@@ -274,13 +274,7 @@ only for the step that needs it:
 If the mod folder's `data` can't be written, the mod can't save your wallet or places, and the launcher tells
 you to move the folder (for example to your Desktop).
 
-If you start `sc-offline.exe` with **Run as administrator** anyway, `play` still starts the game with normal
-rights (with the desktop's own token) and says so. As administrator, Windows makes the game ignore the
-switches it uses to turn off overlay Vulkan layers, so OBS's and Steam's layers load into it, and one of them
-can crash the game while it loads the universe. When normal rights can't be had (User Account Control turned
-off), the game starts as administrator with a warning. A `StarCitizen.exe` set to *Run this program as an
-administrator* in its Properties won't start from a normal launcher; untick that box. `mod.log` warns
-(`[!] the game is running as administrator ...`) whenever the game has administrator rights.
+Start `sc-offline.exe` with normal rights. An elevated launcher attempts to use the desktop token for the game; if unavailable, it falls back and warns. Remove *Run this program as an administrator* from `StarCitizen.exe` Properties to launch with normal rights. Startup megamap crash #109 remains under investigation; no OBS or elevation cause is established. Crash diagnostics identify the fault module/offset and raw-stack executable-address candidates, not an unwound call chain. Windows CI builds pass; v0.7.7 has not been run in game.
 
 ### Session logs
 

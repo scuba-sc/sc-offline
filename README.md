@@ -164,7 +164,7 @@ Say yes to the administrator prompt; some antivirus tools lock the hosts file.
 <details>
 <summary><b>The game closes by itself while loading</b></summary>
 
-Start `sc-offline.exe` normally, not with **Run as administrator**, and make sure `StarCitizen.exe` isn't set to *Run this program as an administrator* (right-click it in `Bin64` > Properties > Compatibility). As administrator, overlay programs such as OBS hook into the game and can crash it. Close OBS and other overlays if it still happens. `data/mod.log` names the module that crashed in its `[crash]` lines; attach it to a bug report with `Game.log`.
+Start `sc-offline.exe` with normal rights. An elevated launcher attempts to use the desktop token for the game; if unavailable, it falls back and warns. Remove *Run this program as an administrator* from `StarCitizen.exe` Properties to launch with normal rights. Startup megamap crash #109 remains under investigation; no OBS or elevation cause is established. Crash diagnostics identify the fault module/offset and raw-stack executable-address candidates, not an unwound call chain. Windows CI builds pass; v0.7.7 has not been run in game.
 </details>
 
 <details>
