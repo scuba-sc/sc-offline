@@ -31,6 +31,7 @@
 #include "sco/game/offline.h"
 #include "sco/runtime.h"
 #include "sco_lua.h"
+#include "sco_lua_game.h"   // sco.datacore, sco.game.* and the game.* payloads for Lua scripts
 #include <filesystem>
 #include <iterator>
 
@@ -208,6 +209,11 @@ static void StartHostKit() {
     }
     pf.pluginsEnabled = PluginsEnabled();
     pf.scripts = &kLua;
+    // sco-lua is game-neutral since sco-core c133484: the Star Citizen tables (sco.datacore,
+    // the read-only sco.game.*, the game.* event payloads) are an adapter the product adds, once,
+    // before any script loads. Same tables and permissions as before.
+    if (sco_lua_add_extension(&sco_lua_game_extension) != SCO_OK)
+        Log("[app] sco-lua: the Star Citizen adapter wasn't added; scripts get no sco.game or sco.datacore");
     // sc-offline's features as built-in plugins (src/builtins/builtins.h), loaded before any plugin
     // folder and with plugins on or off. Their capabilities still come from SetFeatureCaps.
     pf.builtins = kBuiltins;

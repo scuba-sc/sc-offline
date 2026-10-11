@@ -145,9 +145,9 @@ target_compile_options(dinput8 PRIVATE ${SCO_DLL_OPTIONS} /W3)
 target_link_options(dinput8 PRIVATE /SUBSYSTEM:WINDOWS "$<$<CONFIG:Release>:/OPT:REF;/OPT:ICF>")
 # Also named by #pragma comment(lib) in dllmain.cpp and menu.cpp.
 target_link_libraries(dinput8 PRIVATE imgui d3d11 shlwapi advapi32 windowscodecs ole32)
-# The host kit (sco/app.h, with sco/scan.h, signatures, caps, the plugin loader), sco-lua, the
-# detour engine, the zone tree (sco/engine/zone.h) and the CryPak adapter (sco/game/pak.h, with sco_vfs).
-target_link_libraries(dinput8 PRIVATE sco_app sco_lua sco_hook sco_engine sco_pak)
+# The host kit (sco/app.h, with sco/scan.h, signatures, caps, the plugin loader), sco-lua with its
+# Star Citizen adapter (sco_lua_game: sco.datacore and sco.game for scripts), the detour engine, the zone tree (sco/engine/zone.h) and the CryPak adapter (sco/game/pak.h, with sco_vfs).
+target_link_libraries(dinput8 PRIVATE sco_app sco_lua sco_lua_game sco_hook sco_engine sco_pak)
 
 # --- optional bridges (docs/bridges.md) ------------------------------------------------------------
 # Built-ins that link the game to another program on the same PC through sco-core's sco.ipc. Off by
