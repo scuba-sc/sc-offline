@@ -3,33 +3,45 @@
 
     python3 tools/sdk-headers.py            # from the repo root
 
-Every file under src/builtins/ and plugins/ (the plugins built from this repo: plugins/creative) may include only
-  * the headers the SDK zip ships (sco_api.h, sco_*.h, sc_*.h, scosdk/**, ImGui's public headers),
+Every file under src/builtins/ and plugins/ (the plugins built from this repo) may include only
+  * the headers the SDK zips ship (sco_api.h, sco_*.h, sc_*.h, scosdk/**, ImGui's public headers),
   * files inside its own tree (src/builtins/ or plugins/<id>/),
   * toolchain headers (the standard library, the Windows SDK).
 Anything else - ../*.h, sco/*.h (sco-core's internal kernel headers), version.h - fails with file:line.
 
-"Shipped by the SDK zip" is read from external/sco-core/sdk/package.py (its CONTENT table), so
-the gate follows the zip and never a second list kept here.
+"Shipped by the SDK" is read from sco-core, never from a second list kept here:
+  * sdk/components.json when sco-core has it: the union of the public headers of the profiles
+    sc-offline builds against (PROFILES below: the core SDK and the Star Citizen extension, since the
+    built-ins use the game services). Only components with "public_header": true count.
+  * otherwise the legacy CONTENT table in sdk/package.py (sco-core before the profile split).
+A manifest that exists but can't be read fails; it never falls back to the legacy table.
 
 The one exception file is tools/sdk-headers-allow.txt: `header | files | reason`, one line per
 header, a reason on every line. The header is named by where it lives (`src/menu.h`, or
 `sco/plugins.h` for sco-core's include folder), so ../menu.h and ../../menu.h are one entry; files
-is a comma-separated list of path globs relative to src/builtins/ (plugins/ has no entries: it must stay clean). A header or file pattern that no longer matches a
-violation fails too, so the list only ever shrinks. Exit 0 clean, 1 violations or stale entries, 2 the check could not run (which
-must never read as clean).
+is a comma-separated list of path globs relative to src/builtins/ (plugins/ has no entries: it must
+stay clean). A header or file pattern that no longer matches a violation fails too, so the list only
+ever shrinks. Exit 0 clean, 1 violations or stale entries, 2 the check could not run (which must never
+read as clean).
+
+Tests: python3 tools/test_sdk_headers.py
 """
 import fnmatch
+import json
 import re
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent).resolve()
 BUILTINS = ROOT / "src" / "builtins"
 PLUGINS = ROOT / "plugins"   # plugins built from this repo; clean, no allow-list entries
 SCO = ROOT / "external" / "sco-core"
 PACKAGE = SCO / "sdk" / "package.py"
+MANIFEST = SCO / "sdk" / "components.json"
 ALLOW = ROOT / "tools" / "sdk-headers-allow.txt"
+# The SDK profiles sc-offline builds against: the built-ins use the Star Citizen game services.
+PROFILES = ("core", "game-sc")
 # Where an #include is looked up besides the including file's own folder: what check.sh and
 # CMakeLists.txt put on the include path.
 SEARCH = [ROOT / "src", SCO / "include", SCO / "plugins" / "lua", ROOT / "src" / "third_party" / "imgui"]
@@ -37,24 +49,92 @@ SOURCE_SUFFIXES = {".h", ".hpp", ".c", ".cc", ".cpp", ".inl"}
 INCLUDE = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]')
 
 
-def die(msg):
+class CheckError(Exception):
+    """The check could not run. main() turns it into exit 2."""
+
+
+def die(msg) -> NoReturn:
     print(f"sdk-headers: {msg}")
     sys.exit(2)
 
 
-def sdk_headers():
-    """(top-level headers, header folders, ImGui public headers) the SDK zip ships."""
-    if not PACKAGE.is_file():
-        die(f"{PACKAGE.relative_to(ROOT)} is missing; run: git submodule update --init")
-    text = PACKAGE.read_text(encoding="utf-8")
+def split_headers(paths):
+    """include/<x> destinations -> (top-level .h names, top-level folder names)."""
     top, dirs = set(), set()
-    for src in re.findall(r'\(\s*"include/([^"]+)"\s*,', text):
-        (top if src.endswith(".h") and "/" not in src else dirs).add(src)
-    imgui_dir = SCO / "sdk" / "third_party" / "imgui"
-    imgui = {p.name for p in imgui_dir.glob("*.h")} if '"sdk/third_party/imgui"' in text else set()
+    for p in paths:
+        rel = p[len("include/"):]
+        if "/" in rel:
+            dirs.add(rel.split("/")[0])
+        elif rel.endswith(".h"):
+            top.add(rel)
+        else:
+            dirs.add(rel)   # a whole folder, e.g. include/scosdk
+    return top, dirs
+
+
+def headers_from_manifest(path, profiles=PROFILES):
+    """(top, dirs, imgui) from sco-core's sdk/components.json. Raises CheckError on any doubt."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+        raise CheckError(f"{path.name}: can't read it ({e})")
+    if not isinstance(data, dict) or data.get("schema_version") != 1:
+        raise CheckError(f"{path.name}: schema_version must be 1")
+    comps = data.get("components")
+    if not isinstance(comps, list) or not comps:
+        raise CheckError(f"{path.name}: no components")
+    known = set(data["profiles"]) if isinstance(data.get("profiles"), dict) else set()
+    missing = [p for p in profiles if p not in known]
+    if missing:
+        raise CheckError(f"{path.name}: profile(s) {', '.join(missing)} not declared")
+    public, imgui = [], set()
+    for i, c in enumerate(comps):
+        if not isinstance(c, dict):
+            raise CheckError(f"{path.name}: component {i} is not an object")
+        cid, dst, profs = c.get("id"), c.get("destination"), c.get("profiles")
+        if not isinstance(cid, str) or not isinstance(dst, str) or not isinstance(profs, list):
+            raise CheckError(f"{path.name}: component {i} needs id, destination and profiles")
+        if not set(profs) & set(profiles) or not c.get("public_header"):
+            continue
+        if dst.startswith("third_party/imgui"):
+            hdrs = c.get("files")
+            if not isinstance(hdrs, list) or not hdrs:
+                raise CheckError(f"{path.name}: {cid}: an ImGui component lists its headers in 'files'")
+            imgui |= {Path(h).name for h in hdrs if h.endswith(".h")}
+        elif dst.startswith("include/"):
+            public.append(dst)
+        else:
+            raise CheckError(f"{path.name}: {cid}: public_header outside include/ or third_party/imgui")
+    top, dirs = split_headers(public)
     if not top or not dirs or not imgui:
-        die("could not read the SDK header list from sdk/package.py (CONTENT changed shape?)")
+        raise CheckError(f"{path.name}: profiles {'+'.join(profiles)} declare no headers, folders or ImGui headers")
     return top, dirs, imgui
+
+
+def headers_from_package(path, imgui_dir):
+    """(top, dirs, imgui) from the legacy CONTENT table in sdk/package.py."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        raise CheckError(f"{path.name}: can't read it ({e})")
+    m = re.search(r"^CONTENT\s*=\s*\[(.*?)^\]", text, re.S | re.M)
+    if not m:
+        raise CheckError(f"could not read the SDK header list from {path.name} (no CONTENT table)")
+    body = m.group(1)
+    top, dirs = split_headers("include/" + s for s in re.findall(r'\(\s*"include/([^"]+)"\s*,', body))
+    imgui = {p.name for p in imgui_dir.glob("*.h")} if '"sdk/third_party/imgui"' in body else set()
+    if not top or not dirs or not imgui:
+        raise CheckError(f"could not read the SDK header list from {path.name} (CONTENT changed shape?)")
+    return top, dirs, imgui
+
+
+def sdk_headers():
+    """(top-level headers, header folders, ImGui public headers, where they came from)."""
+    if MANIFEST.exists():
+        return (*headers_from_manifest(MANIFEST), f"sdk/components.json ({'+'.join(PROFILES)})")
+    if not PACKAGE.is_file():
+        raise CheckError(f"{PACKAGE.relative_to(ROOT)} is missing; run: git submodule update --init")
+    return (*headers_from_package(PACKAGE, SCO / "sdk" / "third_party" / "imgui"), "sdk/package.py CONTENT (legacy)")
 
 
 def resolve(including, name, quoted):
@@ -100,7 +180,10 @@ def load_allow():
 def main():
     if not BUILTINS.is_dir():
         die(f"{BUILTINS} not found")
-    top, dirs, imgui = sdk_headers()
+    try:
+        top, dirs, imgui, source = sdk_headers()
+    except CheckError as e:
+        die(str(e))
     allow = load_allow()
     files = sorted(p for p in BUILTINS.rglob("*") if p.is_file() and p.suffix in SOURCE_SUFFIXES)
     if not files:
@@ -150,7 +233,8 @@ def main():
         print(f"sdk-headers: FAIL - {len(bad)} include(s) outside the SDK, {len(stale)} stale allow-list entr(ies)")
         sys.exit(1)
     print(f"sdk-headers: ok - {len(files)} files, {checked} includes, {allowed} allow-listed "
-          f"({len(allow)} entries in {ALLOW.relative_to(ROOT).as_posix()})")
+          f"({len(allow)} entries in {ALLOW.relative_to(ROOT).as_posix()}); SDK list from {source}")
 
 
-main()
+if __name__ == "__main__":
+    main()

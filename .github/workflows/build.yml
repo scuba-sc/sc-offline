@@ -60,7 +60,8 @@ jobs:
         run: tools/no-scans.sh
 
   # src/builtins/ is a consumer of the sco SDK: it may include only the SDK zip's public headers and
-  # its own files. The header list comes from external/sco-core/sdk/package.py (hence the submodule);
+  # its own files. The header list comes from external/sco-core's sdk/components.json, or its legacy
+  # sdk/package.py CONTENT table (hence the submodule);
   # the exceptions, one reason each, are in tools/sdk-headers-allow.txt. Its own job for the same
   # reason as no-scans.
   sdk-headers:
@@ -70,6 +71,9 @@ jobs:
         with:
           persist-credentials: false
           submodules: true
+
+      - name: The gate's own tests (manifest and legacy forms, fail-closed)
+        run: python3 tools/test_sdk_headers.py
 
       - name: Built-ins include only SDK headers
         run: python3 tools/sdk-headers.py
