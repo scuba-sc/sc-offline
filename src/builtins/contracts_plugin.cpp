@@ -10,6 +10,7 @@
 #include "builtin_store.h"
 #include "../contracts.h"
 #include "../teleport.h"
+#include <sc_game_events.h>
 #include <cstdio>
 
 namespace {
@@ -39,11 +40,17 @@ void OnTick(const char*, const void*, void*) {
     if (g_tp.ok) ProcessContracts();
 }
 
+void OnActorDied(const char*, const void* data, void*) {
+    const auto* d = static_cast<const sc_game_actor_died*>(data);
+    if (d && d->size >= sizeof(*d)) RecordContractDeath(d->entity_id);
+}
+
 const sco_plugin_info* ContractsQuery() { return &kInfo; }
 
 sco_result ContractsLoad(const sco_api* api, sco_plugin* self) {
     sco_result r = RegisterBuiltinCommand(api, self, kCap, "contracts.status", "Contracts status",
         "How many contracts are known, offered and running, and your wallet's balance", Status);
+    if (r == SCO_OK) r = api->subscribe(self, SC_GAME_EVENT_ACTOR_DIED, OnActorDied, nullptr);
     if (r == SCO_OK) r = api->subscribe(self, "tick", OnTick, nullptr);
     if (r != SCO_OK) return r;   // the host releases what was registered
     g_contractsStore.Open(api, self);   // before the first tick, which restores the wallet

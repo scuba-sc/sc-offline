@@ -548,10 +548,6 @@ static EndMissionFn g_endMission = nullptr;
 using EmFinishedFn = char(__fastcall*)(uintptr_t manager, const uint64_t* entity, uint32_t reason);
 static EmFinishedFn g_emFinishedOrig = nullptr;
 static volatile LONG g_emFinished = -1;
-using ActorKillFn = void(__fastcall*)(uintptr_t actor, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5);
-static ActorKillFn g_actorKillOrig = nullptr;
-static volatile LONG64 g_deaths[32];
-static volatile LONG   g_deathNext = 0;
 using FindEntryFn     = uintptr_t(__fastcall*)(uintptr_t log, const uint8_t* mission);
 using TotalRewardFn   = int(__fastcall*)(uintptr_t entry);
 using UpdateBalanceFn = char(__fastcall*)(uintptr_t wallet, uint8_t currency, int64_t delta);
@@ -668,17 +664,22 @@ static char __fastcall EmFinishedHook(uintptr_t manager, const uint64_t* entity,
     return g_emFinishedOrig(manager, entity, reason);
 }
 
-static void __fastcall ActorKillHook(uintptr_t actor, uintptr_t a2, uintptr_t a3, uintptr_t a4, uintptr_t a5) {
-    uint64_t id = 0;
-    __try { id = EntityIdOfComponent(actor); } __except (EXCEPTION_EXECUTE_HANDLER) {}
-    if (id) InterlockedExchange64(&g_deaths[InterlockedIncrement(&g_deathNext) & 31], static_cast<LONG64>(id));
-    Log("[contracts] actor %llu died", static_cast<unsigned long long>(id));
-    g_actorKillOrig(actor, a2, a3, a4, a5);
-}
+// Entity ids reported by game.actors.died, 32 deep. Unknown id 0 is ignored, preserving the
+// old detour's bookkeeping behavior.
+static volatile LONG64 g_deaths[32];
+static volatile LONG   g_deathNext = 0;
 
+// Did this entity die recently? Pure over the ring, so it needs no game and no hook: what the game
+// pack's event puts in the ring is all it looks at.
 static bool DiedRecently(uint64_t id) {
+    if (!id) return false;
     for (const volatile LONG64& d : g_deaths) if (static_cast<uint64_t>(d) == id) return true;
     return false;
+}
+
+// Called by the contracts built-in's game.actors.died subscription on the game thread.
+void RecordContractDeath(uint64_t id) {
+    if (id) InterlockedExchange64(&g_deaths[InterlockedIncrement(&g_deathNext) & 31], static_cast<LONG64>(id));
 }
 
 static const char* CryText(uintptr_t s) { return s ? reinterpret_cast<const char*>(s) : ""; }
@@ -2021,14 +2022,12 @@ static void HookContractSteps() {
     if (!payHook) Log("[!] contracts: EndMission not hooked; contracts finished by their own scripts won't pay");
     uint8_t* fn = steps ? sco::Sig("contracts.em_module_finished") : nullptr;
     const bool emHook = fn && HookFunction(fn, 15, reinterpret_cast<void*>(&EmFinishedHook), reinterpret_cast<void**>(&g_emFinishedOrig));
-    fn = steps ? sco::Sig("contracts.actor_kill") : nullptr;
-    const bool killHook = fn && HookFunction(fn, 10, reinterpret_cast<void*>(&ActorKillHook), reinterpret_cast<void**>(&g_actorKillOrig));
     g_sendComms = steps ? SigAs<SendCommsFn>("contracts.send_comms") : nullptr;
     if (!g_sendComms) Log("[!] contracts: mission comms (SendCommsNotification) not found; no mission-giver calls");
     fn = steps ? sco::Sig("contracts.helper_spawned") : nullptr;
     const bool helperHook = fn && HookFunction(fn, 10, reinterpret_cast<void*>(&HelperSpawnedHook), reinterpret_cast<void**>(&g_helperSpawnedOrig));
-    Log("[contracts] contract steps: end mission %s, environmental mission end %s, actor deaths %s, delivery helpers %s",
-        g_endMission ? "ok" : "MISSING", emHook ? "ok" : "MISSING", killHook ? "ok" : "MISSING", helperHook ? "ok" : "MISSING");
+    Log("[contracts] contract steps: end mission %s, environmental mission end %s, delivery helpers %s",
+        g_endMission ? "ok" : "MISSING", emHook ? "ok" : "MISSING", helperHook ? "ok" : "MISSING");
 }
 
 static void PrepareModule(uintptr_t module) {

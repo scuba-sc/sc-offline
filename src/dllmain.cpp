@@ -311,7 +311,14 @@ static void RunFeatureTicks(DWORD now) {
     ProcessCVars();
     if (!QuantumBuiltinOwnsTick()) { ProcessQuantum(); ProcessTravel(now); }
     ProcessMissions();
-    if (!ContractsBuiltinOwnsTick()) ProcessContracts();
+    if (!ContractsBuiltinOwnsTick()) {
+        static bool warned = false;
+        if (!warned) {
+            warned = true;
+            Log("[contracts] built-in unavailable: actor-death events aren't subscribed; fallback retires hostiles by entity presence only");
+        }
+        ProcessContracts();
+    }
     TeleportTick(now);
     ProcessFleet(now);
 }

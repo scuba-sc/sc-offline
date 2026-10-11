@@ -6,6 +6,7 @@ void ProcessContracts();
 
 // For the contracts built-in. Game thread.
 bool ContractsReady();   // the mission system and the contract broker's reply were found
+void RecordContractDeath(uint64_t id); // all-actor death event; unknown id 0 is ignored
 struct ContractsStatus {
     int known = 0;            // contract definitions read (0 until they're listed, 15 s after you spawn)
     int listed = 0;           // of those, offered in the mobiGlas
