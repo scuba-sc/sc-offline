@@ -162,6 +162,12 @@ Say yes to the administrator prompt; some antivirus tools lock the hosts file.
 </details>
 
 <details>
+<summary><b>The game closes by itself while loading</b></summary>
+
+Start `sc-offline.exe` normally, not with **Run as administrator**, and make sure `StarCitizen.exe` isn't set to *Run this program as an administrator* (right-click it in `Bin64` > Properties > Compatibility). As administrator, overlay programs such as OBS hook into the game and can crash it. Close OBS and other overlays if it still happens. `data/mod.log` names the module that crashed in its `[crash]` lines; attach it to a bug report with `Game.log`.
+</details>
+
+<details>
 <summary><b>The game crashed or the PC shut down mid-game</b></summary>
 
 Run `sc-offline.exe uninstall` before you play online. It removes the mod and undoes the PC changes.

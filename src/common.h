@@ -9,6 +9,12 @@
 void InitLog();
 void OpenConsole();
 void Log(const char* fmt, ...);
+// After the game has set its own top-level exception filter: on a crash, writes the faulting
+// module+offset and the module return addresses on the stack to mod.log ([crash] lines), then
+// calls the game's filter.
+void InstallCrashLine();
+// True when this process's token is elevated (the game was started as administrator).
+bool ProcessElevated();
 
 enum class PatchResult { NotRun, NotFound, WrongMatchCount, ProtectFailed, Applied };
 

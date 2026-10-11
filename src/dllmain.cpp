@@ -367,6 +367,9 @@ static void RunMainThreadService() {
     if (g_tp.ok) LoadSavedSpot(StartingOverDaymar());
     HWND hwnd = nullptr;
     while (!hwnd) { EnumWindows(FindGameWindow, reinterpret_cast<LPARAM>(&hwnd)); if (!hwnd) Sleep(1000); }
+    // The game's window exists, so its own crash filter is set: ours goes in front of it.
+    InstallCrashLine();
+    Log("[app] crash line: installed (a crash writes its module and offset here as [crash] lines)");
     g_msgHook = SetWindowsHookExW(WH_GETMESSAGE, GetMsgProc, nullptr, GetWindowThreadProcessId(hwnd, nullptr));
     if (!g_msgHook) { Log("[app] could not hook the game's message loop (%lu); hotkeys, menu and plugins disabled", GetLastError()); return; }
     if (SpawnerReady()) Menu_Start(hwnd);
@@ -394,6 +397,10 @@ static DWORD WINAPI ModThread(LPVOID param) {
         FreeLibraryAndExitThread(self, 0);
     }
     Log("[+] No anti-cheat present. Safe to proceed (offline instance confirmed).");
+    if (ProcessElevated())
+        Log("[!] the game is running as administrator. Windows then ignores the switches the game uses to turn off "
+            "overlay Vulkan layers (OBS, Steam), and one of those can crash the game while it loads. Start sc-offline.exe "
+            "normally, not \"Run as administrator\", and untick \"Run this program as an administrator\" on StarCitizen.exe.");
 
     LogStartup();
     ReadStartOptions();

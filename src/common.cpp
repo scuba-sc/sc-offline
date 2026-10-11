@@ -101,5 +101,76 @@ bool SiblingPath(const char* envVar, const char* file, char* path, DWORD n) {
     return true;
 }
 
+// --- crash line ----------------------------------------------------------------------------------
+//
+// The game's crash handler writes "Exception ... addr=0x..." to Game.log with an absolute address
+// and no module, so a crash outside StarCitizen.exe (a driver, an overlay, a Vulkan layer) can't be
+// told from one in it. This filter runs when the game's own top-level filter would: it writes the
+// faulting module and offset to mod.log, then hands over to the game's filter unchanged.
+static LPTOP_LEVEL_EXCEPTION_FILTER g_prevFilter = nullptr;
+
+static void ModuleOf(const void* addr, char* name, size_t n, uintptr_t& base) {
+    HMODULE m = nullptr;
+    base = 0;
+    snprintf(name, n, "?");
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            static_cast<LPCWSTR>(addr), &m) || !m)
+        return;
+    base = reinterpret_cast<uintptr_t>(m);
+    char path[MAX_PATH];
+    const DWORD len = GetModuleFileNameA(m, path, sizeof(path));
+    if (len == 0 || len >= sizeof(path)) return;
+    const char* leaf = strrchr(path, '\\');
+    snprintf(name, n, "%s", leaf ? leaf + 1 : path);
+}
+
+static LONG WINAPI CrashFilter(EXCEPTION_POINTERS* ep) {
+    static volatile LONG once = 0;
+    if (ep && ep->ExceptionRecord && InterlockedExchange(&once, 1) == 0) {
+        const EXCEPTION_RECORD* r = ep->ExceptionRecord;
+        char mod[MAX_PATH]; uintptr_t base;
+        ModuleOf(r->ExceptionAddress, mod, sizeof(mod), base);
+        const uintptr_t at = reinterpret_cast<uintptr_t>(r->ExceptionAddress);
+        if (r->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && r->NumberParameters >= 2)
+            Log("[crash] exception 0x%08lX in %s+0x%llX (%s 0x%llX), thread %lu", r->ExceptionCode, mod,
+                static_cast<unsigned long long>(at - base), r->ExceptionInformation[0] == 8 ? "executing" : r->ExceptionInformation[0] ? "writing" : "reading",
+                static_cast<unsigned long long>(r->ExceptionInformation[1]), GetCurrentThreadId());
+        else
+            Log("[crash] exception 0x%08lX in %s+0x%llX, thread %lu", r->ExceptionCode, mod,
+                static_cast<unsigned long long>(at - base), GetCurrentThreadId());
+        // The return addresses on the stack that point into a module: enough to see who called in.
+        if (ep->ContextRecord) {
+            const uintptr_t* sp = reinterpret_cast<const uintptr_t*>(ep->ContextRecord->Rsp);
+            int found = 0;
+            for (int i = 0; i < 512 && found < 12; ++i) {
+                MEMORY_BASIC_INFORMATION mbi;
+                if (!VirtualQuery(sp + i, &mbi, sizeof(mbi)) || mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD))) break;
+                const uintptr_t v = sp[i];
+                if (!VirtualQuery(reinterpret_cast<const void*>(v), &mbi, sizeof(mbi)) || mbi.Type != MEM_IMAGE ||
+                    !(mbi.Protect & (PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)))
+                    continue;
+                ModuleOf(reinterpret_cast<const void*>(v), mod, sizeof(mod), base);
+                Log("[crash]   stack %s+0x%llX", mod, static_cast<unsigned long long>(v - base));
+                ++found;
+            }
+        }
+    }
+    return g_prevFilter ? g_prevFilter(ep) : EXCEPTION_CONTINUE_SEARCH;
+}
+
+void InstallCrashLine() {
+    LPTOP_LEVEL_EXCEPTION_FILTER prev = SetUnhandledExceptionFilter(CrashFilter);
+    if (prev != CrashFilter) g_prevFilter = prev;
+}
+
+bool ProcessElevated() {
+    HANDLE token = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
+    TOKEN_ELEVATION e{}; DWORD n = 0;
+    const bool ok = GetTokenInformation(token, TokenElevation, &e, sizeof(e), &n) != 0;
+    CloseHandle(token);
+    return ok && e.TokenIsElevated;
+}
+
 bool DataFilePath(char* path, DWORD n, const char* file) { return SiblingPath("SC_OFFLINE_SHIPS_FILE", file, path, n); }
 bool ModLogSibling(char* path, DWORD n, const char* file) { return SiblingPath("SC_OFFLINE_MOD_LOG", file, path, n); }

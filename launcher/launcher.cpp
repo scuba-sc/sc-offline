@@ -2271,6 +2271,65 @@ static int Helper(const wstring& op, const wstring& bin, DWORD parentPid, const 
     return taken ? taken : undone;
 }
 
+static bool IsElevated() {
+    HANDLE token = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
+    TOKEN_ELEVATION e{}; DWORD n = 0;
+    const bool ok = GetTokenInformation(token, TokenElevation, &e, sizeof(e), &n) != 0;
+    CloseHandle(token);
+    return ok && e.TokenIsElevated;
+}
+
+// Starts the game with normal rights. Run as administrator (the launcher, or StarCitizen.exe's own
+// compatibility box), Windows treats the game as high integrity, and the Vulkan loader then ignores
+// every environment variable (loader_secure_getenv, Vulkan-Loader loader/loader_environment.c): the
+// game's own "disable this implicit layer" switches stop working, so OBS's and Steam's overlay
+// layers load into it. A player's 0.7.5 Game.log shows exactly that, then a crash while the first
+// level loads. When this process is elevated, the game is started with the token of the desktop
+// shell (explorer.exe, normal rights) instead. When that can't be done (UAC off, so the shell is
+// elevated too; or the Secondary Logon service CreateProcessWithTokenW needs is disabled), the game
+// starts as before, with a warning, rather than not at all.
+static bool StartGame(const wstring& exe, wstring& cmd, const wstring& dir, PROCESS_INFORMATION& pi) {
+    STARTUPINFOW si{}; si.cb = sizeof(si);
+    auto plain = [&] { return CreateProcessW(exe.c_str(), cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, dir.c_str(), &si, &pi) != 0; };
+    if (!IsElevated()) return plain();
+    DWORD shellPid = 0;
+    if (HWND shell = GetShellWindow()) GetWindowThreadProcessId(shell, &shellPid);
+    HANDLE shellProc = shellPid ? OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, shellPid) : nullptr;
+    HANDLE shellToken = nullptr, token = nullptr;
+    bool started = false, shellElevated = false;
+    DWORD err = 0;
+    if (shellProc && OpenProcessToken(shellProc, TOKEN_QUERY | TOKEN_DUPLICATE, &shellToken)) {
+        TOKEN_ELEVATION e{}; DWORD n = 0;
+        shellElevated = GetTokenInformation(shellToken, TokenElevation, &e, sizeof(e), &n) && e.TokenIsElevated;
+        if (!shellElevated &&
+            DuplicateTokenEx(shellToken, TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID,
+                             nullptr, SecurityImpersonation, TokenPrimary, &token)) {
+            // The token doesn't carry this process's environment: pass ours (the SC_OFFLINE_* variables).
+            wchar_t* env = GetEnvironmentStringsW();
+            started = CreateProcessWithTokenW(token, 0, exe.c_str(), cmd.data(), CREATE_UNICODE_ENVIRONMENT,
+                                              env, dir.c_str(), &si, &pi) != 0;
+            if (env) FreeEnvironmentStringsW(env);
+        }
+    }
+    if (!started) err = GetLastError();
+    if (token) CloseHandle(token);
+    if (shellToken) CloseHandle(shellToken);
+    if (shellProc) CloseHandle(shellProc);
+    if (started) {
+        Out("[i] sc-offline was started as administrator; the game was started with normal rights anyway\n"
+            "    (as administrator, Windows lets overlay layers such as OBS into the game, and they can crash it).\n");
+        return true;
+    }
+    if (shellElevated)
+        Out("[!] Windows' User Account Control is off, so everything, the game included, runs as administrator.\n"
+            "    Overlay layers (OBS, Steam) then load into the game and can crash it; close OBS before playing.\n");
+    else
+        Out("[!] sc-offline was started as administrator and couldn't start the game with normal rights (error %lu);\n"
+            "    it starts as administrator. If it crashes while loading, start sc-offline.exe normally.\n", err);
+    return plain();
+}
+
 // Starts the helper: hidden and unelevated when the game folder is writable, otherwise elevated
 // (one UAC prompt). Returns its process handle, or null.
 static HANDLE StartHelper(const wchar_t* op, const GamePaths& g, const wstring& eventName, const PcWanted& pc) {
@@ -4295,17 +4354,21 @@ int wmain(int argc, wchar_t** argv) {
             pc.eacHosts ? "EAC hosts line, " : "", pc.eacRename ? "EAC renamed " : "");
     SetConsoleCtrlHandler(OnCtrl, TRUE);
 
-    // 5. Play. The game runs with this window's rights, never the helper's.
+    // 5. Play. The game runs with normal rights, never the helper's, and never administrator's even
+    //    when this window was started with "Run as administrator" (StartGame says why).
     const wstring exe = bin + L"\\" + kGameExe;
     wstring cmd = L"\"" + exe + L"\"";
-    STARTUPINFOW si{};
-    si.cb = sizeof(si);
     PROCESS_INFORMATION pi{};
     int rc = kExitOk;
     FILETIME startFt; GetSystemTimeAsFileTime(&startFt);
     const ULONGLONG sessionStart = FileTimeU64(startFt) - 2ull * 10000000ull;   // 2 s of clock slack
-    if (!CreateProcessW(exe.c_str(), cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, bin.c_str(), &si, &pi)) {
-        Out("[!] couldn't start %ls (error %lu)\n", exe.c_str(), GetLastError());
+    if (!StartGame(exe, cmd, bin, pi)) {
+        const DWORD err = GetLastError();
+        Out("[!] couldn't start %ls (error %lu)\n", exe.c_str(), err);
+        if (err == ERROR_ELEVATION_REQUIRED)
+            Out("    StarCitizen.exe is set to \"Run this program as an administrator\" (its Properties >\n"
+                "    Compatibility tab). Untick it: as administrator, overlay layers such as OBS load into the\n"
+                "    game and can crash it while it loads.\n");
         rc = kExitError;
     } else {
         if (!checks.gameBuild.empty()) WriteAll(data + L"\\game-build.txt", checks.gameBuild + "\n");

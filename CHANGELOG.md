@@ -46,6 +46,13 @@
 - Docs and `sc-offline.ini`: `start_ship` only applies with `start = Daymar`, the wallet lives in `data\wallet.txt`, and a new **Not available offline** list in `docs/features.md` covers ASOP, the vehicle manager and character creation ([#26](https://github.com/scubamount/sc-offline/issues/26)).
 - README: 0.6.1 has been played in game on Windows; the "nobody has played it" note is gone. Linux through Wine is still untested.
 
+## 0.7.6 (2026-10-11) — EXPERIMENTAL
+
+For Star Citizen 4.10.2.
+
+- **Fixed: the game could close by itself while loading when sc-offline was started as administrator.** Started with *Run as administrator*, the launcher started the game as administrator too. As administrator, Windows makes the game ignore the switches it uses to turn off overlay Vulkan layers, so layers such as OBS's load into it, and a player's game then crashed while loading the universe. `play` now starts the game with normal rights even when the launcher has administrator rights (it says so). With User Account Control turned off that isn't possible; the game then starts as before, with a warning to close OBS. If `StarCitizen.exe` itself is set to *Run this program as an administrator*, the launcher says to untick that box.
+- **`mod.log` names what crashed.** The game's crash line in `Game.log` gives only an address. sc-offline now adds `[crash]` lines to `mod.log` with the module and offset that faulted (the game, a driver, an overlay) and the modules on the stack, then lets the game's own crash handler run as before. `mod.log` also warns when the game runs as administrator.
+
 ## 0.7.5 (2026-10-10) — EXPERIMENTAL
 
 For Star Citizen 4.10.2.

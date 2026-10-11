@@ -263,8 +263,8 @@ uploaded**: you attach the zip and read it first. `crash_reports = off` turns th
 
 ### Administrator rights
 
-The launcher never runs as administrator, and neither does the game. Windows asks once, only for the step
-that needs it:
+The launcher never asks to run as administrator, and the game never runs as administrator. Windows asks once,
+only for the step that needs it:
 - the helper, when the firewall, EAC or a protected game folder is involved (see [PC changes](#pc-changes));
 - deleting session logs that a protected game folder won't let you delete. The elevated run works out this
   session's files again by itself;
@@ -273,6 +273,14 @@ that needs it:
 
 If the mod folder's `data` can't be written, the mod can't save your wallet or places, and the launcher tells
 you to move the folder (for example to your Desktop).
+
+If you start `sc-offline.exe` with **Run as administrator** anyway, `play` still starts the game with normal
+rights (with the desktop's own token) and says so. As administrator, Windows makes the game ignore the
+switches it uses to turn off overlay Vulkan layers, so OBS's and Steam's layers load into it, and one of them
+can crash the game while it loads the universe. When normal rights can't be had (User Account Control turned
+off), the game starts as administrator with a warning. A `StarCitizen.exe` set to *Run this program as an
+administrator* in its Properties won't start from a normal launcher; untick that box. `mod.log` warns
+(`[!] the game is running as administrator ...`) whenever the game has administrator rights.
 
 ### Session logs
 
