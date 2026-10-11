@@ -97,6 +97,28 @@ class Manifest(unittest.TestCase):
         del bad[3]["files"]
         self.fails(manifest(bad), "lists its headers in 'files'")
 
+    def test_imgui_one_component_per_file(self):
+        per_file = [c for c in GOOD if c["id"] != "imgui"] + [
+            {"id": "imgui.h", "source": "sdk/third_party/imgui/imgui.h", "destination": "third_party/imgui/imgui.h",
+             "profiles": ["core"], "public_header": True},
+            {"id": "imgui.lic", "source": "sdk/third_party/imgui/LICENSE.txt",
+             "destination": "third_party/imgui/LICENSE.txt", "profiles": ["core"]}]
+        self.write(manifest(per_file))
+        _, _, imgui = sh.headers_from_manifest(self.path)
+        self.assertEqual(imgui, {"imgui.h"})
+
+    def test_sco_core_manifest_shape(self):
+        """The shape sco-core's sdk/components.json uses: one component per file, header folders as paths."""
+        comps = [
+            {"id": "a", "source": "include/sco_api.h", "destination": "include/sco_api.h", "profiles": ["core"], "public_header": True},
+            {"id": "b", "source": "include/scosdk/plugin.hpp", "destination": "include/scosdk/plugin.hpp", "profiles": ["core"], "public_header": True},
+            {"id": "c", "source": "include/scosdk/game/actors.hpp", "destination": "include/scosdk/game/actors.hpp", "profiles": ["game-sc"], "public_header": True},
+            {"id": "d", "source": "sdk/third_party/imgui/imgui.h", "destination": "third_party/imgui/imgui.h", "profiles": ["core"], "public_header": True},
+        ]
+        self.write(manifest(comps, ("core", "game-sc", "legacy")))
+        top, dirs, imgui = sh.headers_from_manifest(self.path)
+        self.assertEqual((top, dirs, imgui), ({"sco_api.h"}, {"scosdk"}, {"imgui.h"}))
+
     def test_public_header_outside_include(self):
         self.fails(manifest(GOOD + [{"id": "odd", "source": "a", "destination": "tools/a.h",
                                      "profiles": ["core"], "public_header": True}]), "outside include/")

@@ -97,9 +97,10 @@ def headers_from_manifest(path, profiles=PROFILES):
         if not set(profs) & set(profiles) or not c.get("public_header"):
             continue
         if dst.startswith("third_party/imgui"):
-            hdrs = c.get("files")
+            # One component per file (third_party/imgui/imgui.h), or a folder with its headers in 'files'.
+            hdrs = c.get("files") if dst.rstrip("/") == "third_party/imgui" else [dst]
             if not isinstance(hdrs, list) or not hdrs:
-                raise CheckError(f"{path.name}: {cid}: an ImGui component lists its headers in 'files'")
+                raise CheckError(f"{path.name}: {cid}: an ImGui folder component lists its headers in 'files'")
             imgui |= {Path(h).name for h in hdrs if h.endswith(".h")}
         elif dst.startswith("include/"):
             public.append(dst)
