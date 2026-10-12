@@ -6,7 +6,9 @@ registration tables and attaches the product's NPC tab. The external modules
 use only their feature sources and the public SDK headers; neither the product
 version, private menu/teleport globals nor `sco/plugins.h` are plugin inputs.
 Feature metadata is versioned independently of the product. No service or base
-ABI changes are required, and the sco-core dependency pin is unchanged.
+ABI changes are required. The host dependency is published `sdk-v2.0.0` at
+`cd9a686bda4184f1befbdf0b74b503a1565540dd` (SDK 2.0.0, plugin ABI 1.1,
+Star Citizen game pack 0.3.0).
 
 The standard product build registers `npc` and `inspector` as built-ins. For a
 separate **test build**, `-DSCO_EXTERNAL_WORKFLOWS=ON` omits those two registrations

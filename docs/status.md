@@ -1,10 +1,12 @@
 # What is not verified in game
 
-As of branch `pure-consumer` (head `763e325`), pinned to sco-core `31cf53a`, on Star Citizen **4.10.196.36804**.
+The host is pinned to published sco-core `sdk-v2.0.0`, commit `cd9a686bda4184f1befbdf0b74b503a1565540dd`: SDK **2.0.0**, plugin ABI **1.1** (unchanged), Star Citizen game pack **0.3.0**. The game pack's signature evidence targets Star Citizen **4.10.196.36804**; it is not a game-session result for this product pin.
+
+The release-pin smoke checks remain **NOT RUN** on Windows/in game: offline startup; EAC detection/refusal; services published before plugins; menu; clean exit. CI build success does not close these owner-run checks.
 
 **Nothing from the SDK conversion has run in a game session.** CI proves the code compiles, the gates hold, and the binaries have the right shape. It does not prove a feature works. The last in-game run of sc-offline itself was 0.6.1, before the conversion ([README](../README.md)). The maintainer deferred every in-game check to one run after the conversion lands.
 
-sco-core keeps the matching table for the `game.*` services, with the evidence level of each capability and what a run has to show: [docs/game/status.md](https://github.com/scubamount/sco-core/blob/31cf53aa99817eb8f992c8b90555b5125bbd647d/docs/game/status.md) at the pinned commit. Read it for the service side (for example `game.actors.state`, `game.entities.query_radius`, `game.entities.watch` and `game.events.vehicle_seat` are held **off** until a run decides them). This page lists the sc-offline side: what each converted feature still needs checked. The steps are the ones in the bodies of [#95](https://github.com/scubamount/sc-offline/pull/95), [#97](https://github.com/scubamount/sc-offline/pull/97) and [#98](https://github.com/scubamount/sc-offline/pull/98); `mod.log` lines are quoted as those PRs wrote them.
+sco-core keeps the matching table for the `game.*` services, with the evidence level of each capability and what a run has to show: [docs/game/status.md](https://github.com/scubamount/sco-core/blob/cd9a686bda4184f1befbdf0b74b503a1565540dd/docs/game/status.md) at the pinned commit. Read it for the service side (for example `game.actors.state`, `game.entities.query_radius`, `game.entities.watch` and `game.events.vehicle_seat` are held **off** until a run decides them). This page lists the sc-offline side: what each converted feature still needs checked. The steps are the ones in the bodies of [#95](https://github.com/scubamount/sc-offline/pull/95), [#97](https://github.com/scubamount/sc-offline/pull/97) and [#98](https://github.com/scubamount/sc-offline/pull/98); `mod.log` lines are quoted as those PRs wrote them.
 
 ## From #95 (the SDK conversion, merged)
 
