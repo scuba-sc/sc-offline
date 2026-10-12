@@ -120,27 +120,27 @@ The Gladius' new quantum drive (hold Caps Lock, or B for NAV mode then hold left
 
 ## Plugins
 
-sc-offline can load plugins built with the [sco SDK](https://github.com/scubamount/sco-core/blob/main/sdk/README.md): native DLLs, Lua scripts and data packs. Loading is **on by default** (`plugins = on` in `sc-offline.ini`); sc-offline ships four external features: `npc` (on), `inspector` (on), `discord` (on) and `creative` (off). NPC and inspector have no built-in fallback.
+sc-offline can load plugins built with the [sco SDK](https://github.com/scubamount/sco-core/blob/main/sdk/README.md): native DLLs, Lua scripts and data packs. Loading is **on by default** (`plugins = on` in `sc-offline.ini`); sc-offline ships four external features: `npc` (on), `inspector` (on), `discord` (off; presence blocked pending review) and `creative` (off). NPC and inspector have no built-in fallback.
 
 1. Keep `plugins = on` in `sc-offline.ini`.
 2. Put each plugin in its own folder, `data/plugins/<id>/`, with its `plugin.ini` (for example `data/plugins/hello/plugin.ini` and `hello.dll`). The SDK's examples (`hello`, `greeter`, `travel_pack`) are ready to copy.
 3. Start the game. `mod.log` reports what was found, after the startup lines:
 
    ```
-   [plugin] 14 found, 13 loaded (plugins = on)
+   [plugin] 14 found, 12 loaded (plugins = on)
    [plugin] teleport <version> builtin loaded
    [plugin] spawn <version> builtin loaded
    ...
    [plugin] contracts <version> builtin loaded
    [plugin] creative <version> <kind> disabled
-   [plugin] discord <version> native loaded
+   [plugin] discord <version> native disabled
    [plugin] npc 1.1.0 native loaded
    [plugin] inspector 1.0.0 native loaded
    [plugin] greeter 1.0.0 lua loaded
    ...
    ```
 
-   This illustrative report assumes all nine remaining built-ins load, plus `npc`, `discord`, `inspector` and an added `greeter`; `creative` is found but disabled: 14 found, 13 loaded. Actual counts and refusals depend on the installed folders and capabilities. A plugin that can't load is listed with the reason (`refused: built for api 2.0`, `missing capability 'teleport'`, ...); the others still load. To switch one plugin off, put an empty file named `disabled` in its folder (the launcher's Plugins page does the same, see [launcher.md](launcher.md#the-plugins-page)).
+   This illustrative report assumes all nine remaining built-ins load, plus `npc`, `inspector` and an added `greeter`; `creative` and `discord` are found but disabled: 14 found, 12 loaded. Actual counts and refusals depend on the installed folders and capabilities. A plugin that can't load is listed with the reason (`refused: built for api 2.0`, `missing capability 'teleport'`, ...); the others still load. To switch one plugin off, put an empty file named `disabled` in its folder (the launcher's Plugins page does the same, see [launcher.md](launcher.md#the-plugins-page)).
 
 With `plugins = off`, only the nine remaining built-ins are registered (two more in an optional bridge build); NPC, inspector, Discord and creative do not load. If all nine built-ins load, the illustrative report is `[plugin] 9 found, 9 loaded (plugins = off)`. There is no hidden NPC or inspector implementation. The migration denominator remains 13 baseline features plus two separately counted optional bridges.
 
@@ -191,7 +191,7 @@ When you quit the game (the menu's Quit, or the `quit` console command), plugins
 
 `data/plugins/inspector/plugin.ini` and `inspector.dll` ship enabled, with no `disabled` marker. Keep `plugins = on`; the launcher's Plugins page can disable the folder for the next game start. `inspector.read` reads player actor/entity IDs, health and zone-local transform through public SDK services. Missing providers, absent player, invalid data and unknown maximum health are reported as unavailable/unknown, not fabricated zeroes. It performs no mutation and registers no menu tab or hotkey. The restricted Lua example is non-default, with its own `inspector_lua` ID; it is not another baseline feature or release default. Build/check/install: [SDK workflows](sdk-workflows.md), [plugin README](../plugins/inspector/README.md). **Not run in game.**
 
-The [13-feature migration target](decisions.md) is policy, not completion: steps 1B/1C remove inspector and NPC built-in registrations, leaving nine built-ins and four external features. Creative and Discord defaults below are unchanged.
+The [13-feature migration target](decisions.md) is policy, not completion: steps 1B/1C remove inspector and NPC built-in registrations, leaving nine built-ins and four external features. Creative stays off. Discord folder metadata is off under step 1D; manually enabling it exposes only refused `discord.status`, not presence ([review](../plugins/discord/README.md)).
 
 ### The creative plugin
 

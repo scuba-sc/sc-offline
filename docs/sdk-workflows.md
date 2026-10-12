@@ -10,8 +10,9 @@ Steps 1B/1C ship inspector and NPC as enabled external native plugins under
 registration or fallback remains for either. Nine built-ins and four external
 features (npc, inspector, creative, discord) preserve 13 baseline feature units;
 two optional bridges are separate. Neither `plugins = off` nor a disabled feature
-folder resurrects a hidden implementation. Creative/Discord defaults and launcher
-behavior are unchanged.
+folder resurrects a hidden implementation. Creative stays off and launcher behavior is unchanged. Step 1D separately
+sets Discord folder metadata off and refuses presence pending privacy/transport
+approval; see [Discord review and proof](../plugins/discord/README.md).
 
 The external modules use their feature sources and public SDK headers only, not
 private host registration, product version, host include trees or new ImGui inputs.

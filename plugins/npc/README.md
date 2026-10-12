@@ -6,7 +6,9 @@ no `disabled` marker. It requires `plugins = on`; the launcher's Plugins page ca
 disable its folder for the next game start. No host linkage, built-in registration
 or hidden fallback remains. Nine built-ins plus four external features (npc,
 inspector, creative, discord) preserve 13 baseline units; two optional bridges
-are counted separately. Creative/Discord defaults and launcher behavior are unchanged.
+are counted separately. Creative stays off and launcher behavior is unchanged. Step 1D separately
+sets Discord folder metadata off and refuses presence pending privacy/transport
+approval ([review](../discord/README.md)).
 
 ## Source and published contract
 
