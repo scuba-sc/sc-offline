@@ -1,14 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-only
 #pragma once
-// What the optional bridge built-ins (titanlink/, voxel_bridge/) share: finding the game window,
-// orientation math over teleport.spatial poses, and checks for values read from the other program
-// (docs/bridges.md). Only compiled into a build with SCO_BRIDGE_TITANLINK or SCO_BRIDGE_VOXEL.
-#include "sco_api.h"
-#include <windows.h>
+#include <sco_api.h>
 #include <cmath>
 #include <cstdarg>
-#include <cstdint>
 #include <cstdio>
-
 // Logs one formatted line as the built-in (mod.log shows the built-in's id).
 inline void BridgeLog(const sco_api* api, sco_plugin* self, sco_log_level level, const char* fmt, ...) {
     if (!api) return;
@@ -57,35 +52,4 @@ inline void BridgeAxes(const double q[4], double right[3], double fwd[3], double
     right[0] = 1 - 2 * (y * y + z * z); right[1] = 2 * (x * y + w * z);     right[2] = 2 * (x * z - w * y);
     fwd[0]   = 2 * (x * y - w * z);     fwd[1]   = 1 - 2 * (x * x + z * z); fwd[2]   = 2 * (y * z + w * x);
     up[0]    = 2 * (x * z + w * y);     up[1]    = 2 * (y * z - w * x);     up[2]    = 1 - 2 * (x * x + y * y);
-}
-
-namespace bridge_detail {
-inline BOOL CALLBACK FindGameWindow(HWND hwnd, LPARAM out) {
-    DWORD pid = 0;
-    GetWindowThreadProcessId(hwnd, &pid);
-    if (pid != GetCurrentProcessId() || !IsWindowVisible(hwnd) || GetWindow(hwnd, GW_OWNER)) return TRUE;
-    wchar_t title[128];
-    if (GetWindowTextW(hwnd, title, 128) && wcsstr(title, L"Star Citizen")) {
-        *reinterpret_cast<HWND*>(out) = hwnd;
-        return FALSE;
-    }
-    return TRUE;
-}
-}  // namespace bridge_detail
-
-// Star Citizen's own top-level window, or nullptr. Any thread.
-inline HWND BridgeGameWindow() {
-    HWND w = nullptr;
-    EnumWindows(bridge_detail::FindGameWindow, reinterpret_cast<LPARAM>(&w));
-    return w;
-}
-
-// The game window's client area in pixels (0 x 0 when there is none).
-inline void BridgeViewSize(uint32_t& w, uint32_t& h) {
-    w = h = 0;
-    RECT rc = {};
-    if (HWND gw = BridgeGameWindow(); gw && GetClientRect(gw, &rc)) {
-        w = static_cast<uint32_t>(rc.right > rc.left ? rc.right - rc.left : 0);
-        h = static_cast<uint32_t>(rc.bottom > rc.top ? rc.bottom - rc.top : 0);
-    }
 }

@@ -1,11 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-only
 #pragma once
-// titanlink: the Titanfall 2 bridge, an optional built-in (CMake SCO_BRIDGE_TITANLINK, off by
-// default and never in the release zip). Shared between titanlink_plugin.cpp (the built-in: link,
-// pilot mode, commands, tick), titanlink_ui.cpp (its tab) and titanlink_overlay.cpp (the window
-// that shows Titanfall's picture over the game). docs/bridges.md describes what it does.
+// Optional SDK-only TitanLink; default-disabled and excluded from normal distribution.
 #include "sco_ipc.h"
 #include "sc_titanlink.h" // the channel layout, MIT, from sco-core's SDK
-#include <windows.h>
 #include <cstdint>
 
 // What the tab shows. Written by the tick, read by the tab's draw: both on the game thread.
@@ -25,7 +22,7 @@ struct TlStatus {
     char     weapon[48] = "";
     char     peerLog[TL_MSG_LOG_MAX + 1] = "";   // the last line the Titanfall side sent
     char     frameStatus[96] = "";
-    char     game[MAX_PATH] = "";            // the Titanfall 2 folder (data\titanlink.txt)
+    char     game[260] = "";            // the Titanfall 2 folder (data\titanlink.txt)
     char     map[64] = "";
     char     mode[32] = "";
 };
@@ -44,3 +41,7 @@ void TlUnlink(char* reply, uint32_t size);
 void TlOverlayStart(const sco_ipc_v1* ipc, sco_plugin* self, uint64_t channel);
 void TlOverlayStop();               // joins the thread; call before closing the channel
 void TlOverlayShow(bool on);        // shown only while on and the game is in front
+
+const sco_plugin_info* TitanLinkQuery();
+sco_result TitanLinkLoad(const sco_api*, sco_plugin*);
+void TitanLinkUnload();

@@ -1,45 +1,39 @@
-// titanlink: Titanfall 2 inside Star Citizen, an optional built-in (CMake SCO_BRIDGE_TITANLINK).
-//
-// Pilot mode (F9, titanlink.pilot) opens the channel Local\SCO_titanlink.link through sco.ipc
-// (layout sc_titanlink.h, docs/bridges.md) and, when Titanfall 2 isn't answering yet, starts the
-// EA app and NorthstarLauncher.exe (only on that key press; the command line goes to mod.log). The
-// Titanfall side, a Northstar plugin that opens the channel by name, loads the local match the
-// built-in asks for. From then on, ten times a second, the built-in writes where you are and where
-// you look, converted into the match's frame from an anchor taken where you stood when pilot mode
-// began, and the Titanfall side draws its match from your eyes; the overlay
-// (titanlink_overlay.cpp) shows that picture over the game. V calls your Titan down in front of
-// you and E gets in and out (titanlink.titan, titanlink.embark); the mouse buttons and a few keys
-// go across as held buttons.
-//
-// Game access is teleport.spatial (your pose, zone conversions) and the cl_fov read the product
-// already has; nothing else of the game is touched. Every value the Titanfall side writes is
-// checked before use (ValidTf, DrainPeer, PlaceTitanfallWindow), and the channel closes with the
-// built-in, so the Titanfall side sees it drop at once.
+// SPDX-License-Identifier: GPL-3.0-only
+// SDK-only optional TitanLink orchestration. Windows launch/renderer is a separate boundary.
 #include "titanlink.h"
-#include "../bridge_common.h"
-#include "../builtins.h"
-#include "../tabs.h"
-#include "../../common.h"
-#include "../../cvars.h"
+#include "platform.h"
+#include "math.h"
+#include "frame_valid.h"
 #include <sc_spatial.h>
-#include <tlhelp32.h>
+#include <sc_game_spatial.h>
+#define HAS(t,m) ((t) && (t)->size >= offsetof(std::remove_pointer_t<decltype(t)>,m)+sizeof((t)->m) && (t)->m)
+#include <type_traits>
+#include <sco_settings.h>
+#include <sco_widgets.h>
+#include <sco_ui.h>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-
+#define strncpy_s(dest,src,ignored) std::snprintf(dest,sizeof(dest),"%s",src)
+#define _TRUNCATE 0
 namespace {
 
 const sco_api*       g_api = nullptr;
 sco_plugin*          g_self = nullptr;
 const sco_ipc_v1*    g_ipc = nullptr;
 const sc_spatial_v1* g_sp = nullptr;
+const sc_game_spatial_v1* g_full = nullptr;
+const sco_widgets_v1* g_widgets=nullptr;
+const sco_ui_v1* g_ui=nullptr;
+bool g_panel=false,g_hotkey=false;
+char g_reply[256]{};
+void RefreshUi();
 uint64_t             g_ch = 0;   // the channel; 0 while closed
 
 const sco_plugin_info kInfo = {
-    sizeof(sco_plugin_info), SCO_API_MAJOR, SCO_API_MINOR, "titanlink", SCO_VERSION, "sc-offline",
+    sizeof(sco_plugin_info), SCO_API_MAJOR, SCO_API_MINOR, "titanlink", "0.1.0", "scubamount",
 };
 
-constexpr const char* kCap = "titanlink";
 constexpr uint32_t    kLinkTimeoutMs = 4000;
 constexpr double      kEyeHeight = 1.62;     // metres above your feet
 constexpr double      kMaxUnits = 1.0e6;     // any coordinate of a Titanfall map is well inside this
@@ -54,11 +48,12 @@ TlStatus    g_st;
 tl_tf_state g_in = {};   // the last valid state from the Titanfall side; zero while unlinked
 
 struct Config {
-    char   game[MAX_PATH] = "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Titanfall2";
+    char   game[260] = "C:/Program Files (x86)/Steam/steamapps/common/Titanfall2";
     char   map[64] = "mp_coliseum";
     char   mode[32] = "tdm";
     char   extra[256] = "";
-    double fov = 0;   // vertical degrees; 0 = Star Citizen's cl_fov
+    double fov = 0;   // 0 explicitly reports cl_fov unavailable and uses 60 degrees.
+    bool launch = false; // only after declared setting successfully grants it
 };
 Config g_cfg;
 
@@ -74,207 +69,60 @@ Anchor g_anchor;
 bool     g_startSent = false;   // TL_MSG_START_MATCH went out for this link
 bool     g_ringBad = false;     // the peer's ring failed validation once (logged)
 bool     g_stateBad = false;    // a tl_tf_state failed validation once (logged)
-DWORD    g_launchAt = 0, g_launchDue = 0, g_callAt = 0, g_placedAt = 0;
+uint32_t    g_launchAt = 0, g_callAt = 0;
 uint32_t g_buttons = 0;
 bool     g_titanKeyWas = false, g_embarkKeyWas = false;
 float    g_lastFeet[3] = {};
 uint64_t g_lastFeetMs = 0;
-DWORD    g_fovAt = 0;
+uint32_t    g_fovAt = 0;
 float    g_fovScale = 1.0f;
-DWORD    g_checkedPid = 0;
-bool     g_pidIsTitanfall = false;
 
-// ---- config: data\titanlink.txt ----------------------------------------------------------------
-
-bool ValidName(const char* s, size_t max) {
-    size_t n = 0;
-    for (; s[n]; ++n)
-        if (n >= max || !((s[n] >= 'a' && s[n] <= 'z') || (s[n] >= '0' && s[n] <= '9') || s[n] == '_')) return false;
-    return n > 0;
-}
 
 void LoadConfig() {
-    g_cfg = Config();
-    char path[MAX_PATH];
-    FILE* f = nullptr;
-    if (DataFilePath(path, sizeof(path), "titanlink.txt") && fopen_s(&f, path, "r") == 0 && f) {
-        char line[512];
-        while (fgets(line, sizeof(line), f)) {
-            if (line[0] == '#') continue;
-            char* eq = strchr(line, '=');
-            if (!eq) continue;
-            *eq = 0;
-            char* key = line;
-            while (*key == ' ') ++key;
-            for (char* e = key + strlen(key); e > key && e[-1] == ' ';) *--e = 0;
-            char* value = eq + 1;
-            value[strcspn(value, "\r\n")] = 0;
-            while (*value == ' ') ++value;
-            if (!*value) continue;
-            if (!_stricmp(key, "game")) strncpy_s(g_cfg.game, value, _TRUNCATE);
-            else if (!_stricmp(key, "extra")) strncpy_s(g_cfg.extra, value, _TRUNCATE);
-            else if (!_stricmp(key, "fov")) g_cfg.fov = strtod(value, nullptr);
-            else if (!_stricmp(key, "map") || !_stricmp(key, "mode")) {
-                const bool map = !_stricmp(key, "map");
-                if (ValidName(value, map ? sizeof(g_cfg.map) - 1 : sizeof(g_cfg.mode) - 1))
-                    strncpy_s(map ? g_cfg.map : g_cfg.mode, map ? sizeof(g_cfg.map) : sizeof(g_cfg.mode), value, _TRUNCATE);
-                else
-                    LOGW("[titanlink] %s: %s = %s isn't a map or mode name ([a-z0-9_]); keeping %s", path, key, value,
-                         map ? g_cfg.map : g_cfg.mode);
-            }
-        }
-        fclose(f);
-        LOGI("[titanlink] %s: Titanfall 2 in %s, %s on %s", path, g_cfg.game, g_cfg.mode, g_cfg.map);
-    } else {
-        LOGI("[titanlink] no data\\titanlink.txt; Titanfall 2 is looked for in %s", g_cfg.game);
+    g_cfg=Config();
+    const void* raw=nullptr;
+    const sco_settings_v1* settings=nullptr;
+    if(g_api->query_service(SCO_SETTINGS_NAME,SCO_SETTINGS_VERSION_1_0,&raw)==SCO_OK)settings=static_cast<const sco_settings_v1*>(raw);
+    if(HAS(settings,get_string)){
+        auto get=[&](const char* key,char* dest,uint32_t cap,bool name){
+            char value[260]{};uint32_t n=sizeof(value);
+            if(settings->get_string(g_self,key,value,&n)!=SCO_OK || n>sizeof(value) || !std::memchr(value,0,sizeof(value)))return;
+            const size_t len=std::strlen(value);if(len>=cap)return;
+            if(name){if(!len)return;for(size_t i=0;i<len;++i)if(!((value[i]>='a'&&value[i]<='z')||(value[i]>='0'&&value[i]<='9')||value[i]=='_'))return;}
+            std::snprintf(dest,cap,"%s",value);
+        };
+        get("game",g_cfg.game,sizeof(g_cfg.game),false);get("map",g_cfg.map,sizeof(g_cfg.map),true);
+        get("mode",g_cfg.mode,sizeof(g_cfg.mode),true);get("extra",g_cfg.extra,sizeof(g_cfg.extra),false);
     }
-    if (!(g_cfg.fov >= 0 && g_cfg.fov < 170)) g_cfg.fov = 0;
-    strncpy_s(g_st.game, g_cfg.game, _TRUNCATE);
-    strncpy_s(g_st.map, g_cfg.map, _TRUNCATE);
-    strncpy_s(g_st.mode, g_cfg.mode, _TRUNCATE);
+    if(HAS(settings,get_float)){double f=0;if(settings->get_float(g_self,"fov",&f)==SCO_OK && std::isfinite(f) && f>=0 && f<170)g_cfg.fov=f;}
+    if(HAS(settings,get_bool)){int32_t launch=0;if(settings->get_bool(g_self,"launch",&launch)==SCO_OK)g_cfg.launch=launch==1;}
+    g_fovAt=0;
+    LOGW("[titanlink] legacy titanlink.txt import unavailable: no public host data-root contract; copy game/map/mode/extra/fov to plugin settings");
+    std::snprintf(g_st.game,sizeof(g_st.game),"%s",g_cfg.game);
+    std::snprintf(g_st.map,sizeof(g_st.map),"%s",g_cfg.map);
+    std::snprintf(g_st.mode,sizeof(g_st.mode),"%s",g_cfg.mode);
 }
-
-// ---- starting Titanfall 2 (only from pilot mode's key or button) --------------------------------
-
-bool ProcessRunning(const wchar_t* exe) {
-    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (snap == INVALID_HANDLE_VALUE) return false;
-    PROCESSENTRY32W pe = {};
-    pe.dwSize = sizeof(pe);
-    bool found = false;
-    for (BOOL ok = Process32FirstW(snap, &pe); ok && !found; ok = Process32NextW(snap, &pe)) found = !_wcsicmp(pe.szExeFile, exe);
-    CloseHandle(snap);
-    return found;
-}
-
-bool IsFile(const wchar_t* path) {
-    const DWORD a = GetFileAttributesW(path);
-    return a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY);
-}
-
-// True when the EA app (or Origin) runs; otherwise starts it, minimized, and answers false.
-bool StartEaApp() {
-    if (ProcessRunning(L"EADesktop.exe") || ProcessRunning(L"Origin.exe")) return true;
-    wchar_t path[MAX_PATH] = L"C:\\Program Files\\Electronic Arts\\EA Desktop\\EA Desktop\\EADesktop.exe";
-    HKEY key = nullptr;
-    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\WOW6432Node\\Origin", 0, KEY_READ, &key) == ERROR_SUCCESS) {
-        wchar_t found[MAX_PATH] = L"";
-        DWORD bytes = sizeof(found) - sizeof(wchar_t), type = 0;
-        if (RegQueryValueExW(key, L"ClientPath", nullptr, &type, reinterpret_cast<LPBYTE>(found), &bytes) == ERROR_SUCCESS &&
-            type == REG_SZ) {
-            found[MAX_PATH - 1] = 0;
-            const size_t n = wcslen(found);
-            if (n > 4 && !_wcsicmp(found + n - 4, L".exe") && IsFile(found)) wcscpy_s(path, found);
-        }
-        RegCloseKey(key);
-    }
-    STARTUPINFOW si = {};
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_SHOWMINNOACTIVE;
-    PROCESS_INFORMATION pi = {};
-    if (CreateProcessW(path, nullptr, nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
-        CloseHandle(pi.hThread);
-        CloseHandle(pi.hProcess);
-        LOGI("[titanlink] started the EA app (%ls); Titanfall 2 starts in 25 seconds", path);
-    } else {
-        LOGW("[titanlink] couldn't start the EA app (%ls, error %lu): open it and sign in, then press F9 again", path, GetLastError());
-    }
-    return false;
-}
-
-void Launch() {
-    g_st.launched = true;
-    g_launchAt = GetTickCount() | 1;
-    if (!StartEaApp()) {
-        g_launchDue = GetTickCount() + 25000;
-        return;
-    }
-    uint32_t w = 0, h = 0;
-    BridgeViewSize(w, h);
-    if (w < 64 || h < 64) { w = 1920; h = 1080; }
-    wchar_t dir[MAX_PATH], exe[MAX_PATH], extra[256], cmd[1200];
-    if (!MultiByteToWideChar(CP_ACP, 0, g_cfg.game, -1, dir, MAX_PATH) ||
-        !MultiByteToWideChar(CP_ACP, 0, g_cfg.extra, -1, extra, 256) ||
-        swprintf_s(exe, L"%s\\NorthstarLauncher.exe", dir) < 0 ||
-        swprintf_s(cmd, L"\"%s\" -novid -windowed -noborder -w %u -h %u %s", exe, w, h, extra) < 0) {
-        LOGW("[titanlink] the Titanfall 2 folder or extra arguments in titanlink.txt are too long");
-        return;
-    }
-    STARTUPINFOW si = {};
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_SHOWNOACTIVATE;
-    PROCESS_INFORMATION pi = {};
-    LOGI("[titanlink] starting Titanfall 2: %ls", cmd);
-    if (CreateProcessW(exe, cmd, nullptr, nullptr, FALSE, 0, nullptr, dir, &si, &pi)) {
-        CloseHandle(pi.hThread);
-        CloseHandle(pi.hProcess);
-    } else {
-        LOGW("[titanlink] couldn't start %ls (error %lu): set game= in data\\titanlink.txt to your Titanfall 2 folder", exe, GetLastError());
-    }
-}
-
-// The pid the peer names is used only once it is a NorthstarLauncher.exe or Titanfall2.exe of
-// this user; then its window is kept behind the game, at the game's size, so it renders at it.
-bool IsTitanfallProcess(DWORD pid) {
-    if (!pid || pid == GetCurrentProcessId()) return false;
-    if (pid == g_checkedPid) return g_pidIsTitanfall;
-    g_checkedPid = pid;
-    g_pidIsTitanfall = false;
-    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-    if (!h) return false;
-    wchar_t path[MAX_PATH];
-    DWORD n = MAX_PATH;
-    const bool ok = QueryFullProcessImageNameW(h, 0, path, &n) != 0;
-    CloseHandle(h);
-    if (!ok) return false;
-    const wchar_t* name = wcsrchr(path, L'\\');
-    name = name ? name + 1 : path;
-    g_pidIsTitanfall = !_wcsicmp(name, L"NorthstarLauncher.exe") || !_wcsicmp(name, L"Titanfall2.exe");
-    if (!g_pidIsTitanfall) LOGW("[titanlink] the Titanfall side named process %lu (%ls), which isn't Titanfall 2; its window is left alone", pid, name);
-    return g_pidIsTitanfall;
-}
-
-struct WndFind { DWORD pid; HWND wnd; };
-
-BOOL CALLBACK FindPidWindow(HWND h, LPARAM p) {
-    auto* s = reinterpret_cast<WndFind*>(p);
-    DWORD pid = 0;
-    GetWindowThreadProcessId(h, &pid);
-    if (pid != s->pid || !IsWindowVisible(h) || GetWindow(h, GW_OWNER)) return TRUE;
-    RECT r = {};
-    GetWindowRect(h, &r);
-    if (r.right - r.left < 200) return TRUE;
-    s->wnd = h;
-    return FALSE;
-}
-
-void PlaceTitanfallWindow(DWORD now) {
-    if (g_placedAt && now - g_placedAt < 2000) return;
-    g_placedAt = now;
-    if (!IsTitanfallProcess(g_in.pid)) return;
-    WndFind s = { g_in.pid, nullptr };
-    EnumWindows(FindPidWindow, reinterpret_cast<LPARAM>(&s));
-    HWND game = BridgeGameWindow();
-    if (!s.wnd || !game) return;
-    RECT rc = {}, cur = {};
-    POINT org = { 0, 0 };
-    GetClientRect(game, &rc);
-    ClientToScreen(game, &org);
-    GetWindowRect(s.wnd, &cur);
-    const bool same = cur.left == org.x && cur.top == org.y && cur.right - cur.left == rc.right && cur.bottom - cur.top == rc.bottom;
-    SetWindowPos(s.wnd, HWND_BOTTOM, org.x, org.y, rc.right, rc.bottom,
-                 SWP_NOACTIVATE | SWP_NOOWNERZORDER | (same ? SWP_NOMOVE | SWP_NOSIZE : 0));
-}
-
+void Launch() { if(!g_cfg.launch)return;g_st.launched=TlPlatformLaunch(g_cfg.game,g_cfg.extra); g_launchAt=static_cast<uint32_t>(TlPlatformNow())|1; }
 // ---- poses: teleport.spatial, converted into the match's frame ----------------------------------
 
+template<class T> const T* QueryService(const char* name,uint32_t version){
+    const void* out=nullptr;
+    if(!g_api || !HAS(g_api,query_service) || g_api->query_service(name,version,&out)!=SCO_OK)return nullptr;
+    return static_cast<const T*>(out);
+}
+void QuerySpatial(){g_sp=QueryService<sc_spatial_v1>(SC_SPATIAL_SERVICE_NAME,SC_SPATIAL_SERVICE_VERSION);g_full=QueryService<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME,SC_GAME_SPATIAL_VERSION);}
+bool ValidPose(double p[3],double q[4]){
+    for(int i=0;i<3;++i)if(!std::isfinite(p[i]))return false;
+    double norm=0;for(int i=0;i<4;++i){if(!std::isfinite(q[i]))return false;norm+=q[i]*q[i];}
+    if(!std::isfinite(norm)||norm<1e-12)return false;
+    norm=std::sqrt(norm);for(int i=0;i<4;++i)q[i]/=norm;return true;
+}
 // Your feet, facing and up in the anchor's zone (the zone you're in, converted when it differs).
 bool PoseInAnchor(double pos[3], double fwd[3], double up[3]) {
     double p[3], q[4], r[3], f[3], u[3];
     uint64_t zone = 0;
-    if (!g_sp || !g_anchor.ok || !g_sp->player_pose(p, q, &zone)) return false;
+    QuerySpatial();
+    if (!HAS(g_sp,player_pose) || !g_anchor.ok || !g_sp->player_pose(p, q, &zone) || !zone || !ValidPose(p,q)) return false;
     BridgeAxes(q, r, f, u);
     if (zone == g_anchor.zone) {
         memcpy(pos, p, sizeof(p));
@@ -282,13 +130,11 @@ bool PoseInAnchor(double pos[3], double fwd[3], double up[3]) {
         memcpy(up, u, sizeof(u));
         return true;
     }
-    const double pf[3] = { p[0] + f[0], p[1] + f[1], p[2] + f[2] };
-    const double pu[3] = { p[0] + u[0], p[1] + u[1], p[2] + u[2] };
-    double a[3], b[3], c[3];
-    if (!g_sp->zone_to_zone(zone, g_anchor.zone, p, a) || !g_sp->zone_to_zone(zone, g_anchor.zone, pf, b) ||
-        !g_sp->zone_to_zone(zone, g_anchor.zone, pu, c))
-        return false;
-    for (int i = 0; i < 3; ++i) { pos[i] = a[i]; fwd[i] = b[i] - a[i]; up[i] = c[i] - a[i]; }
+    double converted[3], rotation[4];
+    if (!HAS(g_full,pose_to_zone) || !g_full->pose_to_zone(zone,g_anchor.zone,p,q,converted,rotation)) return false;
+    if(!ValidPose(converted,rotation))return false;
+    BridgeAxes(rotation,r,f,u);
+    memcpy(pos,converted,sizeof(converted));memcpy(fwd,f,sizeof(f));memcpy(up,u,sizeof(u));
     return BridgeNormalize(fwd) && BridgeNormalize(up);
 }
 
@@ -296,7 +142,8 @@ bool SetAnchor() {
     double p[3], q[4], r[3], f[3], u[3];
     uint64_t zone = 0;
     g_anchor.ok = false;
-    if (!g_sp || !g_sp->player_pose(p, q, &zone) || !zone) return false;
+    QuerySpatial();
+    if (!HAS(g_sp,player_pose) || !g_sp->player_pose(p, q, &zone) || !zone || !ValidPose(p,q)) return false;
     BridgeAxes(q, r, f, u);
     g_anchor.zone = zone;
     memcpy(g_anchor.o, p, sizeof(p));
@@ -338,12 +185,10 @@ double TitanDistance() {
     return std::sqrt(BridgeDot(d, d));
 }
 
-float FovScale(DWORD now) {
+float FovScale(uint32_t now) {
     if (g_fovAt && now - g_fovAt < 1000) return g_fovScale;
     g_fovAt = now;
     double vfov = g_cfg.fov;
-    float cl = 0;
-    if (vfov <= 0 && GetCVarNow("cl_fov", cl) && cl > 10 && cl < 170) vfov = cl;
     if (vfov <= 0) vfov = 60.0;
     const double deg = kPi / 180.0;
     const double hor43 = 2.0 * std::atan(std::tan(vfov * deg * 0.5) * 4.0 / 3.0) / deg;
@@ -359,7 +204,7 @@ void Publish(uint64_t nowMs) {
     if (!g_ch) return;
     tl_sc_state s = {};
     s.time_ms = nowMs;
-    const bool focused = GameHasFocus();
+    const bool focused = TlPlatformFocused();
     if (g_st.pilot) s.flags |= TL_SC_PILOT;
     if (focused) s.flags |= TL_SC_FOCUSED;
     double pos[3], f[3], u[3];
@@ -381,8 +226,8 @@ void Publish(uint64_t nowMs) {
     } else {
         g_lastFeetMs = 0;
     }
-    s.fov_scale = FovScale(static_cast<DWORD>(nowMs));
-    BridgeViewSize(s.view_w, s.view_h);
+    s.fov_scale = FovScale(static_cast<uint32_t>(nowMs));
+    TlPlatformViewSize(s.view_w, s.view_h);
     s.buttons = g_st.pilot && focused ? g_buttons : 0;
     g_ipc->block_write(g_self, g_ch, TL_OFF_SC_STATE, &s, sizeof(s));
 }
@@ -412,6 +257,7 @@ bool ValidTf(tl_tf_state& s) {
 
 // Takes what the Titanfall side queued: TL_MSG_LOG lines; other types (a newer peer) are skipped.
 void DrainPeer() {
+    if(g_ringBad)return;
     static uint8_t buf[TL_RING_FROM_PEER];   // a record never exceeds the ring
     for (int i = 0; i < 16; ++i) {
         uint32_t type = 0, size = sizeof(buf);
@@ -436,9 +282,10 @@ void PilotOff(bool tell) {
     g_st.pilot = false;
     g_st.wantPilot = false;
     g_buttons = 0;
+    TlPlatformStop();
     TlOverlayShow(false);
     if (was && tell) Push(TL_MSG_PILOT_OFF, nullptr, 0);
-    Publish(GetTickCount64());
+    Publish(TlPlatformNow());
     if (was) LOGI("[titanlink] pilot mode off");
 }
 
@@ -455,8 +302,11 @@ void PilotOn() {
 
 bool OpenLink(char* reply, uint32_t size) {
     if (g_ch) return true;
-    if (!g_ipc || !g_sp) {
-        snprintf(reply, size, "TitanLink needs sco.ipc and teleport.spatial, and this build has %s", !g_ipc ? "no sco.ipc" : "no teleport.spatial");
+    g_ipc=QueryService<sco_ipc_v1>(SCO_IPC_NAME,SCO_IPC_VERSION_1_0);QuerySpatial();
+    if (!HAS(g_ipc,create) || !HAS(g_ipc,close) || !HAS(g_ipc,peer_age_ms) ||
+        !HAS(g_ipc,block_write) || !HAS(g_ipc,block_read) || !HAS(g_ipc,ring_init) ||
+        !HAS(g_ipc,ring_push) || !HAS(g_ipc,ring_pop) || !HAS(g_sp,player_pose) || !HAS(g_full,pose_to_zone)) {
+        snprintf(reply,size,"TitanLink unavailable: complete sco.ipc, teleport.spatial and game.spatial pose_to_zone required; no private fallback");
         return false;
     }
     LoadConfig();
@@ -473,8 +323,7 @@ bool OpenLink(char* reply, uint32_t size) {
     g_ch = ch;
     g_st.linkOpen = true;
     g_startSent = g_ringBad = g_stateBad = false;
-    g_checkedPid = 0;
-    Publish(GetTickCount64());
+    Publish(TlPlatformNow());
     TlOverlayStart(g_ipc, g_self, ch);
     LOGI("[titanlink] link open: Local\\SCO_titanlink.link, waiting for Titanfall 2's TitanLink plugin");
     return true;
@@ -484,6 +333,7 @@ void CloseLink() {
     if (!g_ch) return;
     PilotOff(true);
     TlOverlayStop();
+    TlPlatformStop();
     g_ipc->close(g_self, g_ch);
     g_ch = 0;
     g_in = {};
@@ -497,63 +347,51 @@ void CloseLink() {
     LOGI("[titanlink] link closed");
 }
 
-bool KeyDown(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
-
-// Pilot mode's keys, read while the game is in front: V and E as presses, the rest as held
-// buttons. Star Citizen sees these keys too (follow-up: an input capture in sco.ui).
 void PilotKeys() {
-    const bool focused = GameHasFocus();
-    const bool tk = focused && KeyDown('V'), ek = focused && KeyDown('E');
+    const bool tk = TlPlatformKey('V'), ek = TlPlatformKey('E');
     char reply[160];
-    if (tk && !g_titanKeyWas && !(g_in.flags & TL_TF_IN_TITAN)) { TlCallTitan(reply, sizeof(reply)); LOGI("[titanlink] V: %s", reply); }
-    if (ek && !g_embarkKeyWas) { TlEmbark(reply, sizeof(reply)); LOGI("[titanlink] E: %s", reply); }
-    g_titanKeyWas = tk;
-    g_embarkKeyWas = ek;
-    uint32_t b = 0;
-    if (focused && !(g_in.flags & TL_TF_BUSY)) {
-        const bool titan = (g_in.flags & TL_TF_IN_TITAN) != 0;
-        if (KeyDown(VK_LBUTTON)) b |= TL_BTN_ATTACK;
-        if (KeyDown(VK_RBUTTON)) b |= TL_BTN_ZOOM;
-        if (KeyDown('R')) b |= TL_BTN_RELOAD;
-        if (KeyDown('F')) b |= TL_BTN_MELEE;
-        if (KeyDown('G')) b |= TL_BTN_OFFHAND;
-        if (KeyDown('Q')) b |= TL_BTN_ABILITY;
-        if (titan && KeyDown('C')) b |= TL_BTN_TITAN_C;
-        if (titan && KeyDown('V')) b |= TL_BTN_TITAN_V;
-        if (KeyDown('Y')) b |= TL_BTN_CYCLE;
-        if (KeyDown('X')) b |= TL_BTN_X;
-    }
-    g_buttons = b;
+    if (tk && !g_titanKeyWas && !(g_in.flags & TL_TF_IN_TITAN)) TlCallTitan(reply,sizeof(reply));
+    if (ek && !g_embarkKeyWas) TlEmbark(reply,sizeof(reply));
+    g_titanKeyWas=tk; g_embarkKeyWas=ek;
+    g_buttons=TlPlatformButtons((g_in.flags&TL_TF_IN_TITAN)!=0,(g_in.flags&TL_TF_BUSY)!=0);
 }
 
+void CloseLink();
 void OnTick(const char*, const void*, void*) {
     if (!g_ch) return;
-    const uint64_t nowMs = GetTickCount64();
-    const DWORD now = static_cast<DWORD>(nowMs);
+    const uint64_t nowMs = TlPlatformNow();
+    const uint32_t now = static_cast<uint32_t>(nowMs);
     uint32_t age = 0;
-    const bool linked = g_ipc->peer_age_ms(g_self, g_ch, &age) == SCO_OK && age < kLinkTimeoutMs;
+    const auto ageResult=g_ipc->peer_age_ms(g_self,g_ch,&age);
+    if(ageResult!=SCO_OK && (g_st.linked || ageResult!=SCO_NOT_FOUND)) {
+        g_st.pilot=g_st.wantPilot=false;g_buttons=0; // no final publish to a closed peer/service
+        CloseLink();return;
+    }
+    const bool linked=ageResult==SCO_OK && age<kLinkTimeoutMs;
     if (linked != g_st.linked) LOGI(linked ? "[titanlink] Titanfall 2 linked" : "[titanlink] Titanfall 2 stopped answering");
     g_st.linked = linked;
     g_st.peerAgeMs = linked ? age : 0;
     if (linked) {
         tl_tf_state in = {};
-        if (g_ipc->block_read(g_self, g_ch, TL_OFF_TF_STATE, &in, sizeof(in)) == SCO_OK) {
-            if (ValidTf(in)) {
-                g_in = in;
-            } else if (!g_stateBad) {
-                g_stateBad = true;
-                LOGW("[titanlink] the Titanfall side wrote an impossible state (a coordinate out of range); ignored");
-            }
+        g_in={}; // Never act on a stale state after a malformed/torn/missing snapshot.
+        if (g_ipc->block_read(g_self,g_ch,TL_OFF_TF_STATE,&in,sizeof(in))==SCO_OK && ValidTf(in)) {
+            g_in=in;
+        } else {
+            if(!g_stateBad)LOGW("[titanlink] invalid or unavailable peer state; pilot stopped");
+            g_stateBad=true;PilotOff(false);
         }
         DrainPeer();
         tl_frame fr = {};
         if (g_ipc->block_read(g_self, g_ch, TL_OFF_FRAME, &fr, sizeof(fr)) == SCO_OK) {
-            BridgeSanitize(fr.status, sizeof(fr.status));
-            strncpy_s(g_st.frameStatus, fr.status, _TRUNCATE);
-        }
+            if(TlValidFrame(fr)) {
+                BridgeSanitize(fr.status, sizeof(fr.status));
+                strncpy_s(g_st.frameStatus, fr.status, _TRUNCATE);
+            } else std::snprintf(g_st.frameStatus,sizeof(g_st.frameStatus),"rejected");
+        } else std::snprintf(g_st.frameStatus,sizeof(g_st.frameStatus),"unavailable");
     } else {
         g_in = {};
         g_startSent = false;
+        std::snprintf(g_st.frameStatus,sizeof(g_st.frameStatus),"unavailable (peer stale)");
     }
     if (linked && !g_startSent) {
         tl_msg_start_match m = {};
@@ -570,10 +408,6 @@ void OnTick(const char*, const void*, void*) {
     g_st.titanHealth = g_in.titan_health;
     g_st.clip = g_in.clip;
     strncpy_s(g_st.weapon, g_in.weapon, _TRUNCATE);
-    if (g_launchDue && static_cast<LONG>(now - g_launchDue) >= 0) {
-        g_launchDue = 0;
-        Launch();
-    }
     if (g_st.wantPilot && !g_st.pilot && g_st.inMatch) PilotOn();
     if (g_st.pilot && !linked) {
         LOGW("[titanlink] Titanfall 2 stopped answering; pilot mode off");
@@ -583,18 +417,20 @@ void OnTick(const char*, const void*, void*) {
         if (!g_anchor.ok) SetAnchor();
         PilotKeys();
     }
-    if (linked) PlaceTitanfallWindow(now);
+    TlPlatformTick(now, linked ? g_in.pid : 0);
     g_st.titanDistance = TitanDistance();
     Publish(nowMs);
+    RefreshUi();
 }
 
 // ---- commands ----------------------------------------------------------------------------------
 
 sco_result CmdPilot(const sco_arg*, uint32_t, void*, char* reply, uint32_t size) {
     TlTogglePilot(reply, size);
-    return SCO_OK;
+    return g_st.linkOpen ? SCO_OK : SCO_UNAVAILABLE;
 }
 sco_result CmdTitan(const sco_arg*, uint32_t, void*, char* reply, uint32_t size) {
+    if(!g_st.pilot){std::snprintf(reply,size,"TitanLink unavailable: start pilot mode first; G2 relocation refused");return SCO_UNAVAILABLE;}
     TlCallTitan(reply, size);
     return SCO_OK;
 }
@@ -607,52 +443,63 @@ sco_result CmdUnlink(const sco_arg*, uint32_t, void*, char* reply, uint32_t size
     return SCO_OK;
 }
 sco_result CmdStatus(const sco_arg*, uint32_t, void*, char* reply, uint32_t size) {
-    snprintf(reply, size, "TitanLink: link %s, Titanfall %s%s, pilot mode %s, %s",
+    snprintf(reply, size, "TitanLink: link %s, Titanfall %s%s, pilot mode %s, %s; G2 relocation refused; G7 cvar writes refused; cl_fov read unavailable; frame %s; launch/overlay %s; legacy titanlink.txt import unavailable (copy keys to plugin settings)",
              g_st.linkOpen ? "open" : "closed", g_st.linked ? "linked" : "not answering", g_st.inMatch ? " in a match" : "",
              g_st.pilot ? "on" : g_st.wantPilot ? "waiting" : "off",
-             g_st.inTitan ? "in the Titan" : g_st.titanParked ? "Titan parked" : "no Titan");
+             g_st.inTitan ? "in the Titan" : g_st.titanParked ? "Titan parked" : "no Titan", g_st.frameStatus, TlPlatformAvailable()?"Windows only, NOT VERIFIED":"unavailable (requires Windows)");
     return SCO_OK;
+}
+
+
+void WidgetEvent(const char* panel,const sco_widget_event* e,void*) {
+    if(!g_api || !panel || std::strcmp(panel,"titanlink.titanfall") || !e || e->size<sizeof(*e) || e->kind!=SCO_WIDGET_BUTTON)return;
+    switch(e->node_id){
+      case 1:TlTogglePilot(g_reply,sizeof(g_reply));break;
+      case 2:TlCallTitan(g_reply,sizeof(g_reply));break;
+      case 3:TlEmbark(g_reply,sizeof(g_reply));break;
+      case 4:TlUnlink(g_reply,sizeof(g_reply));break;
+      default:return;
+    }
+    RefreshUi();
+}
+void RefreshUi(){
+    if(!HAS(g_widgets,set_panel) || !HAS(g_widgets,remove_panel))return;
+    char status[240],health[180],config[240];
+    std::snprintf(status,sizeof(status),"Link: %s; peer %s (%u ms); match %s; frame: %.96s",g_st.linkOpen?"open":"closed",g_st.linked?"linked":"unavailable",g_st.peerAgeMs,g_st.inMatch?"loaded":"unavailable",g_st.frameStatus);
+    std::snprintf(health,sizeof(health),"Titan %s; distance %.1f m; health %.0f%%; weapon %.48s; clip %d",g_st.inTitan?"piloting":g_st.titanParked?"parked":"absent",g_st.titanDistance,g_st.titanHealth*100,g_st.weapon,g_st.clip);
+    std::snprintf(config,sizeof(config),"Game: %.120s; %.31s on %.63s",g_st.game,g_st.mode,g_st.map);
+    const char* text[]={g_st.pilot?"Stop pilot mode (F9)":g_st.wantPilot?"Cancel (F9)":"Start pilot mode (F9)","Call Titan (V)",g_st.inTitan?"Disembark (E)":"Embark (E)","Close link",status,health,config,g_st.peerLog,g_reply,
+      "G2 relocation refused; G7 cvar writes refused. cl_fov read unavailable: set fov or use 60 degrees. Legacy titanlink.txt import unavailable: copy keys into declared plugin settings.",
+      TlPlatformAvailable()?"Owned Windows D3D11 overlay/launch: NOT VERIFIED":"Overlay/launch/input unavailable: requires Windows; commands and IPC retained."};
+    sco_widget_node nodes[11]{};
+    for(uint32_t i=0;i<11;++i){nodes[i].size=sizeof(nodes[i]);nodes[i].id=i<4?i+1:i+10;nodes[i].kind=i<4?SCO_WIDGET_BUTTON:SCO_WIDGET_LABEL;nodes[i].label=text[i];}
+    const auto r=g_widgets->set_panel(g_self,"titanlink.titanfall","Titanfall",nodes,11,sizeof(nodes[0]),WidgetEvent,nullptr);
+    if(r==SCO_OK)g_panel=true;
+    else if(!g_panel)LOGW("[titanlink] UI unavailable (%d); use retained commands",static_cast<int>(r));
 }
 
 const sco_plugin_info* TlQuery() { return &kInfo; }
-
 sco_result TlLoad(const sco_api* api, sco_plugin* self) {
-    g_api = api;
-    g_self = self;
-    if (api->size > offsetof(sco_api, query_service)) {
-        const void* t = nullptr;
-        if (api->query_service(SCO_IPC_NAME, SCO_IPC_VERSION_1_0, &t) == SCO_OK) g_ipc = static_cast<const sco_ipc_v1*>(t);
-        t = nullptr;
-        if (api->query_service(SC_SPATIAL_SERVICE_NAME, SC_SPATIAL_SERVICE_VERSION, &t) == SCO_OK) g_sp = static_cast<const sc_spatial_v1*>(t);
-    }
-    if (!g_ipc || !g_sp) LOGW("[titanlink] %s isn't published; pilot mode can't start", !g_ipc ? "sco.ipc" : "teleport.spatial");
-    sco_result r = RegisterBuiltinCommand(api, self, kCap, "titanlink.pilot", "Titanfall pilot mode",
-        "Turns pilot mode on or off (F9); starts Titanfall 2 if it isn't running", CmdPilot);
-    if (r == SCO_OK) r = RegisterBuiltinCommand(api, self, kCap, "titanlink.titan", "Call Titan",
-        "Calls your Titan down in front of you (V in pilot mode)", CmdTitan);
-    if (r == SCO_OK) r = RegisterBuiltinCommand(api, self, kCap, "titanlink.embark", "Embark / disembark",
-        "Gets into your Titan when you're next to it, or out of it (E in pilot mode)", CmdEmbark);
-    if (r == SCO_OK) r = RegisterBuiltinCommand(api, self, kCap, "titanlink.unlink", "Close TitanLink",
-        "Ends pilot mode and closes the link; Titanfall 2 sees it drop", CmdUnlink);
-    if (r == SCO_OK) r = RegisterBuiltinCommand(api, self, kCap, "titanlink.status", "TitanLink status",
-        "The link, the match and your Titan in one line", CmdStatus);
-    if (r == SCO_OK) r = api->subscribe(self, "tick", OnTick, nullptr);
-    if (r != SCO_OK) return r;   // the host releases what was registered
-    RegisterBuiltinTab(api, self, "titanlink.titanfall", "Titanfall", kTabTitanLink, DrawTitanLinkTab);
-    BindBuiltinHotkey(api, self, "f9", "titanlink.pilot");
-    return SCO_OK;
+    if (!self || !api || api->size < offsetof(sco_api,query_service)+sizeof(api->query_service) || api->major != SCO_API_MAJOR || !api->query_service || !api->log || !api->register_command || !api->subscribe) return SCO_UNAVAILABLE;
+    g_api=api;g_self=self;TlPlatformConfigure(api,self);
+    const void* t=nullptr;
+    if(api->query_service(SCO_IPC_NAME,SCO_IPC_VERSION_1_0,&t)==SCO_OK) g_ipc=static_cast<const sco_ipc_v1*>(t);
+    t=nullptr;if(api->query_service(SC_SPATIAL_SERVICE_NAME,SC_SPATIAL_SERVICE_VERSION,&t)==SCO_OK)g_sp=static_cast<const sc_spatial_v1*>(t);
+    t=nullptr;if(api->query_service(SC_GAME_SPATIAL_NAME,SC_GAME_SPATIAL_VERSION,&t)==SCO_OK)g_full=static_cast<const sc_game_spatial_v1*>(t);
+    const char* ids[]={"titanlink.pilot","titanlink.titan","titanlink.embark","titanlink.unlink","titanlink.status"};
+    const sco_command_fn fns[]={CmdPilot,CmdTitan,CmdEmbark,CmdUnlink,CmdStatus};
+    for(int i=0;i<5;++i) { sco_command c{};c.size=sizeof(c);c.name=ids[i];c.title=ids[i];c.help=ids[i];c.fn=fns[i];
+        const auto r=api->register_command(self,&c);if(r!=SCO_OK)return r; }
+    const auto r=api->subscribe(self,"tick",OnTick,nullptr);if(r!=SCO_OK)return r;
+    t=nullptr;if(api->query_service(SCO_WIDGETS_NAME,SCO_WIDGETS_VERSION_1_0,&t)==SCO_OK)g_widgets=static_cast<const sco_widgets_v1*>(t);
+    t=nullptr;if(api->query_service(SCO_UI_NAME,SCO_UI_VERSION_1_0,&t)==SCO_OK)g_ui=static_cast<const sco_ui_v1*>(t);
+    if(HAS(g_ui,bind_hotkey) && HAS(g_ui,unbind_hotkey))g_hotkey=g_ui->bind_hotkey(self,"f9","titanlink.pilot",nullptr,0)==SCO_OK;
+    RefreshUi();return SCO_OK;
 }
-
-void TlUnload() {
-    CloseLink();
-    g_ipc = nullptr;
-    g_sp = nullptr;
-    g_api = nullptr;
-    g_self = nullptr;
-}
-
-}  // namespace
-
+void TlUnload() { if(g_panel && HAS(g_widgets,remove_panel))g_widgets->remove_panel(g_self,"titanlink.titanfall");
+    if(g_hotkey && HAS(g_ui,unbind_hotkey))g_ui->unbind_hotkey(g_self,"f9");
+    g_panel=g_hotkey=false;g_widgets=nullptr;g_ui=nullptr;g_reply[0]=0;if(g_ch && g_st.pilot)Push(TL_MSG_PILOT_OFF,nullptr,0);g_st.pilot=g_st.wantPilot=false;CloseLink();TlPlatformStop();TlPlatformConfigure(nullptr,nullptr);g_ipc=nullptr;g_sp=nullptr;g_full=nullptr;g_api=nullptr;g_self=nullptr;g_st={};g_anchor={};g_in={};g_launchAt=g_callAt=0; }
+} // namespace
 // ---- the tab's view of it (titanlink.h) ---------------------------------------------------------
 
 const TlStatus& TlGetStatus() { return g_st; }
@@ -665,7 +512,7 @@ void TlTogglePilot(char* reply, uint32_t size) {
     }
     if (!OpenLink(reply, size)) return;
     g_st.wantPilot = true;
-    const DWORD now = GetTickCount();
+    const uint32_t now = static_cast<uint32_t>(TlPlatformNow());
     if (!g_st.linked) {
         if (!g_launchAt || now - g_launchAt > 90000) Launch();
         snprintf(reply, size, "Waiting for Titanfall 2 to load its match; pilot mode starts by itself");
@@ -678,7 +525,7 @@ void TlTogglePilot(char* reply, uint32_t size) {
 }
 
 void TlCallTitan(char* reply, uint32_t size) {
-    const DWORD now = GetTickCount();
+    const uint32_t now = static_cast<uint32_t>(TlPlatformNow());
     double pos[3], f[3], u[3];
     if (!g_st.pilot) { snprintf(reply, size, "Start pilot mode first (F9)"); return; }
     if (!g_st.inMatch) { snprintf(reply, size, "Titanfall's match is still loading"); return; }
@@ -719,4 +566,7 @@ void TlUnlink(char* reply, uint32_t size) {
     snprintf(reply, size, "TitanLink closed");
 }
 
-const sco::plugins::Builtin kTitanLinkBuiltin = { "titanlink", TlQuery, TlLoad, TlUnload };
+
+const sco_plugin_info* TitanLinkQuery(){return TlQuery();}
+sco_result TitanLinkLoad(const sco_api* a,sco_plugin* s){return TlLoad(a,s);}
+void TitanLinkUnload(){TlUnload();}

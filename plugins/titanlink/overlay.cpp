@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-only
 // titanlink's overlay: Titanfall's picture over the game, on a thread and a window of its own.
 //
 // A click-through, topmost, no-activate popup the size of the game's client area, drawn through
@@ -8,21 +9,25 @@
 // the Titanfall side are checked: a handle must be a 32-bit legacy shared handle, and the texture
 // it opens must be a plain 2D texture of at most 8192 x 8192 in a colour format, with a keyed
 // mutex; anything else is closed again and logged once.
-#include "titanlink.h"
-#include "../bridge_common.h"
-#include "../../common.h"
+#include "platform.h"
+#include "frame_valid.h"
+#ifdef _WIN32
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <dcomp.h>
 #include <dxgi1_2.h>
 #include <atomic>
 #include <cstring>
+#include <cstddef>
+#include <mutex>
+#include <thread>
 
 namespace {
 
 std::atomic<bool> g_run{ false };
 std::atomic<bool> g_show{ false };
-HANDLE            g_thread = nullptr;
+std::thread       g_thread;
+std::mutex        g_lifecycle;
 // Set before the thread starts and only read by it.
 const sco_ipc_v1* g_ipc = nullptr;
 sco_plugin*       g_self = nullptr;
@@ -71,7 +76,7 @@ ID3DBlob* Compile(const char* entry, const char* target) {
     ID3DBlob* errors = nullptr;
     if (FAILED(D3DCompile(kShader, sizeof(kShader) - 1, "titanlink", nullptr, nullptr, entry, target, D3DCOMPILE_OPTIMIZATION_LEVEL3, 0,
                           &code, &errors))) {
-        Log("[titanlink] overlay shader %s failed: %s", entry, errors ? static_cast<const char*>(errors->GetBufferPointer()) : "?");
+        TlPlatformLog(SCO_LOG_INFO, "[titanlink] overlay shader %s failed: %s", entry, errors ? static_cast<const char*>(errors->GetBufferPointer()) : "?");
         Rel(errors);
         return nullptr;
     }
@@ -81,6 +86,8 @@ ID3DBlob* Compile(const char* entry, const char* target) {
 
 struct Overlay {
     HWND                     wnd = nullptr;
+    HINSTANCE                instance = nullptr;
+    ATOM                     windowClass = 0;
     ID3D11Device*            dev = nullptr;
     ID3D11DeviceContext*     ctx = nullptr;
     IDXGIDevice*             dxgiDev = nullptr;
@@ -111,18 +118,21 @@ struct Overlay {
         WNDCLASSEXW wc = {};
         wc.cbSize = sizeof(wc);
         wc.lpfnWndProc = DefWindowProcW;
-        wc.hInstance = GetModuleHandleW(nullptr);
-        wc.lpszClassName = L"sc_offline_titanlink_overlay";
-        RegisterClassExW(&wc);   // already registered by an earlier link: fine
+        if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                reinterpret_cast<LPCWSTR>(&g_run), &instance)) return false;
+        wc.hInstance = instance;
+        wc.lpszClassName = L"sco_sdk_titanlink_overlay";
+        windowClass = RegisterClassExW(&wc);
+        if (!windowClass) return false; // Never reuse a foreign class or keep a class across dlclose.
         wnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE |
                                   WS_EX_NOREDIRECTIONBITMAP,
                               wc.lpszClassName, L"", WS_POPUP, 0, 0, 64, 64, nullptr, nullptr, wc.hInstance, nullptr);
-        if (!wnd) { Log("[titanlink] overlay window failed (%lu)", GetLastError()); return false; }
+        if (!wnd) { TlPlatformLog(SCO_LOG_INFO, "[titanlink] overlay window failed (%lu)", GetLastError()); return false; }
         SetLayeredWindowAttributes(wnd, 0, 255, LWA_ALPHA);
         const D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_0 };
         if (FAILED(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels, 1,
                                      D3D11_SDK_VERSION, &dev, nullptr, &ctx))) {
-            Log("[titanlink] no Direct3D 11 device for the overlay");
+            TlPlatformLog(SCO_LOG_INFO, "[titanlink] no Direct3D 11 device for the overlay");
             return false;
         }
         DXGI_SWAP_CHAIN_DESC1 sd = {};
@@ -139,7 +149,7 @@ struct Overlay {
             FAILED(DCompositionCreateDevice(dxgiDev, IID_PPV_ARGS(&dcomp))) || FAILED(dcomp->CreateTargetForHwnd(wnd, TRUE, &target)) ||
             FAILED(dcomp->CreateVisual(&visual)) || FAILED(visual->SetContent(swap)) || FAILED(target->SetRoot(visual)) ||
             FAILED(dcomp->Commit())) {
-            Log("[titanlink] overlay composition setup failed");
+            TlPlatformLog(SCO_LOG_INFO, "[titanlink] overlay composition setup failed");
             return false;
         }
         ID3DBlob* vsCode = Compile("VS", "vs_5_0");
@@ -171,23 +181,40 @@ struct Overlay {
         rd.DepthClipEnable = TRUE;
         if (FAILED(dev->CreateBuffer(&cbd, nullptr, &cb)) || FAILED(dev->CreateSamplerState(&smp, &sampler)) ||
             FAILED(dev->CreateBlendState(&bd, &blend)) || FAILED(dev->CreateRasterizerState(&rd, &raster))) {
-            Log("[titanlink] overlay pipeline setup failed");
+            TlPlatformLog(SCO_LOG_INFO, "[titanlink] overlay pipeline setup failed");
             return false;
         }
-        Log("[titanlink] overlay ready");
+        TlPlatformLog(SCO_LOG_INFO, "[titanlink] overlay ready");
         return true;
     }
 
     void CloseShared(int i) {
         Rel(keyed[i]);
         Rel(shared[i]);
+        opened[i] = 0;
     }
 
+    void DropFrame() {
+        // A failed read must never retain a previously valid picture.
+        if (ctx) {
+            ID3D11ShaderResourceView* empty = nullptr;
+            ctx->PSSetShaderResources(0, 1, &empty);
+        }
+        for (int i = 0; i < 2; ++i) CloseShared(i);
+        Rel(localSrv);
+        Rel(local);
+        lw = lh = lastSeq = 0;
+        lf = DXGI_FORMAT_UNKNOWN;
+        have = false;
+    }
+
+    static bool ValidFrame(const tl_frame& fr) { return TlValidFrame(fr); }
+
     // Opens the texture behind a handle the Titanfall side named, or leaves the slot empty.
-    void OpenShared(int i, uint64_t handle) {
+    bool OpenShared(int i, uint64_t handle, uint32_t width, uint32_t height) {
         CloseShared(i);
         opened[i] = handle;
-        if (!handle) return;
+        if (!handle) return true;
         const char* why = nullptr;
         D3D11_TEXTURE2D_DESC td = {};
         if (handle > 0xFFFFFFFFull) {
@@ -196,33 +223,57 @@ struct Overlay {
             why = "it doesn't open on this graphics card";
         } else {
             shared[i]->GetDesc(&td);
-            if (td.Width < 1 || td.Height < 1 || td.Width > 8192 || td.Height > 8192 || td.ArraySize != 1 || td.SampleDesc.Count != 1 ||
-                !AllowedFormat(td.Format) || !(td.MiscFlags & D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX))
+            if (td.Width != width || td.Height != height || td.Width < 1 || td.Height < 1 ||
+                td.Width > 8192 || td.Height > 8192 || td.MipLevels != 1 || td.ArraySize != 1 ||
+                td.SampleDesc.Count != 1 || td.SampleDesc.Quality != 0 || td.Usage != D3D11_USAGE_DEFAULT ||
+                td.CPUAccessFlags != 0 || !AllowedFormat(td.Format) ||
+                td.MiscFlags != D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX)
                 why = "not a plain colour texture with a keyed mutex, at most 8192 x 8192";
             else if (FAILED(shared[i]->QueryInterface(IID_PPV_ARGS(&keyed[i]))))
                 why = "no keyed mutex";
         }
         if (why) {
             CloseShared(i);
-            if (!badLogged) Log("[titanlink] couldn't use Titanfall's picture: %s", why);
+            if (!badLogged) TlPlatformLog(SCO_LOG_INFO, "[titanlink] couldn't use Titanfall's picture: %s", why);
             badLogged = true;
+            return false;
         }
+        return true;
     }
 
     // Copies the newer of the two shared pictures into `local`, if one is new and free.
     void TakeFrame() {
         tl_frame fr = {};
-        if (g_ipc->block_read(g_self, g_ch, TL_OFF_FRAME, &fr, sizeof(fr)) != SCO_OK) return;
-        for (int i = 0; i < 2; ++i)
-            if (fr.handle[i] != opened[i]) OpenShared(i, fr.handle[i]);
+        if (g_ipc->block_read(g_self, g_ch, TL_OFF_FRAME, &fr, sizeof(fr)) != SCO_OK || !ValidFrame(fr)) {
+            DropFrame();
+            return;
+        }
+        if ((!fr.handle[0] && !fr.handle[1]) || (!fr.tex_seq[0] && !fr.tex_seq[1])) { DropFrame(); return; }
+        if (fr.handle[0] != opened[0] || fr.handle[1] != opened[1]) {
+            DropFrame();
+            for (int i = 0; i < 2; ++i) {
+                if (!OpenShared(i, fr.handle[i], fr.width, fr.height)) { DropFrame(); return; }
+            }
+        }
+        for (int i = 0; i < 2; ++i) {
+            if (!shared[i]) continue;
+            D3D11_TEXTURE2D_DESC td = {};
+            shared[i]->GetDesc(&td);
+            if (td.Width != fr.width || td.Height != fr.height) { DropFrame(); return; }
+        }
         const int order[2] = { fr.tex_seq[0] >= fr.tex_seq[1] ? 0 : 1, fr.tex_seq[0] >= fr.tex_seq[1] ? 1 : 0 };
         for (int oi = 0; oi < 2; ++oi) {
             const int i = order[oi];
             if (!shared[i] || !keyed[i] || fr.tex_seq[i] == 0 || fr.tex_seq[i] == lastSeq) continue;
-            if (keyed[i]->AcquireSync(1, 0) != S_OK) continue;
+            const HRESULT acquired = keyed[i]->AcquireSync(1, 0);
+            if (acquired == static_cast<HRESULT>(WAIT_TIMEOUT)) continue;
+            if (acquired != S_OK) { DropFrame(); return; }
             D3D11_TEXTURE2D_DESC td = {};
             shared[i]->GetDesc(&td);
             if (!local || td.Width != lw || td.Height != lh || td.Format != lf) {
+                ID3D11ShaderResourceView* empty = nullptr;
+                ctx->PSSetShaderResources(0, 1, &empty);
+                have = false;
                 Rel(localSrv);
                 Rel(local);
                 D3D11_TEXTURE2D_DESC ld = td;
@@ -237,12 +288,13 @@ struct Overlay {
                 lf = td.Format;
             }
             if (local) ctx->CopySubresourceRegion(local, 0, 0, 0, 0, shared[i], 0, nullptr);
-            keyed[i]->ReleaseSync(0);
+            const HRESULT released = keyed[i]->ReleaseSync(0);
+            if (FAILED(released) || !local || !localSrv) { DropFrame(); return; }
             lastSeq = fr.tex_seq[i];
-            have = local != nullptr;
+            have = true;
             if (have && !firstLogged) {
                 firstLogged = true;
-                Log("[titanlink] first Titanfall picture in (%ux%u)", lw, lh);
+                TlPlatformLog(SCO_LOG_INFO, "[titanlink] first Titanfall picture in (%ux%u)", lw, lh);
             }
             break;
         }
@@ -250,9 +302,13 @@ struct Overlay {
 
     void Frame(HWND game) {
         RECT rc = {};
-        GetClientRect(game, &rc);
         POINT org = { 0, 0 };
-        ClientToScreen(game, &org);
+        if (!GetClientRect(game, &rc) || !ClientToScreen(game, &org) ||
+            rc.right < 1 || rc.bottom < 1 || rc.right > 8192 || rc.bottom > 8192) {
+            Hide();
+            DropFrame();
+            return;
+        }
         const UINT w = static_cast<UINT>(rc.right > 1 ? rc.right : 1), h = static_cast<UINT>(rc.bottom > 1 ? rc.bottom : 1);
         if (w != sw || h != sh || !rtv) {
             Rel(rtv);
@@ -275,11 +331,14 @@ struct Overlay {
         ctx->RSSetState(raster);
         ctx->OMSetRenderTargets(1, &rtv, nullptr);
         const float cbv[4] = { static_cast<float>(sw), static_cast<float>(sh), have ? 1.0f : 0.0f, 0.0f };
-        D3D11_MAPPED_SUBRESOURCE mapped;
-        if (SUCCEEDED(ctx->Map(cb, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
-            memcpy(mapped.pData, cbv, sizeof(cbv));
-            ctx->Unmap(cb, 0);
+        D3D11_MAPPED_SUBRESOURCE mapped = {};
+        if (FAILED(ctx->Map(cb, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
+            Hide();
+            DropFrame();
+            return;
         }
+        memcpy(mapped.pData, cbv, sizeof(cbv));
+        ctx->Unmap(cb, 0);
         ctx->IASetInputLayout(nullptr);
         ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         ctx->VSSetShader(vs, nullptr, 0);
@@ -290,7 +349,7 @@ struct Overlay {
         ctx->PSSetSamplers(0, 1, &sampler);
         ctx->OMSetBlendState(blend, nullptr, 0xFFFFFFFF);
         ctx->Draw(3, 0);
-        swap->Present(1, 0);
+        if (FAILED(swap->Present(1, 0))) { Hide(); DropFrame(); }
     }
 
     void Hide() {
@@ -299,56 +358,87 @@ struct Overlay {
     }
 
     void Release() {
+        if (ctx) ctx->ClearState();
         for (int i = 0; i < 2; ++i) CloseShared(i);
         Rel(localSrv); Rel(local); Rel(rtv); Rel(raster); Rel(blend); Rel(sampler); Rel(cb); Rel(ps); Rel(vs);
         Rel(visual); Rel(target); Rel(dcomp); Rel(swap); Rel(factory); Rel(adapter); Rel(dxgiDev); Rel(ctx); Rel(dev);
         if (wnd) DestroyWindow(wnd);
         wnd = nullptr;
+        if (windowClass) UnregisterClassW(MAKEINTRESOURCEW(windowClass), instance);
+        windowClass = 0;
     }
+
+    ~Overlay() { Release(); }
 };
 
-DWORD WINAPI OverlayThread(LPVOID) {
+void OverlayThread() {
     Overlay o;
-    const bool ok = o.Init();
-    HWND game = nullptr;
-    while (g_run.load()) {
-        MSG msg;
-        while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) DispatchMessageW(&msg);
-        if (!game || !IsWindow(game)) game = BridgeGameWindow();
-        if (!ok || !g_show.load() || !game || IsIconic(game) || !GameHasFocus()) {
-            o.Hide();
-            Sleep(30);
-            continue;
+    try {
+        if (!o.Init()) return;
+        HWND game = nullptr;
+        while (g_run.load()) {
+            MSG msg = {};
+            while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+            if (!game || !IsWindow(game)) game = TlPlatformWindow();
+            if (!g_show.load() || !game || IsIconic(game) || !TlPlatformFocused()) {
+                o.Hide();
+                o.DropFrame();
+                Sleep(30);
+                continue;
+            }
+            o.Frame(game);
         }
-        o.Frame(game);
+    } catch (...) {
+        TlPlatformLog(SCO_LOG_WARN, "[titanlink] overlay worker failed; its window is closed");
     }
-    o.Release();
-    return 0;
-}
+} // All COM objects and the owned window are released before join completes.
 
-}  // namespace
+} // namespace
 
 void TlOverlayStart(const sco_ipc_v1* ipc, sco_plugin* self, uint64_t channel) {
-    if (g_thread) return;
+    std::lock_guard<std::mutex> lock(g_lifecycle);
+    if (g_thread.joinable()) return;
+    // Test the full function-pointer extent, not just its starting offset.
+    if (!ipc || ipc->size < offsetof(sco_ipc_v1, block_read) + sizeof(ipc->block_read) ||
+        !ipc->block_read || !self || !channel) {
+        TlPlatformLog(SCO_LOG_WARN, "[titanlink] overlay refused: sco.ipc block_read is unavailable");
+        return;
+    }
     g_ipc = ipc;
     g_self = self;
     g_ch = channel;
     g_show = false;
     g_run = true;
-    g_thread = CreateThread(nullptr, 0, OverlayThread, nullptr, 0, nullptr);
-    if (!g_thread) {
+    try {
+        g_thread = std::thread(OverlayThread);
+    } catch (...) {
         g_run = false;
-        Log("[titanlink] couldn't start the overlay thread (%lu); Titanfall's picture won't show", GetLastError());
+        g_ipc = nullptr;
+        g_self = nullptr;
+        g_ch = 0;
+        TlPlatformLog(SCO_LOG_WARN, "[titanlink] couldn't start the overlay worker");
     }
 }
 
 void TlOverlayStop() {
-    if (!g_thread) return;
+    std::lock_guard<std::mutex> lock(g_lifecycle);
     g_run = false;
-    if (WaitForSingleObject(g_thread, 5000) != WAIT_OBJECT_0) Log("[titanlink] the overlay thread didn't stop within 5 s");
-    CloseHandle(g_thread);
-    g_thread = nullptr;
     g_show = false;
+    // No timeout: service pointers, mapping and plugin code stay live until actual exit.
+    if (g_thread.joinable()) g_thread.join();
+    g_ipc = nullptr;
+    g_self = nullptr;
+    g_ch = 0;
 }
 
 void TlOverlayShow(bool on) { g_show = on; }
+#else
+void TlOverlayStart(const sco_ipc_v1*, sco_plugin*, uint64_t) {
+    TlPlatformLog(SCO_LOG_WARN, "[titanlink] D3D overlay is unavailable on this platform");
+}
+void TlOverlayStop() {}
+void TlOverlayShow(bool) {}
+#endif

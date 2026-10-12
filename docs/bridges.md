@@ -1,64 +1,66 @@
 # Bridges: Titanfall 2 and a voxel game
 
-Two optional built-ins link Star Citizen to another game running on the same PC: **TitanLink** (Titanfall 2 through Northstar) and the **voxel bridge** (a Minecraft-style voxel game). They talk through sco-core's `sco.ipc` service: one named shared-memory channel per bridge, for the current Windows user only, laid out with sco-core's MIT wire header [`sc_ipc.h`](../external/sco-core/include/sc_ipc.h) ([sco-core docs/ipc.md](../external/sco-core/docs/ipc.md)). Nothing goes over the network.
+TitanLink and voxel_bridge are independent optional native SDK plugins in
+[`plugins/titanlink`](../plugins/titanlink/README.md) and
+[`plugins/voxel_bridge`](../plugins/voxel_bridge/README.md). Both install with a
+`disabled` marker. Neither bridge, peer fixture nor bridge data belongs to normal
+release packaging. `dinput8.dll` no longer links or registers either bridge.
 
-**They are not in the release.** Both are off by default at build time, so the `dinput8.dll` in the release zip doesn't contain them (CI checks for this), and nothing in `data/` belongs to them. To try one:
+## Build, install, enable (explicit opt-in)
 
-```text
-cmake -S . -B build -A x64 -DSCO_BRIDGE_TITANLINK=ON -DSCO_BRIDGE_VOXEL=ON
-cmake --build build --config Release
-```
+1. Obtain an identified SDK containing IPC/spatial reads and G3 full-pose conversion.
+   This extraction uses a LOCAL integration SDK. Published sdk-v2.0.0 remains pinned
+   and lacks G3; it is not sufficient for these modules. No private host headers.
+2. Configure each independently:
 
-CI builds them that way in its `bridges` job and uploads the result as the `bridges-test` artifact (`dinput8.dll` with both bridges, and `bridge-peer.exe`). Even in such a build, a bridge does nothing until you open it.
+   ```text
+   cmake -S plugins/titanlink -B titan-build -DSCO_SDK_INCLUDE_DIR=<sdk>/include
+   cmake --build titan-build --target sc-offline-titanlink
+   cmake --install titan-build --prefix bridge-stage --component titanlink
+   cmake -S plugins/voxel_bridge -B voxel-build -DSCO_SDK_INCLUDE_DIR=<sdk>/include
+   cmake --build voxel-build --target sc-offline-voxel_bridge
+   cmake --install voxel-build --prefix bridge-stage --component voxel_bridge
+   ```
+3. Copy ONLY the chosen disabled folder from `bridge-stage/data/plugins/` into
+   the configured host plugin root. Enable deliberately by removing its marker;
+   plugin loading must be on. Keep disabled pending owner Windows/offline acceptance.
+   Retired host `SCO_BRIDGE_*` options refuse instead of creating hidden fallback.
 
-Design: [sco-core docs/design/multiplayer.md, section 4.4](../external/sco-core/docs/design/multiplayer.md#44-the-bridges-optional-built-ins-on-sc_ipch).
+TitanLink retains `titanlink.pilot`, `.titan`, `.embark`, `.unlink`, `.status`, F9,
+its renderer-neutral panel and owned Windows overlay/local launcher. Voxel retains
+`voxel_bridge.toggle`, `.anchor`, `.status`, Ctrl+F9, its public panel, owned crate
+placement and bounded `game.world` ground scans. See each plugin README for settings,
+transport/cleanup behavior and retained unavailable functionality.
 
-## TitanLink (Titanfall 2)
+G2 relocation and G7 writes are NOT approved: follow/movement/camera-cvar mutation
+refuses, no private fallback. G3 uses full pose conversion. G9 crate cleanup uses
+`game.entities.spawn/despawn` ownership, never private NPC deletion. Missing services
+refuse their operation. Legacy `titanlink.txt`/`voxel_bridge.txt` automatic import
+is unavailable without a public root/content route: back up files and manually
+transfer the preserved setting names. No legacy files are overwritten/deleted.
 
-**In game.** Press **F9** (or **Start pilot mode** in the **Titanfall** tab). The built-in opens its channel. If Titanfall 2 isn't answering yet, it starts the EA app (if it isn't running) and then `NorthstarLauncher.exe`, sized to the game window. Both command lines go to `mod.log`, and nothing starts unless you pressed F9. Once Titanfall 2's TitanLink plugin attaches, the built-in asks it for a local match (`mode` on `map`). When the match is loaded, pilot mode starts:
+5A multiplayer/G13 is NOT approved: retain legacy source but remove it from host
+sources/registration. `SCO_MULTIPLAYER=ON` refuses; core G13 stays disabled. This
+local IPC extraction never authorizes hosting/joining/private networking.
 
-- The match is anchored where you stand: your feet are the match's anchor point, your facing its +y. Ten times a second the built-in sends where you are and where you face, converted into the match's frame, and Titanfall draws its match from your eyes. You move with Star Citizen's own controls.
-- An overlay window of its own, click-through and over the game, shows Titanfall's picture (the textures the Titanfall side shares), with a small crosshair. Titanfall 2's window is kept behind the game, at the game's size.
-- **V** calls your Titan down 8 m in front of you, and **E** gets you in when you're within 9 m of it, or out again. The mouse buttons, R, F, G, Q, X and Y (and C and V in the Titan) go across as held buttons.
-- **F9** again ends pilot mode. **Close link** in the tab (or `titanlink.unlink`) closes the channel, and Titanfall's side sees it drop at once.
+## Independent peer fixture and evidence
 
-Star Citizen still sees the keys you press in pilot mode. Commands: `titanlink.pilot`, `titanlink.titan`, `titanlink.embark`, `titanlink.unlink`, `titanlink.status`, gated on the `titanlink` capability (teleport available).
+[`tools/bridge-peer`](../tools/bridge-peer/README.md) configures independently with
+only `sc_ipc.h`, `sc_titanlink.h`, `sc_voxel_bridge.h` (MIT); no host, `sco_api.h` or
+runtime library. Windows CLI: `bridge-peer titanlink|voxel [seconds]`. Development
+platform `--wire-info` reports versions; native transport otherwise refuses.
+Project fixture stays GPL-3.0-only: MIT wire dependency does not relicense project
+code. No paired-game code/assets are shipped. The obsolete host-embedded bridges
+CI job is removed; future optional CI needs an approved SDK containing G3.
 
-**Settings**, in `data\titanlink.txt` (optional, `key = value`):
-
-| Key | Default | |
-|---|---|---|
-| `game` | `C:\Program Files (x86)\Steam\steamapps\common\Titanfall2` | The Titanfall 2 folder with `NorthstarLauncher.exe` |
-| `map` | `mp_coliseum` | The local match's map (`[a-z0-9_]`) |
-| `mode` | `tdm` | Its mode (`[a-z0-9_]`) |
-| `extra` | | More arguments for `NorthstarLauncher.exe` |
-| `fov` | `0` | Vertical field of view sent across; 0 uses Star Citizen's `cl_fov` |
-
-## The voxel bridge
-
-**In game.** Press **Ctrl+F9** (or **Open the bridge** in the **Voxel** tab). The built-in opens its channel and makes a **building area** where you stand: block (0, 64, 0) is at your feet, x runs to your right, y up and -z the way you face, each block `size` metres. **Move the area here** (`voxel_bridge.anchor`) moves it.
-
-- Ten times a second the built-in sends your position and facing in block coordinates, so the voxel game's player can follow you.
-- The voxel game sends back which blocks are solid. Each solid block becomes a crate (`block`, a cargo box by default) at its place in Star Citizen: up to 8 spawn per tick, at most 4,096 at once, and a block that stops being solid loses its crate.
-- It also sends the voxel game Star Citizen's ground under the area: one 8 x 8 column region per tick around you, found with build mode's ground ray.
-- **Ctrl+F9** again closes the channel and removes the crates.
-
-Commands: `voxel_bridge.toggle`, `voxel_bridge.anchor`, `voxel_bridge.status`, gated on `voxel_bridge` (teleport and the spawner available).
-
-**Settings**, in `data\voxel_bridge.txt` (optional): `block` (an entity class, default `CargoBox_050x050x050_Metal`, or `none` for no crates), `size` (metres per block, 0.1 to 4, default 0.5), `pivot` (where in the block the crate's origin sits, -1 to 1, default 0), `radius` (ground regions scanned around you, 1 to 4, default 2).
-
-## Where the other sides live
-
-Each bridge has a second half inside the other game. Neither is in this repository, and neither needs anything from it: both build against the published sco-core SDK alone (`sc_ipc.h` and the bridge's layout header, all MIT; see [The wire](#the-wire)).
-
-- **The Titanfall side** is a Northstar plugin (a native DLL that hooks Titanfall 2's Direct3D to share its picture, plus a Squirrel script that runs the local match). The fork's version is `TitanLink/src/plugin.cpp` and `TitanLink/mod/` in the 2026-10-09 download. It lives in its own repository as a separate plugin built against the sco-core SDK (maintainer's decision of 2026-10-10): it is a mod for another game, with Titanfall-side match settings (`sv_cheats`, `ns_auth_allow_insecure` in Titanfall 2) that the design left for the maintainer to decide on, and the SDK headers it includes are MIT so that a non-GPL program can speak the wire. To port the fork's plugin: replace its `Local\SCTitanLink_v1` mapping (`LinkOpen`, `ReadSc`, the `TfBlock` / `FrameBlock` writes and the `cmd` text) with `sc_ipc_attach` on `Local\SCO_titanlink.link` and the blocks and messages below. The free-form console command it used to receive is now a `TL_MSG_START_MATCH` with a map and mode it must check.
-- **The voxel side**, a mod for the voxel game, wasn't in the download, so it has to be written against the wire below.
-
-Until they exist, `bridge-peer.exe` (in `bridges-test`) stands in for either one.
+Windows/MSVC, native cross-process IPC, GPU/renderer/shared handles, late peer exit,
+local launcher/overlay cleanup and gameplay are NOT VERIFIED. Synthetic fixtures
+exist; post-steering integration was configure/compile only, tests NOT RUN.
+No network/game/EAC operation was performed.
 
 ## The wire
 
-Both channels follow `sc_ipc.h`: the 64-byte `sc_ipc_hdr` at offset 0 (magic `SCIO`, version, pids, epoch, both heartbeats, size, `layout_id` / `layout_version`, state), then seqlock **blocks** (`sc_ipc_block`, 16 bytes, then the struct) and single-producer **rings** (`sc_ipc_ring`, 192 bytes, then the capacity) at the offsets in the tables. The layouts are defined once, in sco-core's SDK: [`sc_titanlink.h`](../external/sco-core/include/sc_titanlink.h) and [`sc_voxel_bridge.h`](../external/sco-core/include/sc_voxel_bridge.h), MIT, plain C11 / C++20, with every size and offset pinned by `static_assert`s (and by sco-core's `tests/abi_titanlink.c` and `tests/abi_voxel_bridge.c`; [sco-core docs/ipc.md, Bridge layouts](../external/sco-core/docs/ipc.md#bridge-layouts)). sc-offline includes them from `external/sco-core/include` and keeps no copy of its own. The other side vendors the same headers from the SDK zip; its `TL_LAYOUT_VERSION` / `VX_LAYOUT_VERSION` must equal sc-offline's, or `sc_ipc_attach` refuses the channel (`SC_IPC_MISMATCH`). This page describes the same layouts in prose. Everything is little-endian, with natural alignment.
+Both channels follow `sc_ipc.h`: the 64-byte `sc_ipc_hdr` at offset 0 (magic `SCIO`, version, pids, epoch, both heartbeats, size, `layout_id` / `layout_version`, state), then seqlock **blocks** (`sc_ipc_block`, 16 bytes, then the struct) and single-producer **rings** (`sc_ipc_ring`, 192 bytes, then the capacity) at the offsets in the tables. The layouts are defined once, in sco-core's SDK: [`sc_titanlink.h`](../external/sco-core/include/sc_titanlink.h) and [`sc_voxel_bridge.h`](../external/sco-core/include/sc_voxel_bridge.h), MIT, plain C11 / C++20, with every size and offset pinned by `static_assert`s (and by sco-core's `tests/abi_titanlink.c` and `tests/abi_voxel_bridge.c`; [sco-core docs/ipc.md, Bridge layouts](../external/sco-core/docs/ipc.md#bridge-layouts)). Independent modules use extracted public SDK headers; the peer needs only those three MIT headers. The other side vendors the same headers from the SDK zip; its `TL_LAYOUT_VERSION` / `VX_LAYOUT_VERSION` must equal sc-offline's, or `sc_ipc_attach` refuses the channel (`SC_IPC_MISMATCH`). This page describes the same layouts in prose. Everything is little-endian, with natural alignment.
 
 **What the other side must do:**
 
@@ -109,14 +111,12 @@ sc-offline checks everything you write in the same way: flags are masked, every 
 
 **Voxel -> sc-offline:** 1 `SOLIDS` `{int32 sx, sy, sz; uint32 epoch; uint64 bits[64];}` (528 bytes), the solid blocks of the 16^3 section at (sx, sy, sz). Bit `i` (`bits[i / 64] >> (i % 64)`) is block x = `i & 15`, z = `(i >> 4) & 15`, y = `i >> 8` within it, and a section replaces what you sent for it before. Sections of another epoch, or outside x and z +-30,000 and y -64 to 320, are ignored. 2 `CLEAR` `{uint32 epoch; uint32 reserved;}` removes every crate of that epoch. 3 `LOG`, 1 to 200 bytes of text.
 
-## Testing with `bridge-peer`
+## Using `bridge-peer`
 
-`bridge-peer.exe titanlink` or `bridge-peer.exe voxel`, started while the game runs (before or after you open the bridge), attaches with nothing but the SDK headers `sc_ipc.h`, `sc_titanlink.h` and `sc_voxel_bridge.h`. It beats and prints what sc-offline writes once a second (flags, feet, angles, buttons, the area and the ground it receives), and answers as a minimal other side:
-
-- **titanlink:** it says it's in a match, so pilot mode starts. A Titan call parks a "Titan" where it was asked, and E puts you in it and out again. It shares no picture, so the overlay stays clear.
-- **voxel:** it says a world is loaded. For every new building area it sends one section with a 3 x 3 wall four blocks (2 m) in front of the area's origin, so three columns of three crates appear.
-
-Ctrl+C ends it, and within the timeout the tab shows the other side as gone.
+Build the independent [fixture](../tools/bridge-peer/README.md). On Windows start
+`bridge-peer titanlink` or `bridge-peer voxel` after deliberately enabling/opening
+the chosen module. It sends synthetic match/wall responses, not gameplay results.
+Ctrl+C stops its heartbeat. Native transport and cleanup remain NOT VERIFIED.
 
 ## Not ported (follow-ups)
 
