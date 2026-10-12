@@ -39,4 +39,8 @@ host::Result Start(const Options& options, bool offlinePrepared, bool eacAbsent)
     return host::Start(config); // Provider copies the catalogue before returning.
 }
 host::Status Status() { return host::Snapshot(); }
+bool Ready(uint32_t required) {
+    const auto status = Status();
+    return required && status.admitted && !status.stopped && (status.ready & required) == required;
+}
 }
