@@ -1,2 +1,0 @@
-build.cpp: error: use of undeclared identifier 'max'; did you mean 'fmax'?
-build.cpp: error: use of undeclared identifier 'min'; did you mean 'fmin'?
