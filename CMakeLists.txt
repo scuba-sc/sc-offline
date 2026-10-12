@@ -121,12 +121,10 @@ add_library(dinput8 SHARED
   src/builtins/build_plugin.cpp
   src/builtins/contracts_plugin.cpp
   src/builtins/mining_plugin.cpp
-  src/builtins/multiplayer_plugin.cpp
   # Their menu tabs, drawn through sco.ui (src/builtins/tabs.h).
   src/builtins/loadout_ui.cpp
   src/builtins/quantum_ui.cpp
   src/builtins/build_ui.cpp
-  src/builtins/multiplayer_ui.cpp
   # Manifest EnableSegmentHeap.
   src/dinput8.manifest
 )
@@ -145,35 +143,16 @@ target_link_libraries(dinput8 PRIVATE sco_app sco_lua sco_lua_game sco_hook sco_
 
 # NPC, inspector, crew and spawn are external published-SDK modules; no host targets or fallback.
 
-# --- optional bridges (docs/bridges.md) ------------------------------------------------------------
-# Built-ins that link the game to another program on the same PC through sco-core's sco.ipc. Off by
-# default and never in a release: the release job packages the default build's dinput8.dll, and CI
-# builds these ON in a job of its own (artifact "bridges-test") only so they keep compiling.
-option(SCO_BRIDGE_TITANLINK "Build the Titanfall 2 bridge built-in (titanlink)" OFF)
-option(SCO_BRIDGE_VOXEL "Build the voxel-game bridge built-in (voxel_bridge)" OFF)
-if(SCO_BRIDGE_TITANLINK)
-  target_sources(dinput8 PRIVATE
-    src/builtins/titanlink/titanlink_plugin.cpp
-    src/builtins/titanlink/titanlink_overlay.cpp
-    src/builtins/titanlink/titanlink_ui.cpp)
-  target_compile_definitions(dinput8 PRIVATE SCO_BRIDGE_TITANLINK)
-  # The overlay's own window: DXGI flip swap chain through DirectComposition (d3d11 is linked above).
-  target_link_libraries(dinput8 PRIVATE dxgi dcomp)
-endif()
-if(SCO_BRIDGE_VOXEL)
-  target_sources(dinput8 PRIVATE
-    src/builtins/voxel_bridge/voxel_plugin.cpp
-    src/builtins/voxel_bridge/voxel_ui.cpp)
-  target_compile_definitions(dinput8 PRIVATE SCO_BRIDGE_VOXEL)
-endif()
+# Bridges are independent disabled SDK modules, never host sources or default-release inputs.
+# Configure plugins/titanlink and plugins/voxel_bridge separately (docs/bridges.md).
+# The peer fixture is also a separate tools/bridge-peer configuration, using MIT wire only.
 if(SCO_BRIDGE_TITANLINK OR SCO_BRIDGE_VOXEL)
-  # A stand-in for the other program, for testing a bridge without Titanfall 2 or the voxel game:
-  # it opens a channel with nothing but sco-core's MIT SDK headers sc_ipc.h, sc_titanlink.h and
-  # sc_voxel_bridge.h (tools/bridge-peer).
-  add_executable(bridge-peer tools/bridge-peer/bridge_peer.cpp)
-  target_include_directories(bridge-peer PRIVATE external/sco-core/include)
-  target_compile_definitions(bridge-peer PRIVATE ${SCO_COMMON_DEFINES})
-  target_compile_options(bridge-peer PRIVATE ${SCO_COMMON_OPTIONS} /W3)
+  message(FATAL_ERROR "Host bridge options are retired; configure each optional plugin separately")
+endif()
+# G13 private-session control / multiplayer step 5A is not approved. Retain source, never ship it.
+option(SCO_MULTIPLAYER "Reserved: private-session multiplayer (not approved)" OFF)
+if(SCO_MULTIPLAYER)
+  message(FATAL_ERROR "Multiplayer/G13 is not approved and cannot be built into this host")
 endif()
 
 # WholeProgramOptimization + LinkTimeCodeGeneration in Release (/GL, /LTCG).

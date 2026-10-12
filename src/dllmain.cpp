@@ -178,12 +178,6 @@ static void SetFeatureCaps() {
     SetCap("build", g_buildOk && SpawnerReady());
     SetCap("contracts", ContractsReady());
     SetMiningCaps();   // game.mining, from sco-core's mining.cell row
-#ifdef SCO_BRIDGE_TITANLINK
-    SetCap("titanlink", g_tp.ok);   // your pose and zone conversions come from teleport.spatial
-#endif
-#ifdef SCO_BRIDGE_VOXEL
-    SetCap("voxel_bridge", g_tp.ok && SpawnerReady());   // teleport.spatial, plus the spawner for crates
-#endif
     SetFleetCaps();    // asop.terminal, asop.deliver, asop.retrieve, hangar.lift, atc.store, ...
     SetHangarCaps();   // hangar.instance, atc.tokens, asop.diagnostics
 }

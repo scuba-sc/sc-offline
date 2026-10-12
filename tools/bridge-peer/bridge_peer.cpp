@@ -1,11 +1,12 @@
-// bridge-peer: a stand-in for the other program of an sc-offline bridge (docs/bridges.md), for
-// testing the titanlink and voxel_bridge built-ins without Titanfall 2 or the voxel game.
+// SPDX-License-Identifier: GPL-3.0-only
+// bridge-peer: an independently configured MIT-wire endpoint fixture for optional SDK modules.
+// Native cross-process transport is Windows-only; no gameplay or sco-core runtime library.
 //
 //   bridge-peer titanlink [seconds]
 //   bridge-peer voxel [seconds]
 //
-// Built only with SCO_BRIDGE_TITANLINK or SCO_BRIDGE_VOXEL (CI artifact "bridges-test"); never in a
-// release. It opens the channel the built-in created, by name, with nothing from sco-core but the
+// Configure this folder separately; never in a release or host target.
+// It opens the channel the optional plugin created, by name, with nothing from sco-core but the
 // MIT SDK headers sc_ipc.h and the bridge's layout header, the way the real other side does. It
 // beats, prints what sc-offline writes once a second, and answers like a minimal peer:
 //   titanlink: says it's in a match; a Titan call parks a Titan where asked, E puts the pilot in it
@@ -14,13 +15,12 @@
 //              3 x 3 wall four blocks in front of the area's origin, and counts the ground regions
 //              sc-offline sends.
 // Ctrl+C ends it (or the seconds run out); the channel then sees its heartbeat stop.
-#include <windows.h>
-#include <sc_ipc.h>
-#include <sc_titanlink.h>
-#include <sc_voxel_bridge.h>
-#include <cmath>
+#include "peer_wire.h"
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#ifdef _WIN32
+#include <windows.h>
 
 namespace {
 
@@ -50,6 +50,9 @@ struct Link {
         base = nullptr;
         map = nullptr;
         up = false;
+        ch = {};
+        in = {};
+        out = {};
     }
 
     // Opens and validates the channel; false (quietly) until sc-offline has created it.
@@ -97,6 +100,10 @@ void RunTitanLink(Link& l, ULONGLONG until) {
             if (!l.Attach(L"Local\\SCO_titanlink.link", TL_LAYOUT_ID, TL_LAYOUT_VERSION, TL_OFF_TO_PEER, TL_OFF_FROM_PEER)) { Sleep(500); continue; }
             l.Log(TL_MSG_LOG, "bridge-peer attached (no Titanfall 2 here)");
         }
+        uint32_t ownerAge = 0;
+        if (sc_ipc_owner_age_ms(&l.ch, now, &ownerAge) != SC_IPC_OK || ownerAge >= 4000) {
+            l.Drop(); Sleep(500); continue;
+        }
         sc_ipc_peer_beat(&l.ch, GetCurrentProcessId(), now);
         tl_sc_state sc = {};
         const int scRc = sc_ipc_block_read(&l.ch, TL_OFF_SC_STATE, &sc, sizeof(sc));
@@ -107,6 +114,7 @@ void RunTitanLink(Link& l, ULONGLONG until) {
             if (type == TL_MSG_START_MATCH && n == sizeof(tl_msg_start_match)) {
                 tl_msg_start_match m;
                 memcpy(&m, msg, sizeof(m));
+                if (!PeerStartValid(m)) { n = sizeof(msg); continue; }
                 Printable(m.map, sizeof(m.map));
                 Printable(m.mode, sizeof(m.mode));
                 printf("start match: %s on %s\n", m.mode, m.map);
@@ -114,24 +122,28 @@ void RunTitanLink(Link& l, ULONGLONG until) {
             } else if (type == TL_MSG_CALL_TITAN && n == sizeof(tl_msg_call_titan)) {
                 tl_msg_call_titan m;
                 memcpy(&m, msg, sizeof(m));
+                if (!PeerTitanValid(m)) { n = sizeof(msg); continue; }
                 printf("call Titan: %.0f %.0f %.0f, yaw %.0f\n", m.drop[0], m.drop[1], m.drop[2], m.yaw);
                 memcpy(tf.titan_origin, m.drop, sizeof(m.drop));
                 tf.titan_yaw = m.yaw;
                 tf.flags |= TL_TF_PARKED;
-            } else if (type == TL_MSG_EMBARK) {
+            } else if (type == TL_MSG_EMBARK && n == 0) {
                 printf("embark\n");
                 tf.flags = (tf.flags & ~TL_TF_PARKED) | TL_TF_IN_TITAN;
-            } else if (type == TL_MSG_DISEMBARK) {
+            } else if (type == TL_MSG_DISEMBARK && n == 0) {
                 printf("disembark\n");
                 tf.flags = (tf.flags & ~TL_TF_IN_TITAN) | TL_TF_PARKED;
-            } else if (type == TL_MSG_PILOT_OFF) {
+            } else if (type == TL_MSG_PILOT_OFF && n == 0) {
                 printf("pilot mode off\n");
             } else {
                 printf("message type %u, %u bytes (skipped)\n", type, n);
             }
             n = sizeof(msg);
         }
-        if (rc != SC_IPC_EMPTY && rc != SC_IPC_OK) printf("pop: sc_ipc result %d\n", rc);
+        if (rc != SC_IPC_EMPTY && rc != SC_IPC_OK) {
+            printf("pop: sc_ipc result %d; dropping malformed/closed link\n", rc);
+            l.Drop(); Sleep(500); continue;
+        }
         if (scRc == SC_IPC_OK && (sc.flags & TL_SC_ANCHORED)) {
             memcpy(tf.origin, sc.feet, sizeof(tf.origin));
             tf.eye_z = sc.eye[2];
@@ -168,6 +180,10 @@ void RunVoxel(Link& l, ULONGLONG until) {
             l.Log(VX_MSG_LOG, "bridge-peer attached (no voxel game here)");
             sentEpoch = 0;
         }
+        uint32_t ownerAge = 0;
+        if (sc_ipc_owner_age_ms(&l.ch, now, &ownerAge) != SC_IPC_OK || ownerAge >= 8000) {
+            l.Drop(); Sleep(500); continue;
+        }
         sc_ipc_peer_beat(&l.ch, GetCurrentProcessId(), now);
         vx_sc_state sc = {};
         const int scRc = sc_ipc_block_read(&l.ch, VX_OFF_SC_STATE, &sc, sizeof(sc));
@@ -175,7 +191,7 @@ void RunVoxel(Link& l, ULONGLONG until) {
         uint32_t type = 0, n = sizeof(msg);
         int rc;
         while ((rc = sc_ipc_ring_pop(&l.in, &type, msg, &n)) == SC_IPC_OK) {
-            if (type == VX_MSG_GROUND && n >= sizeof(vx_msg_ground)) {
+            if (type == VX_MSG_GROUND && PeerGroundValid(msg, n)) {
                 vx_msg_ground g;
                 memcpy(&g, msg, sizeof(g));
                 ++groundMsgs;
@@ -187,7 +203,10 @@ void RunVoxel(Link& l, ULONGLONG until) {
             }
             n = sizeof(msg);
         }
-        if (rc != SC_IPC_EMPTY && rc != SC_IPC_OK) printf("pop: sc_ipc result %d\n", rc);
+        if (rc != SC_IPC_EMPTY && rc != SC_IPC_OK) {
+            printf("pop: sc_ipc result %d; dropping malformed/closed link\n", rc);
+            l.Drop(); Sleep(500); continue;
+        }
         if (scRc == SC_IPC_OK && (sc.flags & VX_SC_ANCHORED) && sc.epoch != sentEpoch) {
             // A 3 x 3 wall at z = -4 (four blocks in front of the origin), x 0..2, y 64..66:
             // section (0, 4, -1), local z 12.
@@ -240,3 +259,14 @@ int main(int argc, char** argv) {
     l.Drop();
     return 0;
 }
+#else
+int main(int argc, char** argv) {
+    if (argc == 2 && std::strcmp(argv[1], "--wire-info") == 0) {
+        std::printf("MIT wire IPC=%u TitanLink=%u Voxel=%u; native transport requires Windows\n",
+                    SC_IPC_VERSION, TL_LAYOUT_VERSION, VX_LAYOUT_VERSION);
+        return 0;
+    }
+    std::fprintf(stderr, "bridge-peer: Windows shared-memory transport unavailable on this platform; use --wire-info\n");
+    return 2;
+}
+#endif

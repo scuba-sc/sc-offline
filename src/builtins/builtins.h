@@ -14,10 +14,7 @@ extern const sco::plugins::Builtin kQuantumBuiltin;    // quantum_plugin.cpp: qu
 extern const sco::plugins::Builtin kBuildBuiltin;      // build_plugin.cpp: build.*, the build-mode tick (F6)
 extern const sco::plugins::Builtin kContractsBuiltin;  // contracts_plugin.cpp: contracts.status, the contracts tick
 extern const sco::plugins::Builtin kMiningBuiltin;      // mining_plugin.cpp: mining.status, natural mining on the game.mining row (mining = on)
-extern const sco::plugins::Builtin kMultiplayerBuiltin;  // multiplayer_plugin.cpp: multiplayer.*, co-presence over sco.net
-// The optional bridges (docs/bridges.md), compiled in only with their CMake option; never in a release.
-extern const sco::plugins::Builtin kTitanLinkBuiltin;  // titanlink/titanlink_plugin.cpp: titanlink.*, the Titanfall 2 link (SCO_BRIDGE_TITANLINK)
-extern const sco::plugins::Builtin kVoxelBuiltin;      // voxel_bridge/voxel_plugin.cpp: voxel_bridge.*, the voxel-game link (SCO_BRIDGE_VOXEL)
+// Multiplayer/G13 is not approved; bridges are independent disabled external modules.
 
 // Remaining built-ins own their ticks; external features never have a host fallback.
 bool LoadoutBuiltinOwnsTick();
@@ -62,12 +59,5 @@ inline sco_result RegisterBuiltinCommand(const sco_api* api, sco_plugin* self, c
 
 // Every built-in, in load order.
 inline const sco::plugins::Builtin kBuiltins[] = { kTeleportBuiltin, kLoadoutBuiltin,
-    kQuantumBuiltin, kBuildBuiltin, kContractsBuiltin, kMiningBuiltin,
-    kMultiplayerBuiltin
-#ifdef SCO_BRIDGE_TITANLINK
-    , kTitanLinkBuiltin
-#endif
-#ifdef SCO_BRIDGE_VOXEL
-    , kVoxelBuiltin
-#endif
+    kQuantumBuiltin, kBuildBuiltin, kContractsBuiltin, kMiningBuiltin
 };
