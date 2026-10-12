@@ -9,10 +9,10 @@ namespace {
 const sco_api* api = nullptr;
 sco_plugin* self = nullptr;
 const sco_plugin_info info{sizeof(sco_plugin_info), SCO_API_MAJOR, SCO_API_MINOR, "contracts", "1.0.0", "sc-offline"};
-enum Action { Summary, Offer, Mission };
+enum Action { Summary, Offer, Mission, Accept };
 struct Spec { const char* name; Action action; uint32_t nargs; };
-const Spec specs[] = {{"contracts.status", Summary, 0}, {"contracts.offer", Offer, 1}, {"contracts.mission", Mission, 1}};
-const sco_arg_def defs[] = {{"id_or_index", SCO_ARG_INT, 0, "Nonnegative offer index or positive mission ID"}};
+const Spec specs[] = {{"contracts.status", Summary, 0}, {"contracts.offer", Offer, 1}, {"contracts.mission", Mission, 1}, {"contracts.accept", Accept, 2}};
+const sco_arg_def defs[] = {{"id_or_index", SCO_ARG_INT, 0, "Nonnegative offer index or positive mission ID"}, {"key", SCO_ARG_INT, 0, "Positive owner/session receipt key"}};
 template<class T> const T* Service(const char* name, uint32_t version) {
     const void* table = nullptr;
     if (!MEMBER(api, sco_api, query_service) || !self || api->query_service(name, version, &table) != SCO_OK) return nullptr;
@@ -41,6 +41,17 @@ sco_result Execute(const sco_arg* args, uint32_t count, void* context, char* rep
         sc_mission_status out{}; out.size = sizeof(out);
         result = m->status(self, static_cast<uint64_t>(args[0].v.i), &out);
         if (result == SCO_OK) std::snprintf(reply, capacity, "Mission %llu state %u phase %u objective %u session %llu", static_cast<unsigned long long>(out.mission_id), out.state, out.phase, out.objective, static_cast<unsigned long long>(out.session));
+    }
+    if (spec.action == Accept) {
+        if (args[0].v.i >= SC_MISSIONS_MAX_OFFERS || !args[1].v.i) return SCO_BAD_ARG;
+        if (!MEMBER(m, sc_missions_v1, offer) || !MEMBER(m, sc_missions_v1, accept)) return SCO_UNAVAILABLE;
+        sc_mission_offer offer{}; offer.size = sizeof(offer);
+        result = m->offer(self, static_cast<uint32_t>(args[0].v.i), &offer);
+        if (result == SCO_OK) {
+            uint64_t id = 0;
+            result = m->accept(self, &offer, static_cast<uint64_t>(args[1].v.i), &id);
+            if (result == SCO_OK) std::snprintf(reply, capacity, "Accepted mission %llu; owner/session receipt key %llu", static_cast<unsigned long long>(id), static_cast<unsigned long long>(args[1].v.i));
+        }
     }
     if (result != SCO_OK && result != SCO_UNAVAILABLE) std::snprintf(reply, capacity, "Contracts operation refused (%u); effects not retried", static_cast<unsigned>(result));
     return result;

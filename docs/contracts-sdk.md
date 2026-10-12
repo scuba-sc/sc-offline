@@ -14,6 +14,11 @@ No engine pointers, detours, account/online balances or G13 session controls.
 3. Install component `contracts` into a separate staging root. Do not enable a
    second `contracts` ID while the legacy built-in is still registered.
 
+`contracts.accept <offer-index> <key>` reads the current copied offer and submits
+its broker/generation unchanged. Replays retain the explicit nonzero key; the
+provider owns bounded once-only owner/session receipts. Altered replay refuses.
+No automatic retry, key generation, reward payment or durable receipt claim.
+
 Read commands: `contracts.status`, `contracts.offer <index>`,
 `contracts.mission <id>`. Every invocation reopens the public table and validates
 complete callback extents and non-null methods. Unload clears consumer admission;

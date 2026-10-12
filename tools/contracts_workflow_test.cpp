@@ -8,6 +8,7 @@
 #include <cstring>
 #include <map>
 #include <string>
+#include <tuple>
 #include <cstdio>
 #include <cstdlib>
 
@@ -42,7 +43,25 @@ sco_result Status(sco_plugin* self, uint64_t id, sc_mission_status* out) {
     if (id != state.mission_id) return SCO_NOT_FOUND;
     *out = state; return SCO_OK;
 }
-sc_missions_v1 missions{sizeof(sc_missions_v1), 0, Offer, Status, nullptr, nullptr, nullptr, nullptr, nullptr};
+unsigned accept_effects = 0;
+bool mutation_ready = true;
+struct Acceptance { sc_mission_offer offer; uint64_t id; };
+std::map<std::tuple<uintptr_t, uint64_t, uint64_t>, Acceptance> acceptances;
+sco_result Accept(sco_plugin* self, const sc_mission_offer* offer, uint64_t key, uint64_t* id) {
+    assert(self == owner && offer->size == sizeof(*offer) && key);
+    if (!mutation_ready) return SCO_WRONG_THREAD;
+    auto scope = std::make_tuple(reinterpret_cast<uintptr_t>(self), state.session, key);
+    auto found = acceptances.find(scope);
+    if (found != acceptances.end()) {
+        if (std::memcmp(&found->second.offer, offer, sizeof(*offer))) return SCO_BAD_ARG;
+        *id = found->second.id; return SCO_OK;
+    }
+    if (offer->generation != offered.generation || offer->broker_id != offered.broker_id) return SCO_BAD_ARG;
+    if (acceptances.size() >= SC_MISSIONS_MAX_ACTIVE) return SCO_TOO_MANY;
+    *id = state.mission_id; acceptances.emplace(scope, Acceptance{*offer, *id});
+    ++accept_effects; return SCO_OK;
+}
+sc_missions_v1 missions{sizeof(sc_missions_v1), 0, Offer, Status, Accept, nullptr, nullptr, nullptr, nullptr};
 sc_economy_v1 economy{sizeof(sc_economy_v1), 0, nullptr, nullptr, nullptr};
 sco_api api{};
 std::string reply;
@@ -53,6 +72,30 @@ sco_result Call(const char* name, std::initializer_list<sco_arg> args = {}) {
     char buffer[512]{};
     auto r = it->second.fn(args.begin(), static_cast<uint32_t>(args.size()), it->second.ctx, buffer, sizeof(buffer));
     reply = buffer; return r;
+}
+void AcceptCase() {
+    assert(Call("contracts.accept", {Int(0), Int(9)}) == SCO_OK && reply.find("77") != std::string::npos);
+    assert(Call("contracts.accept", {Int(0), Int(9)}) == SCO_OK && accept_effects == 1);
+    ++offered.generation;
+    assert(Call("contracts.accept", {Int(0), Int(9)}) == SCO_BAD_ARG && accept_effects == 1);
+    assert(Call("contracts.accept", {Int(0), Int(0)}) == SCO_BAD_ARG);
+    mutation_ready = false;
+    assert(Call("contracts.accept", {Int(0), Int(10)}) == SCO_WRONG_THREAD && accept_effects == 1);
+    mutation_ready = true;
+    available = false;
+    assert(Call("contracts.accept", {Int(0), Int(10)}) == SCO_UNAVAILABLE && accept_effects == 1);
+    available = true;
+    auto callback = missions.accept; missions.accept = nullptr;
+    assert(Call("contracts.accept", {Int(0), Int(10)}) == SCO_UNAVAILABLE);
+    missions.accept = callback;
+    uint32_t size = missions.size; missions.size = offsetof(sc_missions_v1, accept) + 1;
+    assert(Call("contracts.accept", {Int(0), Int(10)}) == SCO_UNAVAILABLE); missions.size = size;
+    test_module::Unload(); commands.clear(); owner = reinterpret_cast<sco_plugin*>(uintptr_t{2});
+    assert(test_module::Load(&api, owner) == SCO_OK);
+    --offered.generation;
+    assert(Call("contracts.accept", {Int(0), Int(9)}) == SCO_OK && accept_effects == 2);
+    ++state.session;
+    assert(Call("contracts.accept", {Int(0), Int(9)}) == SCO_OK && accept_effects == 3);
 }
 void ReadCase() {
     assert(Call("contracts.status") == SCO_OK);
@@ -88,6 +131,7 @@ int main(int argc, char** argv) {
     api.register_command = Register; api.query_service = Query;
     assert(test_module::Load(&api, owner) == SCO_OK);
     if (!std::strcmp(argv[2], "read")) ReadCase();
+    else if (!std::strcmp(argv[2], "accept")) AcceptCase();
     else return 2;
     test_module::Unload(); test_module::Close();
     std::printf("contracts %s: PASS (dynamic module, synthetic public provider; not run in game)\n", argv[2]);
