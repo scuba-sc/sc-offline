@@ -4,9 +4,38 @@ The host is pinned to published sco-core `sdk-v2.0.0`, commit `cd9a686bda4184f1b
 
 The release-pin smoke checks remain **NOT RUN** on Windows/in game: offline startup; EAC detection/refusal; services published before plugins; menu; clean exit. CI build success does not close these owner-run checks.
 
-**Nothing from the SDK conversion has run in a game session.** CI proves the code compiles, the gates hold, and the binaries have the right shape. It does not prove a feature works. The last in-game run of sc-offline itself was 0.6.1, before the conversion ([README](../README.md)). The maintainer deferred every in-game check to one run after the conversion lands.
+**Nothing from the SDK conversion has run in a game session.** CI proves the code compiles, the gates hold, and the binaries have the right shape. It does not prove a feature works. The last in-game run of sc-offline itself was 0.6.1, before the conversion ([README](../README.md)). The current owner decision is CI-gated PR merge and user testing of official
+releases; owner Windows/in-game acceptance remains **NOT RUN**. No synthetic
+fixture or checker result certifies gameplay. Policy: [decisions.md](decisions.md).
 
 sco-core keeps the matching table for the `game.*` services, with the evidence level of each capability and what a run has to show: [docs/game/status.md](https://github.com/scubamount/sco-core/blob/cd9a686bda4184f1befbdf0b74b503a1565540dd/docs/game/status.md) at the pinned commit. Read it for the service side (for example `game.actors.state`, `game.entities.query_radius`, `game.entities.watch` and `game.events.vehicle_seat` are held **off** until a run decides them). This page lists the sc-offline side: what each converted feature still needs checked. The steps are the ones in the bodies of [#95](https://github.com/scubamount/sc-offline/pull/95), [#97](https://github.com/scubamount/sc-offline/pull/97) and [#98](https://github.com/scubamount/sc-offline/pull/98); `mod.log` lines are quoted as those PRs wrote them.
+
+## Step 1B: external inspector acceptance — NOT RUN
+
+Inspector is now an enabled external native folder, not a production built-in:
+`data/plugins/inspector/plugin.ini` and `inspector.dll`, no `disabled` marker.
+Ten built-ins remain, including NPC. The [tutorial](sdk-workflows.md) separates
+published-archive/checker/synthetic proof from the following owed game checks:
+
+- Record the exact Windows host revision, plugin version and game build; verify
+  service publication precedes inspector load and no duplicate-ID refusal occurs.
+- Invoke `inspector.read` before player spawn and after spawn. Unavailable
+  providers/player fields stay unknown; zero maximum health is not a denominator.
+- Confirm the command does not mutate game state or require rendering/UI.
+- Run `sco.reload inspector`: old owner-scoped command callbacks are withdrawn,
+  a fresh load registers the command once, and each read reopens services.
+- Disable the folder and restart, then separately test `plugins = off`:
+  inspector is unavailable, no hidden host fallback runs, NPC remains built in.
+- Restore the enabled folder; confirm native inspector loads. If exercising Lua,
+  replace the native variant rather than installing another inspector ID.
+
+Published SDK checks validate manifest/module behavior under a stand-in host;
+synthetic module tests cover public-service branches. Neither proves native
+Windows game loading, actual engine fields or owner-run reload safety.
+
+The lists below preserve earlier acceptance requests, not executed outcomes.
+Built-ins cannot be hot-reloaded: older NPC/build reload wording denotes a
+future external-plugin acceptance case, not a current built-in capability.
 
 ## From #95 (the SDK conversion, merged)
 
@@ -41,7 +70,11 @@ Each converted feature has a deferred checklist in the PR's body. In short:
 5. `creative.ship_ammo on` aboard a ship: the ship's weapons don't drain.
 6. Disable or unload the plugin and restart: all five are off and the fly speed is the game's own again.
 7. The Player and Vehicles tabs' checkboxes drive the same commands, and revert with a status message ("Needs the creative plugin") when the plugin is off.
-8. A launcher self-update turns the plugin off again (the release's `disabled` marker is copied), as intended.
+8. Verify launcher update behavior against saved enable choices. The earlier
+   request expected the release's `disabled` marker to turn creative off again;
+   this is not evidence of a tested result or approval to reset user choices.
+   [Current decisions](decisions.md) leave updater/default reconciliation and
+   preservation of enable choices open, separate from step 1B.
 
 The local checks recorded for #98 were a compile of the built-ins and the plugin with zig/mingw, and `tools/sdk-headers.py`. MSVC (`/W4 /WX` on the plugin target) and `tools/check.sh` were not run for it by its author; CI runs them.
 

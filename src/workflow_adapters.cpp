@@ -2,7 +2,6 @@
 // Host-only registration and optional product menu coupling. Never part of a plugin module.
 #include "sco/plugins.h"
 #include "../plugins/npc/npc.h"
-#include "../plugins/inspector/inspector.h"
 
 void RegisterNpcsTab(const sco_api* api, sco_plugin* self);
 void ResetNpcsTab();
@@ -20,6 +19,3 @@ void UnloadNpc() {
 }
 
 extern const sco::plugins::Builtin kNpcBuiltin = {"npc", sco::features::npc::Query, LoadNpc, UnloadNpc};
-extern const sco::plugins::Builtin kInspectorBuiltin = {
-    "inspector", sco::features::inspector::Query, sco::features::inspector::Load, sco::features::inspector::Unload,
-};

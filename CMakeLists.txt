@@ -149,12 +149,14 @@ target_link_libraries(dinput8 PRIVATE imgui d3d11 shlwapi advapi32 windowscodecs
 # Star Citizen adapter (sco_lua_game: sco.datacore and sco.game for scripts), the detour engine, the zone tree (sco/engine/zone.h) and the CryPak adapter (sco/game/pak.h, with sco_vfs).
 target_link_libraries(dinput8 PRIVATE sco_app sco_lua sco_lua_game sco_hook sco_engine sco_pak)
 
-# The same SDK-only sources back the built-ins and the separate native modules.
-set(SCO_SDK_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/sco-core/include" CACHE PATH "Public SDK headers")
-add_subdirectory(plugins)
-target_link_libraries(dinput8 PRIVATE sco-feature-npc sco-feature-inspector)
-# Test hosts can omit these built-ins to load the native adapters instead. Off in normal builds.
-option(SCO_EXTERNAL_WORKFLOWS "Omit NPC/inspector built-in registration for external workflow testing" OFF)
+# NPC remains built in until step 1C. Inspector is built separately from a published SDK,
+# never as a host target or linked feature fallback.
+add_library(sco-feature-npc STATIC plugins/npc/npc.cpp)
+target_include_directories(sco-feature-npc PUBLIC external/sco-core/include)
+target_compile_features(sco-feature-npc PUBLIC cxx_std_20)
+target_link_libraries(dinput8 PRIVATE sco-feature-npc)
+# Test hosts can omit NPC registration to load its native adapter.
+option(SCO_EXTERNAL_WORKFLOWS "Omit NPC built-in registration for external workflow testing" OFF)
 if(SCO_EXTERNAL_WORKFLOWS)
   target_compile_definitions(dinput8 PRIVATE SCO_EXTERNAL_WORKFLOWS)
 endif()

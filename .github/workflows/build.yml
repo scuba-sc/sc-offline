@@ -92,6 +92,40 @@ jobs:
       - name: Built-ins include only SDK headers
         run: python3 tools/sdk-headers.py
 
+  # Only inspector is migrated in 1B. Neither job initializes the host submodule.
+  inspector-sdk-posix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download published SDK (combined core + game)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download sdk-v2.0.0 -R scubamount/sco-core -p 'sco-sdk-2.0.0.zip' -p SHA256SUMS -D "$RUNNER_TEMP/sdk-assets"
+      - name: Isolated inspector build, full dependency traces, negative controls and checker
+        run: python3 tools/check_inspector_sdk.py --archive "$RUNNER_TEMP/sdk-assets/sco-sdk-2.0.0.zip" --sums "$RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$RUNNER_TEMP/inspector-proof"
+
+  inspector-sdk:
+    runs-on: windows-2025-vs2026
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download published SDK (combined core + game)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download sdk-v2.0.0 -R scubamount/sco-core -p 'sco-sdk-2.0.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
+      - name: Isolated MSVC inspector, module workflow, full dependency traces and checker
+        run: python tools/check_inspector_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.0.0.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/inspector-proof"
+      - name: Upload enabled inspector release folder
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: inspector-plugin
+          path: ${{ runner.temp }}/inspector-proof/stage/data/plugins
+          if-no-files-found: error
+          retention-days: 30
+
   build:
     needs: check
     # Pinned: the project builds with the v145 toolset, which this image carries (VS 2026).
@@ -161,6 +195,7 @@ jobs:
           $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($dll))
           Check (-not $text.Contains('titanlink.pilot')) 'dinput8.dll has no titanlink built-in (SCO_BRIDGE_TITANLINK off)'
           Check (-not $text.Contains('voxel_bridge.toggle')) 'dinput8.dll has no voxel_bridge built-in (SCO_BRIDGE_VOXEL off)'
+          Check (-not $text.Contains('inspector.read')) 'dinput8.dll has no inspector built-in or linked fallback'
 
           '--- dinput8.dll manifest'
           & $mt -nologo "-inputresource:$dll;#2" -out:dll.manifest
@@ -248,7 +283,7 @@ jobs:
           retention-days: 14
 
   release:
-    needs: build
+    needs: [build, inspector-sdk]
     runs-on: ubuntu-24.04
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -269,6 +304,12 @@ jobs:
         with:
           name: creative-plugin
           path: built-creative
+
+      - name: Download inspector plugin artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: inspector-plugin
+          path: built-inspector
 
       # The player download: everything to play, in one folder, with the DLL CI just built.
       # manifest.json (#31) lists every other file in the folder with its SHA-256; the launcher's
@@ -294,6 +335,11 @@ jobs:
           cp built-creative/discord/discord.dll "stage/$pkg/data/plugins/discord/"
           for f in plugin.ini discord.dll; do test -f "stage/$pkg/data/plugins/discord/$f"; done
           test ! -e "stage/$pkg/data/plugins/discord/disabled"
+          # Inspector: published-SDK build, explicitly enabled; no built-in fallback.
+          mkdir -p "stage/$pkg/data/plugins/inspector"
+          cp built-inspector/inspector/plugin.ini built-inspector/inspector/inspector.dll "stage/$pkg/data/plugins/inspector/"
+          for f in plugin.ini inspector.dll; do test -f "stage/$pkg/data/plugins/inspector/$f"; done
+          test ! -e "stage/$pkg/data/plugins/inspector/disabled"
           chmod +x "stage/$pkg/sc-offline.sh"
           python3 tools/release-manifest.py write "stage/$pkg" --tag "$TAG" --commit "$SHA" --version-h src/version.h
           (cd stage && zip -qrX "../$pkg.zip" "$pkg")

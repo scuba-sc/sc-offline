@@ -111,27 +111,28 @@ The Gladius' new quantum drive (hold Caps Lock, or B for NAV mode then hold left
 
 ## Plugins
 
-sc-offline can load plugins built with the [sco SDK](https://github.com/scubamount/sco-core/blob/main/sdk/README.md): native DLLs, Lua scripts and data packs. Loading is **on by default** (`plugins = on` in `sc-offline.ini`); sc-offline ships `discord` (on) and `creative` (off).
+sc-offline can load plugins built with the [sco SDK](https://github.com/scubamount/sco-core/blob/main/sdk/README.md): native DLLs, Lua scripts and data packs. Loading is **on by default** (`plugins = on` in `sc-offline.ini`); sc-offline ships `inspector` (on), `discord` (on) and `creative` (off). Inspector is now an external native folder, not a built-in; NPC stays built in.
 
 1. Keep `plugins = on` in `sc-offline.ini`.
 2. Put each plugin in its own folder, `data/plugins/<id>/`, with its `plugin.ini` (for example `data/plugins/hello/plugin.ini` and `hello.dll`). The SDK's examples (`hello`, `greeter`, `travel_pack`) are ready to copy.
 3. Start the game. `mod.log` reports what was found, after the startup lines:
 
    ```
-   [plugin] 13 found, 12 loaded (plugins = on)
+   [plugin] 14 found, 13 loaded (plugins = on)
    [plugin] teleport <version> builtin loaded
    [plugin] spawn <version> builtin loaded
    ...
    [plugin] contracts <version> builtin loaded
    [plugin] creative <version> <kind> disabled
    [plugin] discord <version> native loaded
+   [plugin] inspector 1.0.0 native loaded
    [plugin] greeter 1.0.0 lua loaded
    ...
    ```
 
-   Here the ten built-ins, `creative` (found, but not loaded while its `disabled` marker is there), `discord` and `greeter` make 13 found, 12 loaded. A plugin that can't load is listed with the reason (`refused: built for api 2.0`, `missing capability 'teleport'`, ...); the others still load. To switch one plugin off, put an empty file named `disabled` in its folder (the launcher's Plugins page does the same, see [launcher.md](launcher.md#the-plugins-page)).
+   This illustrative report assumes all ten remaining built-ins load, plus `discord`, `inspector` and an added `greeter`; `creative` is found but disabled: 14 found, 13 loaded. Actual counts and refusals depend on the installed folders and capabilities. A plugin that can't load is listed with the reason (`refused: built for api 2.0`, `missing capability 'teleport'`, ...); the others still load. To switch one plugin off, put an empty file named `disabled` in its folder (the launcher's Plugins page does the same, see [launcher.md](launcher.md#the-plugins-page)).
 
-With `plugins = off`, `mod.log` shows `[plugin] 10 found, 10 loaded (plugins = off)`: only the ten built-in plugins load (two more in a build with the optional bridges).
+With `plugins = off`, only the ten remaining built-ins are registered (two more in an optional bridge build); inspector, Discord and creative do not load. If all ten built-ins load, the illustrative report is `[plugin] 10 found, 10 loaded (plugins = off)`. There is no hidden inspector implementation.
 
 ### Built-in plugins
 
@@ -177,6 +178,12 @@ sco-core's game pack publishes `teleport.spatial` 1.0 (since game pack 0.1.0; th
 A plugin can add its own menu tab (drawn with sc-offline's ImGui), a badge beside the tab title, and an overlay. It can also bind a free key chord such as `ctrl+alt+9` to any command. sc-offline keeps **M** and build mode's keys for itself. See [plugin-ui.md](plugin-ui.md) for the tab order, how to draw, and the full key table.
 
 When you quit the game (the menu's Quit, or the `quit` console command), plugins get `game.exit` and are then unloaded, newest first and built-ins last, before the game exits. `mod.log` shows `[app] game closing (CSystem::Quit): game.exit, unloading plugins` followed by one `[plugin] unloaded <id>` line per plugin. If the game crashes or is killed (Task Manager, `taskkill`), plugins get no `game.exit` and aren't unloaded; don't rely on it to save anything that matters.
+
+### The inspector plugin
+
+`data/plugins/inspector/plugin.ini` and `inspector.dll` ship enabled, with no `disabled` marker. Keep `plugins = on`; the launcher's Plugins page can disable the folder for the next game start. `inspector.read` reads player actor/entity IDs, health and zone-local transform through public SDK services. Missing providers, absent player, invalid data and unknown maximum health are reported as unavailable/unknown, not fabricated zeroes. It performs no mutation and registers no menu tab or hotkey. The restricted Lua example is a non-default replacement with the same `inspector` ID; never install both variants together. Build/check/install: [SDK workflows](sdk-workflows.md), [plugin README](../plugins/inspector/README.md). **Not run in game.**
+
+The [13-feature migration target](decisions.md) is policy, not completion: this step removes only inspector's built-in registration. Creative and Discord defaults below are unchanged.
 
 ### The creative plugin
 

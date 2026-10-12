@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// External DLL entry points; the built-in adapter uses the same feature module.
+// External native entry points; no host registration adapter or fallback.
 #include "inspector.h"
 
 extern "C" {

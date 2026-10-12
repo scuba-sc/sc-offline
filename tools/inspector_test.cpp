@@ -5,17 +5,7 @@
 #include "sc_entities.h"
 
 #include <cstddef>
-#ifdef INSPECTOR_BUILTIN_TEST
-#include "sco/plugins.h" // Host-adapter test only, never a plugin input.
-extern const sco::plugins::Builtin kInspectorBuiltin;
-void RegisterNpcsTab(const sco_api*, sco_plugin*) {}
-void ResetNpcsTab() {}
-namespace entry {
-const sco_plugin_info* Query() { return kInspectorBuiltin.query(); }
-sco_result Load(const sco_api* api, sco_plugin* self) { return kInspectorBuiltin.load(api, self); }
-void Unload() { kInspectorBuiltin.unload(); }
-}
-#elif defined(INSPECTOR_EXTERNAL_TEST)
+#if defined(INSPECTOR_EXTERNAL_TEST)
 namespace entry {
 const sco_plugin_info* Query() { return sco_plugin_query(); }
 sco_result Load(const sco_api* api, sco_plugin* self) { return sco_plugin_load(api, self); }

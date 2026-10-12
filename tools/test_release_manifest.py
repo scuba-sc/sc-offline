@@ -57,6 +57,22 @@ class ReleaseManifest(unittest.TestCase):
         self.assertEqual(e["sha256"], "58055bdcc73787eb88c78d36f0b4939e9c5dc1c3ad17e25cc85a6833cf1a0cab")  # sha256(b"a\r\nb\r\n")
         self.assertEqual(e["size"], 6)
 
+    def test_external_inspector_files_are_covered(self):
+        folder = os.path.join(self.dir, "data", "plugins", "inspector")
+        os.makedirs(folder)
+        with open(os.path.join(HERE, "..", "plugins", "inspector", "plugin.ini"), "rb") as f:
+            self.put("data/plugins/inspector/plugin.ini", f.read())
+        self.put("data/plugins/inspector/inspector.dll", b"synthetic module fixture, not a PE binary")
+        _, count = rm.write(self.dir, "v0.7.0", COMMIT, self.vh)
+        self.assertEqual(count, 6)
+        paths = {e["path"] for e in json.loads(self.manifest())["files"]}
+        self.assertIn("data/plugins/inspector/plugin.ini", paths)
+        self.assertIn("data/plugins/inspector/inspector.dll", paths)
+        self.assertNotIn("data/plugins/inspector/disabled", paths)
+        self.assertEqual(rm.check(self.dir)[1], [])
+        os.remove(os.path.join(folder, "inspector.dll"))
+        self.assertEqual(rm.check(self.dir)[1], ["data/plugins/inspector/inspector.dll: missing"])
+
     def test_one_file_per_line(self):
         rm.write(self.dir, "v0.7.0", COMMIT, self.vh)
         file_lines = [l for l in self.manifest().splitlines() if '"path"' in l]
