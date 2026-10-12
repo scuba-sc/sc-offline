@@ -295,9 +295,14 @@ void ForwardReply(sco_result result,const char* reply,void*) {
 }
 sco_result Forward(const char* name,const sco_arg* args,uint32_t n,char* out,uint32_t size) {
     if (!HAS(g.api,sco_api,invoke)) return Answer(SCO_UNAVAILABLE,out,size,"External command invocation unavailable.");
+    g.status[0]=0;
     const auto r=g.api->invoke(g.self,name,args,n,ForwardReply,nullptr);
-    // invoke is queued; successful submission is not gameplay success.
-    return Answer(r,out,size,r==SCO_OK ? "External command queued; completion is reported separately, no host fallback." : "External command absent/refused; no host fallback.");
+    // Public game-thread invocation completes synchronously; preserve its actual reply.
+    if (g.status[0]) {
+        if (out && size) std::snprintf(out,size,"%s",g.status);
+        return r;
+    }
+    return Answer(r,out,size,r==SCO_OK ? "External command accepted; provider supplied no reply." : "External command absent/refused; no host fallback.");
 }
 sco_result Spawn(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     const auto r=Validate(args,n,4,out,size); if (r!=SCO_OK) return r;

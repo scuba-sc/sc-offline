@@ -54,10 +54,11 @@ public game-thread routes, reopen tables, and guard complete pointer extents/nul
 | `loadout.cvars` | Refresh and report four real public observations; failed/missing/invalid reads are `unknown/unavailable`, never silently off |
 | `loadout.cvar_set` | Name string, bool; **always refused** |
 | `loadout.console` | Command string; **always refused** |
-| `loadout.spawn` | Class string, height float, seat string, power bool; requires spoilers; queues external `spawn.ship_options` |
-| `loadout.build` | Object string, ahead float; requires spoilers; queues `build.place` |
+| `loadout.spawn` | Class string, height float, seat string, power bool; requires spoilers; invokes external `spawn.ship_options` |
+| `loadout.build` | Object string, ahead float; requires spoilers; invokes `build.place` |
 
-Queued external shortcuts report submission separately from completion. Missing,
+Game-thread external shortcuts preserve the provider result/reply. This is not
+proof of eventual gameplay/streaming completion. Missing,
 disabled or refusing spawn/build/creative plugins have no private fallback.
 The Player panel invokes optional creative commands and displays the public
 provider's requested-state flags, not an invented engine-state observation.
@@ -123,10 +124,14 @@ Migration to public quantum control remains pending separate approval.
 ## Evidence and pending acceptance
 
 The touched native plugin configures, compiles and links against the local
-integration SDK. **Tests, checker/archive/dependency proofs, reviews, Windows
-host/MSVC/DLL calling conventions, renderer, runtime reload/cleanup and actual
-gameplay NOT RUN** by owner speed order. This is not an assertion that partial
-batches, parsing, unavailable reads or write refusal were dynamically exercised.
-Production G6/G7 adapters are unverified/fail-closed; four actual Windows game
+integration SDK. **Canonical suites, checker/archive/dependency proofs, reviews,
+Windows host/MSVC/DLL calling conventions, renderer, runtime reload/cleanup and
+actual gameplay NOT RUN** by owner speed order. A follow-up focused ad-hoc
+probe loaded the actual native module against synthetic public cvar callbacks:
+four exact-name 0/1 reads, absent/failed reads invalidating prior values,
+write/console refusal without querying a write service, synchronous external
+provider result/reply preservation, and unload twice passed. This is not host
+loader/gameplay evidence; partial batches, parsing and unsupported-slot behavior
+were not dynamically exercised. Production G6/G7 adapters are unverified/fail-closed; four actual Windows game
 values, outfits/head/visor mapping and no duplication/corruption remain owner
 acceptance work. SDK publication/pin/release promotion is also pending.
