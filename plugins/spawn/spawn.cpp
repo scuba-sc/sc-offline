@@ -5,6 +5,8 @@
 #include "sc_spatial.h"
 #include "sc_actors.h"
 #include "sc_vehicles.h"
+#include "sco_content.h"
+#include <string>
 #include <cctype>
 #include <cstddef>
 #include <cmath>
@@ -38,6 +40,42 @@ sco_result RemoveTicket(Ticket& t) {
     auto r = ent->despawn(g.self,t.id);
     if (r == SCO_OK || r == SCO_NOT_FOUND) t.phase = Phase::Removing;
     return r;
+}
+// An additive startup pack route, never a filesystem fallback. Base ships.txt stays
+// in the legacy host picker; duplicate pack names remain independently selectable.
+sco_result PackList(const sco_arg* args, uint32_t n, void*, char* out, uint32_t size) {
+    if (!g.api) return SCO_UNAVAILABLE;
+    if (!args || n != 1 || args[0].type != SCO_ARG_INT || args[0].v.i < 0 ||
+        args[0].v.i >= SCO_CONTENT_MAX_ITEMS || !out || !size) return SCO_BAD_ARG;
+    out[0] = 0;
+    const auto* content = Open<sco_content_v1>(SCO_CONTENT_NAME);
+    if (!HAS(content, sco_content_v1, item) || !HAS(content, sco_content_v1, read))
+        return Answer(SCO_UNAVAILABLE, out, size, "Startup pack content unavailable; no private fallback");
+    uint32_t matched = 0;
+    for (uint32_t i = 0; i < SCO_CONTENT_MAX_ITEMS; ++i) {
+        sco_content_item item{}; item.size = sizeof(item);
+        auto r = content->item(g.self, SCO_CONTENT_LIST, i, &item);
+        if (r == SCO_NOT_FOUND) break;
+        if (r != SCO_OK) return Answer(r, out, size, "Pack enumeration refused");
+        if (!std::memchr(item.name, 0, sizeof(item.name)) || !std::memchr(item.pack, 0, sizeof(item.pack)))
+            return Answer(SCO_FAILED, out, size, "Invalid copied pack metadata");
+        if (std::strcmp(item.name, "lists/ships.txt") || matched++ != static_cast<uint32_t>(args[0].v.i)) continue;
+        uint32_t needed = 0;
+        r = content->read(g.self, item.id, nullptr, &needed);
+        if (r != SCO_OK && r != SCO_TOO_MANY) return Answer(r, out, size, "Pack read refused");
+        if (needed > SCO_CONTENT_MAX_FILE_BYTES || needed >= size)
+            return Answer(SCO_TOO_MANY, out, size, "Ship pack list exceeds output capacity; nothing copied");
+        std::string bytes(needed, '\0');
+        uint32_t copied = needed;
+        r = content->read(g.self, item.id, needed ? bytes.data() : nullptr, &copied);
+        if (r != SCO_OK) return Answer(r, out, size, "Pack read refused");
+        if (copied != needed || bytes.find('\0') != std::string::npos)
+            return Answer(SCO_BAD_ARG, out, size, "Ship pack list is not plain text; nothing copied");
+        if (needed) std::memcpy(out, bytes.data(), needed);
+        out[needed] = 0;
+        return SCO_OK; // No automatic spawning, deduplication or script execution.
+    }
+    return Answer(SCO_NOT_FOUND, out, size, "No matching enabled lists/ships.txt at this ordinal; base list unchanged");
 }
 sco_result Ship(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     if (!g.api) return SCO_UNAVAILABLE;
@@ -237,7 +275,9 @@ sco_result Load(const sco_api* api,sco_plugin* self) {
     const sco_arg_def board[]={{"id",SCO_ARG_INT,0,"Owned volatile ship id"},{"seat",SCO_ARG_STRING,0,"pilot or all words in seat name"},
        {"power",SCO_ARG_BOOL,0,"Flight Ready after confirmed pilot boarding"}};
     const sco_arg_def id{"id",SCO_ARG_INT,0,"Owned volatile ship id"};
+    const sco_arg_def listIndex{"ordinal",SCO_ARG_INT,0,"Zero-based ships.txt pack ordinal; duplicates retained"};
     const sco_command commands[]={
+       {sizeof(sco_command),0,"spawn.pack_list","Read ship pack list","Copied startup lists/ships.txt; base list unchanged",nullptr,&listIndex,1,sizeof(sco_arg_def),PackList,&g},
        {sizeof(sco_command),0,"spawn.ship","Spawn ship","Owned ordinary spawn, no private fallback","spawn.ship",ship,2,sizeof(sco_arg_def),Ship,&g},
        {sizeof(sco_command),0,"spawn.ship_options","Spawn and board","Explicit owned spawn and boarding options","spawn.ship",options,4,sizeof(sco_arg_def),Options,&g},
        {sizeof(sco_command),0,"spawn.board","Board owned ship","Choose a seat after ordinary spawn","game.vehicles.seat",board,3,sizeof(sco_arg_def),Board,&g},

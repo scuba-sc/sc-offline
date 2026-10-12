@@ -64,6 +64,10 @@ foreach(feature npc inspector)
   install(FILES ${feature}/plugin.ini DESTINATION data/plugins/${feature} COMPONENT ${feature})
 endforeach()
 
+# Ordinary first-party DataCore pack: no module, no reused native quantum ID.
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../data/plugins/quantum_drive"
+  DESTINATION data/plugins COMPONENT quantum_drive)
+
 option(SCO_WORKFLOW_TESTS "Build the targeted synthetic workflow tests" OFF)
 if(SCO_WORKFLOW_TESTS)
   enable_testing()

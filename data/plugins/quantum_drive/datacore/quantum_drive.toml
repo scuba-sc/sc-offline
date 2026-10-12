@@ -1,6 +1,6 @@
 # quantum_drive: the new quantum drive (Star Citizen 4.10's SCItemQuantumDriveParams_NEW, with
 # boost) given to the Wetkah Beacon, the quantum drive sc-offline's Gladius flies with. This is
-# sc-offline's built-in data pack: sco-core's pack loader applies it as the game loads
+# ordinary separately named data pack: sco-core's pack loader applies it as the game loads
 # Data\Game2.dcb (sco::game::pak), and mod.log reports it ("[+] new quantum drive: ...").
 #
 # Hand-maintained (design decision 11). It was produced once, from sc-offline's former byte patch
@@ -10,7 +10,7 @@
 # instead of their index, and no `= 0` / `= false` sets on new instances (they start
 # zero-filled). Edit it by hand from now on; records and fields are found by name, so it keeps
 # working across game patches while they exist. After a game update:
-#     sco-dcb check <Game2.dcb> data/builtin/quantum      (exit 0: everything applies)
+#     sco-dcb check <Game2.dcb> data/plugins/quantum_drive      (exit 0: everything applies)
 # Format: sco-core docs/datacore.md, "Pack format". All of it applies, or none of it does.
 format = 1
 atomic = true

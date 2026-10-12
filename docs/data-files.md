@@ -13,10 +13,49 @@ Everything the menu reads is plain text in `data/`. Most files explain their own
 | `outfits.txt` | 35 outfits: each is a `[name]` line, then one line per piece |
 | `locations.txt` | Places for the Travel tab: system, name, entity, radius |
 | `contract_scripts.txt` | The 796 contracts that run without any CIG mission script; see [features.md](features.md#contracts). |
-| `builtin/quantum/datacore/quantum_drive.toml` | The new quantum drive's game data, applied as the game loads (see [features.md](features.md#logging)) |
+| `plugins/quantum_drive/datacore/quantum_drive.toml` | The new quantum drive's game data, applied as the game loads (see [features.md](features.md#logging)) |
 | `OfflineDB/default_1.xml` | The starting loadout. The launcher copies it to `user\client\0` |
 | `plugins\discord\` | The blocked Discord status plugin: `plugin.ini`, `disabled` and `discord.dll`, off pending transport/field approval (see [launcher.md](launcher.md#discord-status)) |
 | `plugins\creative\` | The optional creative plugin: `plugin.ini`, `creative.dll` and an empty `disabled` marker (off until you switch it on in the launcher's Plugins page; see [features.md](features.md#the-creative-plugin)). Other plugins go in their own folder here with `plugins = on` |
+
+## Ordinary data packs and content access
+
+`data/plugins/quantum_drive/plugin.ini` declares an ordinary `kind = data`
+pack, separate from native/built-in `quantum`. It has no entry or code dependency.
+`plugins = off`, a `disabled` marker, a missing/invalid manifest or discovery
+refusal leaves that pack stock; there is no synthesized built-in pack fallback.
+Restart after installing, disabling or editing packs. The old
+`data/builtin/quantum` path is no longer consumed; user edits there must be copied
+explicitly to the new pack while stopped (back up both first). Do not load both
+legacy and G1 host CryPak producers: the host composition adapter owns early
+DataCore discovery/application once integrated.
+
+The existing sco-core pipeline discovers folders in filename byte order and
+indexes files in relative-name byte order. DataCore writes later in that order
+win a field conflict, which core logs with both owners. `atomic = true` refuses
+all operations in a broken TOML file; it is **file** atomicity, not a filesystem
+transaction. A failed final splice plan passes stock bytes through CryPak. Core
+refuses unsafe/unreadable indexed packs and propagates dependency refusal.
+Startup packs must not depend on not-yet-loaded code providers. Do not edit files
+while startup is indexing them.
+
+G14 supplies public copied list/script bytes via `sco.content` (4096 items,
+1 MiB/file, 16 MiB total). External spawn exposes `spawn.pack_list <ordinal>`
+for `lists/ships.txt` using only that table; duplicate files remain independently
+selectable. No plugin gets host paths, private ContentIndex access or script
+execution from this route. It is additive: **all seven base list files above stay
+in place**, unchanged, with no automatic import, deletion or merge. Other feature
+pack formats are not newly claimed as supported.
+
+Owner-local validation commands (not executed for this change):
+
+```sh
+sco-dcb lint data/plugins/quantum_drive
+sco-dcb check /path/to/legally-held/Game2.dcb data/plugins/quantum_drive
+```
+
+Do not upload extracted DCB/game data. These commands do not certify Windows
+CryPak timing or gameplay.
 
 ## Files the mod creates
 
