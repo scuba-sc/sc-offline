@@ -265,57 +265,45 @@ static void StartHostKit() {
 #endif
 }
 
-static void RunFeatureTicks(DWORD now) {
-    // Each built-in runs its feature's work from its tick subscription; these calls are the
-    // fallback for a built-in that didn't load.
-    if (!LoadoutBuiltinOwnsTick()) { ProcessLoadout(); ProcessOutfits(); }
-    ProcessNpcs();   // legacy npcs.txt/removal callers remain; external NPC uses game.actors with no tick
-    if (!BuildBuiltinOwnsTick()) ProcessBuild();
+// Retained legacy consumers pending their own game-pack migrations. This is NOT a
+// fallback for failed/disabled/crashed plugins: their feature work belongs to subscriptions.
+static void RunLegacyTicks(DWORD now) {
+    ProcessNpcs();
     ProcessCVars();
-    if (!QuantumBuiltinOwnsTick()) { ProcessQuantum(); ProcessTravel(now); }
     ProcessMissions();
-    if (!ContractsBuiltinOwnsTick()) {
-        static bool warned = false;
-        if (!warned) {
-            warned = true;
-            Log("[contracts] built-in unavailable: actor-death events aren't subscribed; fallback retires hostiles by entity presence only");
-        }
-        ProcessContracts();
-    }
     TeleportTick(now);
     ProcessFleet(now);
 }
 
 static void OnMainThreadTick() {
-    static bool hostKitStarted = false;
-    if (!hostKitStarted) { hostKitStarted = true; StartHostKit(); }
-    // Every message, not throttled: a loading thread may be waiting for it (services.cpp, rc7).
-    ProcessHangars(GetTickCount());
-    // Every pass, not throttled: the menu's frame (its tabs are plugin draws, game thread only)
-    // and the keys bound through sco.ui.
-    Menu_GameThreadFrame();
-    if (g_hostKitStarted) Hotkeys_Poll();
-
-    static DWORD last = 0;
+#ifdef SCO_OFFLINE_G1_HOST
+    // Terminal phases never restart; Start() re-inspects before provider publication.
+    if (sco::game::host::Status().phase == sco::game::host::Phase::Prepared) StartHostKit();
+    if (!offline_host::Running()) return;
     const DWORD now = GetTickCount();
+    // Re-inspect BEFORE cadence, OS callbacks or retained legacy consumers. Lost
+    // admission cancels pending app tasks through G1 without executing them.
+    if (offline_host::Tick(now) != sco::Result::Ok || !offline_host::Running()) return;
+    ProcessHangars(now); // synchronous message handoff remains unthrottled
+    Menu_GameThreadFrame();
+    Hotkeys_Poll();
+    static DWORD last = 0;
     if (now - last < 100) return;
     last = now;
-
-    // Every feature below reads teleport's entity system, and none of them ran before this hook
-    // started without teleport; the host kit's Tick runs either way.
-    if (g_tp.ok) RunFeatureTicks(now);
-    sco::app::Tick(now);   // plugin tasks, then "tick"
+    if (g_tp.ok) RunLegacyTicks(now);
+#endif
 }
 
 static HHOOK g_msgHook = nullptr;
 
 static LRESULT CALLBACK GetMsgProc(int code, WPARAM wp, LPARAM lp) {
     if (code >= 0) {
-        OnMainThreadTick();
-        // GetMessage hands the game's main loop WM_QUIT when the game closes: the last point we
-        // reliably see on the game thread. Peeks that leave it queued don't count; a PeekMessage
-        // that removes it may add PM_NOYIELD, so test the PM_REMOVE bit.
-        if ((wp & PM_REMOVE) && reinterpret_cast<const MSG*>(lp)->message == WM_QUIT) StopHostKit("WM_QUIT");
+        // WM_QUIT is terminal BEFORE queued work/render/input; a non-removing peek
+        // also must not execute a tick while quit is pending. Game-pack quit owns the
+        // synchronous pre-engine teardown; this is only the secondary OS trigger.
+        if (reinterpret_cast<const MSG*>(lp)->message == WM_QUIT) {
+            if (wp & PM_REMOVE) StopHostKit("WM_QUIT");
+        } else OnMainThreadTick();
     }
     return CallNextHookEx(g_msgHook, code, wp, lp);
 }
@@ -343,7 +331,15 @@ static void RunMainThreadService() {
     g_msgHook = SetWindowsHookExW(WH_GETMESSAGE, GetMsgProc, nullptr, GetWindowThreadProcessId(hwnd, nullptr));
     if (!g_msgHook) { Log("[app] could not hook the game's message loop (%lu); hotkeys, menu and plugins disabled", GetLastError()); return; }
     if (SpawnerReady()) Menu_Start(hwnd);
-    for (;;) { PostMessageW(hwnd, WM_NULL, 0, 0); Sleep(200); }
+#ifdef SCO_OFFLINE_G1_HOST
+    for (;;) {
+        const auto phase = sco::game::host::Status().phase;
+        if (phase == sco::game::host::Phase::Stopped || phase == sco::game::host::Phase::Failed) break;
+        PostMessageW(hwnd, WM_NULL, 0, 0);
+        Sleep(200);
+    }
+    UnhookWindowsHookEx(g_msgHook); // hook handle stays immutable for any in-flight callback
+#endif
 }
 
 static DWORD WINAPI ModThread(LPVOID param) {
