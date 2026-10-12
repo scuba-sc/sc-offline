@@ -6,7 +6,6 @@
 #include "hooks.h"
 #include "teleport.h"
 #include "spawner.h"
-#include "loadout.h"
 #include "npc.h"
 #include "build.h"
 #include "cvars.h"
@@ -17,7 +16,6 @@
 #include "version.h"
 #include "services.h"
 #include "fleet.h"
-#include "outfits.h"
 #include "menu.h"
 #include "hotkeys.h"
 #include "builtins/builtins.h"
@@ -104,7 +102,6 @@ static bool AntiCheatPresent() {
 }
 
 static bool g_offline = false;
-static bool g_outfitsOk = false;
 static bool g_buildOk = false;   // the free camera build mode uses
 static bool g_signaturesResolved = false;
 static const char* g_quitHookStatus = nullptr;   // "[app] game quit hook: ..." in LogStartup
@@ -127,7 +124,6 @@ static void StartOffline() {
     InstallQuitHook();
     if (ResolveTeleportApi()) {
         ResolveSpawnApi(g_text, g_rdata);
-        g_outfitsOk = ResolveLoadoutApi(g_text, g_rdata);  // outfits ride the gear menu's loader
         ResolveNpcApi(g_text);
         g_buildOk = ResolveBuildApi(g_text, g_rdata);
         ResolveCVarsApi(g_text, g_rdata);
@@ -148,8 +144,6 @@ static void LogStartup() {
     else         Log("[!] teleport: unavailable (see above)");
     if (SpawnerReady()) Log("[+] ship spawner: ready (M = menu)");
     else                Log("[!] ship spawner: unavailable (see above)");
-    if (g_outfitsOk) Log("[+] outfits: ready (Squadron 42 tab, data/outfits.txt)");
-    else             Log("[!] outfits: unavailable (they use the gear menu's loader; see [gear] above)");
     LogFleet();
     LogHangars();
     if (g_offline)
@@ -170,8 +164,6 @@ static void SetFeatureCaps() {
     SetCap("offline", g_offline);
     SetCap("teleport", g_tp.ok);
     SetCap("npc", SpawnerReady());
-    SetCap("outfits", g_outfitsOk);
-    SetCap("loadout", g_outfitsOk);   // the gear menu's loader, which outfits ride
     SetCap("quantum.drive", QuantumDriveReady());
     SetCap("quantum.boost", QuantumBoostReady());
     SetCap("quantum", g_tp.ok);   // the Travel tab's requests all go through teleport
@@ -301,7 +293,6 @@ static void InstallQuitHook() {
 static void RunFeatureTicks(DWORD now) {
     // Each built-in runs its feature's work from its tick subscription; these calls are the
     // fallback for a built-in that didn't load.
-    if (!LoadoutBuiltinOwnsTick()) { ProcessLoadout(); ProcessOutfits(); }
     ProcessNpcs();   // legacy npcs.txt/removal callers remain; external NPC uses game.actors with no tick
     if (!BuildBuiltinOwnsTick()) ProcessBuild();
     ProcessCVars();

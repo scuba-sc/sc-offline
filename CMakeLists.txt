@@ -101,7 +101,6 @@ add_library(dinput8 SHARED
   src/hooks.cpp
   src/teleport.cpp
   src/spawner.cpp
-  src/loadout.cpp
   src/npc.cpp
   src/build.cpp
   src/cvars.cpp
@@ -110,20 +109,17 @@ add_library(dinput8 SHARED
   src/quantum.cpp
   src/services.cpp
   src/fleet.cpp
-  src/outfits.cpp
   src/menu.cpp
   src/hotkeys.cpp
   src/travel.cpp
   # Built-in plugins (src/builtins/builtins.h).
   src/builtins/teleport_plugin.cpp
-  src/builtins/loadout_plugin.cpp
   src/builtins/quantum_plugin.cpp
   src/builtins/build_plugin.cpp
   src/builtins/contracts_plugin.cpp
   src/builtins/mining_plugin.cpp
   src/builtins/multiplayer_plugin.cpp
   # Their menu tabs, drawn through sco.ui (src/builtins/tabs.h).
-  src/builtins/loadout_ui.cpp
   src/builtins/quantum_ui.cpp
   src/builtins/build_ui.cpp
   src/builtins/multiplayer_ui.cpp
@@ -143,7 +139,8 @@ target_link_libraries(dinput8 PRIVATE imgui d3d11 shlwapi advapi32 windowscodecs
 # Star Citizen adapter (sco_lua_game: sco.datacore and sco.game for scripts), the detour engine, the zone tree (sco/engine/zone.h) and the CryPak adapter (sco/game/pak.h, with sco_vfs).
 target_link_libraries(dinput8 PRIVATE sco_app sco_lua sco_lua_game sco_hook sco_engine sco_pak)
 
-# NPC, inspector, crew and spawn are external published-SDK modules; no host targets or fallback.
+# NPC, inspector, crew, spawn and loadout are external modules; no host feature fallback.
+# Loadout requires post-2.0 G6/G7/content/widgets headers; its release/pin promotion is pending.
 
 # --- optional bridges (docs/bridges.md) ------------------------------------------------------------
 # Built-ins that link the game to another program on the same PC through sco-core's sco.ipc. Off by

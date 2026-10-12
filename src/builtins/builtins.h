@@ -9,7 +9,6 @@
 #include <cstring>
 
 extern const sco::plugins::Builtin kTeleportBuiltin;   // teleport_plugin.cpp: teleport.save, teleport.go
-extern const sco::plugins::Builtin kLoadoutBuiltin;    // loadout_plugin.cpp: loadout.equip, loadout.wear, gear + outfit ticks
 extern const sco::plugins::Builtin kQuantumBuiltin;    // quantum_plugin.cpp: quantum.*, the quantum boost and travel ticks
 extern const sco::plugins::Builtin kBuildBuiltin;      // build_plugin.cpp: build.*, the build-mode tick (F6)
 extern const sco::plugins::Builtin kContractsBuiltin;  // contracts_plugin.cpp: contracts.status, the contracts tick
@@ -20,7 +19,6 @@ extern const sco::plugins::Builtin kTitanLinkBuiltin;  // titanlink/titanlink_pl
 extern const sco::plugins::Builtin kVoxelBuiltin;      // voxel_bridge/voxel_plugin.cpp: voxel_bridge.*, the voxel-game link (SCO_BRIDGE_VOXEL)
 
 // Remaining built-ins own their ticks; external features never have a host fallback.
-bool LoadoutBuiltinOwnsTick();
 bool QuantumBuiltinOwnsTick();
 bool BuildBuiltinOwnsTick();
 bool ContractsBuiltinOwnsTick();
@@ -61,7 +59,7 @@ inline sco_result RegisterBuiltinCommand(const sco_api* api, sco_plugin* self, c
 }
 
 // Every built-in, in load order.
-inline const sco::plugins::Builtin kBuiltins[] = { kTeleportBuiltin, kLoadoutBuiltin,
+inline const sco::plugins::Builtin kBuiltins[] = { kTeleportBuiltin,
     kQuantumBuiltin, kBuildBuiltin, kContractsBuiltin, kMiningBuiltin,
     kMultiplayerBuiltin
 #ifdef SCO_BRIDGE_TITANLINK

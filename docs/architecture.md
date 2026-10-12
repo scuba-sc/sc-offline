@@ -2,6 +2,10 @@
 
 sc-offline is two things on top of [sco-core](https://github.com/scubamount/sco-core): the **host** that loads sco-core's kernel into Star Citizen, and the **reference consumer** of what sco-core publishes. The host builds from the published `sdk-v2.0.0` tag, pinned to sco-core `cd9a686bda4184f1befbdf0b74b503a1565540dd`. SDK **2.0.0**, plugin ABI **1.1** (unchanged), and Star Citizen game pack **0.3.0** are separate versions. SDK 2.0.0 changes packaging and release profiles, not the frozen plugin ABI; the full Windows host still builds from tagged source, not a plugin SDK archive. How to build and what CI checks: [build.md](build.md). What nobody has run in game yet: [status.md](status.md).
 
+## Loadout/SQ42 development boundary
+
+`plugins/loadout` is the external G6/G7 consumer; see its [build and limitations](../plugins/loadout/README.md). The legacy host loadout registration, compilation and fallback tick are removed; inactive sources are retained in `legacy/loadout`. Four SQ42 settings use public real reads and unknown/refusal states, never the separate unapproved cvar-write service. This requires a newer local SDK/host than the unchanged published pin. Optional Player/SQ42 panels use `sco.widgets`, not product ImGui globals. Complete weapon/clothing/head/default parity and production typed engine adapters remain pending. Step 4C quantum migration is not approved; private boost/keeper paths are unchanged. Historical feature/default prose below predates this development boundary.
+
 ## Who owns what
 
 | Layer | Owns | Lives in |

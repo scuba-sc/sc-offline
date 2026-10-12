@@ -33,12 +33,7 @@ void            Menu_RequestFlightReady();
 void            Menu_GetStatus(char* out, size_t n);
 void            SetMenuStatus(const char* fmt, ...);   // also logged; shown in the menu's status strip
 
-enum MenuGearSlot { Gear_Undersuit, Gear_Helmet, Gear_Torso, Gear_Arms, Gear_Legs, Gear_Backpack,
-                    Gear_Primary, Gear_Sidearm, Gear_Ammo, Gear_Grenade, Gear_SlotCount };
-int             Menu_GearCount(int slot);
-const char*     Menu_GearName(int slot, int index);
-void            Menu_RequestEquip(const int picks[Gear_SlotCount]);
-void            Menu_RunConsole(const char* cmd);
+void            Menu_RunConsole(const char* cmd);   // logs an unapproved/refused command; never executes
 bool            Menu_ConsoleReady();   // the game's console was found
 
 int             Menu_NpcCount();
@@ -59,11 +54,6 @@ bool            Menu_BuildModeActive();
 void            Menu_BuildUndo();
 void            Menu_BuildClear();
 int             Menu_BuildPlacedCount();
-
-int             Menu_OutfitCount();
-const char*     Menu_OutfitName(int index);
-void            Menu_RequestWearOutfit(int index);
-void            Menu_SetS42VisorHud(bool on);
 
 void Menu_Start(HWND gameWindow);
 // Game thread, on every pass of the message hook: builds the menu's ImGui frame when the menu
