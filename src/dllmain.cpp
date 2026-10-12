@@ -14,8 +14,12 @@
 #include "quantum.h"
 #include "travel.h"
 #include "version.h"
+#ifdef SCO_ASOP_HOST_COMPOSITION
+#include "asop_shell.h"
+#else
 #include "services.h"
 #include "fleet.h"
+#endif
 #include "menu.h"
 #include "hotkeys.h"
 #include "builtins/builtins.h"
@@ -132,8 +136,10 @@ static void StartOffline() {
         ResolveCVarsApi(g_text, g_rdata);
         ResolveMissionsApi(g_text, g_rdata);
         ResolveContractsApi(g_text, g_rdata);
-        ResolveFleetApi();     // ship terminals (fleet.cpp); reads sc-offline.ini's asop switch
-        ResolveHangarsApi();   // hangars and ATC tokens (services.cpp)
+#ifndef SCO_ASOP_HOST_COMPOSITION
+        ResolveFleetApi();
+        ResolveHangarsApi();
+#endif
     }
 }
 
@@ -146,8 +152,10 @@ static void LogStartup() {
     Log("[!] teleport: G2 REFUSE; F7/F8 consumer unavailable; read services are separate");
     if (SpawnerReady()) Log("[+] ship spawner: ready (M = menu)");
     else                Log("[!] ship spawner: unavailable (see above)");
+#ifndef SCO_ASOP_HOST_COMPOSITION
     LogFleet();
     LogHangars();
+#endif
     if (g_offline)
         Log("[i] check Game.log: \"Process sc-client started\" line should show bOnline[0].");
     else
@@ -171,8 +179,10 @@ static void SetFeatureCaps() {
     SetCap("quantum", false); // movement remains REFUSE; external read commands have their own availability
     SetCap("contracts", ContractsReady());
     SetMiningCaps();   // game.mining, from sco-core's mining.cell row
-    SetFleetCaps();    // asop.terminal, asop.deliver, asop.retrieve, hangar.lift, atc.store, ...
-    SetHangarCaps();   // hangar.instance, atc.tokens, asop.diagnostics
+#ifndef SCO_ASOP_HOST_COMPOSITION
+    SetFleetCaps();
+    SetHangarCaps();
+#endif
 }
 
 static const sco::plugins::ScriptRuntime kLua{ sco_lua_load, sco_lua_unload };
@@ -236,6 +246,9 @@ static bool PrepareHostKit() {
 }
 
 static void StopHostKit(const char* trigger) {
+#ifdef SCO_ASOP_HOST_COMPOSITION
+    offline::asop::Stop(); // Untaken callers wake before app/provider teardown.
+#endif
 #ifdef SCO_OFFLINE_G1_HOST
     const sco::Result result = offline_host::Stop();
     if (result != sco::Result::Ok) Log("[app] stop (%s) refused: %s", trigger, sco::ResultName(result));
@@ -244,11 +257,33 @@ static void StopHostKit(const char* trigger) {
 #endif
 }
 
+#ifdef SCO_ASOP_HOST_COMPOSITION
+static const char kAsopExitOwner = 0;
+static void StopAsopBeforeProviders(const char*, const void*, void*) {
+    offline::asop::Stop();
+}
+#endif
+
 static void StartHostKit() {
 #ifdef SCO_OFFLINE_G1_HOST
     const sco::Result result = offline_host::Start();
     g_hostKitStarted = result == sco::Result::Ok;
     if (!g_hostKitStarted) Log("[app] start refused: %s", sco::ResultName(result));
+#ifdef SCO_ASOP_HOST_COMPOSITION
+    if (g_hostKitStarted) {
+        // G1 owns engine quit and admission-loss teardown. Its app::Stop dispatches
+        // game.exit before withdrawing providers, including the direct quit path.
+        const auto subscribed = sco::Subscribe(&kAsopExitOwner, "game.exit", StopAsopBeforeProviders, nullptr);
+        if (subscribed != sco::Result::Ok) {
+            Log("[asop] shutdown subscription refused: %s; ASOP stays inactive", sco::ResultName(subscribed));
+        } else {
+            char ships[MAX_PATH]{};
+            ShipsFilePath(ships, sizeof(ships));
+            const auto r = offline::asop::StartFromEnvironment(g_offline, InspectAntiCheat() == AcCheck::Clear, ships);
+            Log("[asop] host composition result=%u; no product fallback", static_cast<unsigned>(r));
+        }
+    }
+#endif
 #endif
 }
 
@@ -259,7 +294,9 @@ static void RunLegacyTicks(DWORD now) {
     ProcessCVars();
     ProcessMissions();
     // Build, quantum, teleport and loadout are external; no fallback ticks.
+#ifndef SCO_ASOP_HOST_COMPOSITION
     ProcessFleet(now);
+#endif
 }
 
 static void OnMainThreadTick() {
@@ -271,7 +308,11 @@ static void OnMainThreadTick() {
     // Re-inspect BEFORE cadence, OS callbacks or retained legacy consumers. Lost
     // admission cancels pending app tasks through G1 without executing them.
     if (offline_host::Tick(now) != sco::Result::Ok || !offline_host::Running()) return;
+#ifdef SCO_ASOP_HOST_COMPOSITION
+    offline::asop::Pump(now); // EVERY admitted message, never behind tick cadence.
+#else
     ProcessHangars(now); // synchronous message handoff remains unthrottled
+#endif
     Menu_GameThreadFrame();
     Hotkeys_Poll();
     static DWORD last = 0;

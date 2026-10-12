@@ -1,5 +1,7 @@
 #include "hooks.h"
+#ifndef SCO_ASOP_HOST_COMPOSITION
 #include "fleet.h"
+#endif
 #include "patches.h"
 #include "teleport.h"
 #include "sco/hook.h"
@@ -155,6 +157,7 @@ static uint64_t __fastcall Hook_ValidateProjection(uintptr_t self, uintptr_t sta
     return r;
 }
 
+#ifndef SCO_ASOP_HOST_COMPOSITION
 using InstanceGroupQueryFn = void(__fastcall*)(uintptr_t, uintptr_t, uintptr_t*);
 static InstanceGroupQueryFn g_origInstanceGroupQuery = nullptr;
 static uintptr_t*           g_servicesManager = nullptr;
@@ -188,6 +191,18 @@ static void __fastcall Hook_EntitlementsResult(uintptr_t self, uintptr_t result)
 static void __fastcall Hook_RetrieveVehicle(uintptr_t asop, uintptr_t slot);
 static bool PrepareRetrieveVehicle(uint8_t* target);
 
+#else
+using StrCtorFn = void*(__fastcall*)(void*, const char*);
+using StrDtorFn = void(__fastcall*)(void*);
+static StrCtorFn g_strCtor = nullptr;
+static StrDtorFn g_strDtor = nullptr;
+bool MakeCryString(void* out, const char* text) {
+    if (!g_strCtor) return false;
+    g_strCtor(out, text); return true;
+}
+void FreeCryString(void* value) { if (g_strDtor) g_strDtor(value); }
+#endif
+
 // Each target is a sco-core signature row (sco/game/offline.h; the retrieve hook's is the ASOP row
 // asop.fleet_retrieve); a hook is installed only when its capability is ready.
 struct HookSpec {
@@ -205,6 +220,7 @@ static const HookSpec kHooks[] = {
       5, reinterpret_cast<void*>(&Hook_ValidateFilter), reinterpret_cast<void**>(&g_origValidateFilter), nullptr },
     { "inventory projection validator", "inventory.validate_projection", "inventory.projection_validator",
       5, reinterpret_cast<void*>(&Hook_ValidateProjection), reinterpret_cast<void**>(&g_origValidateProjection), nullptr },
+#ifndef SCO_ASOP_HOST_COMPOSITION
     { "hangar elevator crash guard", "elevator.instance_group_query", "elevator.crash_guard",
       5, reinterpret_cast<void*>(&Hook_InstanceGroupQuery), reinterpret_cast<void**>(&g_origInstanceGroupQuery),
       &PrepareInstanceGroupQuery },
@@ -214,10 +230,16 @@ static const HookSpec kHooks[] = {
     { "fleet manager retrieve -> spaceport ATC", "asop.fleet_retrieve", "fleet.retrieve_atc",
       5, reinterpret_cast<void*>(&Hook_RetrieveVehicle), reinterpret_cast<void**>(&g_origRetrieveVehicle),
       &PrepareRetrieveVehicle },
+#endif
 };
 static PatchStatus g_hookStatus[sizeof(kHooks) / sizeof(kHooks[0])];
 
 void InstallHooks() {
+#ifdef SCO_ASOP_HOST_COMPOSITION
+    // Retained legacy contracts/missions use string constructors, NOT fleet hooks.
+    g_strCtor = reinterpret_cast<StrCtorFn>(sco::Sig("fleet.string_ctor"));
+    g_strDtor = reinterpret_cast<StrDtorFn>(sco::Sig("fleet.string_dtor"));
+#endif
     for (size_t i = 0; i < sizeof(kHooks) / sizeof(kHooks[0]); ++i) {
         const HookSpec& h = kHooks[i];
         PatchStatus& st = g_hookStatus[i];
@@ -250,6 +272,7 @@ uint8_t* NearData(size_t n) {
     return g_text.base ? sco::hook::AllocateNear(g_text.base, n) : nullptr;
 }
 
+#ifndef SCO_ASOP_HOST_COMPOSITION
 constexpr size_t   kEntitlementSize = 0x150;
 // The fleet ships' entitlement URN: urn:sc:platform:entitlement:uuid:<id>. CSCURN bytes +0x00
 // namespace (6 platform; 0x11 = none), +0x01 type (0x16 entitlement; 0x1E = none), +0x08 kind
@@ -475,3 +498,4 @@ static void __fastcall Hook_RetrieveVehicle(uintptr_t asop, uintptr_t slot) {
         Log("[fleet] retrieve %s failed: %s", g_ships[i].name, err);
     else Log("[fleet] retrieve %s: asked the spaceport ATC for a hangar/pad", g_ships[i].name);
 }
+#endif
