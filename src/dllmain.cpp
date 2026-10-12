@@ -105,7 +105,6 @@ static bool AntiCheatPresent() {
 
 static bool g_offline = false;
 static bool g_outfitsOk = false;
-static bool g_buildOk = false;   // the free camera build mode uses
 static bool g_signaturesResolved = false;
 static const char* g_quitHookStatus = nullptr;   // "[app] game quit hook: ..." in LogStartup
 
@@ -129,7 +128,7 @@ static void StartOffline() {
         ResolveSpawnApi(g_text, g_rdata);
         g_outfitsOk = ResolveLoadoutApi(g_text, g_rdata);  // outfits ride the gear menu's loader
         ResolveNpcApi(g_text);
-        g_buildOk = ResolveBuildApi(g_text, g_rdata);
+        ResolveLegacyPlacementApi(g_text, g_rdata); // unrelated legacy NPC/contracts helpers only
         ResolveCVarsApi(g_text, g_rdata);
         ResolveMissionsApi(g_text, g_rdata);
         ResolveContractsApi(g_text, g_rdata);
@@ -175,7 +174,6 @@ static void SetFeatureCaps() {
     SetCap("quantum.drive", QuantumDriveReady());
     SetCap("quantum.boost", QuantumBoostReady());
     SetCap("quantum", g_tp.ok);   // the Travel tab's requests all go through teleport
-    SetCap("build", g_buildOk && SpawnerReady());
     SetCap("contracts", ContractsReady());
     SetMiningCaps();   // game.mining, from sco-core's mining.cell row
 #ifdef SCO_BRIDGE_TITANLINK
@@ -303,7 +301,7 @@ static void RunFeatureTicks(DWORD now) {
     // fallback for a built-in that didn't load.
     if (!LoadoutBuiltinOwnsTick()) { ProcessLoadout(); ProcessOutfits(); }
     ProcessNpcs();   // legacy npcs.txt/removal callers remain; external NPC uses game.actors with no tick
-    if (!BuildBuiltinOwnsTick()) ProcessBuild();
+    // Build is external; no feature tick fallback when missing/disabled/faulted.
     ProcessCVars();
     if (!QuantumBuiltinOwnsTick()) { ProcessQuantum(); ProcessTravel(now); }
     ProcessMissions();

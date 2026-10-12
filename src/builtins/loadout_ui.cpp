@@ -7,7 +7,7 @@
 #include "../menu.h"
 #include "../menu_ui.h"
 #include "../third_party/imgui/imgui.h"
-#include "../build.h"
+#include "build_menu.h"
 #include "../cvars.h"
 #include "sc_spawn.h"
 #include <cstdio>
@@ -20,6 +20,8 @@ void RegisterPlayerTab(const sco_api* api, sco_plugin* self) {
     g_api = api;
     g_self = self;
     RegisterBuiltinTab(api, self, "loadout.player", "Player", kTabPlayer, DrawPlayerTab);
+    BuildMenuUseApi(api, self);
+    RegisterBuiltinTab(api, self, "loadout.build", "Build", kTabBuild, DrawBuildTab);
 }
 
 // The command's reply in the status strip (which also logs it). A refusal puts the checkbox back; a

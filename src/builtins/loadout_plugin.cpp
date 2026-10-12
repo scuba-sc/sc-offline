@@ -6,6 +6,7 @@
 // items.txt and outfits.txt once you're in the universe and equip on the game thread. The
 // mechanics stay in loadout.cpp and outfits.cpp.
 #include "builtins.h"
+#include "build_menu.h"
 #include "tabs.h"
 #include "../loadout.h"
 #include "../menu.h"
@@ -113,7 +114,7 @@ sco_result LoadoutLoad(const sco_api* api, sco_plugin* self) {
 }
 
 // A crash leaves g_ticking set, so dllmain doesn't take the loadout tick back.
-void LoadoutUnload() { g_ticking = false; }
+void LoadoutUnload() { g_ticking = false; BuildMenuUseApi(nullptr, nullptr); }
 
 }  // namespace
 

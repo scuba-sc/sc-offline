@@ -1,22 +1,13 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Retained ONLY for legacy NPC/contracts/optional bridge callers not yet migrated.
+// The build plugin never links or calls this file; no aim/freecam/spawn/removal fallback.
 #include "build.h"
 #include "spawner.h"
 #include "teleport.h"
-#include "npc.h"
-#include "menu.h"
 #include "world_caps.h"
+#include <sco/game/world.h>
+#include <sco/signatures.h>
 #include <cmath>
-#include <share.h>
-
-using FreeCamOnFn  = void(__fastcall*)(void* args);
-using FreeCamOffFn = void(__fastcall*)();
-static FreeCamOnFn    g_freeCamOn = nullptr;
-static FreeCamOffFn   g_freeCamOff = nullptr;
-static const uint8_t* g_freeCamFlag = nullptr;
-
-static int __fastcall FreeCamArgCount(void*) { return 2; }
-static const char* __fastcall FreeCamArg(void*, int index) { return index == 1 ? "2" : "FreeCamEnable"; }
-static void* const kFreeCamArgsVtbl[] = { nullptr, reinterpret_cast<void*>(&FreeCamArgCount), reinterpret_cast<void*>(&FreeCamArg), nullptr };
-static void* const kFreeCamArgs[] = { const_cast<void**>(kFreeCamArgsVtbl) };
 
 using ReleaseGridFn = void(__fastcall*)(uintptr_t grid);
 static uintptr_t*    g_physWorld = nullptr;
@@ -30,124 +21,19 @@ static uintptr_t g_entityRayProxy = 0, g_entitySkipAdd = 0;
 
 static uintptr_t SigAddr(const char* id) { return reinterpret_cast<uintptr_t>(sco::Sig(id)); }
 
-// The camera's position and rotation offsets are checked by sco-core's build.camera_fields row,
-// in the code the game's own teleport-to-camera reads them with.
-static bool g_cameraOk = false;
-
-// The addresses come from sco-core's build.* rows (sco/game/world.h).
-bool ResolveBuildApi(const Section&, const Section&) {
+void ResolveLegacyPlacementApi(const Section&, const Section&) {
     if (WorldCapability("build.ground_ray")) {
-        g_rayTag          = reinterpret_cast<const char*>(sco::Sig("build.ray_tag"));
-        g_physWorld       = reinterpret_cast<uintptr_t*>(sco::Sig("build.phys_world"));
-        g_releaseGrid     = reinterpret_cast<ReleaseGridFn>(sco::Sig("build.release_grid"));
-        g_entityRayProxy  = SigAddr("build.entity_ray_proxy");
-        g_entitySkipAdd   = SigAddr("build.entity_skip_add");
-    } else {
-        Log("[build] ground ray not found; objects go where the camera points instead of on the ground (see the [core] lines in mod.log)");
+        g_rayTag = reinterpret_cast<const char*>(sco::Sig("build.ray_tag"));
+        g_physWorld = reinterpret_cast<uintptr_t*>(sco::Sig("build.phys_world"));
+        g_releaseGrid = reinterpret_cast<ReleaseGridFn>(sco::Sig("build.release_grid"));
+        g_entityRayProxy = SigAddr("build.entity_ray_proxy");
+        g_entitySkipAdd = SigAddr("build.entity_skip_add");
     }
     if (WorldCapability("build.entity_move")) {
         g_entitySetPosition = SigAddr("build.entity_set_position");
         g_entitySetRotation = SigAddr("build.entity_set_rotation");
         g_entityGetRotation = SigAddr("build.entity_get_rotation");
-    } else {
-        Log("[build] entity move/rotate functions not found; the preview won't follow the camera (see the [core] lines in mod.log)");
     }
-    g_cameraOk = WorldCapability("build.camera");
-    if (!g_cameraOk) Log("[build] camera fields not confirmed; build mode can't aim (see the [core] lines in mod.log)");
-    if (WorldCapability("build.free_cam")) {
-        g_freeCamOn   = reinterpret_cast<FreeCamOnFn>(sco::Sig("build.free_cam_on"));
-        g_freeCamOff  = reinterpret_cast<FreeCamOffFn>(sco::Sig("build.free_cam_off"));
-        g_freeCamFlag = sco::Sig("build.free_cam_flag");
-    }
-    if (!g_freeCamOn || !g_freeCamOff) Log("[build] free camera not found; build mode disabled (see the [core] lines in mod.log)");
-    return g_freeCamOn && g_freeCamOff;
-}
-
-constexpr int        kMaxBuild = 4096, kMaxCats = 24;
-static char          g_build[kMaxBuild][192];
-static int           g_buildCat[kMaxBuild];
-static bool          g_buildNpc[kMaxBuild];
-static char          g_cats[kMaxCats][24];
-static int           g_catCount = 0;
-static volatile LONG g_buildCount = -1;
-static volatile LONG g_buildWanted = 0;
-
-static struct {
-    volatile LONG selected = 0;
-    volatile LONG reachCm = 5000;
-    volatile LONG toggle = 0, undo = 0, clear = 0;
-} g_ui;
-
-int Menu_BuildCount() {
-    const LONG n = g_buildCount;
-    if (n < 0) InterlockedExchange(&g_buildWanted, 1);
-    return n;
-}
-const char* Menu_BuildName(int i) { return i >= 0 && i < g_buildCount ? g_build[i] : ""; }
-const char* Menu_BuildCategory(int i) { return i >= 0 && i < g_buildCount ? g_cats[g_buildCat[i]] : ""; }
-int Menu_BuildCategoryOf(int i) { return i >= 0 && i < g_buildCount ? g_buildCat[i] : -1; }
-int Menu_BuildCategoryCount() { return g_buildCount > 0 ? g_catCount : 0; }
-const char* Menu_BuildCategoryName(int c) { return c >= 0 && c < g_catCount ? g_cats[c] : ""; }
-void Menu_SetBuild(int index, float reach) {
-    InterlockedExchange(&g_ui.selected, index);
-    InterlockedExchange(&g_ui.reachCm, static_cast<LONG>(reach * 100));
-}
-float Menu_BuildReach() { return g_ui.reachCm / 100.0f; }
-void Menu_ToggleBuildMode() { InterlockedExchange(&g_ui.toggle, 1); }
-void Menu_BuildUndo() { InterlockedExchange(&g_ui.undo, 1); }
-void Menu_BuildClear() { InterlockedExchange(&g_ui.clear, 1); }
-
-static struct {
-    volatile LONG pending  = 0;
-    volatile LONG index    = -1;
-    volatile LONG inFront  = 1;
-    volatile LONG aheadCm  = 800;
-} g_placeReq;
-
-void Menu_RequestPlace(int index, bool inFront, float aheadMetres) {
-    if (index < 0 || index >= kMaxBuild) return;
-    InterlockedExchange(&g_placeReq.index, index);
-    InterlockedExchange(&g_placeReq.inFront, inFront ? 1 : 0);
-    InterlockedExchange(&g_placeReq.aheadCm, static_cast<LONG>(aheadMetres * 100.0f));
-    InterlockedExchange(&g_placeReq.pending, 1);
-}
-
-static bool IsNpcClass(const char* name) {
-    static const char* const kPrefixes[] = { "NPC_", "AIShip_CrewProfiles", "PU_Pilots", "PU_Human", "Vanduul_Pilot" };
-    for (const char* p : kPrefixes)
-        if (_strnicmp(name, p, strlen(p)) == 0) return true;
-    return false;
-}
-
-static int BuildList() {
-    char path[MAX_PATH];
-    if (!DataFilePath(path, sizeof(path), "buildables.txt")) return 0;
-    FILE* f = _fsopen(path, "r", _SH_DENYNO);
-    if (!f) { Log("[build] can't open %s", path); return 0; }
-    const uintptr_t registry = VCall<uintptr_t>(*g_tp.entitySystem, 0xC0);
-    int n = 0, cats = 0, cat = -1, unknown = 0;
-    char line[256];
-    while (n < kMaxBuild && fgets(line, sizeof(line), f)) {
-        line[strcspn(line, "\r\n#")] = 0;
-        char* name = line + strspn(line, " \t");
-        if (!*name) continue;
-        if (*name == '[') {
-            name[strcspn(name, "]")] = 0;
-            if (cats < kMaxCats) { strncpy_s(g_cats[cats], name + 1, _TRUNCATE); cat = cats++; }
-            continue;
-        }
-        if (cat < 0) continue;
-        const size_t len = strlen(name);
-        const bool prefab = len > 7 && _stricmp(name + len - 7, ".socpak") == 0;
-        if (prefab ? !PrefabsReady() : !VCall<uintptr_t>(registry, 0x20, static_cast<const char*>(name))) { ++unknown; continue; }
-        strncpy_s(g_build[n], name, _TRUNCATE);
-        g_buildNpc[n] = _stricmp(g_cats[cat], "guards") == 0 || IsNpcClass(name);
-        g_buildCat[n++] = cat;
-    }
-    fclose(f);
-    g_catCount = cats;
-    Log("[build] %d objects in the build menu (%d unknown names skipped)", n, unknown);
-    return n;
 }
 
 static int g_slotsOk = -1;
@@ -206,63 +92,6 @@ struct PhysSkipList {
 static_assert(sizeof(PhysSkipList) == 0x60, "PhysSkipList layout");
 static PhysSkipList g_skip = { {}, 0, 0, 8, 0, -1, 0, {} };
 
-// game.world (sc_world.h), when the build built-in found it: the ray with nothing skipped, and the camera.
-// An unavailable answer (the capability isn't ready on this game build) switches that function back to
-// the rows, once, with a log line.
-static const sc_world_v1* g_world = nullptr;
-static sco_plugin*        g_worldSelf = nullptr;
-static bool               g_worldRayOk = true, g_worldCameraOk = true;
-
-void BuildUseWorld(const sc_world_v1* world, sco_plugin* self) {
-    g_world = world;
-    g_worldSelf = self;
-}
-
-static const char* WorldError() {
-    static char text[192];
-    uint32_t size = sizeof(text);
-    text[0] = 0;
-    if (g_world->size <= offsetof(sc_world_v1, last_error) || g_world->last_error(g_worldSelf, text, &size) != SCO_OK || !text[0])
-        snprintf(text, sizeof(text), "no reason given");
-    return text;
-}
-
-enum class WorldRay { Hit, Miss, Unavailable };
-
-// One ray between two world positions through game.world.raycast, which tries the zone and up to two of
-// its parents like RayHit does. Unavailable: use the rows (no service, its capability isn't ready, or the
-// zone has no id the service can take). No C++ objects with destructors here: MSVC C2712.
-static WorldRay WorldRayHit(uintptr_t zone, const double from[3], const double to[3], double hit[3]) {
-    if (!g_world || !g_worldRayOk) return WorldRay::Unavailable;
-    const uint64_t zoneId = ZoneId(zone);
-    if (!zoneId || ZoneFromId(zoneId) != zone) return WorldRay::Unavailable;
-    double o[3], e[3];
-    if (!WorldToLocal(zone, from, o) || !WorldToLocal(zone, to, e)) return WorldRay::Miss;
-    const double d[3] = { e[0] - o[0], e[1] - o[1], e[2] - o[2] };
-    const double len = sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
-    if (len < 0.01) return WorldRay::Miss;
-    sc_world_hit h = {};
-    h.size = sizeof(h);
-    const sco_result r = g_world->raycast(zoneId, o, d, len, &h);
-    if (r == SCO_OK) {
-        LocalToWorld(zone, h.pos, hit);
-        return WorldRay::Hit;
-    }
-    if (r == SCO_UNAVAILABLE) {
-        g_worldRayOk = false;
-        Log("[build] game.world.raycast isn't ready on this game build (%s): the ground ray reads the game through sco-core's build rows", WorldError());
-        return WorldRay::Unavailable;
-    }
-    if (r != SCO_NOT_FOUND) {
-        static bool warned = false;
-        if (!warned) {
-            warned = true;
-            Log("[build] game.world.raycast answered %d: %s (no ground found; logged once)", static_cast<int>(r), WorldError());
-        }
-    }
-    return WorldRay::Miss;
-}
-
 static double CastInZone(uintptr_t zone, const double from[3], const double to[3]) {
     double o[3], e[3];
     if (!WorldToLocal(zone, from, o) || !WorldToLocal(zone, to, e)) return -1;
@@ -300,94 +129,15 @@ static bool RayHit(uintptr_t zone, const double from[3], const double to[3], dou
     return false;
 }
 
-// A ray that skips nothing (your own body can be hit): game.world.raycast when it's there, else the rows'
-// ray with an empty skip list, as before.
+// Legacy callers only. Not a fallback accessible from the external build consumer.
 static bool PlainRayHit(uintptr_t zone, const double from[3], const double to[3], double hit[3]) {
-    switch (WorldRayHit(zone, from, to, hit)) {
-        case WorldRay::Hit:  return true;
-        case WorldRay::Miss: return false;
-        case WorldRay::Unavailable: break;
-    }
     uintptr_t actor, entity;
     if (!GetLocalPlayer(actor, entity) || !RaySlotsOk(entity)) return false;
     g_skip.count = 0;
     return RayHit(zone, from, to, hit);
 }
-
 bool GroundRay(uintptr_t zone, const double from[3], const double to[3], double hit[3]) {
     return zone && PlainRayHit(zone, from, to, hit);
-}
-
-// The camera build mode aims from: game.world.camera (world frame, x y z w), else the offsets sco-core's
-// build.camera_fields row checks. False when there is no camera to read (not spawned, or a fault).
-static bool ReadCamera(uintptr_t actor, double p[3], double q[4]) {
-    if (g_world && g_worldCameraOk) {
-        const sco_result r = g_world->camera(p, q, nullptr);
-        if (r == SCO_OK) return true;
-        if (r != SCO_UNAVAILABLE) return false;
-        g_worldCameraOk = false;
-        Log("[build] game.world.camera isn't ready on this game build (%s): build mode reads the camera through sco-core's build rows", WorldError());
-    }
-    const uintptr_t cam = Rd<uintptr_t>(actor + 0x208);
-    if (!cam || !g_cameraOk) return false;
-    memcpy(p, reinterpret_cast<const double*>(cam + sco::game::world::kCameraPosition), 3 * sizeof(double));
-    const float* f = reinterpret_cast<const float*>(cam + sco::game::world::kCameraRotation);
-    for (int i = 0; i < 4; ++i) q[i] = f[i];
-    return true;
-}
-
-static double g_fromYou = 0;
-static bool   g_grounded = false;
-
-static double g_camPos[3], g_camFwd[3];   // camera, as of the last Target() call
-
-static bool Target(double reach, double yaw, double lift, uint64_t previewId, double pos[3], double rot[4]) {
-    uintptr_t actor, entity;
-    if (!GetLocalPlayer(actor, entity)) return false;
-    const uintptr_t zone = VCall<uintptr_t>(entity, 0x6B8);
-    double p[3], q[4];
-    if (!zone || !ReadCamera(actor, p, q)) return false;
-    const double fwd[3] = { 2.0 * (q[0] * q[1] - q[3] * q[2]),
-                            1.0 - 2.0 * (q[0] * q[0] + q[2] * q[2]),
-                            2.0 * (q[1] * q[2] + q[3] * q[0]) };
-    memcpy(g_camPos, p, sizeof(g_camPos));
-    memcpy(g_camFwd, fwd, sizeof(g_camFwd));
-    double you[3], stand[4] = { 0, 0, 0, 1 };
-    Vec3Out(entity, 0x2B8, you);
-    if (EntitySlotsOk(entity)) {
-        double buf[4] = {};
-        const double* r = VCall<const double*>(entity, 0x2C8, buf, static_cast<uint8_t>(0));
-        if (r) memcpy(stand, r, sizeof(stand));
-    }
-    const double upLocal[3] = { 2.0 * (stand[0] * stand[2] + stand[3] * stand[1]),
-                                2.0 * (stand[1] * stand[2] - stand[3] * stand[0]),
-                                1.0 - 2.0 * (stand[0] * stand[0] + stand[1] * stand[1]) };
-    double head[3], feetW[3], headW[3], up[3];
-    for (int i = 0; i < 3; ++i) head[i] = you[i] + upLocal[i];
-    LocalToWorld(zone, you, feetW);
-    LocalToWorld(zone, head, headW);
-    for (int i = 0; i < 3; ++i) up[i] = headW[i] - feetW[i];
-
-    double world[3];
-    for (int i = 0; i < 3; ++i) world[i] = p[i] + fwd[i] * reach;
-    g_grounded = false;
-    if (RaySlotsOk(entity)) {
-        g_skip.count = 0;
-        if (const uintptr_t preview = EntityById(previewId)) VCall<void>(preview, 0x430, &g_skip, true);
-        double hit[3], from[3], down[3];
-        const bool aimed = RayHit(zone, p, world, hit);
-        for (int i = 0; i < 3; ++i) from[i] = aimed ? hit[i] - fwd[i] * 0.3 : world[i];
-        for (int i = 0; i < 3; ++i) down[i] = from[i] - up[i] * 2000.0;
-        if (RayHit(zone, from, down, world)) g_grounded = true;
-        else if (aimed) { memcpy(world, hit, sizeof(world)); g_grounded = true; }
-    }
-    for (int i = 0; i < 3; ++i) world[i] += up[i] * lift;
-    if (!WorldToLocal(zone, world, pos)) return false;
-    g_fromYou = sqrt((pos[0] - you[0]) * (pos[0] - you[0]) + (pos[1] - you[1]) * (pos[1] - you[1]) + (pos[2] - you[2]) * (pos[2] - you[2]));
-    const double half = yaw * 3.14159265358979323846 / 360.0;
-    const double turn[4] = { 0, 0, sin(half), cos(half) };
-    QuatMul(stand, turn, rot);
-    return true;
 }
 
 bool PlaceNearPlayer(double ahead, double side, double lift, double pos[3], double rot[4]) {
@@ -432,199 +182,6 @@ bool PlaceNearPlayer(double ahead, double side, double lift, double pos[3], doub
     return true;
 }
 
-constexpr int   kMaxPlaced = 2048;
-static uint64_t g_placed[kMaxPlaced];
-static int      g_placedCount = 0;
-static bool     g_placedEnt[kMaxPlaced];   // g_placed[i] is still owned through game.entities (keep() wasn't available or refused)
-static bool     g_active = false;
-static uint64_t g_previewId = 0;
-static bool     g_previewEnt = false;
-static int      g_previewIndex = -1;
-static double   g_yaw = 0;
-
-int  Menu_BuildPlacedCount() { return g_placedCount; }
-bool Menu_BuildModeActive() { return g_active; }
-
-// Props are spawned, moved and removed through game.entities (sco-core's game pack; the build
-// built-in hands us the table and its plugin handle). What it can't carry stays on the spawner:
-// prefabs (.socpak), NPCs, and everything when the service or its capability is missing.
-static const sc_entities_v1* g_ent = nullptr;
-static sco_plugin*           g_entSelf = nullptr;
-
-void BuildUseEntities(const sc_entities_v1* ent, sco_plugin* self) {
-    g_ent = ent;
-    g_entSelf = self;
-}
-
-// The id of the zone you're in (what game.entities takes), or 0. No C++ objects with destructors
-// here: MSVC C2712.
-static uint64_t PlayerZoneId() {
-    __try {
-        uintptr_t actor, entity;
-        if (!GetLocalPlayer(actor, entity)) return 0;
-        const uintptr_t zone = VCall<uintptr_t>(entity, 0x6B8);
-        if (!zone) return 0;
-        const uint64_t zoneId = ZoneId(zone);
-        return zoneId && ZoneFromId(zoneId) == zone ? zoneId : 0;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return 0;
-    }
-}
-
-// The service's reason for the last refusal; the text is valid until the next call.
-static const char* EntitiesError(sco_result r) {
-    static char text[192];
-    uint32_t size = sizeof(text);
-    if (g_ent->last_error(g_entSelf, text, &size) != SCO_OK || !text[0]) snprintf(text, sizeof(text), "game.entities answered %d", static_cast<int>(r));
-    return text;
-}
-
-// viaEntities: true when the id belongs to game.entities (so it's despawned and moved there).
-static const char* SpawnBuildable(const char* name, const double pos[3], const double rot[4], uint64_t& id, bool npc, bool& viaEntities) {
-    viaEntities = false;
-    const size_t len = strlen(name);
-    if (len > 7 && _stricmp(name + len - 7, ".socpak") == 0) return SpawnPrefabInPlayerZone(name, pos, rot, id);
-    if (g_ent && !npc) {
-        if (const uint64_t zoneId = PlayerZoneId()) {
-            const sco_result r = g_ent->spawn(g_entSelf, name, zoneId, pos, rot, &id);
-            if (r == SCO_OK) {
-                viaEntities = true;
-                return nullptr;
-            }
-            if (r != SCO_UNAVAILABLE) return EntitiesError(r);   // unavailable: no capability on this build; use the spawner
-        }
-    }
-    return SpawnEntityInPlayerZone(name, pos, rot, id);
-}
-
-// Placed props outlive the build plugin: keep() (game.entities 1.1) releases our ownership right after the
-// spawn, so the host doesn't despawn them when the build built-in unloads or reloads. The preview is never
-// kept. True when kept: the prop then isn't ours to despawn, and Undo and Clear base remove it with
-// RemoveEntityById, as they did before build mode used game.entities. False keeps today's behaviour (the
-// host removes it when we unload; despawn removes it before that).
-static bool KeepProp(uint64_t id) {
-    static bool warned = false;
-    if (!g_ent) return false;
-    if (g_ent->size <= offsetof(sc_entities_v1, keep)) {
-        if (!warned) {
-            warned = true;
-            Log("[build] game.entities has no keep() (1.0): placed props are removed when the build plugin unloads");
-        }
-        return false;
-    }
-    const sco_result r = g_ent->keep(g_entSelf, id);
-    if (r == SCO_OK) return true;
-    Log("[build] keep(%llu) refused: %s; this prop is removed when the build plugin unloads", static_cast<unsigned long long>(id), EntitiesError(r));
-    return false;
-}
-
-// Removes what SpawnBuildable spawned.
-static void RemoveBuilt(uint64_t id, bool viaEntities) {
-    if (viaEntities && g_ent && g_ent->despawn(g_entSelf, id) == SCO_OK) return;
-    RemoveEntityById(id);
-}
-
-static bool IsPrefab(const char* name) {
-    const size_t len = strlen(name);
-    return len > 7 && _stricmp(name + len - 7, ".socpak") == 0;
-}
-
-// A prefab (.socpak) lays its buildings out once, where it's first spawned, so a live prefab can't
-// follow the camera. Prefabs are previewed with a small marker instead, and built where it stands.
-static const char* PrefabMarker() {
-    static const char* marker = nullptr;
-    static bool tried = false;
-    if (tried) return marker;
-    tried = true;
-    static const char* const kCandidates[] = {
-        "PlayerDeco_Flair_Hanger_Flag_UEE_1", "PlayerDeco_Flair_Hanger_Flag_IAE_2955_BIS_1", "PlayerDeco_Flair_Heart_Table_1_a",
-    };
-    for (const char* c : kCandidates) {
-        bool exists = false;
-        __try { exists = EntityClassExists(c); } __except (EXCEPTION_EXECUTE_HANDLER) {}
-        if (exists) { marker = c; break; }
-    }
-    if (!marker) Log("[build] no prefab marker class found; prefabs preview as themselves (they won't follow the camera)");
-    return marker;
-}
-
-// The real prefab, built at the marker once the camera has held still for a moment, so you can see
-// the actual building: where it lines up and whether it clips. Moving the camera, rotating or
-// changing reach takes it away again; clicking while it's up keeps it as the placed building.
-static struct {
-    uint64_t id; double pos[3], rot[4], camPos[3], camFwd[3]; double yaw, reach;
-    DWORD stillSince; bool suppressed;
-} g_ghost;
-
-static void RemoveGhost() {
-    if (g_ghost.id) RemoveBuilt(g_ghost.id, false);
-    g_ghost.id = 0;
-}
-
-static void RemovePreview() {
-    if (g_previewId) RemoveBuilt(g_previewId, g_previewEnt);
-    g_previewId = 0;
-    g_previewEnt = false;
-    g_previewIndex = -1;
-    RemoveGhost();
-}
-
-// True when the camera hasn't moved (or turned) since the last call that returned false.
-static bool CameraStill() {
-    double d = 0, dot = 0;
-    for (int i = 0; i < 3; ++i) {
-        d += (g_camPos[i] - g_ghost.camPos[i]) * (g_camPos[i] - g_ghost.camPos[i]);
-        dot += g_camFwd[i] * g_ghost.camFwd[i];
-    }
-    if (d < 0.05 * 0.05 && dot > 0.9998) return true;
-    memcpy(g_ghost.camPos, g_camPos, sizeof(g_camPos));
-    memcpy(g_ghost.camFwd, g_camFwd, sizeof(g_camFwd));
-    return false;
-}
-
-// Reads buildables.txt once you're spawned: when the Build tab first asks for the list, or when F6
-// enters build mode before the tab was ever opened.
-static void LoadBuildList() {
-    uintptr_t actor, entity;
-    bool live = false;
-    __try { live = GetLocalPlayer(actor, entity); } __except (EXCEPTION_EXECUTE_HANDLER) {}
-    if (!live) return;
-    int n = 0;
-    __try { n = BuildList(); } __except (EXCEPTION_EXECUTE_HANDLER) { n = 0; Log("[build] fault while reading buildables.txt"); }
-    InterlockedExchange(&g_buildCount, n);
-}
-
-static void Enter() {
-    if (g_freeCamOn && g_buildCount < 0) LoadBuildList();
-    if (!g_freeCamOn || g_buildCount <= 0) {
-        Log("[build] build mode isn't available yet (%s)", !g_freeCamOn ? "no free camera on this game build"
-                                                     : g_buildCount < 0 ? "you're not spawned yet"
-                                                                        : "nothing to place from buildables.txt");
-        return;
-    }
-    __try { g_freeCamOn(const_cast<void**>(kFreeCamArgs)); } __except (EXCEPTION_EXECUTE_HANDLER) { Log("[build] fault while enabling the free camera"); return; }
-    g_active = true;
-    Log("[build] build mode on: left click = place, R = rotate, [ ] = shorter / longer reach, Backspace = undo, F6 = exit");
-}
-
-static void Exit() {
-    RemovePreview();
-    __try { g_freeCamOff(); } __except (EXCEPTION_EXECUTE_HANDLER) { Log("[build] fault while disabling the free camera"); }
-    g_active = false;
-    Log("[build] build mode off (%d objects placed)", g_placedCount);
-}
-
-static void Undo() {
-    if (!g_placedCount) return;
-    --g_placedCount;
-    RemoveBuilt(g_placed[g_placedCount], g_placedEnt[g_placedCount]);
-}
-
-static void Clear() {
-    while (g_placedCount) Undo();
-    Log("[build] base cleared");
-}
-
 // Moves (and with rot, turns) any entity within its zone, in local coordinates. Build mode's preview,
 // NPCs that can't be removed (sent far away) and spawn.entities' set_entity_transform.
 bool MoveEntityLocal(uint64_t id, const double pos[3], const double rot[4]) {
@@ -639,144 +196,3 @@ bool MoveEntityLocal(uint64_t id, const double pos[3], const double rot[4]) {
     }
 }
 
-// A fresh spawn takes seconds to stream in; until it has, there's nothing to move.
-static void MovePreview(const double pos[3], const double rot[4]) {
-    if (g_previewEnt && g_ent) {
-        if (!g_ent->alive(g_previewId)) return;
-        if (const uint64_t zoneId = PlayerZoneId()) g_ent->set_transform(g_entSelf, g_previewId, zoneId, pos, rot);
-        return;
-    }
-    MoveEntityLocal(g_previewId, pos, rot);
-}
-
-static bool GameWindowInFront() {
-    wchar_t title[64] = L"";
-    return GameHasFocus() && GetWindowTextW(GetForegroundWindow(), title, 64) && wcsstr(title, L"Star Citizen");
-}
-
-static bool Pressed(int vk, bool& was, bool allowed) {
-    const bool down = (GetAsyncKeyState(vk) & 0x8000) != 0;
-    const bool hit = allowed && down && !was;
-    was = down;
-    return hit;
-}
-
-void ProcessBuild() {
-    if (!g_tp.ok || !SpawnerReady()) return;
-    if (!g_freeCamOn) return;
-    if (g_buildCount < 0 && g_buildWanted) LoadBuildList();
-
-    // F6 is the build built-in's hotkey (build.toggle through sco.ui), which sets g_ui.toggle. The
-    // keys below are build mode's own, reserved for the product (hotkeys.h).
-    static bool lmb, r, closer, farther, back;
-    const bool keys = GameWindowInFront();
-    if (InterlockedExchange(&g_ui.toggle, 0) != 0) { if (g_active) Exit(); else Enter(); }
-    const bool undoKey = Pressed(VK_BACK, back, keys && g_active);
-    if (InterlockedExchange(&g_ui.undo, 0) != 0 || undoKey) Undo();
-    if (InterlockedExchange(&g_ui.clear, 0)) Clear();
-    if (InterlockedExchange(&g_placeReq.pending, 0)) {
-        const int   idx     = static_cast<int>(InterlockedCompareExchange(&g_placeReq.index, 0, 0));
-        const bool  inFront = InterlockedCompareExchange(&g_placeReq.inFront, 0, 0) != 0;
-        const double ahead  = InterlockedCompareExchange(&g_placeReq.aheadCm, 0, 0) / 100.0;
-        const char* where   = inFront ? "in front of you" : "at your feet";
-        if (idx < 0 || idx >= g_buildCount)
-            Log("[build] can't spawn anything (%s)", g_buildCount < 0 ? "build list not loaded yet" : "bad selection");
-        else if (g_placedCount >= kMaxPlaced)
-            Log("[build] the base is full (%d objects)", kMaxPlaced);
-        else {
-            double pos[3], rot[4];
-            bool ok = false;
-            __try { ok = PlaceNearPlayer(inFront ? ahead : 0.0, 0.0, g_buildNpc[idx] ? 0.3 : 0.0, pos, rot); }
-            __except (EXCEPTION_EXECUTE_HANDLER) { Log("[build] fault while looking for a spot %s", where); }
-            if (!ok) Log("[build] no spot %s", where);
-            else {
-                uint64_t id = 0;
-                bool viaEnt = false;
-                if (const char* err = SpawnBuildable(g_build[idx], pos, rot, id, g_buildNpc[idx], viaEnt))
-                    Log("[build] spawning %s failed: %s", g_build[idx], err);
-                else {
-                    g_placedEnt[g_placedCount] = viaEnt && !KeepProp(id);
-                    g_placed[g_placedCount++] = id;
-                    Log("[build] spawned %s %s (%d in the base)", g_build[idx], where, g_placedCount);
-                }
-            }
-        }
-    }
-    if (!g_active) return;
-    if (g_freeCamFlag && !*g_freeCamFlag) {
-        RemovePreview();
-        g_active = false;
-        Log("[build] the game turned the free camera off; build mode off (%d objects placed)", g_placedCount);
-        return;
-    }
-
-    double reach = g_ui.reachCm / 100.0;
-    if (Pressed(VK_OEM_4, closer, keys)) InterlockedExchange(&g_ui.reachCm, static_cast<LONG>((reach = max(5.0, reach - 5.0)) * 100));
-    if (Pressed(VK_OEM_6, farther, keys)) InterlockedExchange(&g_ui.reachCm, static_cast<LONG>((reach = min(300.0, reach + 5.0)) * 100));
-    if (Pressed('R', r, keys)) g_yaw = fmod(g_yaw + 45.0, 360.0);
-
-    const int index = g_ui.selected;
-    if (index < 0 || index >= g_buildCount) return;
-    double pos[3], rot[4];
-    bool aimed = false;
-    const double lift = g_buildNpc[index] ? 0.3 : 0.0;
-    __try { aimed = Target(reach, g_yaw, lift, g_previewId, pos, rot); }
-    __except (EXCEPTION_EXECUTE_HANDLER) {
-        if (g_rayOk > 0) { g_rayOk = 0; Log("[build] fault in the ground ray; objects go where the camera points instead"); }
-    }
-    if (!aimed) return;
-    const char* where = g_grounded ? "on the ground" : "in the air (no ground under it)";
-
-    if (index != g_previewIndex) {
-        RemovePreview();
-        uint64_t id = 0;
-        bool viaEnt = false;
-        const char* marker = IsPrefab(g_build[index]) ? PrefabMarker() : nullptr;
-        if (const char* err = SpawnBuildable(marker ? marker : g_build[index], pos, rot, id, g_buildNpc[index], viaEnt)) { Log("[build] preview of %s failed: %s", g_build[index], err); g_previewIndex = index; return; }
-        g_previewId = id;
-        g_previewEnt = viaEnt;
-        g_previewIndex = index;
-        Log("[build] previewing %s %s %.1f m from you%s", g_build[index], where, g_fromYou, marker ? " (marker: the prefab is built where the flag stands)" : "");
-    } else if (!g_ghost.id) {
-        MovePreview(pos, rot);
-    }
-
-    const bool prefab = IsPrefab(g_build[index]) && PrefabMarker();
-    if (prefab) {
-        const DWORD now = GetTickCount();
-        const bool still = CameraStill() && g_ghost.yaw == g_yaw && g_ghost.reach == reach;
-        if (!still) {
-            g_ghost.stillSince = now;
-            g_ghost.yaw = g_yaw;
-            g_ghost.reach = reach;
-            g_ghost.suppressed = false;
-            RemoveGhost();
-        } else if (!g_ghost.id && !g_ghost.suppressed && now - g_ghost.stillSince > 500) {
-            uint64_t id = 0;
-            bool viaEnt = false;
-            if (!SpawnBuildable(g_build[index], pos, rot, id, g_buildNpc[index], viaEnt)) {   // a prefab: never via game.entities
-                g_ghost.id = id;
-                memcpy(g_ghost.pos, pos, sizeof(g_ghost.pos));
-                memcpy(g_ghost.rot, rot, sizeof(g_ghost.rot));
-            }
-        }
-    }
-
-    if (Pressed(VK_LBUTTON, lmb, keys) && g_placedCount < kMaxPlaced) {
-        uint64_t id = 0;
-        bool viaEnt = false;
-        if (prefab && g_ghost.id) {                      // keep the preview as the real thing
-            g_placedEnt[g_placedCount] = false;
-            g_placed[g_placedCount++] = g_ghost.id;
-            g_ghost.id = 0;
-            g_ghost.suppressed = true;                   // no second preview on top until the camera moves
-            Log("[build] placed %s %s %.1f m from you (%d)", g_build[index], where, g_fromYou, g_placedCount);
-        } else if (const char* err = SpawnBuildable(g_build[index], prefab && g_ghost.id ? g_ghost.pos : pos, rot, id, g_buildNpc[index], viaEnt)) {
-            Log("[build] placing %s failed: %s", g_build[index], err);
-        } else {
-            g_placedEnt[g_placedCount] = viaEnt && !KeepProp(id);
-            g_placed[g_placedCount++] = id;
-            Log("[build] placed %s %s %.1f m from you (%d)", g_build[index], where, g_fromYou, g_placedCount);
-        }
-    }
-}
