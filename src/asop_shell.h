@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: GPL-3.0-only
+#pragma once
+// Product policy only. All engine hooks, fleet state and continuations belong to sco-core.
+#include <sco/game/asop_host.h>
+#include <string>
+#include <vector>
+namespace offline::asop {
+struct Options {
+    bool enabled = true;
+    bool diagnostics = false;
+    sco::game::asop_host::CatalogMode catalog = sco::game::asop_host::CatalogMode::Game;
+    std::vector<std::string> ships;
+};
+// Atomic bounded parsing of user-supplied class-list bytes; no game records or pointers.
+bool ParseShips(const std::string& bytes, std::vector<std::string>& out);
+sco::game::asop_host::Result Start(const Options& options, bool offlinePrepared, bool eacAbsent);
+sco::game::asop_host::Status Status();
+void Pump(uint32_t now);
+void Stop();
+}
