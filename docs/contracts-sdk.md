@@ -1,0 +1,27 @@
+# Contracts SDK migration — charter 6C
+
+The separately loadable `contracts` module is a command-first SDK consumer,
+not a replacement certification of the retained legacy feature. The production
+G11/G12 engine adapter is unavailable: requests refuse, with no private fallback.
+No engine pointers, detours, account/online balances or G13 session controls.
+
+## Build / check / install
+
+1. Obtain a checksum-verified SDK archive containing `sc_missions.h` (the published
+   2.0.0 pin does not yet contain this local integrated addition).
+2. Configure `plugins/contracts` with `SCO_SDK_INCLUDE_DIR=<extracted>/include` and
+   `SCO_WORKFLOW_TESTS=ON`; build `contracts-module-test`; run only the named slice.
+3. Install component `contracts` into a separate staging root. Do not enable a
+   second `contracts` ID while the legacy built-in is still registered.
+
+Read commands: `contracts.status`, `contracts.offer <index>`,
+`contracts.mission <id>`. Every invocation reopens the public table and validates
+complete callback extents and non-null methods. Unload clears consumer admission;
+no unload mutation or worker/queued tick exists. The host releases registrations.
+
+**Pending:** production adapter, full retained mobiGlas/UI/mission-kind parity,
+15-second automatic offering, actor-death orchestration, wallet precedence/import/
+save/payout policy and reload persistence. Legacy host sources remain untouched,
+not counted as migrated. Windows/MSVC, actual loader fault guards and gameplay
+acceptance are NOT VERIFIED. Dynamic synthetic public-provider proof is separate
+from engine/provider acceptance and from durable exactly-once persistence.
