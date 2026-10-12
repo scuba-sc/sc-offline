@@ -61,6 +61,7 @@ def prove(sdk_include):
                     raise AssertionError(f"Non-SDK input: {path.name}")
         print("workflow-boundary: two modules built; four translation-unit dependency traces clean")
         original = (source / "npc/npc.cpp").read_text()
+        original_mtime_ns = (source / "npc/npc.cpp").stat().st_mtime_ns
         mutants = {
             "host registration header": '#include "sco/plugins.h"\n',
             "product version header": '#include "version.h"\n',
@@ -70,6 +71,11 @@ def prove(sdk_include):
         }
         for label, mutation in mutants.items():
             (source / "npc/npc.cpp").write_text(original + "\n" + mutation)
+            # Model timestamp-preserving copies and coarse-resolution filesystem clocks.
+            # Negative controls must compile even when a mutation looks older than its object.
+            mutant = source / "npc/npc.cpp"
+            os.utime(mutant, ns=(mutant.stat().st_atime_ns, original_mtime_ns))
+            run(["cmake", "--build", str(build), "--target", "clean"], root)
             result = run(["cmake", "--build", str(build), "--target", "sc-offline-npc"], root, False)
             if result.returncode == 0:
                 raise AssertionError(f"External target admitted {label}")
