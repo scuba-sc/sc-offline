@@ -9,10 +9,10 @@ namespace {
 const sco_api* api = nullptr;
 sco_plugin* self = nullptr;
 const sco_plugin_info info{sizeof(sco_plugin_info), SCO_API_MAJOR, SCO_API_MINOR, "contracts", "1.0.0", "sc-offline"};
-enum Action { Summary, Offer, Mission, Accept };
+enum Action { Summary, Offer, Mission, Accept, Objective, Advance };
 struct Spec { const char* name; Action action; uint32_t nargs; };
-const Spec specs[] = {{"contracts.status", Summary, 0}, {"contracts.offer", Offer, 1}, {"contracts.mission", Mission, 1}, {"contracts.accept", Accept, 2}};
-const sco_arg_def defs[] = {{"id_or_index", SCO_ARG_INT, 0, "Nonnegative offer index or positive mission ID"}, {"key", SCO_ARG_INT, 0, "Positive owner/session receipt key"}};
+const Spec specs[] = {{"contracts.status", Summary, 0}, {"contracts.offer", Offer, 1}, {"contracts.mission", Mission, 1}, {"contracts.accept", Accept, 2}, {"contracts.objective", Objective, 3}, {"contracts.advance", Advance, 2}};
+const sco_arg_def defs[] = {{"id_or_index", SCO_ARG_INT, 0, "Nonnegative offer index or positive mission ID"}, {"key_or_phase", SCO_ARG_INT, 0, "Receipt key or expected phase"}, {"objective", SCO_ARG_INT, 0, "Expected objective"}};
 template<class T> const T* Service(const char* name, uint32_t version) {
     const void* table = nullptr;
     if (!MEMBER(api, sco_api, query_service) || !self || api->query_service(name, version, &table) != SCO_OK) return nullptr;
@@ -52,6 +52,19 @@ sco_result Execute(const sco_arg* args, uint32_t count, void* context, char* rep
             result = m->accept(self, &offer, static_cast<uint64_t>(args[1].v.i), &id);
             if (result == SCO_OK) std::snprintf(reply, capacity, "Accepted mission %llu; owner/session receipt key %llu", static_cast<unsigned long long>(id), static_cast<unsigned long long>(args[1].v.i));
         }
+    }
+    if (spec.action == Objective || spec.action == Advance) {
+        if (!args[0].v.i || args[1].v.i >= SC_MISSIONS_MAX_STEPS || (spec.action == Objective && args[2].v.i >= SC_MISSIONS_MAX_STEPS)) return SCO_BAD_ARG;
+        uint64_t id = static_cast<uint64_t>(args[0].v.i);
+        uint32_t phase = static_cast<uint32_t>(args[1].v.i);
+        if (spec.action == Objective) {
+            if (!MEMBER(m, sc_missions_v1, objective)) return SCO_UNAVAILABLE;
+            result = m->objective(self, id, phase, static_cast<uint32_t>(args[2].v.i));
+        } else {
+            if (!MEMBER(m, sc_missions_v1, advance)) return SCO_UNAVAILABLE;
+            result = m->advance(self, id, phase);
+        }
+        if (result == SCO_OK) std::snprintf(reply, capacity, "Mission step accepted; no automatic payout");
     }
     if (result != SCO_OK && result != SCO_UNAVAILABLE) std::snprintf(reply, capacity, "Contracts operation refused (%u); effects not retried", static_cast<unsigned>(result));
     return result;

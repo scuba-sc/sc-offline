@@ -61,7 +61,26 @@ sco_result Accept(sco_plugin* self, const sc_mission_offer* offer, uint64_t key,
     *id = state.mission_id; acceptances.emplace(scope, Acceptance{*offer, *id});
     ++accept_effects; return SCO_OK;
 }
-sc_missions_v1 missions{sizeof(sc_missions_v1), 0, Offer, Status, Accept, nullptr, nullptr, nullptr, nullptr};
+unsigned objective_effects = 0, phase_effects = 0;
+sco_result Objective(sco_plugin* self, uint64_t id, uint32_t phase, uint32_t objective) {
+    assert(self == owner);
+    if (!mutation_ready) return SCO_UNAVAILABLE;
+    if (id != state.mission_id) return SCO_NOT_FOUND;
+    if (phase < state.phase || (phase == state.phase && objective < state.objective)) return SCO_OK;
+    if (state.state != SC_MISSION_ACTIVE || phase != state.phase || objective != state.objective || objective >= state.objectives_in_phase) return SCO_BAD_ARG;
+    ++state.objective; ++objective_effects; return SCO_OK;
+}
+sco_result Advance(sco_plugin* self, uint64_t id, uint32_t phase) {
+    assert(self == owner);
+    if (!mutation_ready) return SCO_UNAVAILABLE;
+    if (id != state.mission_id) return SCO_NOT_FOUND;
+    if (phase < state.phase || (state.state == SC_MISSION_COMPLETED && phase == state.phase)) return SCO_OK;
+    if (state.state != SC_MISSION_ACTIVE || phase != state.phase || state.objective != state.objectives_in_phase) return SCO_BAD_ARG;
+    if (state.phase + 1 == state.phase_count) state.state = SC_MISSION_COMPLETED;
+    else { ++state.phase; state.objective = 0; }
+    ++phase_effects; return SCO_OK;
+}
+sc_missions_v1 missions{sizeof(sc_missions_v1), 0, Offer, Status, Accept, Objective, Advance, nullptr, nullptr};
 sc_economy_v1 economy{sizeof(sc_economy_v1), 0, nullptr, nullptr, nullptr};
 sco_api api{};
 std::string reply;
@@ -72,6 +91,24 @@ sco_result Call(const char* name, std::initializer_list<sco_arg> args = {}) {
     char buffer[512]{};
     auto r = it->second.fn(args.begin(), static_cast<uint32_t>(args.size()), it->second.ctx, buffer, sizeof(buffer));
     reply = buffer; return r;
+}
+void ProgressCase() {
+    assert(Call("contracts.accept", {Int(0), Int(1)}) == SCO_OK);
+    assert(Call("contracts.advance", {Int(77), Int(0)}) == SCO_BAD_ARG && phase_effects == 0);
+    assert(Call("contracts.objective", {Int(77), Int(0), Int(1)}) == SCO_BAD_ARG && objective_effects == 0);
+    assert(Call("contracts.objective", {Int(77), Int(0), Int(0)}) == SCO_OK);
+    assert(Call("contracts.objective", {Int(77), Int(0), Int(0)}) == SCO_OK && objective_effects == 1);
+    assert(Call("contracts.advance", {Int(77), Int(0)}) == SCO_OK);
+    assert(Call("contracts.advance", {Int(77), Int(0)}) == SCO_OK && phase_effects == 1);
+    mutation_ready = false;
+    assert(Call("contracts.objective", {Int(77), Int(1), Int(0)}) == SCO_UNAVAILABLE && objective_effects == 1);
+    mutation_ready = true;
+    assert(Call("contracts.objective", {Int(77), Int(1), Int(0)}) == SCO_OK);
+    assert(Call("contracts.advance", {Int(77), Int(1)}) == SCO_OK && state.state == SC_MISSION_COMPLETED);
+    assert(Call("contracts.advance", {Int(77), Int(1)}) == SCO_OK && phase_effects == 2);
+    assert(Call("contracts.objective", {Int(77), Int(INT64_MAX), Int(0)}) == SCO_BAD_ARG);
+    auto callback = missions.advance; missions.advance = nullptr;
+    assert(Call("contracts.advance", {Int(77), Int(1)}) == SCO_UNAVAILABLE); missions.advance = callback;
 }
 void AcceptCase() {
     assert(Call("contracts.accept", {Int(0), Int(9)}) == SCO_OK && reply.find("77") != std::string::npos);
@@ -132,6 +169,7 @@ int main(int argc, char** argv) {
     assert(test_module::Load(&api, owner) == SCO_OK);
     if (!std::strcmp(argv[2], "read")) ReadCase();
     else if (!std::strcmp(argv[2], "accept")) AcceptCase();
+    else if (!std::strcmp(argv[2], "progress")) ProgressCase();
     else return 2;
     test_module::Unload(); test_module::Close();
     std::printf("contracts %s: PASS (dynamic module, synthetic public provider; not run in game)\n", argv[2]);

@@ -19,6 +19,11 @@ its broker/generation unchanged. Replays retain the explicit nonzero key; the
 provider owns bounded once-only owner/session receipts. Altered replay refuses.
 No automatic retry, key generation, reward payment or durable receipt claim.
 
+`contracts.objective <id> <expected-phase> <expected-objective>` and
+`contracts.advance <id> <expected-phase>` use explicit zero-based expected state.
+The provider checks ownership/session and ordered progression; no consumer-side
+optimistic increment, retry loop, objective inference or automatic payout occurs.
+
 Read commands: `contracts.status`, `contracts.offer <index>`,
 `contracts.mission <id>`. Every invocation reopens the public table and validates
 complete callback extents and non-null methods. Unload clears consumer admission;
