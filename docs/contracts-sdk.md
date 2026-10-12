@@ -24,6 +24,28 @@ No automatic retry, key generation, reward payment or durable receipt claim.
 The provider checks ownership/session and ordered progression; no consumer-side
 optimistic increment, retry loop, objective inference or automatic payout occurs.
 
+`contracts.abandon <id>` requests owned once-only abandonment explicitly.
+`contracts.cancel` blocks further consumer accept/progression/ingestion (not reads,
+receipt lookup or explicit abandon); `contracts.resume` reopens only this local gate.
+These commands never erase provider receipts or retry uncertain effects. Operations
+are synchronous, so cancellation cannot roll back an already committed operation.
+
+`contracts.ingest <script-ordinal>` obtains copied script bytes through public
+`sco.content` 1.0, never filesystem paths or direct file opens. The public content
+broker enforces declared-root/link containment. Consumer size/path/declaration checks
+admit only `missions/<lowercase-id>.scom`, at most 4096 bytes, exact LF grammar:
+
+```text
+sco-mission 1
+phases 2
+objectives 1
+```
+
+Canonical counts 1..64 only, no XML/Lua/includes/network or extra bytes. The provider
+also validates; registrations are session-lifetime. The legacy XML script library is
+retained but unsupported here, not silently converted or bundled. Owner approval of
+this narrower format remains pending. Pack snapshots require host restart to change.
+
 Read commands: `contracts.status`, `contracts.offer <index>`,
 `contracts.mission <id>`. Every invocation reopens the public table and validates
 complete callback extents and non-null methods. Unload clears consumer admission;

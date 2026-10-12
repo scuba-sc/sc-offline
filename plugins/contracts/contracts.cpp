@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "contracts.h"
 #include <sc_missions.h>
+#include <sco_content.h>
+#include <cstring>
+#include <string_view>
+#include <charconv>
 #include <cstddef>
 #include <cstdio>
 #define MEMBER(t, type, m) ((t) && (t)->size >= offsetof(type, m) + sizeof((t)->m) && (t)->m)
@@ -8,15 +12,41 @@ namespace sco::features::contracts {
 namespace {
 const sco_api* api = nullptr;
 sco_plugin* self = nullptr;
+bool cancelled = false;
 const sco_plugin_info info{sizeof(sco_plugin_info), SCO_API_MAJOR, SCO_API_MINOR, "contracts", "1.0.0", "sc-offline"};
-enum Action { Summary, Offer, Mission, Accept, Objective, Advance };
+enum Action { Summary, Offer, Mission, Accept, Objective, Advance, Abandon, Ingest, Cancel, Resume };
 struct Spec { const char* name; Action action; uint32_t nargs; };
-const Spec specs[] = {{"contracts.status", Summary, 0}, {"contracts.offer", Offer, 1}, {"contracts.mission", Mission, 1}, {"contracts.accept", Accept, 2}, {"contracts.objective", Objective, 3}, {"contracts.advance", Advance, 2}};
+const Spec specs[] = {{"contracts.status", Summary, 0}, {"contracts.offer", Offer, 1}, {"contracts.mission", Mission, 1}, {"contracts.accept", Accept, 2}, {"contracts.objective", Objective, 3}, {"contracts.advance", Advance, 2}, {"contracts.abandon", Abandon, 1}, {"contracts.ingest", Ingest, 1}, {"contracts.cancel", Cancel, 0}, {"contracts.resume", Resume, 0}};
 const sco_arg_def defs[] = {{"id_or_index", SCO_ARG_INT, 0, "Nonnegative offer index or positive mission ID"}, {"key_or_phase", SCO_ARG_INT, 0, "Receipt key or expected phase"}, {"objective", SCO_ARG_INT, 0, "Expected objective"}};
 template<class T> const T* Service(const char* name, uint32_t version) {
     const void* table = nullptr;
     if (!MEMBER(api, sco_api, query_service) || !self || api->query_service(name, version, &table) != SCO_OK) return nullptr;
     return static_cast<const T*>(table);
+}
+bool MissionPath(const char* name, size_t capacity) {
+    const void* end = std::memchr(name, 0, capacity);
+    if (!end) return false;
+    std::string_view path(name, static_cast<const char*>(end) - name);
+    if (!path.starts_with("missions/") || !path.ends_with(".scom")) return false;
+    auto id = path.substr(9, path.size() - 9 - 5);
+    if (id.empty() || id.size() > 100) return false;
+    for (char c : id) if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_')) return false;
+    return true;
+}
+bool Declaration(std::string_view bytes) {
+    if (!bytes.starts_with("sco-mission 1\nphases ")) return false;
+    bytes.remove_prefix(21);
+    auto number = [&bytes]() {
+        auto newline = bytes.find('\n');
+        if (newline == std::string_view::npos || newline == 0 || bytes.front() == '0') return false;
+        uint32_t value = 0;
+        auto parsed = std::from_chars(bytes.data(), bytes.data() + newline, value);
+        if (parsed.ec != std::errc{} || parsed.ptr != bytes.data() + newline || !value || value > SC_MISSIONS_MAX_STEPS) return false;
+        bytes.remove_prefix(newline + 1); return true;
+    };
+    if (!number() || !bytes.starts_with("objectives ")) return false;
+    bytes.remove_prefix(11);
+    return number() && bytes.empty();
 }
 sco_result Execute(const sco_arg* args, uint32_t count, void* context, char* reply, uint32_t capacity) {
     if (!reply || !capacity || !context) return SCO_BAD_ARG;
@@ -25,6 +55,14 @@ sco_result Execute(const sco_arg* args, uint32_t count, void* context, char* rep
     const auto& spec = *static_cast<const Spec*>(context);
     if (count != spec.nargs || (count && !args)) return SCO_BAD_ARG;
     for (uint32_t i = 0; i < count; ++i) if (args[i].type != SCO_ARG_INT || args[i].v.i < 0) return SCO_BAD_ARG;
+    if (spec.action == Cancel || spec.action == Resume) {
+        cancelled = spec.action == Cancel;
+        std::snprintf(reply, capacity, cancelled ? "Consumer mutations cancelled; receipts preserved" : "Consumer resumed; provider admission still required");
+        return SCO_OK;
+    }
+    if (cancelled && (spec.action == Accept || spec.action == Objective || spec.action == Advance || spec.action == Ingest)) {
+        std::snprintf(reply, capacity, "Consumer cancelled; no provider mutation; receipts preserved"); return SCO_UNAVAILABLE;
+    }
     const auto* m = Service<sc_missions_v1>(SC_MISSIONS_SERVICE_NAME, SC_MISSIONS_SERVICE_VERSION);
     sco_result result = SCO_UNAVAILABLE;
     if (spec.action == Summary || spec.action == Offer) {
@@ -66,6 +104,36 @@ sco_result Execute(const sco_arg* args, uint32_t count, void* context, char* rep
         }
         if (result == SCO_OK) std::snprintf(reply, capacity, "Mission step accepted; no automatic payout");
     }
+    if (spec.action == Abandon) {
+        if (!args[0].v.i) return SCO_BAD_ARG;
+        if (!MEMBER(m, sc_missions_v1, abandon)) return SCO_UNAVAILABLE;
+        result = m->abandon(self, static_cast<uint64_t>(args[0].v.i));
+        if (result == SCO_OK) std::snprintf(reply, capacity, "Abandonment accepted; effects not retried");
+    }
+    if (spec.action == Ingest) {
+        if (args[0].v.i >= SCO_CONTENT_MAX_ITEMS) return SCO_BAD_ARG;
+        if (!MEMBER(m, sc_missions_v1, ingest)) return SCO_UNAVAILABLE;
+        const auto* c = Service<sco_content_v1>(SCO_CONTENT_NAME, SCO_CONTENT_VERSION_1_0);
+        if (!MEMBER(c, sco_content_v1, item) || !MEMBER(c, sco_content_v1, read)) return SCO_UNAVAILABLE;
+        sco_content_item item{}; item.size = sizeof(item);
+        result = c->item(self, SCO_CONTENT_SCRIPT, static_cast<uint32_t>(args[0].v.i), &item);
+        if (result != SCO_OK) return result;
+        if (item.kind != SCO_CONTENT_SCRIPT || !item.id || !MissionPath(item.name, sizeof(item.name))) return SCO_BAD_ARG;
+        uint32_t needed = 0;
+        result = c->read(self, item.id, nullptr, &needed);
+        if (result != SCO_TOO_MANY && result != SCO_OK) return result;
+        if (!needed || needed > SC_MISSIONS_SCRIPT_BYTES) return SCO_BAD_ARG;
+        char bytes[SC_MISSIONS_SCRIPT_BYTES];
+        uint32_t written = needed;
+        result = c->read(self, item.id, bytes, &written);
+        if (result != SCO_OK) return result;
+        if (written != needed || !Declaration(std::string_view(bytes, written))) return SCO_BAD_ARG;
+        sc_mission_script script{}; script.size = sizeof(script);
+        std::snprintf(script.relative_path, sizeof(script.relative_path), "%s", item.name);
+        script.bytes = bytes; script.byte_count = written;
+        result = m->ingest(self, &script);
+        if (result == SCO_OK) std::snprintf(reply, capacity, "Declarative mission registered; session lifetime; no executable scripts");
+    }
     if (result != SCO_OK && result != SCO_UNAVAILABLE) std::snprintf(reply, capacity, "Contracts operation refused (%u); effects not retried", static_cast<unsigned>(result));
     return result;
 }
@@ -74,7 +142,7 @@ const sco_plugin_info* Query() { return &info; }
 sco_result Load(const sco_api* host, sco_plugin* owner) {
     if (api) return SCO_BAD_ARG;
     if (!owner || !host || host->major != SCO_API_MAJOR || host->minor < SCO_API_MINOR || !MEMBER(host, sco_api, register_command) || !MEMBER(host, sco_api, query_service)) return SCO_UNAVAILABLE;
-    api = host; self = owner;
+    api = host; self = owner; cancelled = false;
     for (const auto& spec : specs) {
         const sco_command command{sizeof(sco_command), 0, spec.name, spec.name, "Guarded public offline contracts boundary", nullptr, spec.nargs ? defs : nullptr, spec.nargs, sizeof(sco_arg_def), Execute, const_cast<Spec*>(&spec)};
         sco_result r = api->register_command(self, &command);
@@ -82,5 +150,5 @@ sco_result Load(const sco_api* host, sco_plugin* owner) {
     }
     return SCO_OK;
 }
-void Unload() { api = nullptr; self = nullptr; } // no late provider mutation; host releases commands
+void Unload() { cancelled = true; api = nullptr; self = nullptr; } // no late provider mutation; host releases commands
 }

@@ -3,6 +3,7 @@
 #include "workflow_module.h"
 #include <sc_missions.h>
 #include <sc_economy.h>
+#include <sco_content.h>
 #include <cassert>
 #include <cstddef>
 #include <cstring>
@@ -18,6 +19,7 @@ sco_plugin* owner = reinterpret_cast<sco_plugin*>(uintptr_t{1});
 bool available = true;
 const void* missions_table = nullptr;
 const void* economy_table = nullptr;
+const void* content_table = nullptr;
 sc_mission_offer offered{sizeof(sc_mission_offer), 0, 11, 22, 2, 1, 100, 1};
 sc_mission_status state{sizeof(sc_mission_status), SC_MISSION_ACTIVE, 77, 11, 0, 0, 2, 1, 1};
 unsigned reads = 0;
@@ -31,6 +33,7 @@ sco_result Query(const char* name, uint32_t version, const void** out) {
     if (!available) return SCO_NOT_FOUND;
     if (!std::strcmp(name, SC_MISSIONS_SERVICE_NAME)) *out = missions_table;
     if (!std::strcmp(name, SC_ECONOMY_SERVICE_NAME)) *out = economy_table;
+    if (!std::strcmp(name, SCO_CONTENT_NAME)) *out = content_table;
     return *out ? SCO_OK : SCO_NOT_FOUND;
 }
 sco_result Offer(sco_plugin* self, uint32_t index, sc_mission_offer* out) {
@@ -80,7 +83,40 @@ sco_result Advance(sco_plugin* self, uint64_t id, uint32_t phase) {
     else { ++state.phase; state.objective = 0; }
     ++phase_effects; return SCO_OK;
 }
-sc_missions_v1 missions{sizeof(sc_missions_v1), 0, Offer, Status, Accept, Objective, Advance, nullptr, nullptr};
+unsigned abandon_effects = 0, ingest_effects = 0;
+std::string script_bytes = "sco-mission 1\nphases 2\nobjectives 1\n";
+std::string script_name = "missions/demo.scom";
+std::map<std::string, std::string> scripts;
+sco_result Abandon(sco_plugin* self, uint64_t id) {
+    assert(self == owner);
+    if (!mutation_ready) return SCO_UNAVAILABLE;
+    if (id != state.mission_id) return SCO_NOT_FOUND;
+    if (state.state == SC_MISSION_ABANDONED) return SCO_OK;
+    if (state.state != SC_MISSION_ACTIVE) return SCO_BAD_ARG;
+    state.state = SC_MISSION_ABANDONED; ++abandon_effects; return SCO_OK;
+}
+sco_result Ingest(sco_plugin* self, const sc_mission_script* script) {
+    assert(self == owner && script->size == sizeof(*script) && !script->flags && !script->_pad);
+    if (!mutation_ready) return SCO_UNAVAILABLE;
+    std::string bytes(script->bytes, script->byte_count);
+    if (bytes != "sco-mission 1\nphases 2\nobjectives 1\n") return SCO_BAD_ARG;
+    auto found = scripts.find(script->relative_path);
+    if (found != scripts.end()) return found->second == bytes ? SCO_OK : SCO_BAD_ARG;
+    scripts.emplace(script->relative_path, bytes); ++ingest_effects; return SCO_OK;
+}
+sco_result Item(sco_plugin* self, sco_content_kind kind, uint32_t ordinal, sco_content_item* out) {
+    assert(self == owner && kind == SCO_CONTENT_SCRIPT && out->size == sizeof(*out));
+    if (ordinal) return SCO_NOT_FOUND;
+    out->kind = kind; out->id = 91;
+    std::snprintf(out->name, sizeof(out->name), "%s", script_name.c_str()); return SCO_OK;
+}
+sco_result Read(sco_plugin* self, uint64_t id, void* out, uint32_t* size) {
+    assert(self == owner && id == 91);
+    if (*size < script_bytes.size()) { *size = static_cast<uint32_t>(script_bytes.size()); return SCO_TOO_MANY; }
+    std::memcpy(out, script_bytes.data(), script_bytes.size()); *size = static_cast<uint32_t>(script_bytes.size()); return SCO_OK;
+}
+sco_content_v1 content{sizeof(sco_content_v1), 0, Item, Read};
+sc_missions_v1 missions{sizeof(sc_missions_v1), 0, Offer, Status, Accept, Objective, Advance, Abandon, Ingest};
 sc_economy_v1 economy{sizeof(sc_economy_v1), 0, nullptr, nullptr, nullptr};
 sco_api api{};
 std::string reply;
@@ -91,6 +127,35 @@ sco_result Call(const char* name, std::initializer_list<sco_arg> args = {}) {
     char buffer[512]{};
     auto r = it->second.fn(args.begin(), static_cast<uint32_t>(args.size()), it->second.ctx, buffer, sizeof(buffer));
     reply = buffer; return r;
+}
+void ScriptCase() {
+    assert(Call("contracts.accept", {Int(0), Int(1)}) == SCO_OK);
+    assert(Call("contracts.abandon", {Int(77)}) == SCO_OK);
+    assert(Call("contracts.abandon", {Int(77)}) == SCO_OK && abandon_effects == 1);
+    assert(Call("contracts.ingest", {Int(0)}) == SCO_OK);
+    assert(Call("contracts.ingest", {Int(0)}) == SCO_OK && ingest_effects == 1);
+    script_bytes = "<!DOCTYPE mission>";
+    assert(Call("contracts.ingest", {Int(0)}) == SCO_BAD_ARG && ingest_effects == 1);
+    script_bytes = "sco-mission 1\nphases 2\nobjectives 1\n";
+    script_name = "../missions/demo.scom";
+    assert(Call("contracts.ingest", {Int(0)}) == SCO_BAD_ARG && ingest_effects == 1);
+    script_name = "missions/demo.scom";
+    script_bytes.assign(SC_MISSIONS_SCRIPT_BYTES + 1, 'a');
+    assert(Call("contracts.ingest", {Int(0)}) == SCO_BAD_ARG && ingest_effects == 1);
+    assert(Call("contracts.cancel") == SCO_OK);
+    unsigned before = reads;
+    assert(Call("contracts.accept", {Int(0), Int(2)}) == SCO_UNAVAILABLE && reads == before);
+    assert(Call("contracts.ingest", {Int(0)}) == SCO_UNAVAILABLE);
+    assert(Call("contracts.status") == SCO_OK); // cancellation never hides reads/receipts
+    assert(Call("contracts.resume") == SCO_OK);
+    assert(Call("contracts.accept", {Int(0), Int(1)}) == SCO_OK && accept_effects == 1);
+    content_table = nullptr;
+    assert(Call("contracts.ingest", {Int(0)}) == SCO_UNAVAILABLE);
+    content_table = &content;
+    auto callback = missions.ingest; missions.ingest = nullptr;
+    assert(Call("contracts.ingest", {Int(0)}) == SCO_UNAVAILABLE); missions.ingest = callback;
+    test_module::Unload(); test_module::Unload();
+    assert(Call("contracts.abandon", {Int(77)}) == SCO_UNAVAILABLE && abandon_effects == 1);
 }
 void ProgressCase() {
     assert(Call("contracts.accept", {Int(0), Int(1)}) == SCO_OK);
@@ -163,13 +228,14 @@ int main(int argc, char** argv) {
     if (argc != 3) return 2;
     test_module::Open(2, argv);
     assert(!std::strcmp(test_module::Query()->name, "contracts"));
-    missions_table = &missions; economy_table = &economy;
+    missions_table = &missions; economy_table = &economy; content_table = &content;
     api.size = sizeof(api); api.major = SCO_API_MAJOR; api.minor = SCO_API_MINOR;
     api.register_command = Register; api.query_service = Query;
     assert(test_module::Load(&api, owner) == SCO_OK);
     if (!std::strcmp(argv[2], "read")) ReadCase();
     else if (!std::strcmp(argv[2], "accept")) AcceptCase();
     else if (!std::strcmp(argv[2], "progress")) ProgressCase();
+    else if (!std::strcmp(argv[2], "script")) ScriptCase();
     else return 2;
     test_module::Unload(); test_module::Close();
     std::printf("contracts %s: PASS (dynamic module, synthetic public provider; not run in game)\n", argv[2]);
