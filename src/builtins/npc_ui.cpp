@@ -1,5 +1,5 @@
 // The npc built-in's menu tab: NPCs, and the NPC picker the Crew tab shares. Registered through
-// sco.ui (RegisterNpcsTab, called by npc_plugin.cpp) and drawn by the menu shell. The buttons run
+// sco.ui (RegisterNpcsTab, called by the host adapter) and drawn by the menu shell. The buttons run
 // the built-in's npc.spawn and npc.clear commands through sco_api's invoke.
 #include "tabs.h"
 #include "../menu.h"
@@ -23,6 +23,9 @@ void RegisterNpcsTab(const sco_api* api, sco_plugin* self) {
     g_self = self;
     RegisterBuiltinTab(api, self, "npc.npcs", "NPCs", kTabNpcs, DrawNpcsTab);
 }
+
+// Stop borrowing the plugin handle before the host releases its callbacks.
+void ResetNpcsTab() { g_api = nullptr; g_self = nullptr; }
 
 // --- NPC picker, shared by the NPCs and Crew tabs -------------------------------------------
 
@@ -71,9 +74,9 @@ void DrawNpcsTab(void*, void*) {
         InvokeNpcCommand("npc.spawn", args, 2);
         MenuClose();
     }
-    if (ImGui::Button("Remove spawned NPCs", ImVec2(-1, 0))) {
+    if (ImGui::Button("Observe owned NPCs", ImVec2(-1, 0)))
+        InvokeNpcCommand("npc.observe", nullptr, 0);
+    if (ImGui::Button("Remove owned NPCs", ImVec2(-1, 0)))
         InvokeNpcCommand("npc.clear", nullptr, 0);
-        Menu_RequestClearNpcs();   // the crew's NPCs, which the spawner tracks in npc.cpp
-    }
-    Hint("Removes every NPC this menu has spawned, crew included.");
+    Hint("Only this plugin's NPCs. Crew and foreign NPCs are not removed.");
 }

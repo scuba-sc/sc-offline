@@ -118,7 +118,7 @@ add_library(dinput8 SHARED
   src/builtins/teleport_plugin.cpp
   src/builtins/spawn_plugin.cpp
   src/builtins/crew_plugin.cpp
-  src/builtins/npc_plugin.cpp
+  src/workflow_adapters.cpp
   src/builtins/loadout_plugin.cpp
   src/builtins/quantum_plugin.cpp
   src/builtins/build_plugin.cpp
@@ -148,6 +148,16 @@ target_link_libraries(dinput8 PRIVATE imgui d3d11 shlwapi advapi32 windowscodecs
 # The host kit (sco/app.h, with sco/scan.h, signatures, caps, the plugin loader), sco-lua with its
 # Star Citizen adapter (sco_lua_game: sco.datacore and sco.game for scripts), the detour engine, the zone tree (sco/engine/zone.h) and the CryPak adapter (sco/game/pak.h, with sco_vfs).
 target_link_libraries(dinput8 PRIVATE sco_app sco_lua sco_lua_game sco_hook sco_engine sco_pak)
+
+# The same SDK-only sources back the built-ins and the separate native modules.
+set(SCO_SDK_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/sco-core/include" CACHE PATH "Public SDK headers")
+add_subdirectory(plugins)
+target_link_libraries(dinput8 PRIVATE sco-feature-npc sco-feature-inspector)
+# Test hosts can omit these built-ins to load the native adapters instead. Off in normal builds.
+option(SCO_EXTERNAL_WORKFLOWS "Omit NPC/inspector built-in registration for external workflow testing" OFF)
+if(SCO_EXTERNAL_WORKFLOWS)
+  target_compile_definitions(dinput8 PRIVATE SCO_EXTERNAL_WORKFLOWS)
+endif()
 
 # --- optional bridges (docs/bridges.md) ------------------------------------------------------------
 # Built-ins that link the game to another program on the same PC through sco-core's sco.ipc. Off by
