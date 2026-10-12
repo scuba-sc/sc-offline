@@ -4,7 +4,9 @@ Step 1B ships the native inspector as an **enabled external plugin**, not a
 built-in. Release layout is `data/plugins/inspector/plugin.ini` plus
 `inspector.dll`, with no `disabled` marker. It requires `plugins = on`; the
 launcher's Plugins page can switch its folder off. There is no host fallback.
-NPC remains built in; this step does not change creative or Discord defaults.
+Step 1C also ships NPC as an enabled external command-first plugin. Nine built-ins
+remain and four features are external (npc, inspector, creative, discord);
+creative and Discord defaults are unchanged. See [NPC](../npc/README.md).
 
 ## Source and contract
 

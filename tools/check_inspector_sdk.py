@@ -59,12 +59,12 @@ def verify_extract(archive, sums, destination):
     return sdk, public
 
 
-def trace_posix(build, source, sdk, public):
+def trace_posix(build, source, sdk, public, feature="inspector"):
     commands = json.loads((build / 'compile_commands.json').read_text())
     commands = [c for c in commands if any(t in c['command'] for t in
-                ('CMakeFiles/sco-feature-inspector.dir/', 'CMakeFiles/sc-offline-inspector.dir/'))]
+                (f'CMakeFiles/sco-feature-{feature}.dir/', f'CMakeFiles/sc-offline-{feature}.dir/'))]
     if len(commands) != 2:
-        raise AssertionError('Expected two inspector translation units')
+        raise AssertionError(f'Expected two {feature} translation units')
     for command in commands:
         argv = shlex.split(command['command'])
         i = argv.index('-o'); del argv[i:i + 2]
@@ -106,17 +106,17 @@ def trace_posix(build, source, sdk, public):
             elif contained(p, ROOT):
                 ok = False
             elif contained(p, source):
-                ok = contained(p, source / 'plugins/inspector') and p.is_file()
+                ok = contained(p, source / 'plugins' / feature) and p.is_file()
             else:
                 ok = p in metadata or any(contained(p, d) for d in system)
             if not ok:
-                raise AssertionError('Non-public inspector dependency: ' + p.name)
-    print('inspector: two full compiler dependency traces clean (including system headers)')
+                raise AssertionError(f'Non-public {feature} dependency: ' + p.name)
+    print(f'{feature}: two full compiler dependency traces clean (including system headers)')
 
 
-def trace_windows(build, source, sdk, public):
+def trace_windows(build, source, sdk, public, feature="inspector"):
     count = 0
-    for target in ("sco-feature-inspector", "sc-offline-inspector"):
+    for target in (f"sco-feature-{feature}", f"sc-offline-{feature}"):
         directory = build / "dependencies" / target
         roots = [Path(p.strip()).resolve() for p in
                  (directory / "toolchain.txt").read_text(encoding="utf-8-sig").splitlines() if p.strip()]
@@ -124,7 +124,7 @@ def trace_windows(build, source, sdk, public):
             raise AssertionError("Empty evaluated MSVC IncludePath")
         traces = list(directory.glob("*.json"))
         if len(traces) != 1:
-            raise AssertionError("Expected one MSVC trace per inspector target")
+            raise AssertionError(f"Expected one MSVC trace per {feature} target")
         data = json.loads(traces[0].read_text(encoding="utf-8-sig"))["Data"]
         dependencies = [data["Source"]] + data["Includes"]
         if not data["Includes"]:
@@ -136,15 +136,15 @@ def trace_windows(build, source, sdk, public):
             elif contained(p, ROOT):
                 ok = False
             elif contained(p, source):
-                ok = contained(p, source / "plugins/inspector") and p.is_file()
+                ok = contained(p, source / "plugins" / feature) and p.is_file()
             else:
                 ok = any(contained(p, d) for d in roots)
             if not ok:
-                raise AssertionError("Non-public inspector dependency: " + p.name)
+                raise AssertionError(f"Non-public {feature} dependency: " + p.name)
         count += 1
     if count != 2:
-        raise AssertionError("Missing MSVC inspector traces")
-    print("inspector: two full MSVC compiler dependency traces clean")
+        raise AssertionError(f"Missing MSVC {feature} traces")
+    print(f"{feature}: two full MSVC compiler dependency traces clean")
 
 
 def main(args):
@@ -178,7 +178,7 @@ def main(args):
     trace = trace_windows if os.name == 'nt' else trace_posix
     trace(build, source, sdk, public)
     stage = work / 'stage'
-    run(['cmake', '--install', build, '--config', 'Release', '--prefix', stage], work)
+    run(['cmake', '--install', build, '--config', 'Release', '--prefix', stage, '--component', 'inspector'], work)
     folder = stage / 'data/plugins/inspector'
     modules = [p for p in folder.iterdir() if p.suffix in ('.dll', '.so', '.dylib')]
     if len(modules) != 1 or (folder / 'disabled').exists():

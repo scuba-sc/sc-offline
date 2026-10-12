@@ -73,6 +73,22 @@ class ReleaseManifest(unittest.TestCase):
         os.remove(os.path.join(folder, "inspector.dll"))
         self.assertEqual(rm.check(self.dir)[1], ["data/plugins/inspector/inspector.dll: missing"])
 
+    def test_external_npc_files_are_covered(self):
+        folder = os.path.join(self.dir, "data", "plugins", "npc")
+        os.makedirs(folder)
+        with open(os.path.join(HERE, "..", "plugins", "npc", "plugin.ini"), "rb") as f:
+            self.put("data/plugins/npc/plugin.ini", f.read())
+        self.put("data/plugins/npc/npc.dll", b"synthetic module fixture, not a PE binary")
+        _, count = rm.write(self.dir, "v0.7.0", COMMIT, self.vh)
+        self.assertEqual(count, 6)
+        paths = {e["path"] for e in json.loads(self.manifest())["files"]}
+        self.assertIn("data/plugins/npc/plugin.ini", paths)
+        self.assertIn("data/plugins/npc/npc.dll", paths)
+        self.assertNotIn("data/plugins/npc/disabled", paths)
+        self.assertEqual(rm.check(self.dir)[1], [])
+        os.remove(os.path.join(folder, "npc.dll"))
+        self.assertEqual(rm.check(self.dir)[1], ["data/plugins/npc/npc.dll: missing"])
+
     def test_one_file_per_line(self):
         rm.write(self.dir, "v0.7.0", COMMIT, self.vh)
         file_lines = [l for l in self.manifest().splitlines() if '"path"' in l]

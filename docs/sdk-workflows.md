@@ -1,30 +1,28 @@
-# SDK-only inspector and owned NPC workflows
+# Published-SDK inspector and owned NPC workflows
 
-These features have SDK-only implementations under `plugins/`. Inspector now
-ships as an external native plugin only. NPC remains built in for this step;
-`src/workflow_adapters.cpp` is host-only and supplies NPC's registration and tab.
-The external modules
-use only their feature sources and the public SDK headers; neither the product
-version, private menu/teleport globals nor `sco/plugins.h` are plugin inputs.
-Feature metadata is versioned independently of the product. No service or base
-ABI changes are required. The host dependency is published `sdk-v2.0.0` at
-`cd9a686bda4184f1befbdf0b74b503a1565540dd` (SDK 2.0.0, plugin ABI 1.1,
-Star Citizen game pack 0.3.0).
+Steps 1B/1C ship inspector and NPC as enabled external native plugins under
+`data/plugins/{inspector,npc}/`, not production built-ins. No host linkage,
+registration or fallback remains for either. Nine built-ins and four external
+features (npc, inspector, creative, discord) preserve 13 baseline feature units;
+two optional bridges are separate. Neither `plugins = off` nor a disabled feature
+folder resurrects a hidden implementation. Creative/Discord defaults and launcher
+behavior are unchanged.
 
-Step **1B removes only inspector's production built-in registration**. The
-release installs `data/plugins/inspector/plugin.ini` and `inspector.dll`, enabled
-without a `disabled` marker. `plugins = off` or disabling this folder leaves no
-inspector command or fallback. Ten built-ins remain, including NPC. An external
-NPC module is still a test input; never install its folder alongside the normal
-NPC built-in. This does not turn the host shell into a plugin.
+The external modules use their feature sources and public SDK headers only, not
+private host registration, product version, host include trees or new ImGui inputs.
+The old NPC tab is removed pending renderer-neutral widgets ([sco-core #139](https://github.com/scubamount/sco-core/issues/139)); Crew keeps its shared picker and legacy
+`src/npc.cpp` is untouched. `src/workflow_adapters.cpp` is removed.
 
-Standalone targets stage modules/manifests under
-`<plugin-build>/test-plugins/{npc,inspector}/`. Windows produces `npc.dll` and
-`inspector.dll`; macOS/Linux development builds use their native module suffix
-and are **not Windows game-loadable artifacts**. The dynamic-loader tests take
-the actual built path. Release packaging copies only the native inspector
-variant; Lua and the NPC test module are not additional release features.
-Owner policies and future boundaries: [decisions.md](decisions.md).
+Use published **`sdk-v2.0.0`**, combined **`sco-sdk-2.0.0.zip`**, verified against
+release **`SHA256SUMS`**: SDK 2.0.0, plugin ABI 1.1 and Star Citizen game pack 0.3.0
+are distinct versions. The Windows host independently uses the tagged submodule
+`cd9a686bda4184f1befbdf0b74b503a1565540dd`; a plugin archive cannot build the full host.
+
+Standalone modules/manifests stage under `<plugin-build>/test-plugins/{npc,inspector}/`.
+Windows emits `npc.dll` and `inspector.dll`; macOS/Linux emit development-only
+native modules, not Windows game-loadable files. Release installation contains
+only each native module and manifest, enabled without a `disabled` marker. Lua is
+a non-default inspector example, not another release feature. See [decisions](decisions.md).
 
 ## Worked tutorial: standalone native inspector
 
@@ -154,6 +152,72 @@ host and plugin versions and the checks in [status.md](status.md) before claimin
 engine behavior or in-game reload safety. CI/checker/synthetic proof does not
 replace that run; releases remain human decisions.
 
+## Worked tutorial: standalone native NPC
+
+### Stage 1 — Obtain and verify
+
+Follow inspector Stage 1 above in a fresh `npc-dev` work directory. Download the
+same immutable `sdk-v2.0.0` combined `sco-sdk-2.0.0.zip` and release `SHA256SUMS`,
+verify the archive **before extraction**, and use only the extracted SDK `include/`.
+CMake 3.20+, Python 3 and C/C++20 are required; the game module requires Windows
+x64/MSVC. `plugins/npc/{npc.cpp,npc.h,external.cpp,plugin.ini}` are the copyable
+feature sources. Manifest: `id = npc`, independent version `1.1.0`, `api = 1.1`,
+`kind = native`, `entry = npc.dll`. No required game capabilities prevent load;
+individual commands report missing services/capabilities.
+
+### Stage 2 — Isolated build and checker
+
+With `$Work`, `$SDK` and `$SOURCE` set as in Stage 1, in Developer PowerShell:
+
+```powershell
+$PluginBuild = Join-Path $Work "plugin-build"
+$CheckerBuild = Join-Path $Work "checker-build"
+cmake -S "$SOURCE/plugins" -B "$PluginBuild" -A x64 -DSCO_SDK_INCLUDE_DIR="$SDK/include" -DSCO_WORKFLOW_TESTS=ON
+cmake --build "$PluginBuild" --config Release --target sc-offline-npc npc-module-test
+cmake -S "$SDK" -B "$CheckerBuild" -A x64
+cmake --build "$CheckerBuild" --config Release --target sco-plugin-check
+ctest --test-dir "$PluginBuild" -C Release -R '^npc-module-workflow$' --output-on-failure
+& "$CheckerBuild/Release/sco-plugin-check.exe" "$PluginBuild/test-plugins/npc" --invoke npc.observe
+```
+
+Stop on any nonzero exit. The checker is compiled from the published zip's
+`tools/sco-plugin-check.c`; its missing-service fixture must report unavailable,
+not manufacture visibility. The named module test loads the actual native module
+against synthetic public providers, not the game or a native safety sandbox.
+
+On macOS/Linux use inspector Stage 2's POSIX commands with targets
+`sc-offline-npc npc-module-test`, CTest regex `^npc-module-workflow$`, folder `npc`
+and invocation `npc.observe`. Rewrite `entry` **in a separate checker copy** to
+the actual emitted `.so`/`.dylib`, exactly as that example does. Never rename a
+non-Windows development module to `.dll` or install it into the game.
+
+### Stage 3 — Install, enable and invoke
+
+With the game closed, install only the Windows x64 output:
+
+```powershell
+$Product = "C:/mods/sc-offline"
+$Destination = Join-Path $Product "data/plugins/npc"
+# Back up any existing NPC folder before replacing it.
+New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+Copy-Item "$PluginBuild/test-plugins/npc/plugin.ini" $Destination
+Copy-Item "$PluginBuild/test-plugins/npc/npc.dll" $Destination
+```
+
+Keep `plugins = on` in `sc-offline.ini`; enable NPC in the launcher's Plugins page
+if a preserved `disabled` marker exists. Fresh release folders have none. Start
+only through the existing offline launcher and read `data/mod.log` for the load
+or exact refusal. Invoke `npc.spawn`, `npc.observe`, `npc.remove` and `npc.clear`
+through the host command registry on the game thread. No NPC tab, hotkey, console
+transport or new ImGui integration is installed. Folder disable applies at next
+start; `plugins = off` blocks the external module. There is no built-in fallback.
+
+Normal `sco.reload npc` is the running-host external-consumer route, not a promise
+of provider hot reload or safe gameplay. Rebuild only with the module unloaded or
+the game closed; never overwrite a loaded Windows DLL. **Native faults are
+restart-required, not safe reload/recovery. In-game acceptance: NOT RUN.** Record
+exact build/archetype and the [pending checks](status.md) before certifying behavior.
+
 ## Read-only inspector
 
 Run `inspector.read` through the host command registry. The reply and plugin log
@@ -222,53 +286,28 @@ Seat workflows and the separate NPC-seat-removal regression are not covered.
 
 ## Targeted development proof
 
-Use the **published**, checksum-verified SDK from the tutorial above. The
-combined legacy archive contains core and game public headers; an approved,
-exact-compatible core+game archive composition can also be used. Do not package
-a local source checkout as a substitute for this release-consumer proof, or
-point the plugin build at the host source include tree.
+Use only the checksum-verified published combined SDK, not host source headers
+or a locally repackaged checkout. The tutorial's named module workflows provide
+host-independent synthetic proof. No host-only built-in adapter harness remains in this migration.
 
-```sh
-# SDK_INCLUDE is the verified published archive's include/ directory.
-cmake -S plugins -B build/workflows \
-  -DSCO_SDK_INCLUDE_DIR="$SDK_INCLUDE" \
-  -DSCO_WORKFLOW_TESTS=ON
-cmake --build build/workflows --target \
-  inspector-module-test
-ctest --test-dir build/workflows \
-  -R '^inspector-module-workflow$' --output-on-failure
-python3 tools/test_workflow_boundary.py --sdk-include "$SDK_INCLUDE"
-lua plugins/inspector/inspector_test.lua
-```
+CI invokes `tools/check_npc_sdk.py` and `tools/check_inspector_sdk.py`, each with
+`--archive <published.zip> --sums <release-SHA256SUMS> --work <new-directory-outside-checkout>`.
+They verify archive and extracted checksums, copy feature/test sources into an
+isolated root, build/install the module and published checker, run only the named
+module workflow and invoke `npc.observe` / `inspector.read` with services absent.
+Compiler dependency traces check exact published header destinations, including
+system-marked includes; MSVC traces include evaluated toolchain IncludePath.
+POSIX negative controls reject private host/product headers, unresolved private
+symbols and transitive foreign headers. Strict Mach-O/ELF links reject private
+symbols; Windows links enforce this normally. The install inventory contains
+only the manifest and native module, with no disabled marker or example/test files.
 
-The host header path is given **only** to the optional built-in adapter tests;
-shared feature libraries and external modules compile against the extracted
-SDK. Leave it unset to build only SDK-only targets. On macOS/Linux,
-`-DCMAKE_CXX_FLAGS="-fsanitize=address,undefined"` enables the targeted sanitizer
-run. The legacy workflow boundary probe builds both development modules. For the
-shipped inspector, CI uses `tools/check_inspector_sdk.py --archive <published.zip>
---sums <release-SHA256SUMS> --work <new-directory-outside-checkout>`. It verifies
-archive and extracted checksums, copies only feature/test sources into an isolated
-root, builds/installs inspector and the published checker, and runs the named
-module workflow and missing-service checker invocation. Two full compiler traces
-are checked against exact published header destinations (including system-marked
-includes); MSVC traces use the evaluated toolchain IncludePath. POSIX controls
-reject a host header, product header, unresolved private symbol and system-marked
-transitive foreign header. Strict links reject private symbols on Mach-O/ELF;
-Windows links enforce this normally. The install inventory contains only the
-manifest and native module, with no disabled marker or test/example files.
-
-The native tests exercise built-in forwarding, exported entrypoints and actual
-dynamic module loading against synthetic public providers, including truncated
-and null methods, absent capabilities, no player, unknown health maximum,
-delayed visibility, foreign IDs, pre-stream removal, invalid pose, partial
-batches, bounded capacity, high-bit IDs, failed registration and repeated unload.
-These are host-independent conformance checks, **not** a full product build or
-sco-core real-host provider integration.
-
-**Not run in game.** Windows/MSVC host and isolated external-plugin builds
-remain required in CI; owner acceptance is still NOT RUN. Exact-game-build
-acceptance must still record the chosen
-archetype/build and inspect player fields, owned spawn/visibility/removal and
-unload cleanup in each mode. No game support certification, seat regression
-closure, tag or release follows from the synthetic checks.
+NPC synthetic cases cover exported entrypoints and actual dynamic loading,
+truncated/null methods, absent capabilities/provider/player, delayed visibility,
+foreign IDs, pre-stream removal, invalid pose, partial batches, bounded capacity,
+high-bit IDs, failed registration and repeated unload. Inspector covers valid
+reads and explicit unavailable/unknown fields. These are not actual game-provider,
+Windows rendering, real-host fault-containment or gameplay checks. **In-game
+acceptance: NOT RUN.** Native faults require restart; synthetic success cannot
+establish safe reload/recovery, seat-regression closure or game support. See
+[status](status.md) for the owed exact-build checks.

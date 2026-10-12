@@ -306,7 +306,7 @@ static void RunFeatureTicks(DWORD now) {
     if (!SpawnBuiltinOwnsTick()) ProcessShipMenu(now);
     if (!CrewBuiltinOwnsTick()) ProcessCrew(now);
     if (!LoadoutBuiltinOwnsTick()) { ProcessLoadout(); ProcessOutfits(); }
-    ProcessNpcs();   // npcs.txt, removals; the npc built-in spawns through game.actors and has no tick
+    ProcessNpcs();   // legacy npcs.txt/removal callers remain; external NPC uses game.actors with no tick
     if (!BuildBuiltinOwnsTick()) ProcessBuild();
     ProcessCVars();
     if (!QuantumBuiltinOwnsTick()) { ProcessQuantum(); ProcessTravel(now); }

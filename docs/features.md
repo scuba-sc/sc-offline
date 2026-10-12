@@ -1,6 +1,6 @@
 # Features
 
-Everything runs through a single in-game menu, which **M** opens. It has nine tabs: **Player**, **Travel**, **Vehicles**, **Crew**, **NPCs**, **Build**, **Multiplayer**, **Squadron 42**, **Menu**. The Squadron 42 and Multiplayer tabs were written for this repository; the other seven come from upstream ChrisWareOffline 0.9.0-rc1. Which `game.*` service each feature runs on is in [architecture.md](architecture.md#what-each-feature-runs-on); what has not been run in game yet is in [status.md](status.md).
+The in-game menu, which **M** opens, has eight tabs: **Player**, **Travel**, **Vehicles**, **Crew**, **Build**, **Multiplayer**, **Squadron 42**, **Menu**. NPC is an external command-first plugin; the old **NPCs** tab is removed pending renderer-neutral widgets ([sco-core #139](https://github.com/scubamount/sco-core/issues/139)). Crew retains its shared NPC archetype picker. Which `game.*` service each feature runs on is in [architecture.md](architecture.md#what-each-feature-runs-on); pending game acceptance is in [status.md](status.md).
 
 Most of the lists below are plain text files in `data/`, and the counts are taken from those files. Remove lines from a file and its list gets shorter. See [data-files.md](data-files.md).
 
@@ -51,7 +51,16 @@ The `crew.*` commands (below) work on sco-core's `game.vehicles` and `game.actor
 
 ## NPCs
 
-Spawn any of 2239 NPC archetypes in front of you, and remove them again (`npcs.txt`). The `npc` built-in spawns through sco-core's `game.actors` service (`spawn_npc` and `despawn`, `sc_actors.h`), so the game pack owns the NPCs: **Remove spawned NPCs** and `npc.clear` despawn them, and unloading or reloading the built-in despawns whatever it spawned. The tab's remove button also takes out the crew's NPCs. NPCs appear 3 m ahead at your feet's height with no ground check, so on a slope they can start a little above or inside the ground.
+`npc` ships enabled as `data/plugins/npc/{plugin.ini,npc.dll}` and requires `plugins = on`; disable its folder in the launcher for the next game start. No built-in fallback or NPC menu tab remains. Invoke these commands through the host command registry on the game thread:
+
+| Command | Does |
+| --- | --- |
+| `npc.spawn <archetype> <count>` | Requests 1 to 10 owned NPCs near a fresh player pose; logs returned session IDs as pending streaming. Choose a class suitable for the actual game build; `npcs.txt` is a catalog, not a promise every class is available |
+| `npc.observe` | Read-only pending/visible/removing/unknown counts and visible transforms in the log; unavailable observations do not alter ownership |
+| `npc.remove <id>` | Requests removal of one NPC still owned by this plugin; rejects crew/foreign IDs without mutation |
+| `npc.clear` | Requests removal of only this plugin's NPCs, never a crew-wide clear |
+
+Spawn/removal use `game.actors`, pose uses `teleport.spatial` and observation uses `game.entities`, reopening borrowed tables on each command. There is no ground ray. `SCO_OK` means removal started, not disappearance; `alive=0` does not prove removal or free a session ticket. Capacity is bounded by `SC_ACTORS_MAX_NPCS` per load, including accepted-removal tickets. Normal unload requests cleanup once; host owner-release cleanup remains authoritative. Native faults require restart, not safe reload/recovery. Crew's shared picker is retained, and legacy `src/npc.cpp` is untouched. See [SDK workflows](sdk-workflows.md) and [plugin README](../plugins/npc/README.md). **In-game acceptance: NOT RUN.**
 
 ## Build (F6)
 
@@ -111,7 +120,7 @@ The Gladius' new quantum drive (hold Caps Lock, or B for NAV mode then hold left
 
 ## Plugins
 
-sc-offline can load plugins built with the [sco SDK](https://github.com/scubamount/sco-core/blob/main/sdk/README.md): native DLLs, Lua scripts and data packs. Loading is **on by default** (`plugins = on` in `sc-offline.ini`); sc-offline ships `inspector` (on), `discord` (on) and `creative` (off). Inspector is now an external native folder, not a built-in; NPC stays built in.
+sc-offline can load plugins built with the [sco SDK](https://github.com/scubamount/sco-core/blob/main/sdk/README.md): native DLLs, Lua scripts and data packs. Loading is **on by default** (`plugins = on` in `sc-offline.ini`); sc-offline ships four external features: `npc` (on), `inspector` (on), `discord` (on) and `creative` (off). NPC and inspector have no built-in fallback.
 
 1. Keep `plugins = on` in `sc-offline.ini`.
 2. Put each plugin in its own folder, `data/plugins/<id>/`, with its `plugin.ini` (for example `data/plugins/hello/plugin.ini` and `hello.dll`). The SDK's examples (`hello`, `greeter`, `travel_pack`) are ready to copy.
@@ -125,18 +134,19 @@ sc-offline can load plugins built with the [sco SDK](https://github.com/scubamou
    [plugin] contracts <version> builtin loaded
    [plugin] creative <version> <kind> disabled
    [plugin] discord <version> native loaded
+   [plugin] npc 1.1.0 native loaded
    [plugin] inspector 1.0.0 native loaded
    [plugin] greeter 1.0.0 lua loaded
    ...
    ```
 
-   This illustrative report assumes all ten remaining built-ins load, plus `discord`, `inspector` and an added `greeter`; `creative` is found but disabled: 14 found, 13 loaded. Actual counts and refusals depend on the installed folders and capabilities. A plugin that can't load is listed with the reason (`refused: built for api 2.0`, `missing capability 'teleport'`, ...); the others still load. To switch one plugin off, put an empty file named `disabled` in its folder (the launcher's Plugins page does the same, see [launcher.md](launcher.md#the-plugins-page)).
+   This illustrative report assumes all nine remaining built-ins load, plus `npc`, `discord`, `inspector` and an added `greeter`; `creative` is found but disabled: 14 found, 13 loaded. Actual counts and refusals depend on the installed folders and capabilities. A plugin that can't load is listed with the reason (`refused: built for api 2.0`, `missing capability 'teleport'`, ...); the others still load. To switch one plugin off, put an empty file named `disabled` in its folder (the launcher's Plugins page does the same, see [launcher.md](launcher.md#the-plugins-page)).
 
-With `plugins = off`, only the ten remaining built-ins are registered (two more in an optional bridge build); inspector, Discord and creative do not load. If all ten built-ins load, the illustrative report is `[plugin] 10 found, 10 loaded (plugins = off)`. There is no hidden inspector implementation.
+With `plugins = off`, only the nine remaining built-ins are registered (two more in an optional bridge build); NPC, inspector, Discord and creative do not load. If all nine built-ins load, the illustrative report is `[plugin] 9 found, 9 loaded (plugins = off)`. There is no hidden NPC or inspector implementation. The migration denominator remains 13 baseline features plus two separately counted optional bridges.
 
 ### Built-in plugins
 
-sc-offline's features are ten plugins compiled into `dinput8.dll`: `teleport`, `spawn`, `crew`, `loadout`, `npc`, `quantum`, `build`, `contracts`, `mining` and `multiplayer`, loaded in that order. They load first, with `plugins` on or off, and are listed as `builtin` in the `[plugin]` report (`[plugin] loaded teleport <version> (api 1.1) built in`). Most run their feature's per-tick work from a `tick` subscription (`npc` has none), so a fault there switches that feature off (`[plugin] <id> ... crashed`) instead of crashing the game. Each built-in also draws its own tabs in the menu through sco-core's `sco.ui` service, and binds its keys there: `build` binds F6, and `teleport` binds F7 and F8. The menu looks and works as before. A fault while a tab is drawn switches off only the built-in that owns it, along with its tabs. Their commands are the ones plugins call through the SDK's `invoke`; a command that ran but couldn't do it (an unknown name, a list not loaded yet) answers `failed` with the reason:
+sc-offline's features are nine plugins compiled into `dinput8.dll`: `teleport`, `spawn`, `crew`, `loadout`, `quantum`, `build`, `contracts`, `mining` and `multiplayer`, loaded in that order. They load first, with `plugins` on or off, and are listed as `builtin` in the `[plugin]` report (`[plugin] loaded teleport <version> (api 1.1) built in`). Most run their feature's per-tick work from a `tick` subscription, so a fault there switches that feature off (`[plugin] <id> ... crashed`) instead of crashing the game. Each built-in also draws its own tabs in the menu through sco-core's `sco.ui` service, and binds its keys there: `build` binds F6, and `teleport` binds F7 and F8. The NPC tab is no longer registered; other product tabs and keys remain. A fault while a tab is drawn switches off only the built-in that owns it, along with its tabs. Their commands are the ones plugins call through the SDK's `invoke`; a command that ran but couldn't do it (an unknown name, a list not loaded yet) answers `failed` with the reason:
 
 | Command | Does | Key |
 | --- | --- | --- |
@@ -149,8 +159,6 @@ sc-offline's features are ten plugins compiled into `dinput8.dll`: `teleport`, `
 | `crew.fill <npc>` | Puts an NPC of this archetype (`npcs.txt`) in every empty, usable seat of the target ship and says how many seats it skipped | |
 | `crew.clear` | Removes the NPCs `crew.fill` added to the target ship | |
 | `crew.power_on` | Sends the game's Flight Ready event to the target ship | |
-| `npc.spawn <npc> <count>` | Spawns 1 to 10 NPCs of an archetype (`npcs.txt`) about 3 m in front of you, through the game pack's `game.actors`; an unknown archetype answers `failed` with the game pack's reason | |
-| `npc.clear` | Despawns the NPCs `npc.spawn` made (the crew's NPCs aren't included; `crew.clear` removes those) | |
 | `loadout.equip <items>` | Equips items from `items.txt` (separated by spaces or commas, one per slot; the other slots are empty, as in the gear menu) | |
 | `loadout.wear <outfit>` | Wears a Squadron 42 outfit from `outfits.txt` | |
 | `quantum.travel <place> <altitude>` | Teleports you to a place from the Travel tab, `<altitude>` m (100 to 20000) above the ground | |
@@ -167,7 +175,7 @@ sc-offline's features are ten plugins compiled into `dinput8.dll`: `teleport`, `
 | `multiplayer.leave` | Leaves the session (or stops hosting) | |
 | `multiplayer.goto <player>` | Teleports you next to that player's ghost | |
 
-Each built-in's commands are gated on a capability: `teleport`, `spawn.ship`, `loadout`, `quantum`, `build` and `contracts` (sc-offline's own rows, set in `SetFeatureCaps`); `game.vehicles.seats`, `game.vehicles.seat`, `game.vehicles.flight_ready` and `game.actors.despawn` for the `crew.*` commands; `game.actors.spawn_npc` and `game.actors.despawn` for `npc.spawn` and `npc.clear`; `game.mining` for `mining.status`; `sco.net` for `multiplayer.*`. One is missing when this game build's addresses for that feature aren't found, and the rest of the plugin system still starts. A built-in owns its id, command prefix and services, so a plugin folder named after one (`teleport`, `spawn`, `crew`, ...) is refused (`the id belongs to a built-in plugin`), whatever its kind.
+Each built-in's commands are gated on a capability: `teleport`, `spawn.ship`, `loadout`, `quantum`, `build` and `contracts` (sc-offline's own rows, set in `SetFeatureCaps`); `game.vehicles.seats`, `game.vehicles.seat`, `game.vehicles.flight_ready` and `game.actors.despawn` for the `crew.*` commands; `game.mining` for `mining.status`; `sco.net` for `multiplayer.*`. One is missing when this game build's addresses for that feature aren't found, and the rest of the plugin system still starts. A built-in owns its id, command prefix and services, so a plugin folder named after one (`teleport`, `spawn`, `crew`, ...) is refused (`the id belongs to a built-in plugin`), whatever its kind.
 
 The `spawn` built-in's tick runs the Vehicles tab's spawns and the seat job that puts you in a seat; the `crew` built-in's runs the Crew tab's own seat actions (still the spawner's seat code) and the seat jobs of the `crew.*` commands, which seat through `game.vehicles`. For plugin authors sco-core's game pack publishes `spawn.entities` 1.2 (the `spawn` built-in published it before, with the same table): a C function table to spawn an entity class near you, look up your entity and ship ids, ask whether an entity id still resolves in the game (`entity_alive`, 1.1), and (new in 1.2) move and turn an entity in the world frame or a zone's frame (`set_entity_transform`), without going through command replies. A plugin may move only what it spawned itself through `spawn_as` (1.2: `spawn_near_player` with the plugin's handle; what `spawn_near_player` and `spawn.ship` spawn belongs to nobody), forgotten when that plugin unloads, or your own vehicle once ASOP registers it as retrieved or delivered by ATC. A plugin built against 1.0 or 1.1 keeps working; one that uses a later function checks the table's `size` first. Its header is [`sc_spawn.h`](../external/sco-core/include/sc_spawn.h), shipped in sco-core's SDK; find it with `query_service` (sco_api 1.1). A plugin runs its own code in the game, so only install plugins you trust.
 
@@ -181,9 +189,9 @@ When you quit the game (the menu's Quit, or the `quit` console command), plugins
 
 ### The inspector plugin
 
-`data/plugins/inspector/plugin.ini` and `inspector.dll` ship enabled, with no `disabled` marker. Keep `plugins = on`; the launcher's Plugins page can disable the folder for the next game start. `inspector.read` reads player actor/entity IDs, health and zone-local transform through public SDK services. Missing providers, absent player, invalid data and unknown maximum health are reported as unavailable/unknown, not fabricated zeroes. It performs no mutation and registers no menu tab or hotkey. The restricted Lua example is a non-default replacement with the same `inspector` ID; never install both variants together. Build/check/install: [SDK workflows](sdk-workflows.md), [plugin README](../plugins/inspector/README.md). **Not run in game.**
+`data/plugins/inspector/plugin.ini` and `inspector.dll` ship enabled, with no `disabled` marker. Keep `plugins = on`; the launcher's Plugins page can disable the folder for the next game start. `inspector.read` reads player actor/entity IDs, health and zone-local transform through public SDK services. Missing providers, absent player, invalid data and unknown maximum health are reported as unavailable/unknown, not fabricated zeroes. It performs no mutation and registers no menu tab or hotkey. The restricted Lua example is non-default, with its own `inspector_lua` ID; it is not another baseline feature or release default. Build/check/install: [SDK workflows](sdk-workflows.md), [plugin README](../plugins/inspector/README.md). **Not run in game.**
 
-The [13-feature migration target](decisions.md) is policy, not completion: this step removes only inspector's built-in registration. Creative and Discord defaults below are unchanged.
+The [13-feature migration target](decisions.md) is policy, not completion: steps 1B/1C remove inspector and NPC built-in registrations, leaving nine built-ins and four external features. Creative and Discord defaults below are unchanged.
 
 ### The creative plugin
 

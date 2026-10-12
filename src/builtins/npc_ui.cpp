@@ -1,6 +1,5 @@
-// The npc built-in's menu tab: NPCs, and the NPC picker the Crew tab shares. Registered through
-// sco.ui (RegisterNpcsTab, called by the host adapter) and drawn by the menu shell. The buttons run
-// the built-in's npc.spawn and npc.clear commands through sco_api's invoke.
+// Host-only archetype picker retained for Crew. NPC is command-first externally;
+// its replacement UI waits for SDK renderer-neutral widgets (sco-core #139).
 #include "tabs.h"
 #include "../menu.h"
 #include "../menu_ui.h"
@@ -8,26 +7,7 @@
 #include <cstdio>
 #include <cstring>
 
-static const sco_api* g_api = nullptr;
-static sco_plugin*    g_self = nullptr;
-
-// The command's reply (a refusal, or "Spawning ...") in the menu's status strip, which also logs it.
-static void ShowReply(sco_result, const char* reply, void*) { SetMenuStatus("%s", reply ? reply : ""); }
-
-static void InvokeNpcCommand(const char* name, const sco_arg* args, uint32_t nargs) {
-    if (g_api && g_self) g_api->invoke(g_self, name, args, nargs, ShowReply, nullptr);
-}
-
-void RegisterNpcsTab(const sco_api* api, sco_plugin* self) {
-    g_api = api;
-    g_self = self;
-    RegisterBuiltinTab(api, self, "npc.npcs", "NPCs", kTabNpcs, DrawNpcsTab);
-}
-
-// Stop borrowing the plugin handle before the host releases its callbacks.
-void ResetNpcsTab() { g_api = nullptr; g_self = nullptr; }
-
-// --- NPC picker, shared by the NPCs and Crew tabs -------------------------------------------
+// --- NPC picker, used by the Crew tab -----------------------------------------------------
 
 int g_npcPick = 0;
 
@@ -57,26 +37,4 @@ bool NpcPicker() {
         ImGui::EndCombo();
     }
     return true;
-}
-
-void DrawNpcsTab(void*, void*) {
-    SectionHeading("Spawn NPCs");
-    if (!NpcPicker()) return;
-    static int howMany = 1;
-    ImGui::SetNextItemWidth(-1);
-    ImGui::SliderInt("##howMany", &howMany, 1, 10, howMany == 1 ? "1 NPC" : "%d NPCs");
-    if (PrimaryButton("Spawn in front of me")) {
-        sco_arg args[2] = {};
-        args[0].type = SCO_ARG_STRING;
-        args[0].v.s = Menu_NpcName(g_npcPick);
-        args[1].type = SCO_ARG_INT;
-        args[1].v.i = howMany;
-        InvokeNpcCommand("npc.spawn", args, 2);
-        MenuClose();
-    }
-    if (ImGui::Button("Observe owned NPCs", ImVec2(-1, 0)))
-        InvokeNpcCommand("npc.observe", nullptr, 0);
-    if (ImGui::Button("Remove owned NPCs", ImVec2(-1, 0)))
-        InvokeNpcCommand("npc.clear", nullptr, 0);
-    Hint("Only this plugin's NPCs. Crew and foreign NPCs are not removed.");
 }

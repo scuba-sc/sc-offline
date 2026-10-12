@@ -11,7 +11,6 @@
 extern const sco::plugins::Builtin kTeleportBuiltin;   // teleport_plugin.cpp: teleport.save, teleport.go
 extern const sco::plugins::Builtin kSpawnBuiltin;      // spawn_plugin.cpp: spawn.ship, spawn.entities, the spawner tick
 extern const sco::plugins::Builtin kCrewBuiltin;       // crew_plugin.cpp: crew.*, seat actions and crew jobs
-extern const sco::plugins::Builtin kNpcBuiltin;        // workflow_adapters.cpp: SDK-only owned NPC logic
 extern const sco::plugins::Builtin kLoadoutBuiltin;    // loadout_plugin.cpp: loadout.equip, loadout.wear, gear + outfit ticks
 extern const sco::plugins::Builtin kQuantumBuiltin;    // quantum_plugin.cpp: quantum.*, the quantum boost and travel ticks
 extern const sco::plugins::Builtin kBuildBuiltin;      // build_plugin.cpp: build.*, the build-mode tick (F6)
@@ -70,9 +69,6 @@ inline sco_result RegisterBuiltinCommand(const sco_api* api, sco_plugin* self, c
 
 // Every built-in, in load order.
 inline const sco::plugins::Builtin kBuiltins[] = { kTeleportBuiltin, kSpawnBuiltin, kCrewBuiltin, kLoadoutBuiltin,
-#ifndef SCO_EXTERNAL_WORKFLOWS
-    kNpcBuiltin,
-#endif
     kQuantumBuiltin, kBuildBuiltin, kContractsBuiltin, kMiningBuiltin,
     kMultiplayerBuiltin
 #ifdef SCO_BRIDGE_TITANLINK

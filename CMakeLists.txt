@@ -118,7 +118,6 @@ add_library(dinput8 SHARED
   src/builtins/teleport_plugin.cpp
   src/builtins/spawn_plugin.cpp
   src/builtins/crew_plugin.cpp
-  src/workflow_adapters.cpp
   src/builtins/loadout_plugin.cpp
   src/builtins/quantum_plugin.cpp
   src/builtins/build_plugin.cpp
@@ -149,17 +148,7 @@ target_link_libraries(dinput8 PRIVATE imgui d3d11 shlwapi advapi32 windowscodecs
 # Star Citizen adapter (sco_lua_game: sco.datacore and sco.game for scripts), the detour engine, the zone tree (sco/engine/zone.h) and the CryPak adapter (sco/game/pak.h, with sco_vfs).
 target_link_libraries(dinput8 PRIVATE sco_app sco_lua sco_lua_game sco_hook sco_engine sco_pak)
 
-# NPC remains built in until step 1C. Inspector is built separately from a published SDK,
-# never as a host target or linked feature fallback.
-add_library(sco-feature-npc STATIC plugins/npc/npc.cpp)
-target_include_directories(sco-feature-npc PUBLIC external/sco-core/include)
-target_compile_features(sco-feature-npc PUBLIC cxx_std_20)
-target_link_libraries(dinput8 PRIVATE sco-feature-npc)
-# Test hosts can omit NPC registration to load its native adapter.
-option(SCO_EXTERNAL_WORKFLOWS "Omit NPC built-in registration for external workflow testing" OFF)
-if(SCO_EXTERNAL_WORKFLOWS)
-  target_compile_definitions(dinput8 PRIVATE SCO_EXTERNAL_WORKFLOWS)
-endif()
+# NPC and inspector are external published-SDK modules; no host targets or fallback.
 
 # --- optional bridges (docs/bridges.md) ------------------------------------------------------------
 # Built-ins that link the game to another program on the same PC through sco-core's sco.ipc. Off by
@@ -223,7 +212,7 @@ set_target_properties(spawn_probe PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/test-plugins")
 configure_file(tools/test-plugins/spawn_probe/plugin.ini "${_probe_dir}/plugin.ini" COPYONLY)
 
-# builtins_probe exercises the feature built-ins' commands in game (crew, npc, loadout, quantum,
+# builtins_probe exercises host feature commands and the external NPC commands in game (crew, npc, loadout, quantum,
 # build, contracts); same layout as spawn_probe.
 add_library(builtins_probe SHARED tools/test-plugins/builtins_probe/builtins_probe.c)
 target_include_directories(builtins_probe PRIVATE external/sco-core/include)

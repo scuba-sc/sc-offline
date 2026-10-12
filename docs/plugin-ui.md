@@ -12,13 +12,18 @@ The menu shows the tabs registered through `sco.ui` by ascending `order`, ties i
 | 200 | Travel | `quantum` | `quantum.travel` |
 | 300 | Vehicles | `spawn` | `spawn.vehicles` |
 | 400 | Crew | `crew` | `crew.crew` |
-| 500 | NPCs | `npc` | `npc.npcs` |
+| 500 | reserved (NPC UI pending SDK widgets) | — | — |
 | 600 | Build | `build` | `build.build` |
 | 650 | Multiplayer | `multiplayer` | `multiplayer.session` |
 | 700 | Squadron 42 | `loadout` | `loadout.sq42` |
 | — | Menu | sc-offline | (not in `sco.ui`) |
 
 To put a tab between two of these, give it an order in between. An order above 700 puts it after Squadron 42 (the optional bridges' **Titanfall** and **Voxel** tabs take 800 and 810 in builds that include them). `teleport`, `contracts` and `mining` have no page of their own: their controls sit on the Player, Vehicles and Travel tabs, or they have no menu controls at all. The creative plugin has none either: the Player and Vehicles tabs' cheat checkboxes run its commands.
+
+NPC is now an external command-first plugin (`npc.spawn`, `npc.observe`, `npc.remove`,
+`npc.clear`), with no tab or new ImGui coupling. Its old NPC menu is unavailable pending
+renderer-neutral widgets ([sco-core #139](https://github.com/scubamount/sco-core/issues/139));
+Crew retains its existing host archetype picker. Inspector is command-only too.
 
 ## Drawing: ImGui through sc-offline's frame
 

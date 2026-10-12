@@ -5,18 +5,7 @@
 #include "sc_entities.h"
 #include "sc_spatial.h"
 #include <cmath>
-#ifdef NPC_BUILTIN_TEST
-#include "sco/plugins.h" // Only the host-adapter harness uses this private registration type.
-extern const sco::plugins::Builtin kNpcBuiltin;
-extern const sco::plugins::Builtin kInspectorBuiltin;
-void RegisterNpcsTab(const sco_api*, sco_plugin*) {}
-void ResetNpcsTab() {}
-namespace entry {
-const sco_plugin_info* Query() { return kNpcBuiltin.query(); }
-sco_result Load(const sco_api* api, sco_plugin* self) { return kNpcBuiltin.load(api, self); }
-void Unload() { kNpcBuiltin.unload(); }
-}
-#elif defined(NPC_EXTERNAL_TEST)
+#if defined(NPC_EXTERNAL_TEST)
 namespace entry {
 const sco_plugin_info* Query() { return sco_plugin_query(); }
 sco_result Load(const sco_api* api, sco_plugin* self) { return sco_plugin_load(api, self); }
@@ -47,6 +36,12 @@ int spawned = 0, removed = 0, pose_calls = 0, transform_calls = 0, registrations
 bool streamed = false, publish_actors = true, publish_spatial = true, publish_entities = true;
 uint64_t spawn_id = 101, pose_zone = 91;
 std::set<uint64_t> issued;
+// Synthetic public-service state for NPCs this plugin did not spawn. These are
+// deliberately separate from the owner-issued tickets, not host/engine objects.
+const std::set<uint64_t> foreign_sentinels{9001, 9002};
+const std::set<uint64_t> crew_sentinels{9101, 9102};
+std::set<uint64_t> foreign_ids = foreign_sentinels, crew_ids = crew_sentinels;
+std::map<uint64_t, int> despawn_attempts;
 int fail_spawn_at = -1;
 bool auto_ids = false;
 double pose_pos[3] = {1,2,3}, pose_rot[4] = {0,0,0,1};
@@ -93,7 +88,10 @@ sco_result Spawn(sco_plugin* self, const char* archetype, uint64_t zone, const d
     return spawn_result;
 }
 sco_result Remove(sco_plugin* self, uint64_t id) {
-    CHECK(self == owner && issued.count(id)); ++removed;
+    ++despawn_attempts[id]; // Record even a forbidden attempt before rejecting it.
+    CHECK(self == owner);
+    CHECK(!foreign_ids.count(id)); CHECK(!crew_ids.count(id));
+    CHECK(issued.count(id)); ++removed;
     if (remove_result == SCO_OK || remove_result == SCO_NOT_FOUND) issued.erase(id);
     return remove_result;
 }
@@ -103,6 +101,7 @@ void Reset() {
     streamed = false; publish_actors = publish_spatial = publish_entities = true;
     spawn_id = 101; pose_zone = 91; pose_result = 1; fail_registration = -1; missing_cap = nullptr;
     issued.clear(); fail_spawn_at = -1; auto_ids = false;
+    foreign_ids = foreign_sentinels; crew_ids = crew_sentinels; despawn_attempts.clear();
     pose_pos[0]=1; pose_pos[1]=2; pose_pos[2]=3; pose_rot[0]=pose_rot[1]=pose_rot[2]=0; pose_rot[3]=1;
     spawn_result = remove_result = transform_result = SCO_OK;
     actors = {}; actors.size = sizeof(actors); actors.spawn_npc = Spawn; actors.despawn = Remove;
@@ -142,18 +141,52 @@ void Lifecycle() {
     Unload(); Unload(); CHECK(removed == 1);
     CHECK(Run("npc.observe") == SCO_UNAVAILABLE);
 }
+void CheckForeignAndCrewUntouched() {
+    CHECK(foreign_ids == foreign_sentinels); CHECK(crew_ids == crew_sentinels);
+    for (const auto id : foreign_sentinels) CHECK(despawn_attempts.count(id) == 0);
+    for (const auto id : crew_sentinels) CHECK(despawn_attempts.count(id) == 0);
+}
+void ClearAndUnloadOwnershipIsolation() {
+    Reset(); auto api = Api(); using namespace entry;
+    auto_ids = true; CHECK(Load(&api, owner) == SCO_OK);
+    CHECK(SpawnOne() == SCO_OK); CHECK(SpawnOne() == SCO_OK);
+    CHECK(issued == std::set<uint64_t>({101, 102}));
+    for (const auto id : foreign_sentinels) CHECK(RemoveId(static_cast<int64_t>(id)) == SCO_NOT_FOUND);
+    for (const auto id : crew_sentinels) CHECK(RemoveId(static_cast<int64_t>(id)) == SCO_NOT_FOUND);
+    CHECK(despawn_attempts.empty() && removed == 0);
+
+    CHECK(Run("npc.clear") == SCO_OK); CHECK(issued.empty() && removed == 2);
+    CHECK((despawn_attempts == std::map<uint64_t, int>{{101, 1}, {102, 1}}));
+    CheckForeignAndCrewUntouched();
+    CHECK(Run("npc.clear") == SCO_OK && removed == 2);
+    CheckForeignAndCrewUntouched();
+
+    // Keep new owned tickets outstanding so unload, not only clear, must clean up.
+    CHECK(SpawnOne() == SCO_OK); CHECK(SpawnOne() == SCO_OK);
+    CHECK(issued == std::set<uint64_t>({103, 104})); CHECK(!streamed);
+    Unload(); CHECK(issued.empty() && removed == 4);
+    CHECK((despawn_attempts == std::map<uint64_t, int>{{101, 1}, {102, 1}, {103, 1}, {104, 1}}));
+    CheckForeignAndCrewUntouched();
+    const auto attempts = despawn_attempts;
+    Unload(); CHECK(despawn_attempts == attempts && removed == 4);
+    CheckForeignAndCrewUntouched();
+    CHECK(Run("npc.clear") == SCO_UNAVAILABLE);
+}
 void DeferredRemovalAndCleanup() {
     Reset(); auto api = Api(); using namespace entry;
     CHECK(Load(&api, owner) == SCO_OK); CHECK(SpawnOne() == SCO_OK);
-    CHECK(RemoveId(101) == SCO_OK); CHECK(removed == 1); // Before any streaming.
+    CHECK(!streamed); CHECK(RemoveId(101) == SCO_OK && removed == 1 && issued.empty()); // Pre-stream ticket.
+    CHECK(despawn_attempts.at(101) == 1);
     CHECK(Run("npc.observe") == SCO_OK); Contains("removing=1");
-    Unload(); Unload(); CHECK(removed == 1);
+    Unload(); Unload(); CHECK(removed == 1 && despawn_attempts.at(101) == 1);
     Reset(); api = Api(); CHECK(Load(&api, owner) == SCO_OK); CHECK(SpawnOne() == SCO_OK);
     remove_result = SCO_WRONG_THREAD;
     CHECK(RemoveId(101) == SCO_WRONG_THREAD); CHECK(removed == 1);
     remove_result = SCO_OK; Unload(); Unload(); CHECK(removed == 2);
     Reset(); api = Api(); CHECK(Load(&api, owner) == SCO_OK); CHECK(SpawnOne() == SCO_OK);
-    missing_cap = "game.actors.despawn"; Unload(); Unload(); CHECK(removed == 0); // Host releases leftovers.
+    missing_cap = "game.actors.despawn"; Unload(); Unload();
+    CHECK(removed == 0 && despawn_attempts.empty() && issued.count(101) == 1);
+    // Cleanup refusal retains the provider's ticket; host owner-release is not exercised here.
 }
 void LocationNegatives() {
     Reset(); auto api = Api(); using namespace entry;
@@ -237,8 +270,14 @@ void BoundedPartialAndHighId() {
     for (uint32_t n = 0; n < SC_ACTORS_MAX_NPCS; ++n) CHECK(SpawnOne() == SCO_OK);
     CHECK(SpawnOne() == SCO_TOO_MANY && spawned == static_cast<int>(SC_ACTORS_MAX_NPCS));
     CHECK(Run("npc.clear") == SCO_OK && removed == static_cast<int>(SC_ACTORS_MAX_NPCS));
-    CHECK(SpawnOne() == SCO_TOO_MANY); // Pending-removal tickets are never recycled from alive=0.
-    Unload(); CHECK(issued.empty());
+    CHECK(issued.empty() && despawn_attempts.size() == SC_ACTORS_MAX_NPCS && !streamed);
+    CHECK(Run("npc.clear") == SCO_OK && removed == static_cast<int>(SC_ACTORS_MAX_NPCS));
+    CHECK(SpawnOne() == SCO_TOO_MANY && spawned == static_cast<int>(SC_ACTORS_MAX_NPCS)); // Retained tickets still consume quota.
+    Unload(); Unload(); CHECK(issued.empty() && removed == static_cast<int>(SC_ACTORS_MAX_NPCS));
+    for (const auto& [id, attempts] : despawn_attempts) {
+        CHECK(id >= 101 && id < 101 + SC_ACTORS_MAX_NPCS && attempts == 1);
+    }
+    CheckForeignAndCrewUntouched();
 }
 void CommandNegatives() {
     Reset(); auto api = Api(); using namespace entry;
@@ -265,16 +304,16 @@ int main(int argc, char** argv) {
 #else
     (void)argc; (void)argv;
 #endif
-    Lifecycle(); DeferredRemovalAndCleanup(); LocationNegatives(); ProviderAndMemberNegatives();
+    Lifecycle(); ClearAndUnloadOwnershipIsolation(); DeferredRemovalAndCleanup(); LocationNegatives(); ProviderAndMemberNegatives();
     HostAndRegistrationNegatives(); CommandNegatives(); BoundedPartialAndHighId();
 #ifdef NPC_EXTERNAL_TEST
     Reset(); auto api = Api();
     CHECK(sco_plugin_query() == sco::features::npc::Query());
     CHECK(sco_plugin_load(&api, owner) == SCO_OK); CHECK(SpawnOne() == SCO_OK);
     sco_plugin_unload(); sco_plugin_unload(); CHECK(removed == 1);
-    std::puts("npc_workflow: 8 cases passed (including external adapter)");
+    std::puts("npc_workflow: 9 cases passed (including external adapter)");
 #else
-    std::puts("npc_workflow: 7 cases passed");
+    std::puts("npc_workflow: 8 cases passed");
 #ifdef WORKFLOW_DYNAMIC_TEST
     test_module::Close();
 #endif
