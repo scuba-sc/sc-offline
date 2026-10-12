@@ -1,5 +1,11 @@
 # Published-SDK inspector and owned NPC workflows
 
+For distinct author-owned IDs rather than replacing release features, use the
+[copyable SDK/MCP tutorial](../examples/sdk-mcp/README.md). It supplies
+`tutorial_npc` and `tutorial_inspector` copies and keeps static discovery separate
+from optional default-off runtime MCP. The tutorial revision is compile-only;
+checker/dynamic/MCP/negative tests are NOT RUN.
+
 The already external, shipped-off creative plugin has its own
 [published-SDK build/check/install and settings/lifecycle guide](../plugins/creative/README.md).
 Its focused `creative-module-workflow` tests the actual module; reversible cleanup
@@ -7,8 +13,8 @@ uses a synthetic provider release-hook stand-in, not Windows/game certification.
 
 Steps 1B/1C ship inspector and NPC as enabled external native plugins under
 `data/plugins/{inspector,npc}/`, not production built-ins. No host linkage,
-registration or fallback remains for either. Nine built-ins and four external
-features (npc, inspector, creative, discord) preserve 13 baseline feature units;
+registration or fallback remains for either. Seven built-ins and six external
+features (npc, inspector, crew, spawn, creative, discord) preserve 13 baseline feature units;
 two optional bridges are separate. Neither `plugins = off` nor a disabled feature
 folder resurrects a hidden implementation. Creative stays off and launcher behavior is unchanged. Step 1D separately
 sets Discord folder metadata off and refuses presence pending privacy/transport
@@ -16,8 +22,8 @@ approval; see [Discord review and proof](../plugins/discord/README.md).
 
 The external modules use their feature sources and public SDK headers only, not
 private host registration, product version, host include trees or new ImGui inputs.
-The old NPC tab is removed pending renderer-neutral widgets ([sco-core #139](https://github.com/scubamount/sco-core/issues/139)); Crew keeps its shared picker and legacy
-`src/npc.cpp` is untouched. `src/workflow_adapters.cpp` is removed.
+The old NPC tab is removed pending renderer-neutral widgets ([sco-core #139](https://github.com/scubamount/sco-core/issues/139)); Crew and ordinary spawn are also external command-first consumers; their
+legacy product picker tabs are removed. Legacy `src/npc.cpp` is untouched. `src/workflow_adapters.cpp` is removed.
 
 Use published **`sdk-v2.0.0`**, combined **`sco-sdk-2.0.0.zip`**, verified against
 release **`SHA256SUMS`**: SDK 2.0.0, plugin ABI 1.1 and Star Citizen game pack 0.3.0
