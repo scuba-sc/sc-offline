@@ -7,7 +7,7 @@ Most of the lists below are plain text files in `data/`, and the counts are take
 ## Player
 
 - Noclip, god mode, infinite ammo: from the optional [creative plugin](#the-creative-plugin) (shipped off; turn it on in the launcher's Plugins page).
-- Gear menu: equip any of 1489 items, sorted into ten slots (`items.txt`).
+- Gear selection is now the external [loadout development module](../plugins/loadout/README.md): copied `items.txt` lists, typed G6 equip, explicit unsupported slots/refusals, no private/XML fallback. The pinned SDK lacks this route; equip and complete legacy-slot parity remain pending.
 - Wallet: your aUEC balance is loaded when you spawn and saved as it changes, in the contracts built-in's storage (`data/storage/contracts.db`) and in `data/wallet.txt`. The file holds just the number; edit it while the game is closed to change your balance: an edited `wallet.txt` always wins over the stored balance (see [Saves](data-files.md#saves)). Without the file, you start with the `aUEC amount` in `data/OfflineDB/default_1.xml` (100,000,000). Once `wallet.txt` exists, that amount is no longer used, so delete `wallet.txt` to go back to it.
 
 ## Travel
@@ -98,7 +98,11 @@ The idea and the working native contract come from the `junikka/sc-offline-minin
 
 ## Squadron 42
 
-The first time you open the tab, it shows a spoiler warning. **OK** opens the tab and **Back** returns to the first tab.
+The external [loadout development module](../plugins/loadout/README.md) owns the SQ42 spoiler warning and selection state. Its optional renderer-neutral panel requires the newer `sco.widgets` host service; commands work without that renderer. The following historical behavior is superseded by the module boundary: outfit/head/material and implicit-default parity is pending G6 extensions, four settings are **read-only real reads** (unknown on failed/absent provider), ordinary shortcuts invoke `spawn.ship_options`/`build.place`, enemy wings stay deferred, and arbitrary console execution **refuses**. No SQ42 cvar writes or `USER.cfg` edits are approved. Neither the pin nor production adapters are promoted by this change.
+
+### Historical SQ42 controls (not active)
+
+The old tab was removed from host build inputs and retained under `legacy/loadout`; its description below is historical, not an assertion of current available behavior.
 
 - **Outfits**: a searchable list of 35 outfits from `outfits.txt`. Pick one, then press **Wear SQ42 outfit**. Outfits that don't name a head use the default face. Unknown item names are skipped when the list loads, and `mod.log` counts them. **SQ42 visor HUD** changes the lens display the next time you press Equip or wear an outfit.
 - **Settings**: four toggles, each with a tooltip: SQ42 auto targeting, visor mini-map, visor greebles, and the SQ42 frontend menu. They are greyed out until the game's current value has been read. They reset when the session ends, and nothing is written to `USER.cfg`.

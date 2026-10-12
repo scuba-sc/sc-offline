@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <cstring>
 
-extern const sco::plugins::Builtin kLoadoutBuiltin;    // loadout_plugin.cpp: loadout.equip, loadout.wear, gear + outfit ticks
 extern const sco::plugins::Builtin kContractsBuiltin;  // contracts_plugin.cpp: contracts.status, the contracts tick
 extern const sco::plugins::Builtin kMiningBuiltin;      // mining_plugin.cpp: mining.status, natural mining on the game.mining row (mining = on)
 extern const sco::plugins::Builtin kMultiplayerBuiltin;  // multiplayer_plugin.cpp: multiplayer.*, co-presence over sco.net
@@ -17,7 +16,6 @@ extern const sco::plugins::Builtin kTitanLinkBuiltin;  // titanlink/titanlink_pl
 extern const sco::plugins::Builtin kVoxelBuiltin;      // voxel_bridge/voxel_plugin.cpp: voxel_bridge.*, the voxel-game link (SCO_BRIDGE_VOXEL)
 
 // Remaining built-ins own their ticks; external features never have a host fallback.
-bool LoadoutBuiltinOwnsTick();
 bool ContractsBuiltinOwnsTick();
 // game.mining from sco-core's rows: ready when the cell function is found (SetFeatureCaps).
 void SetMiningCaps();
@@ -56,8 +54,7 @@ inline sco_result RegisterBuiltinCommand(const sco_api* api, sco_plugin* self, c
 }
 
 // Every built-in, in load order.
-inline const sco::plugins::Builtin kBuiltins[] = { kLoadoutBuiltin,
-    kContractsBuiltin, kMiningBuiltin,
+inline const sco::plugins::Builtin kBuiltins[] = { kContractsBuiltin, kMiningBuiltin,
     kMultiplayerBuiltin
 #ifdef SCO_BRIDGE_TITANLINK
     , kTitanLinkBuiltin

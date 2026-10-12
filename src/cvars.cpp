@@ -27,17 +27,10 @@ static void FindConsole() {
     Log("[cvars] console not found; console commands are disabled (see the [core] lines in mod.log)");
 }
 
-static SRWLOCK       g_lock = SRWLOCK_INIT;
-static char          g_command[256];
-static volatile LONG g_commandPending = 0;
-
 bool Menu_ConsoleReady() { return g_console && *g_console; }
 
 void Menu_RunConsole(const char* cmd) {
-    AcquireSRWLockExclusive(&g_lock);
-    strncpy_s(g_command, cmd, _TRUNCATE);
-    ReleaseSRWLockExclusive(&g_lock);
-    InterlockedExchange(&g_commandPending, 1);
+    Log("[cvars] console command refused: arbitrary console execution is not approved (%s)", cmd ? cmd : "");
 }
 
 static bool Execute(const char* cmd) {
@@ -95,48 +88,16 @@ static const struct { const char* label; const char* tip; const char* cvar; } kS
 };
 constexpr int kS42SettingCount = sizeof(kS42Settings) / sizeof(kS42Settings[0]);
 
-static volatile LONG g_s42On[kS42SettingCount] = { -1, -1, -1, -1 };
-static volatile LONG g_s42PendingMask = 0;   // bit i = a toggle is waiting
-static volatile LONG g_s42PendingVal  = 0;   // bit i = the value it wants
-
 int         Menu_S42SettingCount() { return kS42SettingCount; }
 const char* Menu_S42SettingLabel(int i) { return i >= 0 && i < kS42SettingCount ? kS42Settings[i].label : ""; }
 const char* Menu_S42SettingTip(int i)   { return i >= 0 && i < kS42SettingCount ? kS42Settings[i].tip   : ""; }
-bool        Menu_S42SettingOn(int i)    { return i >= 0 && i < kS42SettingCount && g_s42On[i] == 1; }
-bool        Menu_S42SettingKnown(int i) { return i >= 0 && i < kS42SettingCount && g_s42On[i] >= 0; }
+bool        Menu_S42SettingOn(int)    { return false; }
+bool        Menu_S42SettingKnown(int) { return false; }
 
-// One pending slot per toggle rather than one overall, so two toggles inside the
-// same game tick both land. Value first, mask second: a reader that sees the bit
-// must already see the value.
+// Legacy UI is inactive. The external loadout plugin owns approved public reads;
+// SQ42 cvar writes are not approved, and never enter the private cvar keeper.
 void Menu_RequestS42Setting(int i, bool on) {
-    if (i < 0 || i >= kS42SettingCount) return;
-    if (on) InterlockedOr(&g_s42PendingVal, 1L << i);
-    else    InterlockedAnd(&g_s42PendingVal, ~(1L << i));
-    InterlockedOr(&g_s42PendingMask, 1L << i);
-}
-
-static void ApplyS42Setting(int i, bool on) {
-    const int want = on ? 1 : 0;
-    if (!SetCVarNow(kS42Settings[i].cvar, static_cast<float>(want))) {
-        char cmd[96];
-        snprintf(cmd, sizeof(cmd), "%s %d", kS42Settings[i].cvar, want);
-        if (!Execute(cmd)) { Log("[sq42] console unavailable: %s", cmd); return; }
-    }
-    Log("[sq42] %s = %d", kS42Settings[i].cvar, want);
-}
-
-// Game thread only: reads the four cvars back so the menu can show them. Capped at
-// 5 Hz — four name lookups every tick buys nothing the menu can see.
-static void RefreshS42Settings() {
-    static DWORD last = 0;
-    const DWORD now = GetTickCount();
-    if (now - last < 200) return;
-    last = now;
-    for (int i = 0; i < kS42SettingCount; ++i) {
-        float v = 0.0f;
-        const bool ok = GetCVarNow(kS42Settings[i].cvar, v);
-        InterlockedExchange(&g_s42On[i], ok && v != 0.0f ? 1 : 0);
-    }
+    Log("[sq42] setting write refused: read-only (index %d, value %d); cvar writes are not approved", i, on ? 1 : 0);
 }
 
 void ResolveCVarsApi(const Section&, const Section&) {
@@ -179,19 +140,4 @@ static void KeepSettingsOn() {
 
 void ProcessCVars() {
     KeepSettingsOn();
-    {
-        const LONG mask = InterlockedExchange(&g_s42PendingMask, 0);
-        const LONG vals = g_s42PendingVal;
-        for (int i = 0; i < kS42SettingCount; ++i)
-            if (mask & (1L << i)) ApplyS42Setting(i, (vals >> i) & 1);
-        RefreshS42Settings();
-    }
-    if (InterlockedExchange(&g_commandPending, 0)) {
-        char cmd[256];
-        AcquireSRWLockExclusive(&g_lock);
-        strcpy_s(cmd, g_command);
-        ReleaseSRWLockExclusive(&g_lock);
-        if (Execute(cmd)) Log("[cvars] console: %s", cmd);
-        else              Log("[cvars] console unavailable: %s", cmd);
-    }
 }

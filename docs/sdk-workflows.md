@@ -6,6 +6,12 @@ For distinct author-owned IDs rather than replacing release features, use the
 from optional default-off runtime MCP. The tutorial revision is compile-only;
 checker/dynamic/MCP/negative tests are NOT RUN.
 
+The newer [loadout/SQ42 consumer](../plugins/loadout/README.md) uses G6 typed
+equip, G7 **read-only** cvars, public copied content and optional widgets. These
+are not present in the pinned published SDK 2.0.0. Its local-development build
+is separate from the published tutorial below; release/pin promotion is pending.
+No loadout built-in or legacy host fallback remains; quantum control is deferred.
+
 The already external, shipped-off creative plugin has its own
 [published-SDK build/check/install and settings/lifecycle guide](../plugins/creative/README.md).
 Its focused `creative-module-workflow` tests the actual module; reversible cleanup
