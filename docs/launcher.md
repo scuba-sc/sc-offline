@@ -233,23 +233,11 @@ look up the exact source at `https://github.com/scubamount/sc-offline/tree/<comm
 
 ### Discord status
 
-The Discord status is a plugin, `data\plugins\discord` (source: `plugins/discord/`), built only from the sco SDK's
-headers. With the Discord app open on the same PC it shows, while the game runs:
+The Discord folder (`data\plugins\discord`, source: `plugins/discord/`) is **off pending owner transport and transmitted-field approval**. The packaged folder metadata includes `disabled`. A manually enabled folder loads only local diagnostics: `discord.status` returns unavailable with the approval blocker. It reads no game location, ship, host version, process ID or session timestamp, opens no custom pipe/network connection and sends nothing. Its three existing bool preferences remain stored but inactive; their defaults are now false and a kept true value cannot enable presence.
 
-- **Playing sc-offline**, with where you are (the moon, planet or station) and the ship you're aboard
-- the version the running mod reports (`sc-offline v<version>`), and the time played
-- the sc-offline logo, and two buttons other people can click: **Join the Discord** and **Get sc-offline**
+The former implementation sent activity over Discord's local named pipe, outside host-mediated SDK transport. Local delivery did not prove information stayed local: Discord may publish presence through its own service. No approved Discord transport exists in SDK 2.0.0's shared-memory `sco.ipc` or private-session `sco.net` contracts; no custom IPC/network exception is introduced. See the [transport/privacy review, standalone proof and pending acceptance](../plugins/discord/README.md).
 
-Every value is read from the running game, so the status always names the version you are actually playing. The plugin
-talks only to the Discord app on your PC (its local pipe). It sends nothing over the network, and it needs no Discord login
-or token. The status clears when the game closes. If Discord isn't running, nothing happens and `mod.log` says
-`[discord] Discord isn't running`; if Discord starts later, the plugin picks it up within 15 seconds. Under Wine or Proton
-the Discord pipe usually isn't reachable, so nothing is shown.
-
-Its settings (where you are, your ship, the buttons) are on the plugin's page in the game's menu. To turn the status off,
-switch **Discord** off in the window's top bar or on the **Plugins** page (both create `data\plugins\discord\disabled`).
-The change applies from the next **Play**. An old `discord_presence = off` in `sc-offline.ini` is carried over: the first
-0.7.5 run turns the plugin off and removes the line.
+The top-bar and Plugins-page switch still creates or removes `data\plugins\discord\disabled`, applying on the next **Play**; removing the marker enables diagnostics only, not Rich Presence. Existing legacy `discord_presence = off` migration and launcher behavior are unchanged. Shared host/CI release wiring must stage the marker with the isolated module; local checker success is not proof of final release packaging, host discovery, Windows load or gameplay.
 
 ### Crash reports
 

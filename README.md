@@ -9,6 +9,13 @@
 # sc-offline
 
 **An offline, single-player mod menu for Star Citizen.**<br>
+
+Ordinary spawn has a [standalone command-first SDK consumer](plugins/spawn/README.md):
+`spawn.ship` keeps its class/height arguments, with explicit owned boarding, power and
+cleanup options. Renderer-neutral picker widgets and G2/G3 destination startup are
+not in the pinned SDK. Host default/link/fallback integration is separate; this
+consumer alone does not replace the current Vehicles tab. Synthetic public-SDK
+proof is not Windows/gameplay acceptance.
 Spawn ships and buildings, travel the star systems and wear Squadron 42 outfits from the in-game menu; spawn and manage NPCs through the external plugin commands.
 
 [![Latest release](https://img.shields.io/github/v/release/scubamount/sc-offline?style=flat-square&label=release&color=2ec4d6)](https://github.com/scubamount/sc-offline/releases/latest)

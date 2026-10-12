@@ -10,7 +10,24 @@ fixture or checker result certifies gameplay. Policy: [decisions.md](decisions.m
 
 sco-core keeps the matching table for the `game.*` services, with the evidence level of each capability and what a run has to show: [docs/game/status.md](https://github.com/scubamount/sco-core/blob/cd9a686bda4184f1befbdf0b74b503a1565540dd/docs/game/status.md) at the pinned commit. Read it for the service side (for example `game.actors.state`, `game.entities.query_radius`, `game.entities.watch` and `game.events.vehicle_seat` are held **off** until a run decides them). This page lists the sc-offline side: what each converted feature still needs checked. The steps are the ones in the bodies of [#95](https://github.com/scubamount/sc-offline/pull/95), [#97](https://github.com/scubamount/sc-offline/pull/97) and [#98](https://github.com/scubamount/sc-offline/pull/98); `mod.log` lines are quoted as those PRs wrote them.
 
-## Step 1C: external NPC acceptance — NOT RUN
+## Steps 1D/2A/2B: external features — Windows/game acceptance NOT RUN
+
+Crew and ordinary spawn ship as enabled external folders; their host registrations,
+linked UI and tick fallbacks are removed. Creative stays off; Discord stays off and
+refuses presence pending approved transport/privacy policy. Seven built-ins plus
+six external features retain the 13-unit inventory. Synthetic loaded-module tests
+use published SDK 2.0.0, not engine evidence.
+
+**UI regressions:** Vehicles/Crew tabs, seat/class pickers and the shared NPC picker
+are absent. `sco.widgets` has landed on sco-core main but is not in the pinned
+`sdk-v2.0.0`; modules stay command-first until an approved release contains it.
+SQ42 ordinary ship shortcuts invoke `spawn.ship_options`; enemy-wing orchestration
+is deferred. Destination startup refuses G2/G3 without a private fallback. Owner
+checks still owe real classes/large seat lists, delayed streaming, board/power,
+owned cleanup, disable/reload, offline/EAC refusal, rendering/DPI and MSVC.
+Legacy `src/npc.cpp` and unrelated build/fleet spawner callers remain unchanged.
+
+## Historical step 1C: external NPC acceptance — NOT RUN
 
 NPC ships enabled in `data/plugins/npc/{plugin.ini,npc.dll}`, with no `disabled`
 marker and no host linkage or built-in fallback. Nine built-ins remain; the four

@@ -169,8 +169,6 @@ static void SetCap(const char* name, bool ready) {
 static void SetFeatureCaps() {
     SetCap("offline", g_offline);
     SetCap("teleport", g_tp.ok);
-    SetCap("spawn.ship", SpawnerReady());
-    SetCap("crew", Menu_SeatControlAvailable());
     SetCap("npc", SpawnerReady());
     SetCap("outfits", g_outfitsOk);
     SetCap("loadout", g_outfitsOk);   // the gear menu's loader, which outfits ride
@@ -303,8 +301,6 @@ static void InstallQuitHook() {
 static void RunFeatureTicks(DWORD now) {
     // Each built-in runs its feature's work from its tick subscription; these calls are the
     // fallback for a built-in that didn't load.
-    if (!SpawnBuiltinOwnsTick()) ProcessShipMenu(now);
-    if (!CrewBuiltinOwnsTick()) ProcessCrew(now);
     if (!LoadoutBuiltinOwnsTick()) { ProcessLoadout(); ProcessOutfits(); }
     ProcessNpcs();   // legacy npcs.txt/removal callers remain; external NPC uses game.actors with no tick
     if (!BuildBuiltinOwnsTick()) ProcessBuild();
