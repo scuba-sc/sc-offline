@@ -18,14 +18,12 @@ class NpcRelease(unittest.TestCase):
         self.assertNotIn('workflow_adapters.cpp', host)
         self.assertNotIn('SCO_EXTERNAL_WORKFLOWS', host + builtins)
         self.assertIn('src/npc.cpp', host)  # Legacy callers have not migrated.
-        self.assertIn('kCrewBuiltin', builtins)
+        self.assertNotIn('kCrewBuiltin', builtins)
 
-    def test_command_first_preserves_crew_picker_only(self):
-        ui = (ROOT / 'src/builtins/npc_ui.cpp').read_text()
-        self.assertIn('bool NpcPicker()', ui)
-        for name in ('RegisterNpcsTab', 'ResetNpcsTab', 'DrawNpcsTab', 'npc.spawn', 'npc.clear'):
-            self.assertNotIn(name, ui)
-        self.assertIn('NpcPicker()', (ROOT / 'src/builtins/crew_ui.cpp').read_text())
+    def test_command_first_retires_shared_picker_after_crew(self):
+        for path in ('src/builtins/npc_ui.cpp', 'src/builtins/crew_ui.cpp'):
+            self.assertFalse((ROOT / path).exists())
+        self.assertNotIn('NpcPicker', (ROOT / 'src/builtins/tabs.h').read_text())
 
     def test_binary_gate_does_not_reject_retained_legacy_identifiers(self):
         workflow = (ROOT / '.github/workflows/build.yml').read_text()
@@ -49,7 +47,7 @@ class NpcRelease(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/build.yml').read_text()
         self.assertIn('npc-sdk-posix:', workflow)
         self.assertIn('npc-sdk:', workflow)
-        self.assertIn('needs: [build, inspector-sdk, npc-sdk]', workflow)
+        self.assertIn('needs: [build, inspector-sdk, npc-sdk, external-sdk]', workflow)
         self.assertIn('built-npc/npc/plugin.ini built-npc/npc/npc.dll', workflow)
         self.assertIn('test ! -e "stage/$pkg/data/plugins/npc/disabled"', workflow)
 

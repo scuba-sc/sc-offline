@@ -9,7 +9,7 @@
 #include "../third_party/imgui/imgui.h"
 #include "../build.h"
 #include "../cvars.h"
-#include "../spawner.h"
+#include "sc_spawn.h"
 #include <cstdio>
 #include <cstring>
 
@@ -240,11 +240,8 @@ void DrawSq42Tab(void*, void*) {
 
     // Not the original's dormant "[battle]" mode (two Bengals fighting each other): these
     // spawn one UEE Bengal, the second with a Vanduul wing when an enemy side was found.
-    static char bengalWing[64];
-    const bool enemySide = Menu_EnemySideAvailable();
-    strcpy_s(bengalWing, enemySide ? "Bengal + Vanduul wing" : "Bengal + wing (UEE, no enemy side found)");
-    list[n++] = { "Bengal (UEE)", "RSI_Bengal_PU_AI_UEE", false,      1500.0f, false };
-    list[n++] = { bengalWing,     "RSI_Bengal_PU_AI_UEE", enemySide, 1500.0f, false };
+    list[n++] = { "Bengal (UEE)", "RSI_Bengal_PU_AI_UEE", false, 1500.0f, false };
+    list[n++] = { "Bengal + wing (deferred)", "RSI_Bengal_PU_AI_UEE", true, 1500.0f, false };
 
     static int   pick = 0;
     static char  sqFilter[64] = "";
@@ -254,15 +251,17 @@ void DrawSq42Tab(void*, void*) {
     // Greys out classes this game build doesn't have, like the original, instead of failing
     // after the click with "unknown entity class".
     auto known = [](const char* cls) {
-        const int count = Menu_ShipCount();
-        if (count < 0) return true;   // ship list still loading: don't block
-        const MenuShip* ships = Menu_Ships();
-        for (int i = 0; i < count; ++i)
-            if (_stricmp(ships[i].name, cls) == 0) return true;
-        return false;
+        const sc_spawn_service_v1* spawn = nullptr;
+        if (!g_api || g_api->size < offsetof(sco_api, query_service) + sizeof(g_api->query_service) ||
+            !g_api->query_service || !g_api->has || !g_api->has("spawn.entities")) return false;
+        if (g_api->query_service(SC_SPAWN_SERVICE_NAME, SC_SPAWN_SERVICE_VERSION,
+                reinterpret_cast<const void**>(&spawn)) != SCO_OK || !spawn ||
+            spawn->size < offsetof(sc_spawn_service_v1, class_exists) + sizeof(spawn->class_exists) ||
+            !spawn->class_exists) return false;
+        return spawn->class_exists(cls) != 0;
     };
 
-    ImGui::TextWrapped("Your ships put you in the pilot seat; the Vanduul ones spawn 300 m up and come for you.");
+    ImGui::TextWrapped("Ordinary ships use the external spawn plugin. AI/enemy-wing orchestration is deferred; no private fallback.");
     ImGui::SetNextItemWidth(-1);
     ImGui::InputTextWithHint("##sq42shipFilter", "search ships...", sqFilter, sizeof(sqFilter));
     ImGui::SetNextItemWidth(-1);
@@ -270,15 +269,15 @@ void DrawSq42Tab(void*, void*) {
         for (int i = 0; i < n; ++i) {
             if (sqFilter[0] && !MatchesFilter(list[i].label, sqFilter)) continue;
             ImGui::PushID(i);
-            const bool have = known(list[i].cls);
+            const bool have = !list[i].enemyWing && known(list[i].cls);
             if (ImGui::Selectable(list[i].label, i == pick, have ? 0 : ImGuiSelectableFlags_Disabled)) pick = i;
-            if (!have) ImGui::SetItemTooltip("%s isn't in this game build's ship list.", list[i].cls);
+            if (!have) ImGui::SetItemTooltip("Unavailable class/provider, or deferred enemy-wing orchestration: %s", list[i].cls);
             if (i == pick) ImGui::SetItemDefaultFocus();
             ImGui::PopID();
         }
         ImGui::EndCombo();
     }
-    const bool pickKnown = known(list[pick].cls);
+    const bool pickKnown = !list[pick].enemyWing && known(list[pick].cls);
     if (list[pick].sit) {
         ImGui::SliderFloat("height above me (m)", &height, 0.0f, 500.0f, "%.0f");
         ImGui::Checkbox("put me in the pilot seat", &sit);
@@ -287,11 +286,22 @@ void DrawSq42Tab(void*, void*) {
     const bool spawnClicked = ImGui::Button("Spawn", ImVec2(-1, 42));
     ImGui::EndDisabled();
     if (spawnClicked) {
-        Menu_RequestSpawnClass(list[pick].cls,
-                               list[pick].sit ? height : list[pick].height,
-                               list[pick].sit && sit, list[pick].sit && sit,
-                               list[pick].enemyWing);
-        MenuClose();
+        if (!g_api || !g_self || !g_api->invoke) {
+            SetMenuStatus("The external spawn plugin is unavailable.");
+        } else {
+            sco_arg args[4] = {};
+            args[0].type = SCO_ARG_STRING; args[0].v.s = list[pick].cls;
+            args[1].type = SCO_ARG_FLOAT; args[1].v.f = list[pick].sit ? height : list[pick].height;
+            args[2].type = SCO_ARG_STRING; args[2].v.s = list[pick].sit && sit ? "pilot" : "none";
+            args[3].type = SCO_ARG_BOOL; args[3].v.i = list[pick].sit && sit ? 1 : 0;
+            const sco_result queued = g_api->invoke(g_self, "spawn.ship_options", args, 4,
+                [](sco_result result, const char* reply, void*) {
+                    if (reply && *reply) SetMenuStatus("%s", reply);
+                    else SetMenuStatus("External spawn result %d (missing/disabled plugin has no fallback).", static_cast<int>(result));
+                }, nullptr);
+            if (queued != SCO_OK) SetMenuStatus("External spawn unavailable (result %d).", static_cast<int>(queued));
+            else MenuClose();
+        }
     }
 
     ImGui::SeparatorText("Console");

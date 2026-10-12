@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-only
 cmake_minimum_required(VERSION 3.20)
-project(sc-offline-crew LANGUAGES CXX)
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  project(sc-offline-crew LANGUAGES CXX)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 set(SCO_SDK_INCLUDE_DIR "" CACHE PATH "Checksum-verified published SDK include directory")
 option(SCO_WORKFLOW_TESTS "Build dynamic synthetic crew fixture" OFF)
 option(SCO_CREW_DEPENDENCY_TRACE "Emit MSVC dependency traces" OFF)

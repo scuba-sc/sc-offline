@@ -116,8 +116,6 @@ add_library(dinput8 SHARED
   src/travel.cpp
   # Built-in plugins (src/builtins/builtins.h).
   src/builtins/teleport_plugin.cpp
-  src/builtins/spawn_plugin.cpp
-  src/builtins/crew_plugin.cpp
   src/builtins/loadout_plugin.cpp
   src/builtins/quantum_plugin.cpp
   src/builtins/build_plugin.cpp
@@ -127,9 +125,6 @@ add_library(dinput8 SHARED
   # Their menu tabs, drawn through sco.ui (src/builtins/tabs.h).
   src/builtins/loadout_ui.cpp
   src/builtins/quantum_ui.cpp
-  src/builtins/spawn_ui.cpp
-  src/builtins/crew_ui.cpp
-  src/builtins/npc_ui.cpp
   src/builtins/build_ui.cpp
   src/builtins/multiplayer_ui.cpp
   # Manifest EnableSegmentHeap.
@@ -148,7 +143,7 @@ target_link_libraries(dinput8 PRIVATE imgui d3d11 shlwapi advapi32 windowscodecs
 # Star Citizen adapter (sco_lua_game: sco.datacore and sco.game for scripts), the detour engine, the zone tree (sco/engine/zone.h) and the CryPak adapter (sco/game/pak.h, with sco_vfs).
 target_link_libraries(dinput8 PRIVATE sco_app sco_lua sco_lua_game sco_hook sco_engine sco_pak)
 
-# NPC and inspector are external published-SDK modules; no host targets or fallback.
+# NPC, inspector, crew and spawn are external published-SDK modules; no host targets or fallback.
 
 # --- optional bridges (docs/bridges.md) ------------------------------------------------------------
 # Built-ins that link the game to another program on the same PC through sco-core's sco.ipc. Off by
@@ -240,47 +235,4 @@ set_target_properties(ui_probe PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/test-plugins")
 configure_file(tools/test-plugins/ui_probe/plugin.ini "${_uprobe_dir}/plugin.ini" COPYONLY)
 
-# --- the creative plugin (plugins/creative, data/plugins/creative) ---------------------------------
-# sc-offline's cheats (god mode, noclip, infinite ammo) as an optional native plugin on sco-core's
-# game.creative service: built only from the sco SDK's headers (tools/sdk-headers.py checks this
-# folder too, with no allow-list entry). The output is laid out the way the game reads it,
-# build/data/plugins/creative/creative.dll next to plugin.ini; the folder in the repo
-# (data/plugins/creative) holds plugin.ini and the `disabled` marker the release ships, and CI's
-# release job adds the DLL. Not part of dinput8.dll.
-add_library(sc-offline-creative MODULE plugins/creative/creative.cpp)
-target_include_directories(sc-offline-creative PRIVATE external/sco-core/include)
-target_compile_definitions(sc-offline-creative PRIVATE ${SCO_COMMON_DEFINES})
-target_compile_options(sc-offline-creative PRIVATE ${SCO_COMMON_OPTIONS} /W4 /WX)
-set(_creative_dir "${CMAKE_BINARY_DIR}/data/plugins/creative")
-set_target_properties(sc-offline-creative PROPERTIES
-  OUTPUT_NAME creative
-  PREFIX ""
-  SUFFIX ".dll"
-  CXX_VISIBILITY_PRESET hidden
-  VISIBILITY_INLINES_HIDDEN ON
-  INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
-  RUNTIME_OUTPUT_DIRECTORY "${_creative_dir}/$<0:>"
-  LIBRARY_OUTPUT_DIRECTORY "${_creative_dir}/$<0:>"
-  ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/plugins")
-configure_file(data/plugins/creative/plugin.ini "${_creative_dir}/plugin.ini" COPYONLY)
-
-# --- the discord plugin (plugins/discord, data/plugins/discord) -----------------------------------
-# "Playing sc-offline" on the player's Discord profile, as a plain SDK consumer (the version from
-# api->host_version(), place from teleport.spatial, ship from game.vehicles + game.entities,
-# settings through sco.settings). Same layout as creative; ships enabled (no `disabled` marker).
-add_library(sc-offline-discord MODULE plugins/discord/discord.cpp)
-target_include_directories(sc-offline-discord PRIVATE external/sco-core/include)
-target_compile_definitions(sc-offline-discord PRIVATE ${SCO_COMMON_DEFINES})
-target_compile_options(sc-offline-discord PRIVATE ${SCO_COMMON_OPTIONS} /W4 /WX)
-set(_discord_dir "${CMAKE_BINARY_DIR}/data/plugins/discord")
-set_target_properties(sc-offline-discord PROPERTIES
-  OUTPUT_NAME discord
-  PREFIX ""
-  SUFFIX ".dll"
-  CXX_VISIBILITY_PRESET hidden
-  VISIBILITY_INLINES_HIDDEN ON
-  INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
-  RUNTIME_OUTPUT_DIRECTORY "${_discord_dir}/$<0:>"
-  LIBRARY_OUTPUT_DIRECTORY "${_discord_dir}/$<0:>"
-  ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib/plugins")
-configure_file(data/plugins/discord/plugin.ini "${_discord_dir}/plugin.ini" COPYONLY)
+# External native features are built/staged separately from published SDK archives.

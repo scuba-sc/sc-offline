@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-only
 cmake_minimum_required(VERSION 3.20)
-project(sc-offline-spawn LANGUAGES CXX)
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  project(sc-offline-spawn LANGUAGES CXX)
+  set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 set(SCO_SDK_INCLUDE_DIR "" CACHE PATH "Verified published SDK include directory")
 if(NOT EXISTS "${SCO_SDK_INCLUDE_DIR}/../SHA256SUMS")
   message(FATAL_ERROR "Use the extracted published SDK, not host headers")
