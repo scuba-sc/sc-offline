@@ -144,8 +144,7 @@ static void LogStartup() {
     LogQuantum();
     if (g_signaturesResolved) sco::LogSignatureReport(false);
     if (g_quitHookStatus) Log("[app] game quit hook: %s", g_quitHookStatus);
-    if (g_tp.ok) Log("[+] teleport: ready (F7 = save spot, F8 = go there)");
-    else         Log("[!] teleport: unavailable (see above)");
+    Log("[!] teleport: G2 REFUSE; F7/F8 consumer unavailable; read services are separate");
     if (SpawnerReady()) Log("[+] ship spawner: ready (M = menu)");
     else                Log("[!] ship spawner: unavailable (see above)");
     if (g_outfitsOk) Log("[+] outfits: ready (Squadron 42 tab, data/outfits.txt)");
@@ -168,13 +167,13 @@ static void SetCap(const char* name, bool ready) {
 // One capability per feature, from the same readiness LogStartup prints.
 static void SetFeatureCaps() {
     SetCap("offline", g_offline);
-    SetCap("teleport", g_tp.ok);
+    SetCap("teleport", false); // G2 mutation not approved; read tables remain independently available
     SetCap("npc", SpawnerReady());
     SetCap("outfits", g_outfitsOk);
     SetCap("loadout", g_outfitsOk);   // the gear menu's loader, which outfits ride
     SetCap("quantum.drive", QuantumDriveReady());
     SetCap("quantum.boost", QuantumBoostReady());
-    SetCap("quantum", g_tp.ok);   // the Travel tab's requests all go through teleport
+    SetCap("quantum", false); // movement remains REFUSE; external read commands have their own availability
     SetCap("build", g_buildOk && SpawnerReady());
     SetCap("contracts", ContractsReady());
     SetMiningCaps();   // game.mining, from sco-core's mining.cell row
@@ -305,7 +304,8 @@ static void RunFeatureTicks(DWORD now) {
     ProcessNpcs();   // legacy npcs.txt/removal callers remain; external NPC uses game.actors with no tick
     if (!BuildBuiltinOwnsTick()) ProcessBuild();
     ProcessCVars();
-    if (!QuantumBuiltinOwnsTick()) { ProcessQuantum(); ProcessTravel(now); }
+    // External quantum/teleport own travel state. G2/G8 mutation remains REFUSE.
+    // Never revive private quantum/travel work when a module is absent or faults.
     ProcessMissions();
     if (!ContractsBuiltinOwnsTick()) {
         static bool warned = false;
@@ -315,7 +315,7 @@ static void RunFeatureTicks(DWORD now) {
         }
         ProcessContracts();
     }
-    TeleportTick(now);
+    // No legacy auto-teleport fallback.
     ProcessFleet(now);
 }
 

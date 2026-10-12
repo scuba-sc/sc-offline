@@ -180,71 +180,11 @@ static int SavedZoneLevel(const Spot& s) {
 }
 
 static const char* TeleportToSpot(const Spot& s, int& level) {
-    if (!s.n) return "no saved spot";
-    __try {
-        uintptr_t actor, entity, zone = 0;
-        if (!GetLocalPlayer(actor, entity)) return "player not spawned";
-        level = FindSavedZone(s, entity, zone);
-        if (level < 0) return "you're not in any of the saved spot's zones (different planet/system?)";
-        if (level > 0 && !ZoneParent(zone)) return kOtherSystem;
-        const uint64_t zoneId = ZoneId(zone);
-        if (!zoneId || ZoneFromId(zoneId) != zone) return "zone id lookup mismatch";
-        const double* local = s.z[level].local;
-        double world[3];
-        LocalToWorld(zone, local, world);
-        alignas(16) uint8_t params[0x80] = {};
-        *reinterpret_cast<uint64_t*>(params + 0x00) = zoneId;
-        reinterpret_cast<double*>(params + 0x08)[3] = 1.0;
-        memcpy(params + 0x28, local, 3 * sizeof(double));
-        *reinterpret_cast<double*>(params + 0x40) = 1.0;
-        memcpy(params + 0x48, world, sizeof(world));
-        reinterpret_cast<float*>(params + 0x60)[3] = 1.0f;
-        params[0x7D] = level > 0;
-        const uintptr_t comp = VCall<uintptr_t>(actor, 0x9D8);
-        if (!comp) return "no teleport component";
-        VCall<void>(comp, 0x158, params);
-        return nullptr;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return "fault while teleporting";
-    }
+    (void)s; level = -1; return "Player relocation unavailable: G2 mutation is not approved; no private fallback";
 }
 
 const char* TeleportToEntity(uint64_t entityId, double up) {
-    __try {
-        uintptr_t actor, entity;
-        if (!GetLocalPlayer(actor, entity)) return "player not spawned";
-        const uintptr_t es = *g_tp.entitySystem;
-        const uintptr_t target = es && entityId ? VCall<uintptr_t>(es, 0x120, entityId) : 0;
-        if (!target) return "no such entity here (not streamed in?)";
-        const uintptr_t zone = VCall<uintptr_t>(target, 0x6B8);
-        if (!zone) return "the entity isn't in a zone";
-        const uint64_t zoneId = ZoneId(zone);
-        if (!zoneId || ZoneFromId(zoneId) != zone) return "zone id lookup mismatch";
-        double local[3];
-        Vec3Out(target, 0x2B8, local);
-        const double r = sqrt(Dot(local, local));
-        if (r > 100000.0) for (int i = 0; i < 3; ++i) local[i] += local[i] / r * up;
-        else local[2] += up;
-        if (!PositionLooksValid(local)) return "position out of range";
-        double world[3];
-        LocalToWorld(zone, local, world);
-        alignas(16) uint8_t params[0x80] = {};
-        *reinterpret_cast<uint64_t*>(params + 0x00) = zoneId;
-        reinterpret_cast<double*>(params + 0x08)[3] = 1.0;
-        memcpy(params + 0x28, local, 3 * sizeof(double));
-        *reinterpret_cast<double*>(params + 0x40) = 1.0;
-        memcpy(params + 0x48, world, sizeof(world));
-        reinterpret_cast<float*>(params + 0x60)[3] = 1.0f;
-        params[0x7D] = 1;
-        const uintptr_t comp = VCall<uintptr_t>(actor, 0x9D8);
-        if (!comp) return "no teleport component";
-        VCall<void>(comp, 0x158, params);
-        Log("[tp] to entity %llu in '%s' (%.0f, %.0f, %.0f)", static_cast<unsigned long long>(entityId), ZoneName(zone),
-            local[0], local[1], local[2]);
-        return nullptr;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return "fault while teleporting";
-    }
+    (void)entityId; (void)up; return "Player relocation unavailable: G2 mutation is not approved; no private fallback";
 }
 
 static bool SpotFilePath(char* path, DWORD n) {
@@ -369,46 +309,11 @@ const char* CaptureCurrentSpot(Spot& s) {
 }
 
 bool SaveSpotHere(const char* why, char* reply, size_t n) {
-    Spot s;
-    double world[3] = {};
-    if (const char* err = CaptureSpot(s, world)) {
-        Log("[tp] %s save failed: %s", why, err);
-        snprintf(reply, n, "Couldn't save the spot: %s", err);
-        return false;
-    }
-    const bool stored = g_teleportStore && StoreSpot(s, 0);
-    if (!stored && !SaveSpot(s)) {
-        Log("[tp] %s: could not write the spawn file (SC_OFFLINE_SPAWN_FILE)", why);
-        snprintf(reply, n, "Couldn't write the spawn file (SC_OFFLINE_SPAWN_FILE)");
-        return false;
-    }
-    g_spot = s;
-    char chain[512];
-    DescribeChain(s, chain, sizeof(chain));
-    Log("[tp] %s saved spot: '%s' pos (%.2f, %.2f, %.2f) m; zones: %s; in %s", why, s.z[0].name,
-        s.z[0].local[0], s.z[0].local[1], s.z[0].local[2], chain, stored ? "storage" : "spawn.txt");
-    snprintf(reply, n, "Saved spot: '%s' pos (%.2f, %.2f, %.2f) m; zones: %s", s.z[0].name,
-             s.z[0].local[0], s.z[0].local[1], s.z[0].local[2], chain);
-    return true;
+    (void)why; snprintf(reply, n, "Quick save unavailable: G2 consumer is held in REFUSE mode"); return false;
 }
 
 bool GoToSavedSpot(const char* why, char* reply, size_t n) {
-    if (!g_spot.n) {
-        Log("[tp] %s: no saved spot yet (stand somewhere and press F7)", why);
-        snprintf(reply, n, "No saved spot yet (stand somewhere and press F7)");
-        return false;
-    }
-    if (const char* err = GoToSpot(g_spot, GetTickCount(), why)) {
-        Log("[tp] %s teleport failed: %s", why, err);
-        SetMenuStatus("%s: %s.", why, err);
-        snprintf(reply, n, "%s", err);
-        return false;
-    }
-    if (g_refineLevel > 0)
-        snprintf(reply, n, "Teleported via '%s' (waiting for '%s' to stream in)", g_spot.z[g_refineLevel].name, g_spot.z[0].name);
-    else
-        snprintf(reply, n, "Teleported to saved spot in '%s'", g_spot.z[0].name);
-    return true;
+    (void)why; snprintf(reply, n, "Player relocation unavailable: G2 mutation is not approved; no private fallback"); return false;
 }
 
 static void SystemFromZoneName(const char* name, char* out, size_t n) {
@@ -454,34 +359,7 @@ uintptr_t SystemZoneOf(uintptr_t zone) {
 }
 
 const char* TeleportIntoZone(uintptr_t zone, const double local[3]) {
-    if (!zone) return "no zone";
-    if (!PositionLooksValid(local)) return "position out of range";
-    __try {
-        uintptr_t actor, entity;
-        if (!GetLocalPlayer(actor, entity)) return "player not spawned";
-        const uintptr_t mine = SystemZoneOf(VCall<uintptr_t>(entity, 0x6B8));
-        const uintptr_t theirs = SystemZoneOf(zone);
-        if (!theirs || (mine && mine != theirs)) return "that place is in another star system - travel to that system first";
-        const uint64_t zoneId = ZoneId(zone);
-        if (!zoneId || ZoneFromId(zoneId) != zone) return "zone id lookup mismatch";
-        double world[3];
-        LocalToWorld(zone, local, world);
-        alignas(16) uint8_t params[0x80] = {};
-        *reinterpret_cast<uint64_t*>(params + 0x00) = zoneId;
-        reinterpret_cast<double*>(params + 0x08)[3] = 1.0;
-        memcpy(params + 0x28, local, 3 * sizeof(double));
-        *reinterpret_cast<double*>(params + 0x40) = 1.0;
-        memcpy(params + 0x48, world, sizeof(world));
-        reinterpret_cast<float*>(params + 0x60)[3] = 1.0f;
-        params[0x7D] = 1;
-        const uintptr_t comp = VCall<uintptr_t>(actor, 0x9D8);
-        if (!comp) return "no teleport component";
-        VCall<void>(comp, 0x158, params);
-        Log("[tp] into zone '%s' at (%.0f, %.0f, %.0f)", ZoneName(zone), local[0], local[1], local[2]);
-        return nullptr;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        return "fault while teleporting";
-    }
+    (void)zone; (void)local; return "Player relocation unavailable: G2 mutation is not approved; no private fallback";
 }
 
 static bool g_spotLoadPending = false;   // LoadSavedSpot ran; the first TeleportTick loads the spot
@@ -538,40 +416,5 @@ static void LoadSpotNow() {
 }
 
 void TeleportTick(DWORD now) {
-    if (g_spotLoadPending) {
-        g_spotLoadPending = false;
-        LoadSpotNow();
-    }
-    // F7 and F8 are the teleport built-in's hotkeys (sco.ui), dispatched by hotkeys.cpp.
-    if (g_autoTeleportPending) {
-        uintptr_t actor, entity;
-        bool ready = false;
-        __try { ready = GetLocalPlayer(actor, entity); } __except (EXCEPTION_EXECUTE_HANDLER) {}
-        if (!ready) { g_playerReadySince = 0; return; }
-        if (!g_playerReadySince) g_playerReadySince = now;
-        if (now - g_playerReadySince < 8000) return;
-        static DWORD lastTry = 0;
-        if (now - lastTry < 2000) return;
-        lastTry = now;
-        const char* err = GoToSpot(g_spot, now, "spawned");
-        if (!err) g_autoTeleportPending = false;
-        else if (err == kOtherSystem || now - g_playerReadySince > 120000) { g_autoTeleportPending = false; Log("[tp] auto-teleport gave up: %s", err); }
-    }
-
-    if (g_refineLevel > 0) {
-        static DWORD lastCheck = 0;
-        if (now - lastCheck < 1000) return;
-        lastCheck = now;
-        const int level = SavedZoneLevel(g_refineSpot);
-        if (level >= 0 && level < g_refineLevel) {
-            int got = -1;
-            if (TeleportToSpot(g_refineSpot, got)) { g_refineLevel = 0; return; }
-            g_refineLevel = got;
-            if (got == 0) Log("[tp] '%s' streamed in -> exact spot", g_refineSpot.z[0].name);
-        } else if (now - g_refineSince > 60000) {
-            Log("[tp] '%s' did not stream in within 60 s; stayed in '%s' (F8 = retry)", g_refineSpot.z[0].name,
-                g_refineSpot.z[g_refineLevel].name);
-            g_refineLevel = 0;
-        }
-    }
+    (void)now; // External teleport owns read/state commands; no host fallback or auto-relocation.
 }
