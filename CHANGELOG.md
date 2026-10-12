@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Step 1D: strengthen the external creative plugin (1.1.0).** Keep the shipped `disabled` marker and all six command IDs. Reopen public creative/settings services with full member-extent/null/capability checks; refuse invalid arguments and retain provider failure results. Declare owner-scoped `noclip_speed` (float 10, range 1–10000), read only on an explicit noclip-on request; no startup auto-enable or settings-write path. Add a standalone published-SDK build/install target and `tools/check_creative_sdk.py`, reusing inspector archive/checksum/dependency machinery and the published checker. The focused actual-module fixture covers physical truncated tails, failed reopen, settings, stale callbacks and clean reload under ASan/UBSan; toggle/speed release uses a labeled synthetic provider-hook stand-in. [Creative build/check/install and lifecycle documentation](plugins/creative/README.md) distinguishes consumer evidence from actual host/game cleanup. Windows/MSVC and owner in-game acceptance remain **NOT VERIFIED**; no SDK ABI, Discord policy, private allowlist or launcher changes.
+
 The entries below record changes in order, newest first. Earlier migration counts
 and routes describe intermediate states; Step 1C supersedes the built-in NPC path.
 

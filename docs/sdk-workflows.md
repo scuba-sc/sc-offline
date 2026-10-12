@@ -1,5 +1,10 @@
 # Published-SDK inspector and owned NPC workflows
 
+The already external, shipped-off creative plugin has its own
+[published-SDK build/check/install and settings/lifecycle guide](../plugins/creative/README.md).
+Its focused `creative-module-workflow` tests the actual module; reversible cleanup
+uses a synthetic provider release-hook stand-in, not Windows/game certification.
+
 Steps 1B/1C ship inspector and NPC as enabled external native plugins under
 `data/plugins/{inspector,npc}/`, not production built-ins. No host linkage,
 registration or fallback remains for either. Nine built-ins and four external
