@@ -486,25 +486,7 @@ static void StartScan(DWORD now) {
 struct Probe { bool zoneHost, ship; int depth; char name[96]; char systemZone[48]; };
 
 static bool ProbeEntity(uint64_t id, Probe& out) {
-    out = {};
-    __try {
-        const uintptr_t e = VCall<uintptr_t>(*g_tp.entitySystem, 0x120, id);
-        if (!e) return false;
-        const char* name = VCall<const char*>(e, 0x78);
-        strncpy_s(out.name, name ? name : "", _TRUNCATE);
-        const uintptr_t zone = VCall<uintptr_t>(e, 0x6E0);
-        if (!zone) return true;
-        out.zoneHost = true;
-        out.ship = EntityComponent(e, "IItemPortContainer") != 0;
-        const uintptr_t sys = SystemZoneOf(zone);
-        if (!sys || sys == zone) return true;
-        const char* sysName = ZoneName(sys);
-        strncpy_s(out.systemZone, sysName ? sysName : "", _TRUNCATE);
-        for (uintptr_t z = zone; z && z != sys && out.depth < 8; z = ZoneParent(z)) ++out.depth;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
-        out.zoneHost = false;
-    }
-    return true;
+    (void)id; out = {}; return false; // No private discovery fallback.
 }
 
 static void FinishScan(DWORD now) {
@@ -533,36 +515,7 @@ static void FinishScan(DWORD now) {
 }
 
 static void StepScan(DWORD now) {
-    if (!g_scan.active) return;
-    for (uint64_t k = 0; k < kIdsPerTick; ++k) {
-        const uint64_t id = g_scan.next++;
-        Probe pr;
-        if (!ProbeEntity(id, pr)) continue;
-        g_scan.lastHit = id;
-        ++g_scan.entities;
-        if (!pr.zoneHost || !pr.name[0] || !pr.systemZone[0]) continue;
-        ++g_scan.zones;
-        if (pr.ship || _strnicmp(pr.name, "StreamingSOC", 12) == 0) { ++g_scan.ships; continue; }
-        if (pr.depth > 2) { ++g_scan.deep; continue; }
-        TravelPlace p = {};
-        if (!DescribeEntity(pr.name, p)) {
-            strncpy_s(p.name, pr.name, _TRUNCATE);
-            Underscores(p.name);
-            p.kind = IsMinorZone(pr.name) ? Place_Minor : Place_Other;
-        }
-        // Only names that say which system they're in (OOC_<system>_..., jumppoint_<system>_...,
-        // pyro2) teach us the system's name; P3_L2 and the like just take it from their zone.
-        if (p.system[0] && (_strnicmp(pr.name, "OOC_", 4) == 0 || _strnicmp(pr.name, "jumppoint_", 10) == 0))
-            LearnSystemName(pr.systemZone, p.system);
-        if (!p.system[0]) {
-            const char* known = KnownSystemName(pr.systemZone);
-            strncpy_s(p.system, known ? known : pr.systemZone, _TRUNCATE);
-        }
-        AcquireSRWLockExclusive(&g_travelLock);
-        AddPlace(p);
-        ReleaseSRWLockExclusive(&g_travelLock);
-    }
-    if (g_scan.next - g_scan.lastHit > kGiveUpGap || g_scan.next - kStaticIdBase > kMaxSpan) FinishScan(now);
+    (void)now; if (g_scan.active) { g_scan.active = false; SetMenuStatus("Legacy scan unavailable; use external quantum.scan for bounded observed metadata."); }
 }
 
 // =============================================================================================
@@ -570,24 +523,7 @@ static void StepScan(DWORD now) {
 // =============================================================================================
 
 static const char* GoToPlace(const TravelPlace& p, float altitude) {
-    uintptr_t entity;
-    uint64_t id;
-    if (!FindEntityByNameEx(p.entity, entity, id))
-        return "isn't loaded - it may be in another system, or the name in the list is wrong (try the scan)";
-    uintptr_t zone = 0;
-    __try { zone = VCall<uintptr_t>(entity, 0x6E0); } __except (EXCEPTION_EXECUTE_HANDLER) { zone = 0; }
-    if (zone) {
-        // Planets and moons are zones of their own: arrive straight above the north pole.
-        double height = altitude;
-        if (p.radius > 0) height += p.radius;
-        else if (p.kind == Place_Planet) height = 9.0e6;      // radius unknown: well clear of even a gas giant
-        else if (p.kind == Place_Moon) height = 1.5e6;
-        else height = altitude < 2000 ? 2000 : altitude;
-        const double local[3] = { 0, 0, height };
-        return TeleportIntoZone(zone, local);
-    }
-    if (!id) return "found, but it has no id to teleport to";
-    return TeleportToEntity(id, altitude < 50 ? altitude : 50);
+    (void)p; (void)altitude; return "Player relocation unavailable: G2 mutation is not approved; no private fallback";
 }
 
 static void HandleRequest(DWORD now) {

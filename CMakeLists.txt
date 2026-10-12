@@ -113,18 +113,14 @@ add_library(dinput8 SHARED
   src/outfits.cpp
   src/menu.cpp
   src/hotkeys.cpp
-  src/travel.cpp
   # Built-in plugins (src/builtins/builtins.h).
-  src/builtins/teleport_plugin.cpp
   src/builtins/loadout_plugin.cpp
-  src/builtins/quantum_plugin.cpp
   src/builtins/build_plugin.cpp
   src/builtins/contracts_plugin.cpp
   src/builtins/mining_plugin.cpp
   src/builtins/multiplayer_plugin.cpp
   # Their menu tabs, drawn through sco.ui (src/builtins/tabs.h).
   src/builtins/loadout_ui.cpp
-  src/builtins/quantum_ui.cpp
   src/builtins/build_ui.cpp
   src/builtins/multiplayer_ui.cpp
   # Manifest EnableSegmentHeap.
