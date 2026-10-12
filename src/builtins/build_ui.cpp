@@ -1,6 +1,7 @@
-// The build built-in's menu tab: Build (objects by group, placing and the base). Moved from
-// menu.cpp unchanged; registered through sco.ui by build_plugin.cpp and drawn by the menu shell.
+// Host Build picker: grouped legacy data list, rendering and public command forwarding only.
+// Registered as loadout.build; external build owns placement/undo and refuses disabled G5.
 #include "tabs.h"
+#include "build_menu.h"
 #include "../menu.h"
 #include "../menu_ui.h"
 #include "../third_party/imgui/imgui.h"
@@ -58,11 +59,14 @@ void DrawBuildTab(void*, void*) {
         Menu_ToggleBuildMode();
         if (!building) MenuClose();
     }
+    if (ImGui::Button("Place selection near player", ImVec2(-1, 0)))
+        Menu_RequestPlace(build, true, reach <= 100.0f ? reach : 100.0f);
+    ImGui::SetItemTooltip("Public grounded placement (up to 100 m); does not require G5 freecam.");
     const float half = Columns(2);
     if (ImGui::Button("Undo last", ImVec2(half, 0))) Menu_BuildUndo();
     ImGui::SameLine();
     char clearLabel[48];
     snprintf(clearLabel, sizeof(clearLabel), "Clear base (%d)###clearBase", Menu_BuildPlacedCount());
     if (ImGui::Button(clearLabel, ImVec2(half, 0))) Menu_BuildClear();
-    Hint("While building: left click places, R rotates, [ and ] change reach, Backspace undoes, F6 stops.");
+    Hint("Aim/freecam requires enabled public G5 (currently unavailable; no private fallback). Placement retains undo authority while loaded; unload removes it.");
 }

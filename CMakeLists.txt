@@ -103,7 +103,8 @@ add_library(dinput8 SHARED
   src/spawner.cpp
   src/loadout.cpp
   src/npc.cpp
-  src/build.cpp
+  src/build.cpp   # retained legacy shared helpers, not build feature
+  src/build_menu.cpp
   src/cvars.cpp
   src/missions.cpp
   src/contracts.cpp
@@ -115,7 +116,6 @@ add_library(dinput8 SHARED
   src/hotkeys.cpp
   # Built-in plugins (src/builtins/builtins.h).
   src/builtins/loadout_plugin.cpp
-  src/builtins/build_plugin.cpp
   src/builtins/contracts_plugin.cpp
   src/builtins/mining_plugin.cpp
   src/builtins/multiplayer_plugin.cpp

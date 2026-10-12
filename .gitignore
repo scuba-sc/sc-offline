@@ -1,5 +1,7 @@
 .vs/
 build/
+# The build feature is source, not a generated CMake directory.
+!/plugins/build/
 x64/
 src/x64/
 launcher/x64/
