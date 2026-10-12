@@ -69,6 +69,11 @@ class ImGuiPinTests(unittest.TestCase):
                 self.assertIn(f'{name}: host/SDK mismatch', self.gate.check(root))
                 path.write_bytes(original)
 
+    def test_unpinned_host_input_fails_closed(self):
+        root = self.fixture()
+        (root / 'src/third_party/imgui/new_source.cpp').write_text('// unexpected source\n')
+        self.assertIn('new_source.cpp: unpinned host input', self.gate.check(root))
+
     def test_missing_host_input_fails_closed(self):
         root = self.fixture()
         for name in self.gate.SHA256:

@@ -37,6 +37,9 @@ def check(root):
     host = root / 'src/third_party/imgui'
     sdk = root / 'external/sco-core/sdk/third_party/imgui'
     errors = []
+    actual = {path.relative_to(host).as_posix() for path in host.rglob('*') if path.is_file()}
+    for name in sorted(actual - SHA256.keys()):
+        errors.append(f'{name}: unpinned host input')
     for name, expected in SHA256.items():
         path = host / name
         try:
