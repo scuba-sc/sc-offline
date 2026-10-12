@@ -9,8 +9,15 @@ No engine pointers, detours, account/online balances or G13 session controls.
 
 1. Obtain a checksum-verified SDK archive containing `sc_missions.h` (the published
    2.0.0 pin does not yet contain this local integrated addition).
-2. Configure `plugins/contracts` with `SCO_SDK_INCLUDE_DIR=<extracted>/include` and
-   `SCO_WORKFLOW_TESTS=ON`; build `contracts-module-test`; run only the named slice.
+2. Run `python3 tools/contracts_sdk_check.py --archive <local-or-published.zip>
+   --sums <adjacent-SHA256SUMS> --work <new-outside-root> --slice <read|accept|progress|script|economy>`.
+   This verifies hashes, extracts into an isolated root, builds/loads the actual
+   module, checks its exact public dependencies, installs its two-file folder,
+   and runs the SDK checker with absent services. POSIX `--boundary` adds
+   private/transitive-header and unresolved-symbol negative controls;
+   `--sanitizers` adds a development-only physical-pointer red/green arm.
+   Or configure `plugins/contracts` with `SCO_SDK_INCLUDE_DIR=<extracted>/include`
+   and `SCO_WORKFLOW_TESTS=ON`; build `contracts-module-test`; run only the named slice.
 3. Install component `contracts` into a separate staging root. Do not enable a
    second `contracts` ID while the legacy built-in is still registered.
 
@@ -45,6 +52,25 @@ Canonical counts 1..64 only, no XML/Lua/includes/network or extra bytes. The pro
 also validates; registrations are session-lifetime. The legacy XML script library is
 retained but unsupported here, not silently converted or bundled. Owner approval of
 this narrower format remains pending. Pack snapshots require host restart to change.
+
+`contracts.balance`, `contracts.apply <key> <expected-balance> <signed-delta>`
+and `contracts.receipt <key>` use `game.economy` 1.0. Balance/range preflight never
+creates payment authority; the provider atomically checks expected balance and
+owns non-evicting owner/session receipts. Replays submit the same explicit request,
+not a fresh key. Uncertain effects return refusal and are never automatically
+retried. Receipt flags (including dropped advisory notification) remain visible;
+receipt polling is authoritative, not signals. No payout on mission completion.
+
+## Storage policy — PENDING, not implemented
+
+No `wallet.txt` import, default-wallet restore, timestamp precedence, DB migration,
+reward-once persistence or save is implemented. No direct filesystem fallback is
+permitted. The existing contracts database/IDs and legacy wallet/script code are
+retained unchanged. An owner-approved, versioned `sco.storage` migration and atomic
+payment/save coordination are required before flipping the default feature.
+Owner/session receipts are NOT durable exactly-once across reload or restart.
+The synthetic fixture uses stand-in public providers, not the game-pack provider
+or real owner-release dispatcher; loader/engine acceptance remains separate.
 
 Read commands: `contracts.status`, `contracts.offer <index>`,
 `contracts.mission <id>`. Every invocation reopens the public table and validates

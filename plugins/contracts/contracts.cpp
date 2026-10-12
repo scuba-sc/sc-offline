@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "contracts.h"
 #include <sc_missions.h>
+#include <sc_economy.h>
 #include <sco_content.h>
 #include <cstring>
 #include <string_view>
@@ -14,9 +15,9 @@ const sco_api* api = nullptr;
 sco_plugin* self = nullptr;
 bool cancelled = false;
 const sco_plugin_info info{sizeof(sco_plugin_info), SCO_API_MAJOR, SCO_API_MINOR, "contracts", "1.0.0", "sc-offline"};
-enum Action { Summary, Offer, Mission, Accept, Objective, Advance, Abandon, Ingest, Cancel, Resume };
+enum Action { Summary, Offer, Mission, Accept, Objective, Advance, Abandon, Ingest, Cancel, Resume, Balance, Apply, Receipt };
 struct Spec { const char* name; Action action; uint32_t nargs; };
-const Spec specs[] = {{"contracts.status", Summary, 0}, {"contracts.offer", Offer, 1}, {"contracts.mission", Mission, 1}, {"contracts.accept", Accept, 2}, {"contracts.objective", Objective, 3}, {"contracts.advance", Advance, 2}, {"contracts.abandon", Abandon, 1}, {"contracts.ingest", Ingest, 1}, {"contracts.cancel", Cancel, 0}, {"contracts.resume", Resume, 0}};
+const Spec specs[] = {{"contracts.status", Summary, 0}, {"contracts.offer", Offer, 1}, {"contracts.mission", Mission, 1}, {"contracts.accept", Accept, 2}, {"contracts.objective", Objective, 3}, {"contracts.advance", Advance, 2}, {"contracts.abandon", Abandon, 1}, {"contracts.ingest", Ingest, 1}, {"contracts.cancel", Cancel, 0}, {"contracts.resume", Resume, 0}, {"contracts.balance", Balance, 0}, {"contracts.apply", Apply, 3}, {"contracts.receipt", Receipt, 1}};
 const sco_arg_def defs[] = {{"id_or_index", SCO_ARG_INT, 0, "Nonnegative offer index or positive mission ID"}, {"key_or_phase", SCO_ARG_INT, 0, "Receipt key or expected phase"}, {"objective", SCO_ARG_INT, 0, "Expected objective"}};
 template<class T> const T* Service(const char* name, uint32_t version) {
     const void* table = nullptr;
@@ -35,7 +36,7 @@ bool MissionPath(const char* name, size_t capacity) {
 }
 bool Declaration(std::string_view bytes) {
     if (!bytes.starts_with("sco-mission 1\nphases ")) return false;
-    bytes.remove_prefix(21);
+    bytes.remove_prefix(std::string_view("sco-mission 1\nphases ").size());
     auto number = [&bytes]() {
         auto newline = bytes.find('\n');
         if (newline == std::string_view::npos || newline == 0 || bytes.front() == '0') return false;
@@ -45,7 +46,7 @@ bool Declaration(std::string_view bytes) {
         bytes.remove_prefix(newline + 1); return true;
     };
     if (!number() || !bytes.starts_with("objectives ")) return false;
-    bytes.remove_prefix(11);
+    bytes.remove_prefix(std::string_view("objectives ").size());
     return number() && bytes.empty();
 }
 sco_result Execute(const sco_arg* args, uint32_t count, void* context, char* reply, uint32_t capacity) {
@@ -54,14 +55,42 @@ sco_result Execute(const sco_arg* args, uint32_t count, void* context, char* rep
     if (!api || !self) return SCO_UNAVAILABLE;
     const auto& spec = *static_cast<const Spec*>(context);
     if (count != spec.nargs || (count && !args)) return SCO_BAD_ARG;
-    for (uint32_t i = 0; i < count; ++i) if (args[i].type != SCO_ARG_INT || args[i].v.i < 0) return SCO_BAD_ARG;
+    for (uint32_t i = 0; i < count; ++i) if (args[i].type != SCO_ARG_INT || (args[i].v.i < 0 && !(spec.action == Apply && i == 2))) return SCO_BAD_ARG;
     if (spec.action == Cancel || spec.action == Resume) {
         cancelled = spec.action == Cancel;
         std::snprintf(reply, capacity, cancelled ? "Consumer mutations cancelled; receipts preserved" : "Consumer resumed; provider admission still required");
         return SCO_OK;
     }
-    if (cancelled && (spec.action == Accept || spec.action == Objective || spec.action == Advance || spec.action == Ingest)) {
+    if (cancelled && (spec.action == Accept || spec.action == Objective || spec.action == Advance || spec.action == Ingest || spec.action == Apply)) {
         std::snprintf(reply, capacity, "Consumer cancelled; no provider mutation; receipts preserved"); return SCO_UNAVAILABLE;
+    }
+    if (spec.action == Balance || spec.action == Apply || spec.action == Receipt) {
+        const auto* e = Service<sc_economy_v1>(SC_ECONOMY_SERVICE_NAME, SC_ECONOMY_SERVICE_VERSION);
+        if (spec.action == Balance) {
+            if (!MEMBER(e, sc_economy_v1, balance)) return SCO_UNAVAILABLE;
+            sc_economy_balance out{}; out.size = sizeof(out);
+            sco_result r = e->balance(self, &out);
+            if (r == SCO_OK) std::snprintf(reply, capacity, "Local balance %lld; wallet import/save policy pending", static_cast<long long>(out.local_balance));
+            else std::snprintf(reply, capacity, "Local balance unavailable (%u)", static_cast<unsigned>(r));
+            return r;
+        }
+        if (!args[0].v.i) return SCO_BAD_ARG;
+        sc_economy_receipt out{}; out.size = sizeof(out);
+        sco_result r;
+        if (spec.action == Apply) {
+            int64_t expected = args[1].v.i, delta = args[2].v.i;
+            if (expected >= SC_ECONOMY_BALANCE_LIMIT || !delta || delta <= -SC_ECONOMY_BALANCE_LIMIT || delta >= SC_ECONOMY_BALANCE_LIMIT) return SCO_BAD_ARG;
+            if (expected + delta < 0 || expected + delta >= SC_ECONOMY_BALANCE_LIMIT) return SCO_BAD_ARG;
+            if (!MEMBER(e, sc_economy_v1, apply)) return SCO_UNAVAILABLE;
+            const sc_economy_request request{sizeof(sc_economy_request), 0, static_cast<uint64_t>(args[0].v.i), expected, delta};
+            r = e->apply(self, &request, &out);
+        } else {
+            if (!MEMBER(e, sc_economy_v1, receipt)) return SCO_UNAVAILABLE;
+            r = e->receipt(self, static_cast<uint64_t>(args[0].v.i), &out);
+        }
+        if (r == SCO_OK) std::snprintf(reply, capacity, "Payment key %llu session %llu before %lld after %lld sequence %llu flags %u; session-only receipt; persistence pending", static_cast<unsigned long long>(out.key), static_cast<unsigned long long>(out.session), static_cast<long long>(out.before), static_cast<long long>(out.after), static_cast<unsigned long long>(out.sequence), out.flags);
+        else std::snprintf(reply, capacity, "Payment refused (%u); uncertain effects never retried", static_cast<unsigned>(r));
+        return r;
     }
     const auto* m = Service<sc_missions_v1>(SC_MISSIONS_SERVICE_NAME, SC_MISSIONS_SERVICE_VERSION);
     sco_result result = SCO_UNAVAILABLE;
@@ -141,7 +170,7 @@ sco_result Execute(const sco_arg* args, uint32_t count, void* context, char* rep
 const sco_plugin_info* Query() { return &info; }
 sco_result Load(const sco_api* host, sco_plugin* owner) {
     if (api) return SCO_BAD_ARG;
-    if (!owner || !host || host->major != SCO_API_MAJOR || host->minor < SCO_API_MINOR || !MEMBER(host, sco_api, register_command) || !MEMBER(host, sco_api, query_service)) return SCO_UNAVAILABLE;
+    if (!owner || !MEMBER(host, sco_api, query_service) || !MEMBER(host, sco_api, register_command) || host->major != SCO_API_MAJOR || host->minor < SCO_API_MINOR) return SCO_UNAVAILABLE;
     api = host; self = owner; cancelled = false;
     for (const auto& spec : specs) {
         const sco_command command{sizeof(sco_command), 0, spec.name, spec.name, "Guarded public offline contracts boundary", nullptr, spec.nargs ? defs : nullptr, spec.nargs, sizeof(sco_arg_def), Execute, const_cast<Spec*>(&spec)};

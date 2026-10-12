@@ -117,7 +117,43 @@ sco_result Read(sco_plugin* self, uint64_t id, void* out, uint32_t* size) {
 }
 sco_content_v1 content{sizeof(sco_content_v1), 0, Item, Read};
 sc_missions_v1 missions{sizeof(sc_missions_v1), 0, Offer, Status, Accept, Objective, Advance, Abandon, Ingest};
-sc_economy_v1 economy{sizeof(sc_economy_v1), 0, nullptr, nullptr, nullptr};
+int64_t wallet = 100;
+unsigned payment_effects = 0, payment_signals = 0;
+bool uncertain_payment = false;
+struct Payment { sc_economy_request request; sc_economy_receipt receipt; sco_result result; };
+std::map<std::tuple<uintptr_t, uint64_t, uint64_t>, Payment> payments;
+sco_result Balance(sco_plugin* self, sc_economy_balance* out) {
+    assert(self == owner && out->size == sizeof(*out));
+    if (!mutation_ready) return SCO_UNAVAILABLE;
+    out->local_balance = wallet; return SCO_OK;
+}
+sco_result Apply(sco_plugin* self, const sc_economy_request* request, sc_economy_receipt* out) {
+    assert(self == owner && request->size == sizeof(*request) && out->size == sizeof(*out));
+    if (!mutation_ready) return SCO_WRONG_THREAD;
+    auto scope = std::make_tuple(reinterpret_cast<uintptr_t>(self), state.session, request->key);
+    auto found = payments.find(scope);
+    if (found != payments.end()) {
+        if (std::memcmp(&found->second.request, request, sizeof(*request))) return SCO_BAD_ARG;
+        if (found->second.result == SCO_OK) *out = found->second.receipt;
+        return found->second.result;
+    }
+    if (payments.size() >= SC_ECONOMY_MAX_RECEIPTS) return SCO_TOO_MANY;
+    if (wallet != request->expected_balance) return SCO_FAILED;
+    sc_economy_receipt receipt{sizeof(sc_economy_receipt), 0, request->key, state.session, wallet, wallet + request->delta, request->delta, payment_effects + 1};
+    ++payment_effects; wallet += request->delta;
+    auto result = uncertain_payment ? SCO_FAILED : SCO_OK;
+    payments.emplace(scope, Payment{*request, receipt, result});
+    if (result == SCO_OK) { *out = receipt; ++payment_signals; }
+    return result;
+}
+sco_result Receipt(sco_plugin* self, uint64_t key, sc_economy_receipt* out) {
+    assert(self == owner && out->size == sizeof(*out));
+    auto found = payments.find(std::make_tuple(reinterpret_cast<uintptr_t>(self), state.session, key));
+    if (found == payments.end()) return SCO_NOT_FOUND;
+    if (found->second.result == SCO_OK) *out = found->second.receipt;
+    return found->second.result;
+}
+sc_economy_v1 economy{sizeof(sc_economy_v1), 0, Balance, Apply, Receipt};
 sco_api api{};
 std::string reply;
 sco_arg Int(int64_t value) { sco_arg a{}; a.type = SCO_ARG_INT; a.v.i = value; return a; }
@@ -127,6 +163,51 @@ sco_result Call(const char* name, std::initializer_list<sco_arg> args = {}) {
     char buffer[512]{};
     auto r = it->second.fn(args.begin(), static_cast<uint32_t>(args.size()), it->second.ctx, buffer, sizeof(buffer));
     reply = buffer; return r;
+}
+void EconomyCase() {
+    assert(Call("contracts.balance") == SCO_OK && reply.find("100") != std::string::npos);
+    assert(Call("contracts.apply", {Int(9), Int(100), Int(25)}) == SCO_OK && wallet == 125);
+    assert(Call("contracts.apply", {Int(9), Int(100), Int(25)}) == SCO_OK && payment_effects == 1 && payment_signals == 1);
+    assert(Call("contracts.apply", {Int(9), Int(125), Int(25)}) == SCO_BAD_ARG && payment_effects == 1);
+    assert(Call("contracts.receipt", {Int(9)}) == SCO_OK && reply.find("session 1") != std::string::npos);
+    assert(Call("contracts.apply", {Int(10), Int(125), Int(INT64_MIN)}) == SCO_BAD_ARG);
+    assert(Call("contracts.apply", {Int(10), Int(125), Int(-126)}) == SCO_BAD_ARG);
+    assert(Call("contracts.apply", {Int(10), Int(125), Int(0)}) == SCO_BAD_ARG);
+    mutation_ready = false;
+    assert(Call("contracts.apply", {Int(10), Int(125), Int(1)}) == SCO_WRONG_THREAD && payment_effects == 1);
+    mutation_ready = true;
+    assert(Call("contracts.cancel") == SCO_OK);
+    assert(Call("contracts.apply", {Int(10), Int(125), Int(1)}) == SCO_UNAVAILABLE && payment_effects == 1);
+    assert(Call("contracts.receipt", {Int(9)}) == SCO_OK);
+    assert(Call("contracts.resume") == SCO_OK);
+    uncertain_payment = true;
+    assert(Call("contracts.apply", {Int(10), Int(125), Int(1)}) == SCO_FAILED && payment_effects == 2);
+    uncertain_payment = false;
+    assert(Call("contracts.apply", {Int(10), Int(125), Int(1)}) == SCO_FAILED && payment_effects == 2 && payment_signals == 1);
+    assert(Call("contracts.receipt", {Int(10)}) == SCO_FAILED);
+    available = false;
+    assert(Call("contracts.balance") == SCO_UNAVAILABLE);
+    available = true;
+    size_t length = offsetof(sc_economy_v1, apply) + 1;
+    void* partial = std::malloc(length); std::memset(partial, 0, length);
+    *static_cast<uint32_t*>(partial) = static_cast<uint32_t>(length); economy_table = partial;
+    assert(Call("contracts.apply", {Int(11), Int(126), Int(1)}) == SCO_UNAVAILABLE && payment_effects == 2);
+    std::free(partial); economy_table = &economy;
+    auto callback = economy.apply; economy.apply = nullptr;
+    assert(Call("contracts.apply", {Int(11), Int(126), Int(1)}) == SCO_UNAVAILABLE); economy.apply = callback;
+    ++state.session;
+    assert(Call("contracts.receipt", {Int(9)}) == SCO_NOT_FOUND);
+    assert(Call("contracts.apply", {Int(9), Int(126), Int(-1)}) == SCO_OK && wallet == 125);
+    test_module::Unload(); commands.clear(); owner = reinterpret_cast<sco_plugin*>(uintptr_t{2});
+    assert(test_module::Load(&api, owner) == SCO_OK);
+    assert(Call("contracts.receipt", {Int(9)}) == SCO_NOT_FOUND);
+    assert(Call("contracts.apply", {Int(9), Int(125), Int(-1)}) == SCO_OK && wallet == 124);
+    // Non-evicting provider receipt quota; consumer must propagate refusal, not invent new keys/retry.
+    for (uint32_t key = 20; payments.size() < SC_ECONOMY_MAX_RECEIPTS; ++key) {
+        assert(Call("contracts.apply", {Int(key), Int(wallet), Int(1)}) == SCO_OK);
+    }
+    auto before = payment_effects;
+    assert(Call("contracts.apply", {Int(9999), Int(wallet), Int(1)}) == SCO_TOO_MANY && payment_effects == before);
 }
 void ScriptCase() {
     assert(Call("contracts.accept", {Int(0), Int(1)}) == SCO_OK);
@@ -231,11 +312,20 @@ int main(int argc, char** argv) {
     missions_table = &missions; economy_table = &economy; content_table = &content;
     api.size = sizeof(api); api.major = SCO_API_MAJOR; api.minor = SCO_API_MINOR;
     api.register_command = Register; api.query_service = Query;
+    // Check API admission before version/pointer tails, and do not retain failed opens.
+    size_t api_length = offsetof(sco_api, query_service) + 1;
+    void* partial_api = std::malloc(api_length); std::memset(partial_api, 0, api_length);
+    *static_cast<uint32_t*>(partial_api) = static_cast<uint32_t>(api_length);
+    assert(test_module::Load(static_cast<const sco_api*>(partial_api), owner) == SCO_UNAVAILABLE);
+    std::free(partial_api);
+    sco_api incompatible = api; incompatible.major = 99;
+    assert(test_module::Load(&incompatible, owner) == SCO_UNAVAILABLE);
     assert(test_module::Load(&api, owner) == SCO_OK);
     if (!std::strcmp(argv[2], "read")) ReadCase();
     else if (!std::strcmp(argv[2], "accept")) AcceptCase();
     else if (!std::strcmp(argv[2], "progress")) ProgressCase();
     else if (!std::strcmp(argv[2], "script")) ScriptCase();
+    else if (!std::strcmp(argv[2], "economy")) EconomyCase();
     else return 2;
     test_module::Unload(); test_module::Close();
     std::printf("contracts %s: PASS (dynamic module, synthetic public provider; not run in game)\n", argv[2]);
