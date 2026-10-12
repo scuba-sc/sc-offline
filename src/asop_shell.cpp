@@ -39,6 +39,7 @@ host::Result Start(const Options& options, bool offlinePrepared, bool eacAbsent)
     return host::Start(config); // Provider copies the catalogue before returning.
 }
 host::Status Status() { return host::Snapshot(); }
+void Stop() { host::Stop(); } // Admission closes before app/provider teardown.
 void Pump(uint32_t now) { host::Pump(now); } // Provider retains fleet cadence and lift ownership.
 bool Ready(uint32_t required) {
     const auto status = Status();

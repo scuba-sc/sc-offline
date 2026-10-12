@@ -55,7 +55,9 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # --- sco-core (external/sco-core, a git submodule) -----------------------------------------------
 # Added after CMAKE_MSVC_RUNTIME_LIBRARY above, so its libraries get the static CRT too: they link
 # into dinput8.dll, and CI's verify step checks the DLL imports no dynamic CRT.
-if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/sco-core/CMakeLists.txt")
+set(SCO_HOST_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/sco-core" CACHE PATH "Tagged/local host-source dependency")
+option(SCO_ASOP_HOST_COMPOSITION "Use the G10 host-source ASOP owner (requires newer host kit)" OFF)
+if(NOT EXISTS "${SCO_HOST_SOURCE_DIR}/CMakeLists.txt")
   message(FATAL_ERROR "external/sco-core is empty: the sco-core submodule isn't checked out. "
                       "Run `git submodule update --init` (or clone with --recurse-submodules).")
 endif()
@@ -66,7 +68,10 @@ set(SCO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(SCO_WERROR OFF CACHE BOOL "" FORCE)
 # EXCLUDE_FROM_ALL: only the libraries dinput8 links are built, not sco-core's host tools
 # (sco-sigcheck, sco-host-sim).
-add_subdirectory(external/sco-core EXCLUDE_FROM_ALL)
+add_subdirectory("${SCO_HOST_SOURCE_DIR}" sco-host-core EXCLUDE_FROM_ALL)
+if(SCO_ASOP_HOST_COMPOSITION AND NOT TARGET sco_asop_host)
+  message(FATAL_ERROR "ASOP composition requires a host-source dependency containing G10; no fallback")
+endif()
 
 # Settings every target had: CharacterSet Unicode, ConformanceMode (/permissive-), SDLCheck (/sdl).
 # NDEBUG in Release comes from CMake's default Release flags (/O2 /Ob2 /DNDEBUG).
@@ -108,8 +113,6 @@ add_library(dinput8 SHARED
   src/missions.cpp
   src/contracts.cpp
   src/quantum.cpp
-  src/services.cpp
-  src/fleet.cpp
   src/outfits.cpp
   src/menu.cpp
   src/hotkeys.cpp
@@ -130,6 +133,13 @@ add_library(dinput8 SHARED
   # Manifest EnableSegmentHeap.
   src/dinput8.manifest
 )
+if(SCO_ASOP_HOST_COMPOSITION)
+  target_sources(dinput8 PRIVATE src/asop_shell.cpp src/asop_platform.cpp)
+  target_compile_definitions(dinput8 PRIVATE SCO_ASOP_HOST_COMPOSITION)
+  target_link_libraries(dinput8 PRIVATE sco_asop_host)
+else()
+  target_sources(dinput8 PRIVATE src/services.cpp src/fleet.cpp)
+endif()
 # TargetName dinput8. No dinput8_EXPORTS define: the .vcxproj had none, and the only export is
 # the DirectInput8Create forwarder in dllmain.cpp (#pragma comment(linker, "/export:...")).
 set_target_properties(dinput8 PROPERTIES OUTPUT_NAME dinput8 DEFINE_SYMBOL "")

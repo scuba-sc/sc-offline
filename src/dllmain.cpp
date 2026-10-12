@@ -15,8 +15,12 @@
 #include "quantum.h"
 #include "travel.h"
 #include "version.h"
+#ifdef SCO_ASOP_HOST_COMPOSITION
+#include "asop_shell.h"
+#else
 #include "services.h"
 #include "fleet.h"
+#endif
 #include "outfits.h"
 #include "menu.h"
 #include "hotkeys.h"
@@ -133,8 +137,10 @@ static void StartOffline() {
         ResolveCVarsApi(g_text, g_rdata);
         ResolveMissionsApi(g_text, g_rdata);
         ResolveContractsApi(g_text, g_rdata);
-        ResolveFleetApi();     // ship terminals (fleet.cpp); reads sc-offline.ini's asop switch
-        ResolveHangarsApi();   // hangars and ATC tokens (services.cpp)
+#ifndef SCO_ASOP_HOST_COMPOSITION
+        ResolveFleetApi();
+        ResolveHangarsApi();
+#endif
     }
 }
 
@@ -150,8 +156,10 @@ static void LogStartup() {
     else                Log("[!] ship spawner: unavailable (see above)");
     if (g_outfitsOk) Log("[+] outfits: ready (Squadron 42 tab, data/outfits.txt)");
     else             Log("[!] outfits: unavailable (they use the gear menu's loader; see [gear] above)");
+#ifndef SCO_ASOP_HOST_COMPOSITION
     LogFleet();
     LogHangars();
+#endif
     if (g_offline)
         Log("[i] check Game.log: \"Process sc-client started\" line should show bOnline[0].");
     else
@@ -184,8 +192,10 @@ static void SetFeatureCaps() {
 #ifdef SCO_BRIDGE_VOXEL
     SetCap("voxel_bridge", g_tp.ok && SpawnerReady());   // teleport.spatial, plus the spawner for crates
 #endif
-    SetFleetCaps();    // asop.terminal, asop.deliver, asop.retrieve, hangar.lift, atc.store, ...
-    SetHangarCaps();   // hangar.instance, atc.tokens, asop.diagnostics
+#ifndef SCO_ASOP_HOST_COMPOSITION
+    SetFleetCaps();
+    SetHangarCaps();
+#endif
 }
 
 static const sco::plugins::ScriptRuntime kLua{ sco_lua_load, sco_lua_unload };
@@ -227,6 +237,14 @@ static void StartHostKit() {
     // owner "game" before the built-ins load; the teleport built-in no longer provides it.
     pf.gameServices = true;
     g_hostKitStarted = sco::app::Start(pf);
+#ifdef SCO_ASOP_HOST_COMPOSITION
+    if (g_hostKitStarted) {
+        char ships[MAX_PATH]{};
+        ShipsFilePath(ships, sizeof(ships));
+        const auto r = offline::asop::StartFromEnvironment(g_offline, !AntiCheatPresent(), ships);
+        Log("[asop] host composition result=%u; no product fallback", static_cast<unsigned>(r));
+    }
+#endif
 }
 
 // game.exit and unload, once, on the game thread. Two triggers, whichever comes first: the game's
@@ -237,6 +255,9 @@ static void StopHostKit(const char* trigger) {
     if (stopped) return;
     stopped = true;
     Log("[app] game closing (%s): game.exit, unloading plugins", trigger);
+#ifdef SCO_ASOP_HOST_COMPOSITION
+    offline::asop::Stop(); // Synchronous untaken callers wake before providers disappear.
+#endif
     sco::app::Stop();
 }
 
@@ -316,14 +337,20 @@ static void RunFeatureTicks(DWORD now) {
         ProcessContracts();
     }
     TeleportTick(now);
+#ifndef SCO_ASOP_HOST_COMPOSITION
     ProcessFleet(now);
+#endif
 }
 
 static void OnMainThreadTick() {
     static bool hostKitStarted = false;
     if (!hostKitStarted) { hostKitStarted = true; StartHostKit(); }
     // Every message, not throttled: a loading thread may be waiting for it (services.cpp, rc7).
+#ifdef SCO_ASOP_HOST_COMPOSITION
+    offline::asop::Pump(GetTickCount()); // EVERY message: provider owns caller-frame handoff.
+#else
     ProcessHangars(GetTickCount());
+#endif
     // Every pass, not throttled: the menu's frame (its tabs are plugin draws, game thread only)
     // and the keys bound through sco.ui.
     Menu_GameThreadFrame();
