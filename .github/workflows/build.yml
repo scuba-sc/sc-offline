@@ -34,6 +34,14 @@ jobs:
       - name: tools/check.sh
         run: tools/check.sh
 
+      # The result a built-in command answers (sco-core #12): SCO_FAILED once it ran and failed,
+      # SCO_UNAVAILABLE only for a capability this build doesn't have.
+      - name: Built-in result tests
+        run: |
+          set -eu
+          c++ -std=c++20 -I src/builtins -I external/sco-core/include tools/builtins_result_test.cpp -o builtins_result_test
+          ./builtins_result_test
+
       - name: Release manifest tests
         run: python3 tools/test_release_manifest.py
 

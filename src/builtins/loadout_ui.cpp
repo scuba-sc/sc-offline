@@ -23,7 +23,8 @@ void RegisterPlayerTab(const sco_api* api, sco_plugin* self) {
 }
 
 // The command's reply in the status strip (which also logs it). A refusal puts the checkbox back; a
-// missing command means the creative plugin isn't loaded.
+// missing command means the creative plugin isn't loaded. SCO_FAILED (the command ran and failed)
+// shows the command's own reply; SCO_UNAVAILABLE means the capability isn't on this build.
 static void CreativeReply(sco_result r, const char* reply, void* ctx) {
     if (r == SCO_OK) {
         SetMenuStatus("%s", reply ? reply : "");
@@ -32,6 +33,7 @@ static void CreativeReply(sco_result r, const char* reply, void* ctx) {
     if (ctx) *static_cast<bool*>(ctx) = !*static_cast<bool*>(ctx);
     if (reply && reply[0]) SetMenuStatus("%s", reply);
     else if (r == SCO_NOT_FOUND) SetMenuStatus("Needs the creative plugin: turn it on in the launcher's Plugins page.");
+    else if (r == SCO_UNAVAILABLE) SetMenuStatus("Not available on this game build.");
     else SetMenuStatus("The creative plugin refused (result %d).", static_cast<int>(r));
 }
 

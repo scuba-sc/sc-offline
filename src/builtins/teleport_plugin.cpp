@@ -12,6 +12,7 @@
 // they can't clash with sco_api.h's sco_plugin_* declarations and the DLL still exports only
 // DirectInput8Create.
 #include "builtins.h"
+#include "builtin_result.h"
 #include "builtin_store.h"
 #include "tabs.h"
 #include "../build.h"
@@ -31,16 +32,18 @@ const sco_plugin_info kInfo = {
     sizeof(sco_plugin_info), SCO_API_MAJOR, SCO_API_MINOR, "teleport", SCO_VERSION, "sc-offline",
 };
 
-// A spot that can't be saved or reached answers SCO_UNAVAILABLE; the reply says why. From a hotkey,
+// A spot that can't be saved or reached is a command that ran and failed: SCO_FAILED, with the
+// reply saying why (sco-core #12). The "teleport" capability gate answers SCO_UNAVAILABLE before
+// either command runs, so "teleport isn't on this build" stays distinguishable. From a hotkey,
 // mod.log names the key ("F7"), as before.
 sco_result Save(const sco_arg*, uint32_t, void*, char* reply, uint32_t size) {
     const char* key = Hotkeys_Current();
-    return SaveSpotHere(key ? key : "teleport.save", reply, size) ? SCO_OK : SCO_UNAVAILABLE;
+    return sco::builtins::Ran(SaveSpotHere(key ? key : "teleport.save", reply, size));
 }
 
 sco_result Go(const sco_arg*, uint32_t, void*, char* reply, uint32_t size) {
     const char* key = Hotkeys_Current();
-    return GoToSavedSpot(key ? key : "teleport.go", reply, size) ? SCO_OK : SCO_UNAVAILABLE;
+    return sco::builtins::Ran(GoToSavedSpot(key ? key : "teleport.go", reply, size));
 }
 
 sco_result Register(const char* name, const char* title, const char* help, sco_command_fn fn) {

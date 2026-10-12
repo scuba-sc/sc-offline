@@ -629,8 +629,8 @@ sco_result CmdStatus(const sco_arg*, uint32_t, void*, char* reply, uint32_t size
 
 sco_result CmdLeave(const sco_arg*, uint32_t, void*, char* reply, uint32_t size) {
     if (!g_net->is_active() && sco::net::GetState() == sco::net::State::Idle) {
-        snprintf(reply, size, "Not in a session");
-        return SCO_UNAVAILABLE;
+        snprintf(reply, size, "Not in a session");   // ran, nothing to leave: the sco.net gate answers SCO_UNAVAILABLE without it
+        return SCO_FAILED;
     }
     Mp_Leave();
     snprintf(reply, size, "Left the session");
