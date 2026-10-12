@@ -7,9 +7,13 @@
 // (src/third_party/imgui, IMGUI_VERSION_NUM below; its imgui.cpp, imgui_draw.cpp,
 // imgui_tables.cpp and imgui_widgets.cpp, no backends) and calling Bind(frame) first in every draw
 // callback. Bind points the plugin's copy of ImGui at sc-offline's context and at the allocator
-// sc-offline's own ImGui uses (the process heap), so memory one side allocates the other can free
-// whatever C runtime each was built with. Another ImGui version or imconfig.h is undefined
-// behaviour; when it faults, sco-core disables the plugin and the menu keeps drawing.
+// sc-offline's own ImGui uses (the process heap), so either side can free its allocations.
+// This optional raw-context integration is third-party ABI coupling, NOT the frozen sco_api C ABI.
+// A matching version number alone is insufficient: match the exact source/configuration pin
+// (tools/imgui-pin.py), ABI-affecting definitions and host build settings, then rebuild drawing
+// plugins when that identity changes. Binding does not negotiate or validate context versions.
+// Another ImGui version or imconfig.h is undefined behaviour; crash guards cannot guarantee
+// recovery from corrupted native process state.
 #include "third_party/imgui/imgui.h"
 #include <windows.h>
 

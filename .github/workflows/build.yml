@@ -45,6 +45,12 @@ jobs:
       - name: Release manifest tests
         run: python3 tools/test_release_manifest.py
 
+      # Byte parity alone can bless simultaneous drift: keep an independent immutable source pin.
+      - name: Exact ImGui third-party ABI pin and refusal tests
+        run: |
+          python3 tools/test_imgui_pin.py
+          python3 tools/imgui-pin.py
+
       # The ImGui headers sco-core's SDK ships for plugin UI must be the ones this product links.
       - name: ImGui headers match the SDK's
         run: |
