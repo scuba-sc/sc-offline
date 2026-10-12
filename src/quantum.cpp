@@ -1,203 +1,15 @@
 #include "quantum.h"
 #include "hooks.h"
 #include "teleport.h"
-#include "version.h"
 #include "sco/caps.h"
-#include "sco/datacore.h"
-#include "sco/datacore_service.h"
 #include "sco/game/features.h"
-#include "sco/game/pak.h"
 #include "world_caps.h"
-#include "sco/plugins.h"
-#include "sco/vfs.h"
-#include <atomic>
 #include <cstring>
-#include <filesystem>
-#include <mutex>
-#include <new>
-#include <string>
-#include <system_error>
-#include <vector>
 
-// The new quantum drive's game data: sc-offline's built-in data pack,
-// data/builtin/quantum/datacore/quantum_drive.toml. It names records and fields, not bytes, so it
-// keeps applying across game patches while they exist (design decision 11: made once with
-// `sco-dcb diff`, edited by hand since). A sco::vfs mount on Game2.dcb runs sco-core's pack loader
-// (sco::datacore::service::Load) when the DataCore loader opens the file: the file is read through
-// the engine's own CryPak reads, parsed, the pack applied, and the splices go back to sco::vfs.
-// sco::game::pak serves the result to the loader. A pack that doesn't apply leaves the mount
-// inert and the game loads its own bytes.
-static constexpr const char* kPackOwner = "quantum";       // the built-in the pack belongs to
-static constexpr const char* kPackName = "quantum_drive";  // datacore/quantum_drive.toml
-static sco::vfs::MountTable  g_dcbMounts;
-static std::filesystem::path g_packDir;   // data/builtin/quantum; set before sco::game::pak::Enable
-static bool                  g_pakEnabled = false;
-static const char*           g_notHooked = "see [pak] above";
-static std::atomic<int>      g_dataPatched{ -1 };  // -1 no load yet, 0 loaded without the drive, 1 patched
-
-// What the pack did at the last load: written by ApplyDrivePack, read by ReportDataLoad (both on
-// the loader's thread, one after the other; the lock keeps it simple).
-struct PackOutcome {
-    bool        ran = false, applied = false;
-    size_t      ops = 0;       // patcher operations applied
-    std::string reason;        // why it didn't apply: the pack loader's first failure
-};
-static std::mutex  g_packLock;
-static PackOutcome g_pack;
-
-// Records the outcome; the mount's result is its reason (empty when the pack applied).
-static sco::vfs::Result Finish(PackOutcome&& o) {
-    sco::vfs::Result r{ o.applied ? std::string() : o.reason };
-    std::lock_guard<std::mutex> hold(g_packLock);
-    g_pack = std::move(o);
-    return r;
-}
-
-// The mount's producer (sco::vfs::Transform), run once when the loader opens Game2.dcb.
-static sco::vfs::Result ApplyDrivePack(sco::vfs::BaseIo& base, uint64_t baseSize, std::vector<sco::vfs::Splice>& out) {
-    PackOutcome o;
-    o.ran = true;
-    std::vector<uint8_t> file;
-    try {
-        file.resize(static_cast<size_t>(baseSize));
-    } catch (const std::bad_alloc&) {
-        o.reason = "no memory to read Game2.dcb";
-        return Finish(std::move(o));
-    }
-    size_t got = 0;
-    if (base.Seek(0))
-        while (got < file.size()) {
-            const size_t n = base.Read(file.data() + got, file.size() - got);
-            if (n == 0) break;
-            got += n;
-        }
-    if (got != file.size()) {
-        o.reason = "Game2.dcb couldn't be read";
-        return Finish(std::move(o));
-    }
-    sco::datacore::Schema schema;
-    if (!schema.Parse(file)) {
-        o.reason = "Game2.dcb's layout was refused: " + schema.error;
-        return Finish(std::move(o));
-    }
-    // Built-ins have no plugin folder, so the pack loader gets the quantum built-in's pack as a
-    // data-pack entry of its own, first in plugin order. No dataRoot: sc-offline doesn't run the
-    // sco.datacore service, so there are no saved patches to read.
-    std::vector<sco::plugins::Plugin> list(1);
-    sco::plugins::Plugin& p = list[0];
-    p.dir = g_packDir;
-    p.folder = kPackOwner;
-    p.manifest.id = kPackOwner;
-    p.manifest.name = "quantum drive data";
-    p.manifest.version = SCO_VERSION;
-    p.manifest.kind = sco::plugins::Kind::Data;
-    p.manifestOk = true;
-    p.state = sco::plugins::State::Ready;
-    sco::plugins::ContentIndex index;
-    index.Build(list);
-    const sco::datacore::service::LoadResult loaded = sco::datacore::service::Load(schema, list, index, {});
-    const sco::datacore::PackReport* rep = nullptr;
-    for (const sco::datacore::PackReport& r : loaded.result.packs)
-        if (r.plugin == kPackOwner) rep = &r;   // the built-in's one file
-    if (!rep) {
-        o.reason = list[0].state == sco::plugins::State::Refused
-                       ? list[0].reason
-                       : (g_packDir / "datacore" / (std::string(kPackName) + ".toml")).string() + " is missing";
-        return Finish(std::move(o));
-    }
-    if (rep->state != sco::datacore::PackState::Applied || !loaded.result.status) {
-        o.reason = !rep->reason.empty() ? rep->reason : loaded.result.status.message;
-        for (const sco::datacore::PackOpReport& op : rep->ops)   // the first refusal names the record and field
-            if (!op.status) {
-                o.reason = "line " + std::to_string(op.line) + ": " + op.status.message + " (" +
-                           sco::datacore::RefusalName(op.status.category) + ")";
-                break;
-            }
-        return Finish(std::move(o));
-    }
-    o.applied = true;
-    o.ops = rep->applied;
-    out = loaded.result.splices;
-    return Finish(std::move(o));
-}
-
-static std::shared_ptr<const sco::vfs::Table> BuildDriveMount() {
-    sco::vfs::Mount m;
-    m.path = "Data/Game2.dcb";
-    m.source = kPackName;
-    m.producer = sco::vfs::Transform(ApplyDrivePack);
-    std::vector<sco::vfs::Mount> mounts;
-    mounts.push_back(std::move(m));
-    return sco::vfs::Table::Build(std::move(mounts));
-}
-
-static std::shared_ptr<const sco::vfs::Table> DriveMounts() { return g_dcbMounts.Current(); }
-
-// After each DataCore load: sco::game::pak's report and the pack's, in the feature's words.
-// sco-core calls it on the loader's thread after releasing its lock.
-static void ReportDataLoad(const sco::game::pak::LoadReport& r) {
-    const char* ok = r.loaderOk ? "ok" : "FAILED";
-    const unsigned long long ms = static_cast<unsigned long long>(r.durationMs);
-    PackOutcome pack;
-    {
-        std::lock_guard<std::mutex> hold(g_packLock);
-        pack = std::move(g_pack);
-        g_pack = PackOutcome();
-    }
-    const bool patched = r.outcome == sco::game::pak::Outcome::Applied && pack.applied;
-    switch (r.outcome) {
-    case sco::game::pak::Outcome::Applied:
-        Log("[+] new quantum drive: game data patched as it loaded (pack %s: %zu operations), load %s in %llu ms",
-            kPackName, pack.ops, ok, ms);
-        break;
-    case sco::game::pak::Outcome::Passed:
-        if (pack.ran && !pack.applied)
-            Log("[!] new quantum drive: pack %s not applied (%s); game data loaded %s in %llu ms without the new drive",
-                kPackName, pack.reason.c_str(), ok, ms);
-        else
-            Log("[!] new quantum drive: %s passed through (%s); game data loaded %s in %llu ms without the new drive",
-                r.path.c_str(), r.reason.c_str(), ok, ms);
-        break;
-    case sco::game::pak::Outcome::NoDcb:
-        Log("[!] new quantum drive: the loader opened no .dcb; game data loaded %s without the new drive", ok);
-        break;
-    case sco::game::pak::Outcome::NoCryPak:
-        Log("[!] new quantum drive: CryPak not found; game data loaded %s without the new drive", ok);
-        break;
-    case sco::game::pak::Outcome::SwapFailed:
-        Log("[!] new quantum drive: %s; game data loaded %s without the new drive", r.reason.c_str(), ok);
-        break;
-    case sco::game::pak::Outcome::None:
-        return;
-    }
-    g_dataPatched.store(patched ? 1 : 0, std::memory_order_release);
-    const sco::Result cr = sco::caps::Set("quantum.drive", patched, patched ? nullptr : "the game data wasn't patched (see mod.log)");
-    if (cr != sco::Result::Ok) Log("[!] capability quantum.drive: %s", sco::ResultName(cr));
-}
-
-void EnableQuantumDrive() {
-    char dir[MAX_PATH];
-    if (!DataFilePath(dir, sizeof(dir), "builtin")) {   // data\builtin, beside ships.txt
-        g_notHooked = "SC_OFFLINE_SHIPS_FILE is unset, so there is no data folder for the pack";
-        return;
-    }
-    std::error_code ec;
-    std::filesystem::path root = std::filesystem::absolute(dir, ec);
-    if (ec) root = dir;
-    g_packDir = root / kPackOwner;
-    std::shared_ptr<const sco::vfs::Table> table = BuildDriveMount();
-    const std::vector<sco::vfs::MountInfo> info = table->Mounts();
-    if (info.empty() || info[0].state == sco::vfs::MountState::Refused) {
-        Log("[!] new quantum drive: the pack's mount was refused (%s)", info.empty() ? "no mount" : info[0].reason.c_str());
-        g_notHooked = "the pack's mount was refused";
-        return;
-    }
-    g_dcbMounts.Publish(std::move(table));
-    sco::game::pak::Options o;
-    o.mounts = DriveMounts;
-    o.onLoad = ReportDataLoad;
-    g_pakEnabled = sco::game::pak::Enable(o) == sco::Result::Ok;
-}
+// DataCore/CryPak composition now belongs to sco_game_host: early discovery,
+// OPEN/LOADED timing and producer drain before teardown. The retained drive data
+// is moved into a normal external data folder by the pack migration lane.
+// No private pseudo-plugin list or second loader may be reactivated here.
 
 using OnActionFn = uintptr_t(__fastcall*)(uintptr_t handler, int action, int mode, float value, void* functor);
 using StartUseFn = void(__fastcall*)(uintptr_t usable, uintptr_t user);
@@ -463,13 +275,15 @@ static void FindEffectTagSender() {
 }
 
 void ResolveQuantumApi(const Section&, const Section&) {
-    HookBoostInput();
-    FindEffectTagSender();
+    // G8 mutation is not approved. The retained private implementation must not
+    // become a bootstrap fallback merely because its signature rows resolve.
+    Log("[app] quantum control unavailable: G8 mutation remains disabled");
 }
 
 bool QuantumDriveReady() {
-    const int patched = g_dataPatched.load(std::memory_order_acquire);
-    return patched < 0 ? g_pakEnabled : patched == 1;
+    // LOADED alone does not prove this pack applied. A per-pack consumer outcome
+    // is still required; do not certify readiness from transport installation.
+    return false;
 }
 
 bool QuantumBoostReady() {
@@ -478,8 +292,7 @@ bool QuantumBoostReady() {
 }
 
 void LogQuantum() {
-    if (g_pakEnabled) Log("[+] new quantum drive: game data loader hooked (pack %s applies as Game2.dcb loads)", kPackName);
-    else              Log("[!] new quantum drive: game data loader not hooked (%s)", g_notHooked);
+    Log("[app] quantum drive pack: G1 DataCore owns loading; pack outcome unavailable (no private fallback)");
     const bool audio = g_audioSystem && g_handleValid;
     if (QuantumBoostReady())
         Log("[+] quantum boost: hold Caps Lock, or NAV mode + hold left mouse");

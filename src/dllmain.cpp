@@ -129,7 +129,6 @@ static void StartOffline() {
     if (!g_offline) return;
     InstallHooks();
     ResolveQuantumApi(g_text, g_rdata);
-    EnableQuantumDrive();   // the pak.* rows: the new quantum drive's game data, served as it loads
     if (ResolveTeleportApi()) {
         ResolveSpawnApi(g_text, g_rdata);
         g_outfitsOk = ResolveLoadoutApi(g_text, g_rdata);  // outfits ride the gear menu's loader
@@ -221,8 +220,8 @@ static bool PrepareHostKit() {
     // folder and with plugins on or off. Their capabilities still come from SetFeatureCaps.
     pf.builtins = kBuiltins;
     pf.nBuiltins = std::size(kBuiltins);
-    // image stays nullptr: the features resolve their addresses in DllMain (StartOffline), before
-    // this thread exists, so the signature rows were resolved there and reported by LogStartup.
+    // G1 owns original-image signature resolution in the worker's Prepare, outside
+    // loader lock. The Platform image/registerSignatures inputs must remain null.
     pf.setCapabilities = SetFeatureCaps;
     // The keys sc-offline handles itself (hotkeys.h); no plugin can bind them. The built-ins bind
     // F6, F7 and F8 to their commands through sco.ui like any plugin.
@@ -231,13 +230,18 @@ static bool PrepareHostKit() {
     // sco-core's game pack publishes teleport.spatial (and, later, the game.* services) under the
     // owner "game" before the built-ins load; the teleport built-in no longer provides it.
     pf.gameServices = true;
-    pf.dataCore = false; // DataCore timing is a separate composition slice.
+    // G1 owns early manifest discovery, OPEN/LOADED timing and producer drain.
+    // Its current source contract refuses mixed builtin + early DataCore input;
+    // do not disable DataCore or resurrect the old private pack loader to bypass it.
+    pf.dataCore = true;
 #ifdef SCO_OFFLINE_G1_HOST
     static const sco::Image original = sco::ModuleImage();
     sco::game::host::Options options;
     options.inspect = InspectOfflineEnvironment;
     options.image = &original;
     options.platform = std::move(pf);
+    if (options.platform.nBuiltins)
+        Log("[app] G1 early DataCore requires external folders; retained builtin inputs refuse (migration pending)");
     const sco::Result result = offline_host::Prepare(std::move(options));
     g_quitHookStatus = sco::game::host::Status().quitHookInstalled ? "installed by game pack" : "unavailable";
     if (result != sco::Result::Ok) Log("[app] offline admission/prepare refused: %s", sco::ResultName(result));
@@ -353,7 +357,7 @@ static DWORD WINAPI ModThread(LPVOID param) {
     Log("[+] game module base: 0x%p", reinterpret_cast<void*>(game));
 
     if (InspectAntiCheat() != AcCheck::Clear) {
-        Log("[!] ANTI-CHEAT DETECTED. This mod is OFFLINE-ONLY and will not run here.");
+        Log("[AC] anti-cheat present or inspection unknown; offline admission refused");
         if (g_hooksInstalled) {
             Log("[!] Hooks are already installed, so staying loaded (idle). Close the game.");
             for (;;) Sleep(1000);
