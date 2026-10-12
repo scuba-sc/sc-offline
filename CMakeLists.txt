@@ -55,9 +55,14 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # --- sco-core (external/sco-core, a git submodule) -----------------------------------------------
 # Added after CMAKE_MSVC_RUNTIME_LIBRARY above, so its libraries get the static CRT too: they link
 # into dinput8.dll, and CI's verify step checks the DLL imports no dynamic CRT.
-if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/sco-core/CMakeLists.txt")
-  message(FATAL_ERROR "external/sco-core is empty: the sco-core submodule isn't checked out. "
-                      "Run `git submodule update --init` (or clone with --recurse-submodules).")
+set(SCO_HOST_SOURCE_DIR "" CACHE PATH "Extracted host-source-sc kit (local development; published pin unchanged)")
+if(SCO_HOST_SOURCE_DIR)
+  set(SCO_CORE_SOURCE_DIR "${SCO_HOST_SOURCE_DIR}")
+else()
+  set(SCO_CORE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/sco-core")
+endif()
+if(NOT EXISTS "${SCO_CORE_SOURCE_DIR}/CMakeLists.txt")
+  message(FATAL_ERROR "Host source missing: initialize external/sco-core or set SCO_HOST_SOURCE_DIR")
 endif()
 # sco-core's tests run in sco-core's own CI, not here.
 set(SCO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -66,7 +71,7 @@ set(SCO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(SCO_WERROR OFF CACHE BOOL "" FORCE)
 # EXCLUDE_FROM_ALL: only the libraries dinput8 links are built, not sco-core's host tools
 # (sco-sigcheck, sco-host-sim).
-add_subdirectory(external/sco-core EXCLUDE_FROM_ALL)
+add_subdirectory("${SCO_CORE_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/sco-core" EXCLUDE_FROM_ALL)
 
 # Settings every target had: CharacterSet Unicode, ConformanceMode (/permissive-), SDLCheck (/sdl).
 # NDEBUG in Release comes from CMake's default Release flags (/O2 /Ob2 /DNDEBUG).
@@ -132,6 +137,15 @@ target_link_libraries(dinput8 PRIVATE imgui d3d11 shlwapi advapi32 windowscodecs
 # The host kit (sco/app.h, with sco/scan.h, signatures, caps, the plugin loader), sco-lua with its
 # Star Citizen adapter (sco_lua_game: sco.datacore and sco.game for scripts), the detour engine, the zone tree (sco/engine/zone.h) and the CryPak adapter (sco/game/pak.h, with sco_vfs).
 target_link_libraries(dinput8 PRIVATE sco_app sco_lua sco_lua_game sco_hook sco_engine sco_pak)
+if(TARGET sco_game_host)
+  target_sources(dinput8 PRIVATE src/offline_host.cpp)
+  target_link_libraries(dinput8 PRIVATE sco_game_host)
+  target_compile_definitions(dinput8 PRIVATE SCO_OFFLINE_G1_HOST)
+elseif(SCO_HOST_SOURCE_DIR)
+  message(FATAL_ERROR "SCO_HOST_SOURCE_DIR lacks the required sco_game_host composition target")
+else()
+  message(STATUS "Published host pin lacks G1: offline startup refuses (no private fallback)")
+endif()
 
 # NPC, inspector, crew, spawn and loadout are external modules; no host feature fallback.
 # Loadout requires post-2.0 G6/G7/content/widgets headers; its release/pin promotion is pending.
@@ -170,7 +184,7 @@ target_link_libraries(sc-offline PRIVATE imgui sco_sqlite bcrypt shell32 shlwapi
 # teleport.spatial service, in game (tools/test-plugins).
 # Built into build/test-plugins/<id>/ with its plugin.ini, ready to copy into data/plugins/.
 add_library(spawn_probe SHARED tools/test-plugins/spawn_probe/spawn_probe.c)
-target_include_directories(spawn_probe PRIVATE external/sco-core/include)
+target_include_directories(spawn_probe PRIVATE ${SCO_CORE_SOURCE_DIR}/include)
 target_link_libraries(spawn_probe PRIVATE user32)
 set(_probe_dir "${CMAKE_BINARY_DIR}/test-plugins/spawn_probe")
 set_target_properties(spawn_probe PROPERTIES
@@ -182,7 +196,7 @@ configure_file(tools/test-plugins/spawn_probe/plugin.ini "${_probe_dir}/plugin.i
 # builtins_probe exercises host feature commands and the external NPC commands in game (crew, npc, loadout, quantum,
 # build, contracts); same layout as spawn_probe.
 add_library(builtins_probe SHARED tools/test-plugins/builtins_probe/builtins_probe.c)
-target_include_directories(builtins_probe PRIVATE external/sco-core/include)
+target_include_directories(builtins_probe PRIVATE ${SCO_CORE_SOURCE_DIR}/include)
 target_link_libraries(builtins_probe PRIVATE user32)
 set(_bprobe_dir "${CMAKE_BINARY_DIR}/test-plugins/builtins_probe")
 set_target_properties(builtins_probe PROPERTIES
@@ -195,7 +209,7 @@ configure_file(tools/test-plugins/builtins_probe/plugin.ini "${_bprobe_dir}/plug
 # with ImGui the way a third-party plugin does it (src/menu_imgui.h: sc-offline's own ImGui, linked
 # in), and Ctrl+Alt+9 / Ctrl+Alt+0 bound to its commands; same layout as spawn_probe.
 add_library(ui_probe SHARED tools/test-plugins/ui_probe/ui_probe.cpp)
-target_include_directories(ui_probe PRIVATE external/sco-core/include src)
+target_include_directories(ui_probe PRIVATE ${SCO_CORE_SOURCE_DIR}/include src)
 target_compile_definitions(ui_probe PRIVATE ${SCO_COMMON_DEFINES})
 target_compile_options(ui_probe PRIVATE ${SCO_COMMON_OPTIONS} /W3)
 target_link_libraries(ui_probe PRIVATE imgui)
