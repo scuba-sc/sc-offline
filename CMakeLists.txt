@@ -72,6 +72,11 @@ set(SCO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(SCO_WERROR OFF CACHE BOOL "" FORCE)
 # EXCLUDE_FROM_ALL: only the libraries dinput8 links are built, not sco-core's host tools
 # (sco-sigcheck, sco-host-sim).
+# Host-side renderer only; plugins keep renderer-neutral retained declarations.
+if(EXISTS "${SCO_CORE_SOURCE_DIR}/include/sco/widgets_imgui.h")
+  set(SCO_WIDGETS_IMGUI ON CACHE BOOL "" FORCE)
+  set(SCO_WIDGETS_IMGUI_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/imgui" CACHE PATH "" FORCE)
+endif()
 add_subdirectory("${SCO_CORE_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/sco-core" EXCLUDE_FROM_ALL)
 if(SCO_ASOP_HOST_COMPOSITION AND NOT TARGET sco_asop_host)
   message(FATAL_ERROR "ASOP composition requires a host-source dependency containing G10; no fallback")
@@ -146,6 +151,13 @@ target_link_libraries(dinput8 PRIVATE imgui d3d11 shlwapi advapi32 windowscodecs
 # The host kit (sco/app.h, with sco/scan.h, signatures, caps, the plugin loader), sco-lua with its
 # Star Citizen adapter (sco_lua_game: sco.datacore and sco.game for scripts), the detour engine, the zone tree (sco/engine/zone.h) and the CryPak adapter (sco/game/pak.h, with sco_vfs).
 target_link_libraries(dinput8 PRIVATE sco_app sco_lua sco_lua_game sco_hook sco_engine sco_pak)
+if(TARGET sco_widgets_imgui)
+  target_link_libraries(dinput8 PRIVATE sco_widgets_imgui)
+  target_compile_definitions(dinput8 PRIVATE SCO_WIDGETS_HOST_RENDERER)
+endif()
+if(EXISTS "${SCO_CORE_SOURCE_DIR}/include/sc_private_session.h")
+  target_compile_definitions(dinput8 PRIVATE SCO_OFFLINE_G13_HOST)
+endif()
 if(TARGET sco_game_host)
   target_sources(dinput8 PRIVATE src/offline_host.cpp)
   target_link_libraries(dinput8 PRIVATE sco_game_host)
@@ -165,10 +177,11 @@ endif()
 if(SCO_BRIDGE_TITANLINK OR SCO_BRIDGE_VOXEL)
   message(FATAL_ERROR "Host bridge options are retired; configure each optional plugin separately")
 endif()
-# G13 private-session control / multiplayer step 5A is not approved. Retain source, never ship it.
-option(SCO_MULTIPLAYER "Reserved: private-session multiplayer (not approved)" OFF)
+# G13 is default-on inside the approved host kit. Multiplayer is an external
+# SDK module; the retired host switch never re-adds gameplay target/registry inputs.
+option(SCO_MULTIPLAYER "Retired host-embedded multiplayer option; use plugins/multiplayer" OFF)
 if(SCO_MULTIPLAYER)
-  message(FATAL_ERROR "Multiplayer/G13 is not approved and cannot be built into this host")
+  message(FATAL_ERROR "Multiplayer is external; configure plugins/multiplayer against a G13 SDK")
 endif()
 
 # WholeProgramOptimization + LinkTimeCodeGeneration in Release (/GL, /LTCG).

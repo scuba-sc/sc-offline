@@ -58,7 +58,7 @@ done
 # MSVC C2712 screen (clang does not enforce it): a function containing __try may not own
 # an object that needs unwinding. Flags __try functions that construct std:: objects or call
 # a function returning one by value.
-python3 - "$ROOT/src" "$ROOT/src/builtins" "$ROOT/plugins/titanlink" "$ROOT/plugins/voxel_bridge" "$ROOT/launcher" <<'PY' >> "$TMP"
+python3 - "$ROOT/src" "$ROOT/src/builtins" "$ROOT/plugins/titanlink" "$ROOT/plugins/voxel_bridge" "$ROOT/plugins/multiplayer" "$ROOT/launcher" <<'PY' >> "$TMP"
 import os, re, sys
 src = {f: open(os.path.join(S, f), encoding="utf-8", errors="replace").read()
        for S in sys.argv[1:] for f in os.listdir(S) if f.endswith((".cpp", ".h"))}
