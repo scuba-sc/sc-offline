@@ -106,7 +106,7 @@ def trace_posix(build, source, sdk, public, feature="inspector"):
             elif contained(p, ROOT):
                 ok = False
             elif contained(p, source):
-                ok = contained(p, source / 'plugins' / feature) and p.is_file()
+                ok = (contained(p, source / 'plugins' / feature) or p == source / 'plugins/picker.h') and p.is_file()
             else:
                 ok = p in metadata or any(contained(p, d) for d in system)
             if not ok:
@@ -136,7 +136,7 @@ def trace_windows(build, source, sdk, public, feature="inspector"):
             elif contained(p, ROOT):
                 ok = False
             elif contained(p, source):
-                ok = contained(p, source / "plugins" / feature) and p.is_file()
+                ok = (contained(p, source / "plugins" / feature) or p == source / "plugins/picker.h") and p.is_file()
             else:
                 ok = any(contained(p, d) for d in roots)
             if not ok:

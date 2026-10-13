@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "npc.h"
+#include "../picker.h"
+#include <cstring>
 #include "sc_actors.h"
 #include "sc_entities.h"
 #include "sc_spatial.h"
@@ -165,6 +167,7 @@ sco_result Observe(const sco_arg*, uint32_t nargs, void*, char* reply, uint32_t 
                   pending, visible, removing, unknown);
     return Answer(SCO_OK, reply, size, text);
 }
+#include "picker.inc"
 }  // namespace
 
 const sco_plugin_info* Query() { return &kInfo; }
@@ -186,11 +189,12 @@ sco_result Load(const sco_api* api, sco_plugin* self) {
         const sco_result r = api->register_command(self, &command);
         if (r != SCO_OK) { Unload(); return r; }
     }
-    return SCO_OK;
+    StartPicker();return SCO_OK;
 }
 
 void Unload() {
     if (!g.api) return;
+    StopPicker();
     char reply[160]{};
     const sco_result r = Clear(nullptr, 0, nullptr, reply, sizeof(reply));
     if (r != SCO_OK) g.api->log(g.self, SCO_LOG_WARN, "NPC cleanup refused; host owner-release cleanup is still required");

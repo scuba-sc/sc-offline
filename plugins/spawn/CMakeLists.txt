@@ -8,7 +8,7 @@ set(SCO_SDK_INCLUDE_DIR "" CACHE PATH "Verified published SDK include directory"
 if(NOT EXISTS "${SCO_SDK_INCLUDE_DIR}/../SHA256SUMS")
   message(FATAL_ERROR "Use the extracted published SDK, not host headers")
 endif()
-foreach(header sco_api.h sco_content.h sc_spawn.h sc_entities.h sc_actors.h sc_vehicles.h sc_spatial.h)
+foreach(header sco_widgets.h sco_api.h sco_content.h sc_spawn.h sc_entities.h sc_actors.h sc_vehicles.h sc_spatial.h)
   if(NOT EXISTS "${SCO_SDK_INCLUDE_DIR}/${header}")
     message(FATAL_ERROR "Missing published header: ${header}")
   endif()

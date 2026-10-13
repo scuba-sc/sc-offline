@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "crew.h"
+#include "../picker.h"
 #include "sc_actors.h"
 #include "sc_spatial.h"
 #include "sc_vehicles.h"
@@ -118,7 +119,7 @@ sco_result Power(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size)
     auto r = Ship(v,ship); if (r == SCO_OK) r = v->power_on(g.self,ship);
     return Answer(r,reply,size,r == SCO_OK ? "Flight Ready requested" : "Flight Ready refused (ship authority/provider readiness)");
 }
-sco_result Fill(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size) {
+sco_result FillSeats(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size,uint32_t selected=UINT32_MAX) {
     const auto valid = Validate(args,n,true,reply,size); if (valid != SCO_OK) return valid;
     if (std::strlen(args[0].v.s) > 127) return SCO_BAD_ARG;
     const auto* v = Open<sc_vehicles_v1>(SC_VEHICLES_SERVICE_NAME);
@@ -138,6 +139,7 @@ sco_result Fill(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size) 
     uint32_t added = 0,skipped = 0; r = SCO_OK;
     for (uint32_t i = 0; i < count; ++i) {
         const auto& s = seats[i];
+        if(selected!=UINT32_MAX && s.index!=selected)continue;
         if (!Usable(s) || s.occupant_id || (s.flags & SC_SEAT_OCCUPIED) || Reserved(ship,s.index)) { ++skipped; continue; }
         auto* j = Free(); if (!j) { r = SCO_TOO_MANY; break; }
         uint64_t id = 0; r = a->spawn_npc(g.self,args[0].v.s,zone,pos,&id);
@@ -148,7 +150,8 @@ sco_result Fill(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size) 
     char text[192]; std::snprintf(text,sizeof(text),"Seating %u owned NPCs; skipped=%u; partial seats=%u; batch result=%u",added,skipped,more ? 1u : 0u,static_cast<unsigned>(r));
     return Answer(r != SCO_OK ? r : added || !count ? SCO_OK : SCO_FAILED,reply,size,text);
 }
-sco_result Sit(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size) {
+sco_result Fill(const sco_arg* args,uint32_t n,void* ctx,char* reply,uint32_t size) {return FillSeats(args,n,ctx,reply,size);}
+sco_result SitSeat(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size,uint32_t selected=UINT32_MAX) {
     const auto valid = Validate(args,n,true,reply,size); if (valid != SCO_OK) return valid;
     if (std::strlen(args[0].v.s) > 47) return SCO_BAD_ARG;
     const auto* v = Open<sc_vehicles_v1>(SC_VEHICLES_SERVICE_NAME);
@@ -158,7 +161,7 @@ sco_result Sit(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size) {
     sc_vehicle_seat seats[128]{}; uint64_t ship = 0; uint32_t count = 0,more = 0;
     r = Seats(v,ship,seats,count,more); if (r != SCO_OK) return Answer(r,reply,size,"Ship seats unavailable");
     for (uint32_t i = 0; i < count; ++i) {
-        const auto& s = seats[i]; if (!Matches(s.name,args[0].v.s) || !Usable(s)) continue;
+        const auto& s = seats[i]; if ((selected==UINT32_MAX ? !Matches(s.name,args[0].v.s) : s.index!=selected) || !Usable(s)) continue;
         if (s.occupant_id == me) return Answer(SCO_OK,reply,size,"Already seated");
         const auto* mine = Actor(me);
         if (Reserved(ship,s.index) && (!mine || mine->ship != ship || mine->seat != s.index))
@@ -172,6 +175,7 @@ sco_result Sit(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size) {
     }
     return Answer(SCO_FAILED,reply,size,"No matching usable seat in copied batch");
 }
+sco_result Sit(const sco_arg* args,uint32_t n,void* ctx,char* reply,uint32_t size) {return SitSeat(args,n,ctx,reply,size);}
 sco_result Stand(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size) {
     const auto valid = Validate(args,n,false,reply,size); if (valid != SCO_OK) return valid;
     const auto* v = Open<sc_vehicles_v1>(SC_VEHICLES_SERVICE_NAME);
@@ -203,6 +207,7 @@ sco_result Clear(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size)
     char text[160]; std::snprintf(text,sizeof(text),"Removal started=%u; pending tickets=%u; world disappearance unconfirmed",started,pending);
     return Answer(r,reply,size,text);
 }
+#include "picker.inc"
 void Tick(const char*,const void* data,void*) {
     if (!g.api || !data) return;
     g.now = *static_cast<const uint32_t*>(data);
@@ -235,6 +240,7 @@ void Tick(const char*,const void* data,void*) {
         if (r == SCO_OK && !in && v->seat(g.self,j.actor,j.ship,j.seat) == SCO_OK) ++j.links;
         j.next = g.now + 1500u;
     }
+    if(g.now-picker.last>=1000u){picker.last=g.now;RenderPicker();}
 }
 }
 const sco_plugin_info* Query() { return &info; }
@@ -257,9 +263,10 @@ sco_result Load(const sco_api* api,sco_plugin* self) {
     for (const auto& c : commands) { const auto r = api->register_command(self,&c); if (r != SCO_OK) { g = {}; return r; } }
     const auto r = api->subscribe(self,"tick",Tick,nullptr);
     if (r != SCO_OK) { g = {}; return r; }
-    g.subscribed = true; return SCO_OK;
+    g.subscribed = true; StartPicker();return SCO_OK;
 }
 void Unload() {
+    if(g.api)StopPicker();
     if (g.subscribed && HAS_FN(g.api,sco_api,unsubscribe)) g.api->unsubscribe(g.self,"tick",Tick);
     g = {}; // Host removes commands and releases actors-owned NPCs; no shutdown game calls.
 }

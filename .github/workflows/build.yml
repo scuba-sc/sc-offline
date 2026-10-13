@@ -355,7 +355,10 @@ jobs:
           cp launcher/sc-offline.ini launcher/sc-offline.sh README.md CHANGELOG.md LICENSE "stage/$pkg/"
           git ls-files -z docs | xargs -0 -r cp --parents -t "stage/$pkg/"
           git ls-files -z data | xargs -0 cp --parents -t "stage/$pkg/"
-          # Independent folders; static feature IDs only, metadata/defaults from matching components.
+          # Ordinary public catalog pack; originals remain user-editable sources.
+          mkdir -p "stage/$pkg/data/plugins/picker_catalog/lists"
+          cp data/ships.txt data/npcs.txt "stage/$pkg/data/plugins/picker_catalog/lists/"
+          # Independent folders; metadata/defaults from matching components.
           for feature in creative discord crew spawn mining; do
             mkdir -p "stage/$pkg/data/plugins/$feature"
             cp "built-external/$feature/plugin.ini" "built-external/$feature/$feature.dll" "stage/$pkg/data/plugins/$feature/"

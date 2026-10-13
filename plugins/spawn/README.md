@@ -1,10 +1,19 @@
-# Ordinary spawn — command-first external plugin
+# Ordinary spawn — public SDK Vehicles picker
+
+Current picker/copy-list installation and the one targeted module fixture:
+[Public pickers](../../docs/pickers.md). **These updated sources require a newer
+local integration SDK with `sco_widgets.h` and `sco_content.h`.** The published
+2.0.0 obtain/proof recipes below describe the earlier command-only boundary, not
+a claim that the unchanged published archive can compile these newer sources.
 
 Trusted native code, **GPL-3.0-only**. SDK **2.0.0**, frozen plugin ABI **1.1**,
 Star Citizen game pack **0.3.0**. This source builds independently of the host.
 No private headers, engine memory, custom spawner, network or ImGui dependency.
-Renderer-neutral widgets are not in the pinned SDK; the class/seat picker UI waits
-for that contract. Keep `data/ships.txt` as the existing caller-supplied class list;
+The Vehicles panel uses public `sco.widgets`: class filtering/paging, manual
+class, height, seat-name/pilot/none, Flight Ready, owned boarding/cancel/clear and
+Infinite ship ammo through the external creative command (reverts on refusal).
+Picker actions use the same command handlers/jobs, not legacy engine helpers.
+Keep `data/ships.txt` as the existing caller-supplied class list;
 `spawn.pack_list` additionally reads enabled `lists/ships.txt` through G14's
 public `sco.content` service. This addition requires a newer SDK containing
 `sco_content.h`; the unchanged published 2.0.0 pin predates it. Use a local
@@ -58,7 +67,7 @@ SDK game-thread path. No workers or private thread handoff are created.
 
 | Command | Typed arguments / behavior |
 | --- | --- |
-| `spawn.pack_list <ordinal:int>` | Copies one enabled `lists/ships.txt` startup snapshot; zero-based matching-pack ordinal. Discovery order and duplicate names are retained, not merged or silently overwritten. Empty lists succeed; binary lists, insufficient output capacity, missing/short/null service methods and provider failures refuse. Does not spawn a class or replace the legacy base picker. |
+| `spawn.pack_list <ordinal:int>` | Copies one enabled `lists/ships.txt` startup snapshot; zero-based matching-pack ordinal. Discovery order and duplicate names are retained, not merged or silently overwritten. Empty lists succeed; binary lists, insufficient output capacity, missing/short/null service methods and provider failures refuse. Does not spawn a class; the public Vehicles picker consumes the same catalog snapshots. |
 | `spawn.ship <class:string> <height:float>` | Existing ID, argument names/types/count preserved. Class length 1–63; finite height 0–10000 m along the player's current zone Z axis. Returns the final owned session ID before it streams in. No automatic boarding. |
 | `spawn.ship_options <class:string> <height:float> <seat:string> <power:bool>` | `none` means no boarding; `pilot` selects the known usable pilot seat; another string requires **every word**, case-insensitively, in the copied seat name. Power is accepted only with `pilot`. Boarding providers/capabilities are preflighted before spawn. |
 | `spawn.board <id:int> <seat:string> <power:bool>` | Choose a seat later on an ID this plugin still owns. Uses the same boarding workflow; refuses foreign/retrieved/crew IDs. `none` is not a board target. |

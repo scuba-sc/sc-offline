@@ -70,6 +70,11 @@ set(SCO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 # sco-core's own CI builds it with /WX. Here a warning that only a newer toolset emits must not
 # break the product build, so sco-core's warnings stay warnings.
 set(SCO_WERROR OFF CACHE BOOL "" FORCE)
+# Retained widgets use the host's own ImGui, never renderer headers in plugins.
+if(EXISTS "${SCO_CORE_SOURCE_DIR}/include/sco/widgets_imgui.h")
+  set(SCO_WIDGETS_IMGUI ON CACHE BOOL "Host widget renderer" FORCE)
+  set(SCO_WIDGETS_IMGUI_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/imgui" CACHE PATH "Host ImGui" FORCE)
+endif()
 # EXCLUDE_FROM_ALL: only the libraries dinput8 links are built, not sco-core's host tools
 # (sco-sigcheck, sco-host-sim).
 # Host-side renderer only; plugins keep renderer-neutral retained declarations.

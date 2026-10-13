@@ -507,16 +507,21 @@ static bool DrawMenu() {
             if (ImGui::BeginTabItem(label.c_str(), nullptr, flags)) { body([&] { DrawPluginTab(t, frame); }); ImGui::EndTabItem(); }
         }
 #ifdef SCO_WIDGETS_HOST_RENDERER
-        // Copied retained declarations are rendered by the host on the existing
-        // game-thread frame handoff. No ImGui context crosses the plugin ABI.
-        // Panels() owns the snapshot; callbacks may replace their live panel.
-        sco::widgets::ImGuiRenderer widgetRenderer;
+        // Copied neutral panels are rendered on the same game-thread frame. The
+        // public widget dispatcher guards owner callbacks and rejects stale events.
         for (const auto& panel : sco::widgets::Panels()) {
             const std::string label = panel.title + "###" + panel.id;
             const ImGuiTabItemFlags flags = first ? ImGuiTabItemFlags_SetSelected : 0;
             first = false;
             if (ImGui::BeginTabItem(label.c_str(), nullptr, flags)) {
-                body([&] { sco::widgets::RenderPanel(panel.id.c_str(), widgetRenderer); });
+                body([&] {
+                    ImGuiErrorRecoveryState state;
+                    ImGui::ErrorRecoveryStoreState(&state);
+                    sco::widgets::ImGuiRenderer renderer;
+                    const auto result = sco::widgets::RenderPanel(panel.id.c_str(), renderer);
+                    ImGui::ErrorRecoveryTryToRecoverState(&state);
+                    if (result == sco::Result::Crashed) Log("[menu] widget panel %s crashed; owner disabled", panel.id.c_str());
+                });
                 ImGui::EndTabItem();
             }
         }
