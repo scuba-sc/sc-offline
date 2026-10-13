@@ -263,7 +263,11 @@ void PanelEvent(const char*,const sco_widget_event* event,void*) noexcept {
         case 12: if (event->kind==SCO_WIDGET_BUTTON && (g.place_page+1)*128<g.places.size()) { ++g.place_page; g.selected_place=-1; } break;
         case 13: if (event->kind==SCO_WIDGET_BUTTON && g.mark_page) { --g.mark_page; g.selected_mark=-1; } break;
         case 14: if (event->kind==SCO_WIDGET_BUTTON && (g.mark_page+1)*128<g.marks.size()) { ++g.mark_page; g.selected_mark=-1; } break;
-        default: break;
+        default:
+#ifdef TRAVEL_QUANTUM_CONTROLS
+            sco::features::quantum::Event(event);
+#endif
+            break;
         }
         if (reply[0]) g.last_status=reply;
         Panel();
@@ -295,7 +299,13 @@ void Panel() {
     add(SCO_WIDGET_BUTTON,8,"Save current bookmark (read-only capture)");
     add(SCO_WIDGET_BUTTON,9,"Delete selected bookmark"); add(SCO_WIDGET_BUTTON,10,"Inspect selected bookmark (read-only)");
 #endif
-    if (widgets->set_panel(g.self,(std::string(id)+".travel").c_str(),id,nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(nodes[0]),PanelEvent,nullptr)==SCO_OK) g.panel=true;
+#ifdef TRAVEL_QUANTUM_CONTROLS
+    sco::features::quantum::AppendPanel(nodes);
+    constexpr const char* title="Travel";
+#else
+    constexpr const char* title=id;
+#endif
+    if (widgets->set_panel(g.self,(std::string(id)+".travel").c_str(),title,nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(nodes[0]),PanelEvent,nullptr)==SCO_OK) g.panel=true;
 }
 }
 using namespace implementation;

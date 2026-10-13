@@ -116,7 +116,6 @@ add_library(dinput8 SHARED
   src/cvars.cpp
   src/missions.cpp
   src/contracts.cpp
-  src/quantum.cpp
   src/menu.cpp
   src/hotkeys.cpp
   # Built-in plugins (src/builtins/builtins.h).

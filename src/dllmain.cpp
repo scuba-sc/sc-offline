@@ -11,7 +11,6 @@
 #include "cvars.h"
 #include "missions.h"
 #include "contracts.h"
-#include "quantum.h"
 #include "travel.h"
 #include "version.h"
 #ifdef SCO_ASOP_HOST_COMPOSITION
@@ -128,7 +127,6 @@ static void StartOffline() {
     g_offline = ApplyOfflinePatches();
     if (!g_offline) return;
     InstallHooks();
-    ResolveQuantumApi(g_text, g_rdata);
     if (ResolveTeleportApi()) {
         ResolveSpawnApi(g_text, g_rdata);
         ResolveNpcApi(g_text);
@@ -146,7 +144,6 @@ static void StartOffline() {
 static void LogStartup() {
     LogOfflinePatches();
     LogHooks();
-    LogQuantum();
     if (g_signaturesResolved) sco::LogSignatureReport(false);
     if (g_quitHookStatus) Log("[app] game quit hook: %s", g_quitHookStatus);
     Log("[!] teleport: G2 REFUSE; F7/F8 consumer unavailable; read services are separate");
@@ -174,8 +171,6 @@ static void SetFeatureCaps() {
     SetCap("offline", g_offline);
     SetCap("teleport", false); // G2 mutation not approved; read tables remain independently available
     SetCap("npc", SpawnerReady());
-    SetCap("quantum.drive", QuantumDriveReady());
-    SetCap("quantum.boost", QuantumBoostReady());
     SetCap("quantum", false); // movement remains REFUSE; external read commands have their own availability
     SetCap("contracts", ContractsReady());
     SetMiningCaps();   // game.mining, from sco-core's mining.cell row
