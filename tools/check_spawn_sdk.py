@@ -29,6 +29,7 @@ def main(args):
     source = work / 'source'
     (source / 'plugins').mkdir(parents=True)
     shutil.copytree(ROOT / 'plugins/spawn', source / 'plugins/spawn')
+    shutil.copy2(ROOT / 'plugins/picker.h', source / 'plugins/picker.h')
     (source / 'tools').mkdir()
     for name in ('spawn_workflow_test.cpp', 'workflow_module.h'):
         shutil.copy2(ROOT / 'tools' / name, source / 'tools' / name)

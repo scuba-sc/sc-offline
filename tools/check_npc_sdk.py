@@ -27,6 +27,7 @@ def main(args):
     source = work / 'source'
     (source / 'plugins').mkdir(parents=True)
     shutil.copy2(ROOT / 'plugins/CMakeLists.txt', source / 'plugins/CMakeLists.txt')
+    shutil.copy2(ROOT / 'plugins/picker.h', source / 'plugins/picker.h')
     for feature in ('npc', 'inspector'):
         shutil.copytree(ROOT / 'plugins' / feature, source / 'plugins' / feature)
     (source / 'tools').mkdir()
