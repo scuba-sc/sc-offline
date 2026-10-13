@@ -32,7 +32,7 @@ On the main-thread hook's first tick, `dllmain.cpp` calls `sco::app::Start`. In 
 | Build props | `game.entities`: `spawn`, `set_transform`, `despawn`, and `keep()` (1.1) for placed props | Prefabs (`.socpak`) and NPC props still use the spawner. Without `keep()` (a 1.0 game pack) props stay owned by the plugin |
 | Build: ground ray for placement, build camera | `game.world.raycast`, `game.world.camera` | The aim ray that moves the preview stays on the `build.*` rows: it must skip the preview prop and `raycast` 1.0 has no skip list |
 | Noclip, god mode, infinite ammo | The optional `creative` plugin on `game.creative` 1.0 | Not in `dinput8.dll`; see [below](#built-ins-and-optional-plugins) |
-| Natural mining | `mining` built-in on the `game.mining` row (`mining.cell`) and a `sco::hook` detour | Off unless `mining = on` |
+| Natural mining | External `mining` consumer on public `game.mining`; game pack owns the cell hook/admission | Requested setting off by default; native adapter unavailable until verified |
 | Gear, outfits, quantum travel, contracts | Built-ins gated on `loadout`, `quantum`, `contracts`; sco-core rows, no scans | Their engines are still sc-offline's own (`src/loadout.cpp`, `quantum.cpp`, `contracts.cpp`); no `game.*` service covers them yet |
 | Multiplayer | `multiplayer` built-in on `sco.net`, `teleport.spatial`, `spawn.entities` | Gated on `sco.net` |
 | Gladius quantum drive | A data pack applied by sco-core's DataCore loader | `data/builtin/quantum/` |

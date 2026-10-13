@@ -9,13 +9,10 @@
 #include <cstring>
 
 extern const sco::plugins::Builtin kContractsBuiltin;  // contracts_plugin.cpp: contracts.status, the contracts tick
-extern const sco::plugins::Builtin kMiningBuiltin;      // mining_plugin.cpp: mining.status, natural mining on the game.mining row (mining = on)
 // Multiplayer/G13 is not approved; bridges are independent disabled external modules.
 
 // Remaining built-ins own their ticks; external features never have a host fallback.
 bool ContractsBuiltinOwnsTick();
-// game.mining from sco-core's rows: ready when the cell function is found (SetFeatureCaps).
-void SetMiningCaps();
 
 // The index of the entry named `name` (any case) in a list of count names, or -1.
 inline int FindBuiltinName(int count, const char* (*nameAt)(int), const char* name) {
@@ -51,5 +48,5 @@ inline sco_result RegisterBuiltinCommand(const sco_api* api, sco_plugin* self, c
 }
 
 // Every built-in, in load order.
-inline const sco::plugins::Builtin kBuiltins[] = { kContractsBuiltin, kMiningBuiltin
+inline const sco::plugins::Builtin kBuiltins[] = { kContractsBuiltin
 };

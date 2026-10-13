@@ -178,7 +178,6 @@ static void SetFeatureCaps() {
     SetCap("quantum.boost", QuantumBoostReady());
     SetCap("quantum", false); // movement remains REFUSE; external read commands have their own availability
     SetCap("contracts", ContractsReady());
-    SetMiningCaps();   // game.mining, from sco-core's mining.cell row
 #ifndef SCO_ASOP_HOST_COMPOSITION
     SetFleetCaps();
     SetHangarCaps();

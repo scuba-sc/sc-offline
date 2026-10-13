@@ -90,13 +90,12 @@ This repository ships none of CIG's Subsumption mission scripts. Contracts that 
 
 ## Natural mining
 
-Experimental, and off by default: `mining = on` in `sc-offline.ini` (see [launcher](launcher.md#sc-offlineini)). The `mining` built-in detours the game's `CBiomeBuilder::BuildLargeScaleEcoSystem`, the function that builds each ecosystem cell around you. A cell that has built only its physics (rule flags `0x6`) is passed to the game with the spawning bit set (`0xE`), so the game builds its harvestable rocks as it does online. Only that flag changes: the game's own provider, location and depletion checks, transforms and materials still decide what appears, and nothing is spawned, edited or written by the mod. It acts only for the builder's cell path (type 0), cells whose harvestable LOD is not built yet, and while the offline session is up and the game's online flag is 0. It needs sco-core's `game.mining` capability (the `mining.cell` row, found in any game build); without it `mining.status` is unavailable and `mod.log` says so.
+The external `mining` SDK consumer owns `mining.status` and requested `enabled`/`debug` settings, both off by default. Host ini and `SC_OFFLINE_MINING*` switches no longer enable mining. Deliberate offline import and build instructions: [mining plugin](../plugins/mining/README.md).
 
-`mining.status` reports the state (off, unavailable, waiting for the offline session, active) and how many cells were seen and promoted. `mining_debug = on` also writes `[mining/trace]` lines to `mod.log` while the counts change: cells seen, promoted, why others were skipped, and read faults. A read fault switches natural mining off until you restart.
-
-The idea and the working native contract come from the `junikka/sc-offline-mining` fork (GPL-3.0). It confirmed in game, on an earlier game build, that natural Titanium (Ore) is highlighted in mining mode, shows its composition, responds to the mining laser and can be extracted. This built-in is a port onto sco-core's row for 4.10.196 and is not yet tested in game: see the pull request for the steps. Leaving and returning to an area, depletion and persistence across restarts are unverified.
+The game pack owns the bounded `game.mining` service, cell hook and fresh offline/EAC/network/target admission. This conversion's native bridge remains unavailable until engine/admission verification; no private fallback or automatic import exists. Requested intent is not active gameplay. Windows/native and in-game behavior remain unverified.
 
 ## Squadron 42
+
 
 The external [loadout development module](../plugins/loadout/README.md) owns the SQ42 spoiler warning and selection state. Its optional renderer-neutral panel requires the newer `sco.widgets` host service; commands work without that renderer. The following historical behavior is superseded by the module boundary: outfit/head/material and implicit-default parity is pending G6 extensions, four settings are **read-only real reads** (unknown on failed/absent provider), ordinary shortcuts invoke `spawn.ship_options`/`build.place`, enemy wings stay deferred, and arbitrary console execution **refuses**. No SQ42 cvar writes or `USER.cfg` edits are approved. Neither the pin nor production adapters are promoted by this change.
 
