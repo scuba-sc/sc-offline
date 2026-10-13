@@ -14,7 +14,7 @@ endif()
 if(NOT EXISTS "${SCO_SDK_INCLUDE_DIR}/../SHA256SUMS")
   message(FATAL_ERROR "Use an extracted published SDK with its checksum inventory, not host headers")
 endif()
-foreach(header sco_api.h sc_actors.h sc_entities.h sc_spatial.h)
+foreach(header sco_widgets.h sco_content.h sco_api.h sc_actors.h sc_entities.h sc_spatial.h)
   if(NOT EXISTS "${SCO_SDK_INCLUDE_DIR}/${header}")
     message(FATAL_ERROR "SDK public header missing: ${header}")
   endif()
@@ -64,6 +64,12 @@ foreach(feature npc inspector)
   install(FILES ${feature}/plugin.ini DESTINATION data/plugins/${feature} COMPONENT ${feature})
 endforeach()
 
+# Public startup snapshots of the existing catalogs; no implicit host filesystem reads.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../data/plugins/picker_catalog/plugin.ini"
+  DESTINATION data/plugins/picker_catalog COMPONENT picker_catalog)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../data/ships.txt" "${CMAKE_CURRENT_SOURCE_DIR}/../data/npcs.txt"
+  DESTINATION data/plugins/picker_catalog/lists COMPONENT picker_catalog)
+
 # Ordinary first-party DataCore pack: no module, no reused native quantum ID.
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../data/plugins/quantum_drive"
   DESTINATION data/plugins COMPONENT quantum_drive)
@@ -85,6 +91,20 @@ if(SCO_ADDITIONAL_FEATURES)
   if(SCO_LOADOUT_FEATURE)
     add_subdirectory(loadout)
   endif()
+endif()
+option(SCO_PICKER_TEST "Build only the Vehicles/Crew/NPC widget module fixture" OFF)
+if(SCO_PICKER_TEST)
+  if(NOT SCO_ADDITIONAL_FEATURES)
+    message(FATAL_ERROR "Picker fixture needs the external spawn and crew targets")
+  endif()
+  enable_testing()
+  add_executable(picker-module-test ../tools/picker_workflow_test.cpp)
+  target_compile_features(picker-module-test PRIVATE cxx_std_20)
+  target_include_directories(picker-module-test PRIVATE "${SCO_SDK_INCLUDE_DIR}")
+  target_link_libraries(picker-module-test PRIVATE ${CMAKE_DL_LIBS})
+  add_dependencies(picker-module-test sc-offline-spawn sc-offline-crew sc-offline-npc)
+  add_test(NAME picker-module-workflow COMMAND picker-module-test
+    $<TARGET_FILE:sc-offline-spawn> $<TARGET_FILE:sc-offline-crew> $<TARGET_FILE:sc-offline-npc>)
 endif()
 # Development consumer only until production G11/G12 and retained UI/wallet parity land.
 option(SCO_CONTRACTS_FEATURE "Build command-first contracts consumer (duplicate built-in ID; do not co-install)" OFF)

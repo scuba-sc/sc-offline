@@ -1,15 +1,26 @@
-# Crew — command-first public SDK plugin
+# Crew — public SDK Crew and archetype pickers
+
+Current picker/copy-list installation and the one targeted module fixture:
+[Public pickers](../../docs/pickers.md). **These updated sources require a newer
+local integration SDK with `sco_widgets.h` and `sco_content.h`.** The published
+2.0.0 obtain/proof recipes below describe the earlier command-only boundary, not
+a claim that the unchanged published archive can compile these newer sources.
 
 External native consumer of **sdk-v2.0.0** (SDK 2.0.0, plugin ABI 1.1,
 Star Citizen game pack 0.3.0). GPL-3.0-only project code. Native plugins are
 trusted process code, not a security sandbox.
 
-## UI regression and boundary
+## Public widget boundary
 
-**The former Crew tab, seat picker and shared NPC archetype picker are not
-provided by this plugin.** Renderer-neutral `sco.widgets` is absent from the
-pinned release; replacement UI waits for
-[sco-core #139](https://github.com/scubamount/sco-core/issues/139).
+The external Crew panel uses public `sco.widgets`: target/refresh the current
+ship, copied seat/occupant/usability rows, 32-seat pages, selected-seat Sit,
+Stand or Remove, add one owned NPC to a selected seat, fill/stand/clear owned
+crew and Flight Ready. Each action rereads public providers; per-seat removal
+refuses foreign/player/NPC-plugin occupants. Manual seat words keep `crew.sit`
+semantics; selected-seat actions use the fresh copied index, not ambiguous names.
+Crew and NPC share SDK-only catalog parsing/filtering/paging, not session IDs.
+Widgets/content require a newer local integration SDK; the unchanged published
+2.0.0 pin predates them. No Windows rendering/gameplay result is claimed.
 There is no private ImGui/menu, spawner engine, built-in registration or fallback
 in this module. The command IDs remain available through the host's typed
 `sco_api.invoke` route; this is not a new console or command transport.
@@ -115,5 +126,5 @@ passes. These are synthetic public providers, not private engine simulations.
 small/large real seat lists, NPC streaming/removal, local-player boarding/eject,
 ship-authority and Flight Ready, real host owner-release/command withdrawal,
 normal disable/rebuild/reload, fault handling, offline/EAC refusal. Rendering/DPI
-acceptance is deferred with the absent widget UI. CI, release staging in the
+acceptance is still NOT RUN despite the restored public widget UI. CI, release staging in the
 product, game execution and runtime networking are not performed by this change.

@@ -70,6 +70,11 @@ set(SCO_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 # sco-core's own CI builds it with /WX. Here a warning that only a newer toolset emits must not
 # break the product build, so sco-core's warnings stay warnings.
 set(SCO_WERROR OFF CACHE BOOL "" FORCE)
+# Retained widgets use the host's own ImGui, never renderer headers in plugins.
+if(EXISTS "${SCO_CORE_SOURCE_DIR}/include/sco/widgets_imgui.h")
+  set(SCO_WIDGETS_IMGUI ON CACHE BOOL "Host widget renderer" FORCE)
+  set(SCO_WIDGETS_IMGUI_INCLUDE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/imgui" CACHE PATH "Host ImGui" FORCE)
+endif()
 # EXCLUDE_FROM_ALL: only the libraries dinput8 links are built, not sco-core's host tools
 # (sco-sigcheck, sco-host-sim).
 add_subdirectory("${SCO_CORE_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/sco-core" EXCLUDE_FROM_ALL)
@@ -146,6 +151,10 @@ target_link_libraries(dinput8 PRIVATE imgui d3d11 shlwapi advapi32 windowscodecs
 # The host kit (sco/app.h, with sco/scan.h, signatures, caps, the plugin loader), sco-lua with its
 # Star Citizen adapter (sco_lua_game: sco.datacore and sco.game for scripts), the detour engine, the zone tree (sco/engine/zone.h) and the CryPak adapter (sco/game/pak.h, with sco_vfs).
 target_link_libraries(dinput8 PRIVATE sco_app sco_lua sco_lua_game sco_hook sco_engine sco_pak)
+if(TARGET sco_widgets_imgui)
+  target_link_libraries(dinput8 PRIVATE sco_widgets_imgui)
+  target_compile_definitions(dinput8 PRIVATE SCO_OFFLINE_WIDGETS)
+endif()
 if(TARGET sco_game_host)
   target_sources(dinput8 PRIVATE src/offline_host.cpp)
   target_link_libraries(dinput8 PRIVATE sco_game_host)

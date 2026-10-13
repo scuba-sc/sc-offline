@@ -18,6 +18,16 @@ Everything the menu reads is plain text in `data/`. Most files explain their own
 | `plugins\discord\` | The blocked Discord status plugin: `plugin.ini`, `disabled` and `discord.dll`, off pending transport/field approval (see [launcher.md](launcher.md#discord-status)) |
 | `plugins\creative\` | The optional creative plugin: `plugin.ini`, `creative.dll` and an empty `disabled` marker (off until you switch it on in the launcher's Plugins page; see [features.md](features.md#the-creative-plugin)). Other plugins go in their own folder here with `plugins = on` |
 
+## Public picker catalog snapshots
+
+Release packaging and the CMake `picker_catalog` component install copies of
+`ships.txt` and `npcs.txt` in `data/plugins/picker_catalog/lists/`, with an ordinary
+data manifest. The external Vehicles, Crew and NPCs panels read these enabled
+startup snapshots through `sco.content`; original base files remain unchanged.
+Copy existing user-edited lists into the pack while stopped; there is no implicit
+base-file import or private-reader fallback. Restart after edits. Shared filter/
+paging and bounded ownership rules: [pickers.md](pickers.md).
+
 ## Ordinary data packs and content access
 
 `data/plugins/quantum_drive/plugin.ini` declares an ordinary `kind = data`
