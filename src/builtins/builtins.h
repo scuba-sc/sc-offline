@@ -10,7 +10,8 @@
 
 extern const sco::plugins::Builtin kContractsBuiltin;  // contracts_plugin.cpp: contracts.status, the contracts tick
 extern const sco::plugins::Builtin kMiningBuiltin;      // mining_plugin.cpp: mining.status, natural mining on the game.mining row (mining = on)
-// Multiplayer/G13 is not approved; bridges are independent disabled external modules.
+// Multiplayer uses the approved G13 broker as an external module, never this registry.
+// Bridges remain independent disabled external modules.
 
 // Remaining built-ins own their ticks; external features never have a host fallback.
 bool ContractsBuiltinOwnsTick();

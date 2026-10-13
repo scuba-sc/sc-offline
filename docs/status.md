@@ -1,5 +1,23 @@
 # What is not verified in game
 
+## G13 external multiplayer (R1)
+
+`plugins/multiplayer` has an enabled independent install, no built-in fallback,
+and preserves Host/Join UI, command IDs and the multiplayer database owner/keys.
+The neutral host renders retained widget panels on its game-thread frame handoff.
+Socket control stays in the default-on G13 broker: no socket at load, loopback
+by default, authenticated join and positive offline/EAC/network admission. G2
+goto refuses. See [multiplayer](../plugins/multiplayer/README.md).
+
+The targeted actual-module fixture passed with synthetic public providers;
+core separately exercised its real broker/backend through synthetic transport.
+Published 2.0.0 lacks these contracts. CI release-job/pin promotion,
+Windows/MSVC, real renderer/input, live admission, private LAN and gameplay are
+**NOT VERIFIED**. The current shell still reports offline-session/effective
+network evidence Unknown, so production admission refuses rather than inferring
+safety from flags or patch success. The source/SDK migration is not certification
+that the shell can start a production session.
+
 The host is pinned to published sco-core `sdk-v2.0.0`, commit `cd9a686bda4184f1befbdf0b74b503a1565540dd`: SDK **2.0.0**, plugin ABI **1.1** (unchanged), Star Citizen game pack **0.3.0**. The game pack's signature evidence targets Star Citizen **4.10.196.36804**; it is not a game-session result for this product pin.
 
 The release-pin smoke checks remain **NOT RUN** on Windows/in game: offline startup; EAC detection/refusal; services published before plugins; menu; clean exit. CI build success does not close these owner-run checks.

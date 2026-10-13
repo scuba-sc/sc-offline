@@ -17,6 +17,10 @@
 #include <cstdio>
 #include <cstring>
 #include "sco/ui.h"
+#ifdef SCO_WIDGETS_HOST_RENDERER
+#include "sco/widgets.h"
+#include "sco/widgets_imgui.h"
+#endif
 #include "third_party/imgui/imgui.h"
 #include "third_party/imgui/imgui_internal.h"
 #include "third_party/imgui/imgui_impl_win32.h"
@@ -502,6 +506,21 @@ static bool DrawMenu() {
             first = false;
             if (ImGui::BeginTabItem(label.c_str(), nullptr, flags)) { body([&] { DrawPluginTab(t, frame); }); ImGui::EndTabItem(); }
         }
+#ifdef SCO_WIDGETS_HOST_RENDERER
+        // Copied retained declarations are rendered by the host on the existing
+        // game-thread frame handoff. No ImGui context crosses the plugin ABI.
+        // Panels() owns the snapshot; callbacks may replace their live panel.
+        sco::widgets::ImGuiRenderer widgetRenderer;
+        for (const auto& panel : sco::widgets::Panels()) {
+            const std::string label = panel.title + "###" + panel.id;
+            const ImGuiTabItemFlags flags = first ? ImGuiTabItemFlags_SetSelected : 0;
+            first = false;
+            if (ImGui::BeginTabItem(label.c_str(), nullptr, flags)) {
+                body([&] { sco::widgets::RenderPanel(panel.id.c_str(), widgetRenderer); });
+                ImGui::EndTabItem();
+            }
+        }
+#endif
         if (ImGui::BeginTabItem("Menu", nullptr, first ? ImGuiTabItemFlags_SetSelected : 0)) { body([&] { DrawMenuTab(); }); ImGui::EndTabItem(); }
         ImGui::EndTabBar();
     }

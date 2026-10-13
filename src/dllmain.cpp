@@ -35,6 +35,7 @@
 #include "sco_lua.h"
 #include "sco_lua_game.h"   // sco.datacore, sco.game.* and the game.* payloads for Lua scripts
 #include <filesystem>
+#include <cstring>
 #include <iterator>
 
 #pragma comment(lib, "shlwapi.lib")
@@ -189,6 +190,44 @@ static const sco::plugins::ScriptRuntime kLua{ sco_lua_load, sco_lua_unload };
 
 static bool g_hostKitStarted = false;   // sco::app::Start ran (on the game thread)
 
+#ifdef SCO_OFFLINE_G13_HOST
+static void ConfigurePrivateSession(sco::app::Platform& pf) {
+    // The host (never a plugin) owns bind/scope. No legacy CIDR expansion.
+    // G1 supplies positive live admission; do not substitute g_offline or flags.
+    char enabled[16]{};
+    const DWORD on = GetEnvironmentVariableA("SC_OFFLINE_MULTIPLAYER", enabled, sizeof(enabled));
+    if (on >= sizeof(enabled)) { pf.privateSession.enabled = false; return; }
+    pf.privateSession.enabled = !(on && _stricmp(enabled, "off") == 0);
+    char bind[32]{}, peers[272]{};
+    const DWORD bn = GetEnvironmentVariableA("SC_OFFLINE_MULTIPLAYER_BIND", bind, sizeof(bind));
+    const DWORD pn = GetEnvironmentVariableA("SC_OFFLINE_MULTIPLAYER_PEERS", peers, sizeof(peers));
+    if ((!bn || (bn < sizeof(bind) && !std::strcmp(bind, "127.0.0.1"))) && !pn) return; // exact loopback only
+    if (!bn || !pn || bn >= sizeof(bind) || pn >= sizeof(peers)) {
+        pf.privateSession.enabled = false;
+        Log("[G13] invalid/incomplete host bind + exact peer configuration; disabled");
+        return;
+    }
+    pf.privateSession.bindAddress = bind;
+    pf.privateSession.allowedAddresses.clear();
+    std::string value(peers);
+    size_t first = 0;
+    while (first < value.size() && pf.privateSession.allowedAddresses.size() < 16) {
+        const size_t end = value.find(',', first);
+        std::string address = value.substr(first, end == std::string::npos ? end : end-first);
+        const size_t begin = address.find_first_not_of(" ");
+        const size_t last = address.find_last_not_of(" ");
+        if (begin == std::string::npos) { pf.privateSession.enabled = false; return; }
+        pf.privateSession.allowedAddresses.push_back(address.substr(begin,last-begin+1));
+        if (end == std::string::npos) { first = value.size(); break; }
+        first = end+1;
+        if (first == value.size()) { pf.privateSession.enabled = false; return; }
+    }
+    if (first < value.size()) pf.privateSession.enabled = false;
+    // sco-core Configure validates private numeric bind/exact addresses and fails
+    // closed on public/wildcard/DNS/CIDR/duplicate/mismatched LAN input.
+}
+#endif
+
 static bool PrepareHostKit() {
     sco::app::Platform pf;
     pf.hostVersion = SCO_TITLE;
@@ -223,6 +262,9 @@ static bool PrepareHostKit() {
     // sco-core's game pack publishes teleport.spatial (and, later, the game.* services) under the
     // owner "game" before the built-ins load; the teleport built-in no longer provides it.
     pf.gameServices = true;
+#ifdef SCO_OFFLINE_G13_HOST
+    ConfigurePrivateSession(pf);
+#endif
     // G1 owns early manifest discovery, OPEN/LOADED timing and producer drain.
     // Its current source contract refuses mixed builtin + early DataCore input;
     // do not disable DataCore or resurrect the old private pack loader to bypass it.
