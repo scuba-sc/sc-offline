@@ -275,9 +275,10 @@ static void FindEffectTagSender() {
 }
 
 void ResolveQuantumApi(const Section&, const Section&) {
-    // G8 mutation is not approved. The retained private implementation must not
-    // become a bootstrap fallback merely because its signature rows resolve.
-    Log("[app] quantum control unavailable: G8 mutation remains disabled");
+    // Inactive legacy reference, excluded from the host target. G8 is approved,
+    // but only the public game-pack service may admit owned drive writes.
+    // Never reactivate this private offset/hook implementation as a fallback.
+    Log("[app] private quantum control retired: use admitted game.quantum");
 }
 
 bool QuantumDriveReady() {

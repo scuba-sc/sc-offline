@@ -1,5 +1,7 @@
 # Features
 
+**Current G8 migration boundary:** [external Quantum/Travel](../plugins/quantum/README.md) retains travel IDs, bookmark storage and the Travel panel, adds explicit bounded quantum controls, and removes private boost/keeper activation. Core requires an admitted owned-state backend; its default production adapter is absent, so real boost/effects and NAV input parity are still unavailable. G2 relocation and G7 cvar writes remain refused. Historical feature descriptions below are not current gameplay acceptance.
+
 The in-game menu, which **M** opens, has eight tabs: **Player**, **Travel**, **Vehicles**, **Crew**, **Build**, **Multiplayer**, **Squadron 42**, **Menu**. NPC is an external command-first plugin; the old **NPCs** tab is removed pending renderer-neutral widgets ([sco-core #139](https://github.com/scubamount/sco-core/issues/139)). Crew retains its shared NPC archetype picker. Which `game.*` service each feature runs on is in [architecture.md](architecture.md#what-each-feature-runs-on); pending game acceptance is in [status.md](status.md).
 
 Most of the lists below are plain text files in `data/`, and the counts are taken from those files. Remove lines from a file and its list gets shorter. See [data-files.md](data-files.md).

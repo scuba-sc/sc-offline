@@ -101,16 +101,13 @@ void Menu_RequestS42Setting(int i, bool on) {
 }
 
 void ResolveCVarsApi(const Section&, const Section&) {
-    if (WorldCapability("cvars.qdrive_kept_on")) {
-        for (int i = 0; i < kKeptOnCount; ++i) g_keptOn[i] = reinterpret_cast<int32_t*>(sco::Sig(kKeptOn[i].row));
-        for (int i = 0; i < kKeptOnFloatCount; ++i) g_keptOnFloat[i] = reinterpret_cast<float*>(sco::Sig(kKeptOnFloat[i].row));
-    } else {
-        Log("[+] quantum cvars not found; they stay as the game mode sets them (see the [core] lines in mod.log)");
-    }
+    Log("[app] quantum keeper retired: game.quantum owns control; global cvar writes unavailable");
     FindConsole();
 }
 
-static void KeepSettingsOn() {
+// Retained inactive reference only. Never called/resolved by host startup or tick.
+// G7 global writes remain unapproved; G8 does not authorize this global keeper.
+[[maybe_unused]] static void KeepSettingsOn() {
     for (int i = 0; i < kKeptOnCount; ++i) {
         int32_t* const s = g_keptOn[i];
         if (!s) continue;
@@ -139,5 +136,6 @@ static void KeepSettingsOn() {
 }
 
 void ProcessCVars() {
-    KeepSettingsOn();
+    // No quantum keeper fallback: G8 owns admitted drive controls. G7 writes
+    // remain unapproved; shared global cvars must not be forced every frame.
 }
