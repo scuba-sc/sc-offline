@@ -125,7 +125,6 @@ add_library(dinput8 SHARED
   src/hotkeys.cpp
   # Built-in plugins (src/builtins/builtins.h).
   src/builtins/contracts_plugin.cpp
-  src/builtins/mining_plugin.cpp
   # Their menu tabs, drawn through sco.ui (src/builtins/tabs.h).
   src/builtins/build_ui.cpp
   # Manifest EnableSegmentHeap.
