@@ -17,6 +17,7 @@ launcher/x64/
 *.log
 
 data/wallet.txt
+data/asop_ships.txt
 data/spawn*.txt
 # contract-system dev hooks read by src/contracts.cpp (see docs/data-files.md)
 data/*_test.txt

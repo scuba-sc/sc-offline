@@ -24,6 +24,7 @@ Everything the menu reads is plain text in `data/`. Most files explain their own
 | --- | --- |
 | `storage\` | Your saves: `teleport.db` (the F7 / F8 position), `quantum.db` (your named Travel spots), `contracts.db` (your aUEC balance), each with SQLite's `-wal` and `-shm` files, and any plugin's own database. See [Saves](#saves) |
 | `wallet.txt` | Your aUEC balance, also in `storage\contracts.db`; you can edit it |
+| `asop_ships.txt` | The ship classes checked on the Vehicles tab. An ASOP terminal lists these. Missing or empty means none |
 | `spawn.txt` | Your F7 / F8 position from before `storage\`; read once, then left as it is |
 | `bookmarks.txt` | Your named Travel spots from before `storage\`; read once, then left as it is |
 | `locations_found.txt` | The results of the Travel scan |
@@ -66,7 +67,7 @@ When one of these files is present, `src/contracts.cpp` or `src/spawner.cpp` cha
 | `SC_OFFLINE_PLUGINS` | From `plugins`: `on` loads plugins from `plugins\` beside the ship list (`data\plugins`); anything else is off |
 | `SC_OFFLINE_MULTIPLAYER` | From `multiplayer`: `off` switches the Multiplayer tab off; anything else (or unset) leaves it on |
 | `SC_OFFLINE_MULTIPLAYER_ALLOW` | From `multiplayer_allow`, checked by the launcher: extra IPv4 ranges a session may use |
-| `SC_OFFLINE_ASOP_FLEET_LIST` | From `asop_fleet_list`: `ships` lists `ships.txt` at the terminals; unset or anything else leaves the game's own list (with `asop` on) |
+| `SC_OFFLINE_ASOP_FLEET_LIST` | From `asop_fleet_list`: `ships` lists the classes checked under Ship terminals at the Vehicles tab (read from `asop_ships.txt` for each terminal list request); unset or anything else leaves the game's own list (with `asop` on) |
 | `SC_OFFLINE_MINING` | From `mining`: `on` (or `1`, `yes`, `true`) installs the natural-mining hook; unset or anything else is off. `SC_OFFLINE_MINING_DEBUG` (from `mining_debug`) the same for the `[mining/trace]` lines |
 | `SC_OFFLINE_ASOP` | From `asop`: `off` (or `0`, `no`, `false`) leaves the ship terminals, hangars and ATC alone; unset or anything else is on |
 | `SC_OFFLINE_SHIPS_FILE` | Where the ship list is read from |

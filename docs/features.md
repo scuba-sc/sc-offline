@@ -20,7 +20,7 @@ Most of the lists below are plain text files in `data/`, and the counts are take
 
 ## Vehicles
 
-- Spawn any of 1102 vehicles (`ships.txt`). Typing in the search box selects the first match.
+- Spawn from the full vehicle catalogue in `ships.txt`. Typing in the search box selects the first match. The ASOP terminal checkboxes below are separate and do not limit the spawn menu.
 - Pick where you board: the pilot seat, a seat by name, choose after spawning, or don't board. You can also remove the NPC sitting in that seat.
 - **Power on** sends the game's Flight Ready event. Depending on the ship, some systems may still start switched off.
 - Infinite ship ammo refills the magazines of the ship you're aboard (the [creative plugin](#the-creative-plugin)).
@@ -29,7 +29,7 @@ Most of the lists below are plain text files in `data/`, and the counts are take
 
 The station's ship terminals (ASOP) work offline, with `asop = on` in `sc-offline.ini` (the default):
 
-- **Open a terminal.** It lists the ships of `ships.txt` instead of staying on "Stand by".
+- **Open a terminal.** It lists only the ships checked under Ship terminals on the Vehicles tab (saved in `data\asop_ships.txt`). ASOP reads that file when it requests the terminal's list; the selection is separate from the full `ships.txt` spawn catalogue. Nothing is checked until you check one, so a new list stays on "Stand by". Close and reopen the terminal after changing the checks.
 - **Deliver** stores a ship at the terminal's station. The ship is spawned 1000 m above you for about 3 s and then stored. The terminal shows "Awaiting Delivery" for a few seconds, then "Stored" with a Retrieve action.
 - **Retrieve** gets you a personal hangar from the station's ATC. The station's elevators list it. The hangar's ship lift lowers, the ship is placed on it and the lift brings it up to the hangar floor. Terminals list it as "On Pad" in your hangar, with a Store action.
 - **Store** at the hangar terminal lowers the lift with the ship, stores it, and raises the empty lift again. You can Retrieve it again afterwards.

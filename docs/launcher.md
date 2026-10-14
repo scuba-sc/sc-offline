@@ -305,7 +305,7 @@ There is no wallet setting: your aUEC balance is kept in `data\storage\contracts
 | `start_ship` | `DRAK_Cutlass_Black` | The ship used by `start = Daymar`. **Without `start = Daymar` it does nothing.** |
 | `start` | (empty) | Empty: the game's own spawn (Orison with `boot_map = PU`, a Pyro station with `PU_All`). `Daymar`: about 10 seconds after you spawn, `start_ship` is spawned over Daymar and you're put in its pilot seat. |
 | `plugins` | `on` | `on`: load plugins from `data\plugins\<id>\`. See [Plugins](features.md#plugins). |
-| `asop_fleet_list` | `ships` | Which ship list the terminals show with `asop = on`: `game` (the game's own; offline its entitlement query fails, so it's empty) or `ships` (every ship in `data\ships.txt`). |
+| `asop_fleet_list` | `ships` | Which ship list the terminals show with `asop = on`: `game` (the game's own; offline its entitlement query fails, so it's empty) or `ships` (the classes checked under Ship terminals on the Vehicles tab, saved in `data\asop_ships.txt` and re-read for each terminal list request). |
 | `mining` | `off` | `on`: natural mining, the rocks of the nearby ecosystem cells are built as the game does online. Experimental. See [Natural mining](features.md#natural-mining). `mining_debug = on` (default `off`) adds its counters to `mod.log`. |
 | `asop` | `on` | `off`: leave the ship terminals, personal hangars, the hangar lift and ATC hails as the game has them offline. See [Ship terminals, hangars and ATC](features.md#ship-terminals-hangars-and-atc). |
 | `block_network` | `on` | Block `StarCitizen.exe`, the RSI Launcher and the game's `CrashHandler.exe` in Windows Firewall while you play. See [PC changes](#pc-changes). |
