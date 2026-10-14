@@ -4,12 +4,12 @@
 
 ## [👉 Join the Discord 👈](https://discord.gg/NJKeVfYCCC)
 
-<img src="images/banner.webp" alt="sc-offline — Star Citizen offline mod: single-player mod menu with ships, NPCs, build mode, travel and Squadron 42 outfits" width="100%">
-
 # sc-offline
 
 **An offline, single-player mod menu for Star Citizen.**<br>
 Spawn ships and buildings, travel the star systems and wear Squadron 42 outfits from the in-game menu; spawn and manage NPCs through the external plugin commands.
+
+<sub>Based on **ChrisWareOffline 0.9.0-rc1** by Chris Ware and cloudyyrust (GPL-3.0). The original project was shut down and its repository removed; sc-offline is maintained independently and is not endorsed by its authors. What this repository has changed since then, with dates: [CHANGELOG.md](CHANGELOG.md). Licensed under GPL-3.0 ([LICENSE](LICENSE)); third-party code keeps its own licence ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). This project is not affiliated with, endorsed by, or sponsored by Cloud Imperium Games or Roberts Space Industries.</sub>
 
 [![Latest release](https://img.shields.io/github/v/release/scubamount/sc-offline?style=flat-square&label=release&color=2ec4d6)](https://github.com/scubamount/sc-offline/releases/latest)
 [![Build](https://img.shields.io/github/actions/workflow/status/scubamount/sc-offline/build.yml?branch=main&style=flat-square&label=build)](https://github.com/scubamount/sc-offline/actions/workflows/build.yml)
@@ -27,10 +27,33 @@ Spawn ships and buildings, travel the star systems and wear Squadron 42 outfits 
 </div>
 
 > [!WARNING]
-> This mod may get your account banned. Use it at your own risk, and **only offline**, never on Cloud Imperium Games' servers.
+> Using this mod may breach the Star Citizen EULA and Terms of Service, and it may get your
+> account banned. Use it only offline, never on Cloud Imperium Games' servers. You are
+> responsible for your own account.
+>
+> **Before you play online again**, run `sc-offline.exe status`. If it reports anything left
+> over (for example after a crash or a power cut), run `sc-offline.exe uninstall`, which takes
+> the mod out of the game folder and undoes the PC changes the launcher recorded. See
+> [Go back online](#go-back-online).
 
 > [!NOTE]
-> **Played in game on Windows with 0.6.1** (October 2026): the launcher, the menu and its features worked. Since then sc-offline was converted to run on sco-core's game services and its cheats became an optional plugin, and **none of that conversion has been run in game yet** ([what is not verified](docs/status.md)). Other PCs and game patches can still behave differently; known problems are tracked in [Issues](https://github.com/scubamount/sc-offline/issues). If something breaks, see [Troubleshooting](#troubleshooting) and [report it](https://github.com/scubamount/sc-offline/issues). Linux through Wine is still untested.
+> **Release vs. gameplay testing status.** These are three different states, and none of them
+> stands in for the others:
+> - **Shipped `v0.7.7`** (built on sco-core `2197dfb`, game pack 0.2.0): its
+>   [release notes](https://github.com/scubamount/sc-offline/releases/tag/v0.7.7) report that the
+>   maintainer ran it in game with NVIDIA Smooth Motion off. That was one run, not a check of
+>   each feature.
+> - **Current `main`** pins the published sco-core SDK **2.0.0** (tag `sdk-v2.0.0`, `cd9a686`;
+>   plugin ABI 1.1, game pack 0.3.0) and ships NPC and the inspector as external plugins. It
+>   has **not been run in game** ([what is not verified](docs/status.md)).
+> - **SDK 2.1.0:** draft PR [#126](https://github.com/scubamount/sc-offline/pull/126) is
+>   preparing the move to the published `sdk-v2.1.0` release (`8ef2424`, game pack 0.4.0). It
+>   is not merged; until it is, `main` stays on SDK 2.0.0.
+>
+> In-game verification of each capability, and of SDK 2.1.0, is still outstanding. Other PCs and game patches can behave differently; known problems are tracked
+> in [Issues](https://github.com/scubamount/sc-offline/issues). If something breaks, see
+> [Troubleshooting](#troubleshooting) and [report it](https://github.com/scubamount/sc-offline/issues).
+> Linux through Wine is still untested.
 
 ## Quick start
 
@@ -39,7 +62,7 @@ Spawn ships and buildings, travel the star systems and wear Squadron 42 outfits 
 3. **Open** `sc-offline.exe`, click **Play**, and say yes to the administrator prompt.
 4. **Press `M`** once the game has loaded you in.
 
-The launcher puts the mod into your game folder while you play and takes it out again afterwards, along with every change it made to your PC.
+The launcher puts the mod into your game folder while you play, takes it out again when the game closes, and undoes the PC changes it recorded ([what it changes](#2-what-the-launcher-changes)). After a crash or a power cut, run `sc-offline.exe status`, and `sc-offline.exe uninstall` if it lists anything, before you go online.
 
 ## What you need
 
@@ -65,14 +88,14 @@ The mod can't run while Easy Anti-Cheat (EAC) is on, so each time you play, the 
 
 | Step | Change | Why |
 | --- | --- | --- |
-| 1 | Adds a Windows Firewall rule that blocks `StarCitizen.exe` | The game has no network while modded |
+| 1 | Adds Windows Firewall rules that block `StarCitizen.exe`, the RSI Launcher and the game's crash reporter (with `multiplayer = on`, the game keeps your local network for [co-presence](#scope)) | The game can't reach the internet while modded |
 | 2 | Adds `127.0.0.1 modules-cdn.eac-prod.on.epicgames.com` to your hosts file | The RSI Launcher doesn't download EAC again |
 | 3 | Renames `EasyAntiCheat_EOS.exe` to `EasyAntiCheat_EOS.exe.bak` | EAC doesn't start |
 
-When the game closes, it undoes exactly what it changed and prints what it undid. Anything you set up yourself is left alone. If the game crashes or the PC shuts down, the next run of `sc-offline.exe` lists what is still in place and offers to undo it. Each step can be turned off in `sc-offline.ini`; see [docs/launcher.md](docs/launcher.md#pc-changes).
+Each change is recorded as it is made. When the game closes, the launcher undoes the recorded changes and prints what it undid. Anything you set up yourself is left alone. If the game crashes or the PC shuts down, the changes stay in place: the next run of `sc-offline.exe` lists them and offers to undo them, `sc-offline.exe status` shows them, and `sc-offline.exe uninstall` undoes them. Each step can be turned off in `sc-offline.ini`; see [docs/launcher.md](docs/launcher.md#pc-changes).
 
 > [!IMPORTANT]
-> The firewall rule stops the game reaching the network. It doesn't remove other traces on your PC by itself. When the game closes, the launcher lists the logs the game wrote during this session (`Game.log`, new files in `logbackups` and `Crashes`) and asks twice before deleting them; keep `Game.log` if you want to report a bug. Older logs are never touched. Use the mod at your own risk.
+> The firewall rules keep the game off the internet. They don't remove other traces on your PC by itself. When the game closes, the launcher lists the logs the game wrote during this session (`Game.log`, new files in `logbackups` and `Crashes`) and asks twice before deleting them; keep `Game.log` if you want to report a bug. Older logs are never touched. Use the mod at your own risk.
 
 ## Play
 
@@ -108,11 +131,6 @@ While you play, your Discord profile shows **Playing sc-offline** with the versi
 The launcher finds your install by itself: it asks the RSI Launcher where the game is, checks the usual folders, then searches your drives, and if all that fails it lets you pick the folder. It remembers the answer for next time. To force a folder, set `game =` in `sc-offline.ini`. The same file also chooses the boot map, the channel (`LIVE`, `PTU`, and so on) and an optional start in a ship over Daymar (`start = Daymar` with `start_ship`); see [docs/launcher.md](docs/launcher.md). The mobiGlas vehicle manager and character creation don't work offline; the ship terminals do, with `asop = on` (the default). See [Ship terminals, hangars and ATC](docs/features.md#ship-terminals-hangars-and-atc) and [Not available offline](docs/features.md#not-available-offline).
 
 What's in each menu tab: [docs/features.md](docs/features.md).
-
-<p align="center">
-  <img src="images/screenshot.webp" alt="A Vanduul holding a gun on a desert planet, with a line of Vanduul and a large ship behind it" width="85%">
-  <br><sub>In-game: spawned Vanduul and a ship.</sub>
-</p>
 
 ## Update
 
@@ -152,7 +170,7 @@ Run `sc-offline.exe status` from a terminal. It checks the DLL, the game version
 <details>
 <summary><b>The launcher stops with "Easy Anti-Cheat is active"</b></summary>
 
-Set `eac_rename = on` in `sc-offline.ini`, or rename the file yourself.
+The launcher won't start a modded game while Easy Anti-Cheat is active. Leave `eac_rename = on` (the default) in `sc-offline.ini` so the launcher handles it for the session and restores it when the game closes, then run the launcher again.
 </details>
 
 <details>
@@ -176,7 +194,7 @@ Start `sc-offline.exe` with normal rights. An elevated launcher attempts to use 
 <details>
 <summary><b>The game crashed or the PC shut down mid-game</b></summary>
 
-Run `sc-offline.exe uninstall` before you play online. It removes the mod and undoes the PC changes.
+Run `sc-offline.exe status`, then `sc-offline.exe uninstall` before you play online. It removes the mod and undoes the PC changes the launcher recorded.
 </details>
 
 <details>
@@ -190,8 +208,8 @@ That's expected until the mod is updated for the new game version.
 ## Go back online
 
 1. Close the game.
-2. In the sc-offline window, check the light at the top. **Green** means the mod is out of the game folder and every PC change is undone. **Red** lists what is left: click **Uninstall**, which is enabled only then. (From a terminal: `sc-offline.exe status`, then `sc-offline.exe uninstall` if needed.)
-3. If you set `eac_hosts` or `eac_rename` to `off` and made those changes by hand, undo them by hand: rename `EasyAntiCheat_EOS.exe.bak` back, delete the `modules-cdn.eac-prod.on.epicgames.com` line from your hosts file, and run `ipconfig /flushdns`.
+2. In the sc-offline window, check the light at the top. **Green** means the mod is out of the game folder and every PC change the launcher recorded is undone. **Red** lists what is left: click **Uninstall**, which is enabled only then. (From a terminal: `sc-offline.exe status`, then `sc-offline.exe uninstall` if needed.)
+3. Only changes the launcher made itself are recorded. Anything changed outside it (for example while `eac_hosts` or `eac_rename` was off) isn't, so `status` can't report it and `uninstall` can't undo it.
 
 ## How it's built
 
@@ -201,11 +219,38 @@ What runs on what: teleport on `teleport.spatial`; ship spawns on `spawn.entitie
 
 CI keeps this honest: `no-scans` (no raw scan under `src/`) and `sdk-headers` (`src/builtins/` and `plugins/` include only SDK headers), next to `check`, `build` and `bridges`. The built-ins still call sc-offline's own engines for features with no `game.*` service yet, which is what `tools/sdk-headers-allow.txt` lists. Details: [docs/architecture.md](docs/architecture.md) and [docs/build.md](docs/build.md). What has not been run in game since the conversion: [docs/status.md](docs/status.md).
 
+## Source, dependencies and data
+
+Each release is built by [`.github/workflows/build.yml`](.github/workflows/build.yml) from this repository at the release tag. GitHub publishes the SHA-256 of every release asset, and `sc-offline.exe update` checks the download against it. No prebuilt binary is kept in git. The binaries are compiled from more than `src/`:
+
+| Source | What it is | Licence |
+| --- | --- | --- |
+| `src/` (except `src/third_party/`), `launcher/`, `plugins/` | sc-offline's own code: the mod (`dinput8.dll`), the launcher (`sc-offline.exe`) and the plugin DLLs. The plugins compile against sco-core's SDK headers; NPC and inspector against the published SDK archive | GPL-3.0 ([LICENSE](LICENSE)) |
+| `src/third_party/imgui/` | Dear ImGui 1.92.8 WIP, vendored; in `dinput8.dll` and `sc-offline.exe` | MIT |
+| `external/sco-core` (git submodule) | [sco-core](https://github.com/scubamount/sco-core) at the commit pinned for that release (on `main` today: `sdk-v2.0.0`, `cd9a686`): the host kit, game pack and plugin runtime, plus the Lua 5.4.8 (modified), SQLite 3.53.4 and toml++ 3.4.0 it vendors | sco-core: GPL-3.0-only; Lua and toml++: MIT; SQLite: public domain |
+
+Licence texts and where each component ends up: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), which also ships in the release zip.
+
+`data/` ships in the release as tracked in git. It is not only identifiers:
+
+- **Game identifiers**, one per line: `ships.txt` (vehicle entity class names taken from the game's data), `npcs.txt` (NPC archetypes) and `items.txt` (gear item names, in slot sections).
+- **Contract list:** `contract_scripts.txt`, the IDs and internal names of the 796 contracts that need no CIG mission script, generated from the game's `Game2.dcb`.
+- **Named lists built on game identifiers:** `locations.txt` (system, the name the menu shows, entity name, radius), `outfits.txt` (named outfits, each a list of item names) and `buildables.txt` (the game's object-container paths, in named groups).
+- **Offline profile:** `OfflineDB/default_1.xml`, the starting money and ships, which the launcher copies into the game's user folder.
+- **Game-data patch:** `builtin/quantum/datacore/quantum_drive.toml`, a DataCore data pack that sco-core applies as the game loads its data.
+- **Plugin settings:** `plugins/*/plugin.ini`, and the `disabled` marker that keeps creative off.
+
+Formats: [docs/data-files.md](docs/data-files.md).
+
 ## Scope
 
-Offline play is the default and stays that way: while modded, the game doesn't reach Cloud Imperium Games' servers. Two additions go beyond one offline game, and neither uses or changes the game's own netcode or servers:
+Offline play is the default and stays that way. sc-offline never connects to Cloud Imperium Games' servers, and while modded, the launcher's firewall rules keep the game off the internet. (`sc-offline.exe` itself stays online to check GitHub for updates.)
 
-- **Private co-presence** (the Multiplayer tab): friends who also run sc-offline play alongside each other over a LAN or a VPN you choose (Tailscale, ZeroTier). Each player still runs their own offline game; peers exchange their own authenticated messages (poses, spawn announcements), and other players show up as "ghost" entities your game spawns. Nothing connects until you press Host or Join ([limits](docs/features.md#multiplayer-lan-or-vpn)).
+What runs is a local recreation: ships, NPCs, contracts and build mode run on this project's own data and services, not on CIG's server-side systems. The local contracts are the 796 that need no CIG mission script. This repository ships none of CIG's Subsumption mission scripts, so contracts that need them aren't offered, and nothing done offline restores or affects online progression. None of this makes online play with the mod safe: the launcher's EAC handling keeps you offline while modded, and nothing here guarantees your account won't be flagged.
+
+Two additions go beyond one offline game, and neither uses or changes the game's own netcode or servers:
+
+- **Private co-presence** (the Multiplayer tab, on sco-core's `sco.net`): friends who also run sc-offline play alongside each other, peer to peer between sc-offline clients only, over a LAN or a VPN you set up yourself (Tailscale, ZeroTier). Each player still runs their own offline game; peers exchange their own authenticated messages (poses, spawn announcements), and other players show up as "ghost" entities your game spawns. Nothing connects until you press Host or Join ([limits](docs/features.md#multiplayer-lan-or-vpn)).
 - **Bridges to other games** on the same PC, over local shared memory, for example Titanfall 2 (through Northstar) or a Minecraft-style voxel game. Optional builds only, **not in the release** ([docs/bridges.md](docs/bridges.md)).
 
 sc-offline never runs with Easy Anti-Cheat active: while you play, the launcher renames `EasyAntiCheat_EOS.exe` and blocks the EAC download host ([what the launcher changes](#2-what-the-launcher-changes)). Online play, cheating, getting around anti-cheat and the rest of the bans in [CONTRIBUTING](CONTRIBUTING.md#what-fits-this-project) stay out for good.
@@ -226,6 +271,7 @@ sc-offline never runs with Easy Anti-Cheat active: while you play, the launcher 
 | [Bridges](docs/bridges.md) | The optional Titanfall 2 and voxel bridges (not in the release) |
 | [Build](docs/build.md) | Building from source, checks, CI and releases |
 | [Changelog](CHANGELOG.md) | What changed in each release |
+| [Third-party notices](THIRD_PARTY_NOTICES.md) | Third-party code in the release and its licences |
 
 ## Star history
 

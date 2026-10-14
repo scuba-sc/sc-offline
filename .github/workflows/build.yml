@@ -370,7 +370,7 @@ jobs:
           pkg="sc-offline-$TAG"
           mkdir -p "stage/$pkg"
           cp built/dinput8.dll built/sc-offline.exe "stage/$pkg/"
-          cp launcher/sc-offline.ini launcher/sc-offline.sh README.md CHANGELOG.md LICENSE "stage/$pkg/"
+          cp launcher/sc-offline.ini launcher/sc-offline.sh README.md CHANGELOG.md LICENSE THIRD_PARTY_NOTICES.md "stage/$pkg/"
           git ls-files -z docs | xargs -0 -r cp --parents -t "stage/$pkg/"
           git ls-files -z data | xargs -0 cp --parents -t "stage/$pkg/"
           # The creative plugin: its DLL from CI next to the tracked plugin.ini and `disabled` marker
