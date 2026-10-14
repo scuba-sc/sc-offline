@@ -7,7 +7,7 @@ Most of the lists below are plain text files in `data/`, and the counts are take
 ## Player
 
 - Noclip, god mode, infinite ammo: from the optional [creative plugin](#the-creative-plugin) (shipped off; turn it on in the launcher's Plugins page).
-- Gear menu: equip any of 1489 items, sorted into ten slots (`items.txt`).
+- Gear menu: equip the listed gear from ten slots, plus supported optics, barrels and underbarrels for the primary weapon and sidearm. For the Pyro RYT Multi-Tool, choose one of its five utility modules; the SRT module also offers empty or filled canisters. Its battery is attached automatically. The list is curated rather than a complete inventory database; see [data-files.md](data-files.md#shipped-lists) for public catalog sources.
 - Wallet: your aUEC balance is loaded when you spawn and saved as it changes, in the contracts built-in's storage (`data/storage/contracts.db`) and in `data/wallet.txt`. The file holds just the number; edit it while the game is closed to change your balance: an edited `wallet.txt` always wins over the stored balance (see [Saves](data-files.md#saves)). Without the file, you start with the `aUEC amount` in `data/OfflineDB/default_1.xml` (100,000,000). Once `wallet.txt` exists, that amount is no longer used, so delete `wallet.txt` to go back to it.
 
 ## Travel
@@ -159,7 +159,9 @@ sc-offline's features are nine plugins compiled into `dinput8.dll`: `teleport`, 
 | `crew.fill <npc>` | Puts an NPC of this archetype (`npcs.txt`) in every empty, usable seat of the target ship and says how many seats it skipped | |
 | `crew.clear` | Removes the NPCs `crew.fill` added to the target ship | |
 | `crew.power_on` | Sends the game's Flight Ready event to the target ship | |
-| `loadout.equip <items>` | Equips items from `items.txt` (separated by spaces or commas, one per slot; the other slots are empty, as in the gear menu) | |
+| `npc.spawn <npc> <count>` | Spawns 1 to 10 NPCs of an archetype (`npcs.txt`) about 3 m in front of you, through the game pack's `game.actors`; an unknown archetype answers `failed` with the game pack's reason | |
+| `npc.clear` | Despawns the NPCs `npc.spawn` made (the crew's NPCs aren't included; `crew.clear` removes those) | |
+| `loadout.equip <items>` | Equips gear items from the ten gear sections in `items.txt` (separated by spaces or commas, one per gear slot; the other slots are empty). Weapon attachments and multitool modules/canisters are selected in the Player tab | |
 | `loadout.wear <outfit>` | Wears a Squadron 42 outfit from `outfits.txt` | |
 | `quantum.travel <place> <altitude>` | Teleports you to a place from the Travel tab, `<altitude>` m (100 to 20000) above the ground | |
 | `quantum.bookmark <name>` | Teleports you to a saved spot | |

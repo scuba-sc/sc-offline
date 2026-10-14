@@ -78,6 +78,14 @@ Built-ins cannot be hot-reloaded. The old build reload request is a future
 external-plugin acceptance case, not a current built-in capability. NPC now has
 an external-consumer reload route; game acceptance is still NOT RUN.
 
+## Weapon attachments
+
+Confirmed working in game by the user. For further regression coverage, equip a primary weapon and sidearm with independently selected optics, barrels and underbarrels; verify that selecting **None** removes them on the next equip and an attachment selection is ignored when its weapon isn't selected. Attachment classes absent from the current game build are filtered from the menu.
+
+## Pyro RYT Multi-Tool modules
+
+Confirmed working in game by the user. For further regression coverage, equip the base multi-tool as a sidearm and check each module (mining, cutter, tractor beam, healing and SRT) loads through the utility attachment port. With SRT selected, verify both canister choices and **None**; with another module selected, no SRT canister should be attached. Also check that the multi-tool battery is included and the default SRT variant retains its built-in SRT/empty canister/battery when left unchanged; explicitly choosing a different module or canister should switch to the base multi-tool class and apply that choice.
+
 ## From #95 (the SDK conversion, merged)
 
 Each converted feature has a deferred checklist in the PR's body. In short:

@@ -73,6 +73,106 @@ static void GearCombo(int slot, const char* label, const char* none, int& pick, 
     ImGui::EndCombo();
 }
 
+static void AttachmentCombo(int slot, bool primary, const char* label, int& pick, const char* filter, float width) {
+    const int n = Menu_AttachmentCount(slot);
+    if (pick >= n) pick = -1;
+    char preview[112], id[32];
+    snprintf(preview, sizeof(preview), "%s: %s", label, pick >= 0 ? Menu_AttachmentName(slot, pick) : "None");
+    snprintf(id, sizeof(id), "##attachment%d%d", primary ? 1 : 0, slot);
+    ImGui::SetNextItemWidth(width);
+    if (!ImGui::BeginCombo(id, preview, ImGuiComboFlags_HeightLarge)) return;
+    if (ImGui::Selectable("None", pick < 0)) pick = -1;
+    for (int i = 0; i < n; ++i) {
+        const char* name = Menu_AttachmentName(slot, i);
+        if (!MatchesFilter(name, filter)) continue;
+        ImGui::PushID(i);
+        if (ImGui::Selectable(name, i == pick)) pick = i;
+        if (i == pick) ImGui::SetItemDefaultFocus();
+        ImGui::PopID();
+    }
+    ImGui::EndCombo();
+}
+
+static bool IsMultitoolName(const char* name) {
+    static const char* const kPrefix = "grin_multitool_01";
+    const size_t length = strlen(kPrefix);
+    return name && _strnicmp(name, kPrefix, length) == 0 && (name[length] == '\0' || name[length] == '_');
+}
+
+static bool IsDefaultSrtTool(const char* name) {
+    return name && _stricmp(name, "grin_multitool_01_default_salvage_repair") == 0;
+}
+
+static const char* GearPickName(int slot, const int gear[Gear_SlotCount]) {
+    return gear[slot] >= 0 ? Menu_GearName(slot, gear[slot]) : "";
+}
+
+static const char* ToolModuleLabel(const char* name) {
+    if (_stricmp(name, "grin_multitool_01_mining") == 0) return "OreBit Mining Attachment";
+    if (_stricmp(name, "grin_multitool_01_cutter") == 0) return "OxyTorch Cutter Attachment";
+    if (_stricmp(name, "grin_multitool_01_tractorbeam") == 0) return "TruHold Tractor Beam Attachment";
+    if (_stricmp(name, "grin_multitool_01_healing") == 0) return "LifeGuard Medical Attachment";
+    if (_stricmp(name, "grin_multitool_01_salvage_repair") == 0) return "Cambio-Lite SRT Attachment";
+    return name;
+}
+
+static const char* ToolCanisterLabel(const char* name) {
+    if (_stricmp(name, "grin_multitool_resource_salvage_repair_01") == 0) return "Cambio-Lite SRT Canister (empty)";
+    if (_stricmp(name, "grin_multitool_resource_salvage_repair_01_filled") == 0) return "Cambio-Lite SRT Canister (filled)";
+    return name;
+}
+
+static void ToolModuleCombo(bool primary, const char* tool, int& pick, const char* filter, float width) {
+    const int n = Menu_ToolModuleCount();
+    if (pick >= n) pick = -1;
+    const char* none = IsDefaultSrtTool(tool) ? "Default (Cambio-Lite SRT)" : "None";
+    const char* selected = pick >= 0 ? ToolModuleLabel(Menu_ToolModuleName(pick)) : none;
+    char preview[128], id[32];
+    snprintf(preview, sizeof(preview), "%s module: %s", primary ? "Primary" : "Sidearm", selected);
+    snprintf(id, sizeof(id), "##toolModule%d", primary ? 1 : 0);
+    ImGui::SetNextItemWidth(width);
+    if (!ImGui::BeginCombo(id, preview, ImGuiComboFlags_HeightLarge)) return;
+    if (ImGui::Selectable(none, pick < 0)) pick = -1;
+    for (int i = 0; i < n; ++i) {
+        const char* name = Menu_ToolModuleName(i);
+        const char* label = ToolModuleLabel(name);
+        if (!MatchesFilter(name, filter) && !MatchesFilter(label, filter)) continue;
+        ImGui::PushID(i);
+        if (ImGui::Selectable(label, i == pick)) pick = i;
+        if (i == pick) ImGui::SetItemDefaultFocus();
+        ImGui::PopID();
+    }
+    ImGui::EndCombo();
+}
+
+static bool UsesSrtCanister(const char* tool, int modulePick) {
+    if (modulePick < 0) return IsDefaultSrtTool(tool);
+    return _stricmp(Menu_ToolModuleName(modulePick), "grin_multitool_01_salvage_repair") == 0;
+}
+
+static void ToolCanisterCombo(bool primary, const char* tool, int& pick, const char* filter, float width) {
+    const int n = Menu_ToolCanisterCount();
+    if (pick >= n) pick = -1;
+    const char* none = pick < 0 && IsDefaultSrtTool(tool) ? "Default (empty canister)" : "None";
+    const char* selected = pick >= 0 ? ToolCanisterLabel(Menu_ToolCanisterName(pick)) : none;
+    char preview[128], id[32];
+    snprintf(preview, sizeof(preview), "%s SRT canister: %s", primary ? "Primary" : "Sidearm", selected);
+    snprintf(id, sizeof(id), "##toolCanister%d", primary ? 1 : 0);
+    ImGui::SetNextItemWidth(width);
+    if (!ImGui::BeginCombo(id, preview, ImGuiComboFlags_HeightLarge)) return;
+    if (ImGui::Selectable(none, pick < 0)) pick = -1;
+    for (int i = 0; i < n; ++i) {
+        const char* name = Menu_ToolCanisterName(i);
+        const char* label = ToolCanisterLabel(name);
+        if (!MatchesFilter(name, filter) && !MatchesFilter(label, filter)) continue;
+        ImGui::PushID(i);
+        if (ImGui::Selectable(label, i == pick)) pick = i;
+        if (i == pick) ImGui::SetItemDefaultFocus();
+        ImGui::PopID();
+    }
+    ImGui::EndCombo();
+}
+
 void DrawPlayerTab(void*, void*) {
     SectionHeading("Movement");
     static bool  noclip = false;
@@ -96,18 +196,67 @@ void DrawPlayerTab(void*, void*) {
 
     SectionHeading("Gear");
     static int  gear[Gear_SlotCount] = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+    static MenuWeaponAttachments attachments;
     static char gearFilter[64] = "";
     static const struct { const char* label; const char* none; } kGear[Gear_SlotCount] = {
         { "Undersuit", "Default" }, { "Helmet", "None" }, { "Body", "None" }, { "Arms", "None" }, { "Legs", "None" },
         { "Backpack", "None" }, { "Primary", "None" }, { "Sidearm", "None" }, { "Ammo", "Matches weapon" }, { "Grenades", "None" } };
+    static const char* const kAttachmentLabels[Attachment_SlotCount] = { "Optic", "Barrel", "Underbarrel" };
     if (Menu_GearCount(0) < 0) { Hint("Loading gear (you need to be in the universe)..."); return; }
+    if (Menu_AttachmentCount(0) < 0) { Hint("Loading weapon attachments..."); return; }
+    if (Menu_ToolModuleCount() < 0 || Menu_ToolCanisterCount() < 0) { Hint("Loading multi-tool modules..."); return; }
     SearchBox("##gearFilter", "Search gear", gearFilter, sizeof(gearFilter));
     const float half = Columns(2);
     for (int s = 0; s < Gear_SlotCount; ++s) {
         if (s % 2) ImGui::SameLine();
         GearCombo(s, kGear[s].label, kGear[s].none, gear[s], gearFilter, half);
     }
-    if (PrimaryButton("Equip gear")) { Menu_RequestEquip(gear); MenuClose(); }
+    const char* primary = GearPickName(Gear_Primary, gear);
+    if (IsMultitoolName(primary)) {
+        for (int& pick : attachments.primary) pick = -1;
+    } else {
+        attachments.primaryToolModule = -1;
+        attachments.primaryToolCanister = -1;
+    }
+    if (!IsMultitoolName(primary)) {
+        SectionHeading("Primary weapon attachments");
+        Hint("Choose supported firearm attachment classes from items.txt.");
+        for (int s = 0; s < Attachment_SlotCount; ++s) {
+            if (s % 2) ImGui::SameLine();
+            AttachmentCombo(s, true, kAttachmentLabels[s], attachments.primary[s], gearFilter, half);
+        }
+    } else {
+        SectionHeading("Primary multi-tool");
+        ToolModuleCombo(true, primary, attachments.primaryToolModule, gearFilter, half);
+        if (UsesSrtCanister(primary, attachments.primaryToolModule)) {
+            ImGui::SameLine();
+            ToolCanisterCombo(true, primary, attachments.primaryToolCanister, gearFilter, half);
+        } else attachments.primaryToolCanister = -1;
+    }
+
+    const char* sidearm = GearPickName(Gear_Sidearm, gear);
+    if (IsMultitoolName(sidearm)) {
+        for (int& pick : attachments.sidearm) pick = -1;
+    } else {
+        attachments.sidearmToolModule = -1;
+        attachments.sidearmToolCanister = -1;
+    }
+    if (!IsMultitoolName(sidearm)) {
+        SectionHeading("Sidearm attachments");
+        Hint("Choose supported firearm attachment classes from items.txt.");
+        for (int s = 0; s < Attachment_SlotCount; ++s) {
+            if (s % 2) ImGui::SameLine();
+            AttachmentCombo(s, false, kAttachmentLabels[s], attachments.sidearm[s], gearFilter, half);
+        }
+    } else {
+        SectionHeading("Sidearm multi-tool");
+        ToolModuleCombo(false, sidearm, attachments.sidearmToolModule, gearFilter, half);
+        if (UsesSrtCanister(sidearm, attachments.sidearmToolModule)) {
+            ImGui::SameLine();
+            ToolCanisterCombo(false, sidearm, attachments.sidearmToolCanister, gearFilter, half);
+        } else attachments.sidearmToolCanister = -1;
+    }
+    if (PrimaryButton("Equip gear")) { Menu_RequestEquip(gear, &attachments); MenuClose(); }
 }
 
 void DrawSq42Tab(void*, void*) {

@@ -8,7 +8,7 @@ Everything the menu reads is plain text in `data/`. Most files explain their own
 | --- | --- |
 | `ships.txt` | 1102 spawnable vehicles |
 | `npcs.txt` | 2239 NPC archetypes |
-| `items.txt` | 1489 gear items, in ten slot sections |
+| `items.txt` | Curated gear classes in ten slot sections, 98 firearm attachment classes in `[optic]`, `[barrel]` and `[underbarrel]`, five multitool modules, two SRT canisters and the multitool battery class |
 | `buildables.txt` | 3728 objects in 18 groups, for Build mode and the Squadron 42 Spawn section |
 | `outfits.txt` | 35 outfits: each is a `[name]` line, then one line per piece |
 | `locations.txt` | Places for the Travel tab: system, name, entity, radius |
@@ -17,6 +17,8 @@ Everything the menu reads is plain text in `data/`. Most files explain their own
 | `OfflineDB/default_1.xml` | The starting loadout. The launcher copies it to `user\client\0` |
 | `plugins\discord\` | The Discord status plugin: `plugin.ini` and `discord.dll`, on by default (see [launcher.md](launcher.md#discord-status)) |
 | `plugins\creative\` | The optional creative plugin: `plugin.ini`, `creative.dll` and an empty `disabled` marker (off until you switch it on in the launcher's Plugins page; see [features.md](features.md#the-creative-plugin)). Other plugins go in their own folder here with `plugins = on` |
+
+`items.txt` is a curated list for the Player gear menu, not a complete inventory database. For searching, see the [Star Citizen Wiki item pages](https://starcitizen.tools/Items), [Star Citizen Wiki API](https://api.star-citizen.wiki/), [SC Unpacked](https://scunpacked.com/) and Cornerstone's [Universal Item Finder](https://finder.cstone.space/), including its [FPS tool attachments](https://finder.cstone.space/FPSToolAttachments). These community-maintained sources are useful but can be patch-bound or incomplete; Cornerstone notes that its shop data is crowdsourced. The game's own `Data.p4k` in the installed game data folder is the underlying local data source, but extracted game files should not be copied into this project or redistributed.
 
 ## Files the mod creates
 

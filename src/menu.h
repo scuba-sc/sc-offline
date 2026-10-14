@@ -35,9 +35,24 @@ void            SetMenuStatus(const char* fmt, ...);   // also logged; shown in 
 
 enum MenuGearSlot { Gear_Undersuit, Gear_Helmet, Gear_Torso, Gear_Arms, Gear_Legs, Gear_Backpack,
                     Gear_Primary, Gear_Sidearm, Gear_Ammo, Gear_Grenade, Gear_SlotCount };
+enum MenuAttachmentSlot { Attachment_Optic, Attachment_Barrel, Attachment_Underbarrel, Attachment_SlotCount };
+struct MenuWeaponAttachments {
+    int primary[Attachment_SlotCount] = { -1, -1, -1 };
+    int sidearm[Attachment_SlotCount] = { -1, -1, -1 };
+    int primaryToolModule = -1;
+    int primaryToolCanister = -1;
+    int sidearmToolModule = -1;
+    int sidearmToolCanister = -1;
+};
 int             Menu_GearCount(int slot);
 const char*     Menu_GearName(int slot, int index);
-void            Menu_RequestEquip(const int picks[Gear_SlotCount]);
+int             Menu_AttachmentCount(int slot);
+const char*     Menu_AttachmentName(int slot, int index);
+int             Menu_ToolModuleCount();
+const char*     Menu_ToolModuleName(int index);
+int             Menu_ToolCanisterCount();
+const char*     Menu_ToolCanisterName(int index);
+void            Menu_RequestEquip(const int picks[Gear_SlotCount], const MenuWeaponAttachments* attachments = nullptr);
 void            Menu_RunConsole(const char* cmd);
 bool            Menu_ConsoleReady();   // the game's console was found
 

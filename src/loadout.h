@@ -8,7 +8,7 @@ void ProcessLoadout();
 
 // Shared with the outfit menu: same loader, same file handling.
 bool        LoadoutApiReady();
-std::string LoadoutItem(const char* port, const char* name, const std::string& children = std::string());
+std::string LoadoutItem(const char* port, const char* name, const std::string& children = std::string(), const char* tag = nullptr);
 void        EquipLoadoutXml(const std::string& xml, const char* tag);
 
 // The player's head subtree; null fields take the original's defaults (see HeadItem).
