@@ -18,6 +18,10 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
+# The one published SDK these proofs consume: sdk-v2.1.0 (signed approval at sco-core 8ef24243).
+SDK_ROOT = 'sco-sdk-2.1.0'
+SDK_ARCHIVE = SDK_ROOT + '.zip'
+SDK_SHA256 = 'f5ee92708360c9df1a6b9986c78acab25ea49da460b37b89b47e5e2091326f64'
 
 
 def run(argv, cwd, success=True):
@@ -33,26 +37,35 @@ def contained(path, root):
 
 
 def verify_extract(archive, sums, destination):
+    if archive.name != SDK_ARCHIVE:
+        raise AssertionError(f'Expected published {SDK_ARCHIVE}, got {archive.name}')
     rows = [line.split() for line in sums.read_text().splitlines() if line.strip()]
     hashes = [row[0] for row in rows if row[1].lstrip('*') == archive.name]
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-    if len(hashes) != 1 or digest != hashes[0]:
+    if len(hashes) != 1 or digest != hashes[0] or digest != SDK_SHA256:
         raise AssertionError('Published SDK SHA256 mismatch')
     with zipfile.ZipFile(archive) as z:
         for item in z.infolist():
+            if not item.filename.startswith(SDK_ROOT + '/'):
+                raise AssertionError('Unexpected SDK archive root: ' + item.filename)
             if not contained((destination / item.filename).resolve(), destination.resolve()):
                 raise AssertionError('Unsafe SDK archive path')
         z.extractall(destination)
-    sdk = destination / 'sco-sdk-2.0.0'
-    public = set()
+    sdk = destination / SDK_ROOT
+    public, listed = set(), set()
     for line in (sdk / 'SHA256SUMS').read_text().splitlines():
         digest, name = line.split(None, 1)
         name = name.lstrip('*')
         path = (sdk / name).resolve()
         if not contained(path, sdk.resolve()) or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
             raise AssertionError('Extracted SDK checksum mismatch: ' + name)
+        listed.add(path)
         if name.startswith('include/'):
             public.add(path)
+    extracted = {p.resolve() for p in sdk.rglob('*') if p.is_file()} - {(sdk / 'SHA256SUMS').resolve()}
+    if extracted != listed:
+        raise AssertionError('Extracted SDK files not covered by its SHA256SUMS: ' +
+                             ', '.join(sorted(str(p) for p in extracted ^ listed)))
     if not public:
         raise AssertionError('Empty published header inventory')
     print('published SDK: SHA256 OK; extracted inventory verified')

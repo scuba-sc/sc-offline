@@ -105,9 +105,9 @@ jobs:
       - name: Download published SDK (combined core + game)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.0.0 -R scubamount/sco-core -p 'sco-sdk-2.0.0.zip' -p SHA256SUMS -D "$RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.1.0 -R scubamount/sco-core -p 'sco-sdk-2.1.0.zip' -p SHA256SUMS -D "$RUNNER_TEMP/sdk-assets"
       - name: Isolated inspector build, full dependency traces, negative controls and checker
-        run: python3 tools/check_inspector_sdk.py --archive "$RUNNER_TEMP/sdk-assets/sco-sdk-2.0.0.zip" --sums "$RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$RUNNER_TEMP/inspector-proof"
+        run: python3 tools/check_inspector_sdk.py --archive "$RUNNER_TEMP/sdk-assets/sco-sdk-2.1.0.zip" --sums "$RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$RUNNER_TEMP/inspector-proof"
 
   inspector-sdk:
     runs-on: windows-2025-vs2026
@@ -118,9 +118,9 @@ jobs:
       - name: Download published SDK (combined core + game)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.0.0 -R scubamount/sco-core -p 'sco-sdk-2.0.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.1.0 -R scubamount/sco-core -p 'sco-sdk-2.1.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
       - name: Isolated MSVC inspector, module workflow, full dependency traces and checker
-        run: python tools/check_inspector_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.0.0.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/inspector-proof"
+        run: python tools/check_inspector_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.1.0.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/inspector-proof"
       - name: Upload enabled inspector release folder
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -138,9 +138,9 @@ jobs:
       - name: Download published SDK (combined core + game)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.0.0 -R scubamount/sco-core -p 'sco-sdk-2.0.0.zip' -p SHA256SUMS -D "$RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.1.0 -R scubamount/sco-core -p 'sco-sdk-2.1.0.zip' -p SHA256SUMS -D "$RUNNER_TEMP/sdk-assets"
       - name: Isolated NPC build, lifecycle module test, full dependency traces, negative controls and checker
-        run: python3 tools/check_npc_sdk.py --archive "$RUNNER_TEMP/sdk-assets/sco-sdk-2.0.0.zip" --sums "$RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$RUNNER_TEMP/npc-proof"
+        run: python3 tools/check_npc_sdk.py --archive "$RUNNER_TEMP/sdk-assets/sco-sdk-2.1.0.zip" --sums "$RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$RUNNER_TEMP/npc-proof"
 
   npc-sdk:
     runs-on: windows-2025-vs2026
@@ -151,9 +151,9 @@ jobs:
       - name: Download published SDK (combined core + game)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.0.0 -R scubamount/sco-core -p 'sco-sdk-2.0.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.1.0 -R scubamount/sco-core -p 'sco-sdk-2.1.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
       - name: Isolated MSVC NPC, lifecycle module test, full dependency traces and checker
-        run: python tools/check_npc_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.0.0.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/npc-proof"
+        run: python tools/check_npc_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.1.0.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/npc-proof"
       - name: Upload enabled NPC release folder
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -178,11 +178,11 @@ jobs:
       - name: Download published SDK
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.0.0 -R scubamount/sco-core -p 'sco-sdk-2.0.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.1.0 -R scubamount/sco-core -p 'sco-sdk-2.1.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
       - name: Build, test, check and stage independent feature
         env:
           FEATURE: ${{ matrix.feature }}
-        run: python "tools/check_${env:FEATURE}_sdk.py" --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.0.0.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/feature-proof"
+        run: python "tools/check_${env:FEATURE}_sdk.py" --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.1.0.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/feature-proof"
       - name: Upload published-SDK release folder
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

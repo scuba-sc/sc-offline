@@ -20,7 +20,8 @@ class ExternalRelease(unittest.TestCase):
             self.assertNotIn(marker, ticks)
         self.assertIn('src/npc.cpp', host)
         self.assertIn('src/spawner.cpp', host)  # unrelated build/fleet callers remain
-        shortcut = (ROOT / 'src/builtins/loadout_ui.cpp').read_text()
+        self.assertFalse((ROOT / 'src/builtins/loadout_ui.cpp').exists())
+        shortcut = (ROOT / 'plugins/loadout/loadout.cpp').read_text()
         self.assertNotIn('Menu_RequestSpawnClass', shortcut)
         self.assertIn('"spawn.ship_options"', shortcut)
         self.assertFalse((ROOT / 'src/builtins/npc_ui.cpp').exists())
