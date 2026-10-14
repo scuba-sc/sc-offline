@@ -6,6 +6,7 @@ Dry-run by default. Never loads plugins/hooks or changes admission. Use --apply
 for a deliberate user-initiated import, --replace to overwrite existing settings.
 """
 import argparse
+from contextlib import closing
 import os
 from pathlib import Path
 import sqlite3
@@ -60,7 +61,7 @@ def import_values(data_root, values, apply=False, replace=False):
     if not apply:
         return "dry-run"
     storage.mkdir(exist_ok=True)
-    with sqlite3.connect(dbpath, timeout=0) as db:
+    with closing(sqlite3.connect(dbpath, timeout=0)) as db, db:
         db.execute("BEGIN IMMEDIATE")
         db.execute("CREATE TABLE IF NOT EXISTS sco_kv(key TEXT PRIMARY KEY NOT NULL, value BLOB NOT NULL) WITHOUT ROWID")
         sql = ("INSERT OR REPLACE" if replace else "INSERT OR IGNORE") + " INTO sco_kv(key,value) VALUES(?,?)"

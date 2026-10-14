@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 """One targeted mining workflow: module plus deliberate synthetic settings import."""
+from contextlib import closing
 import os
 from pathlib import Path
 import sqlite3
@@ -24,10 +25,10 @@ def main():
         import_values(root, values, apply=True)
         dbpath = root / "storage/mining.db"
         def kept():
-            with sqlite3.connect(dbpath) as db:
+            with closing(sqlite3.connect(dbpath)) as db:
                 return dict(db.execute("SELECT key,value FROM sco_kv"))
         assert kept() == values
-        with sqlite3.connect(dbpath) as db:
+        with closing(sqlite3.connect(dbpath)) as db, db:
             db.execute("INSERT INTO sco_kv VALUES('unrelated', X'7A')")
         ini.write_text("mining = off\nmining_debug = on\n")
         changed = source_values(ini)
