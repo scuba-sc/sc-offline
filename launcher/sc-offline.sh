@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Linux (EXPERIMENTAL, not yet run by anyone): starts sc-offline.exe inside your Star Citizen
-# Wine prefix. sc-offline.exe then finds the game, adds the mod, and removes it on exit, exactly
-# as on Windows.
+# Linux (EXPERIMENTAL; played once with 0.7.0 on a LUG Helper install, see docs/linux.md):
+# starts sc-offline.exe inside your Star Citizen Wine prefix. sc-offline.exe then finds the game,
+# adds the mod, and removes it on exit, exactly as on Windows.
 #
 #   ./sc-offline.sh [play|install|uninstall|status|update|help] [--game <Windows path>] [--dry-run]
 #                   [--skip-eac-check] [--prefix <dir>] [--wine <path to wine>]

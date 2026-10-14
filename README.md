@@ -53,7 +53,8 @@ Spawn ships and buildings, travel the star systems and wear Squadron 42 outfits 
 > In-game verification of each capability, and of SDK 2.1.0, is still outstanding. Other PCs and game patches can behave differently; known problems are tracked
 > in [Issues](https://github.com/scubamount/sc-offline/issues). If something breaks, see
 > [Troubleshooting](#troubleshooting) and [report it](https://github.com/scubamount/sc-offline/issues).
-> Linux through Wine is still untested.
+> Linux through Wine was played once with 0.7.0, before the SDK conversion, on a LUG Helper install
+> ([docs/linux.md](docs/linux.md)); the converted builds haven't been run on Linux yet.
 
 ## Quick start
 
@@ -69,7 +70,7 @@ The launcher puts the mod into your game folder while you play, takes it out aga
 | Requirement | Details |
 | --- | --- |
 | **Game** | A copy of Star Citizen that you own |
-| **OS** | Windows. Linux through Wine is experimental and untested; see [docs/linux.md](docs/linux.md) |
+| **OS** | Windows. Linux through Wine is experimental (played once with 0.7.0, before the SDK conversion); see [docs/linux.md](docs/linux.md) |
 | **Rights** | Administrator: Windows asks once each time you play |
 | **Disk** | About 1.4 MB for the zip |
 
