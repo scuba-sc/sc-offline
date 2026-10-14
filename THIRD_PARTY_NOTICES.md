@@ -14,7 +14,7 @@ what the build compiles in and where it comes from. It is not a legal opinion.
 
 | Component | Where it comes from | Compiled into | Licence |
 | --- | --- | --- | --- |
-| sc-offline's own code | `src/` (except `src/third_party/`), `launcher/`, `plugins/` | `dinput8.dll`, `sc-offline.exe`, the plugin DLLs | GPL-3.0 |
+| sc-offline's own code | `src/` (except `src/third_party/`), `launcher/`, `plugins/` | `dinput8.dll`, `sc-offline.exe`, the plugin DLLs | GPL-3.0-only |
 | [Dear ImGui](#dear-imgui-1928-wip) 1.92.8 WIP | `src/third_party/imgui/`, vendored in this repository | `dinput8.dll`, `sc-offline.exe` | MIT |
 | [sco-core](https://github.com/scubamount/sco-core) | `external/sco-core` git submodule | `dinput8.dll` | GPL-3.0-only |
 | [Lua](#lua-548) 5.4.8, modified | sco-core `plugins/lua/third_party/lua/` | `dinput8.dll` | MIT |

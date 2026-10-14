@@ -45,4 +45,4 @@ Maintainers tag releases; contributors don't need to bump versions. See [Release
 
 ## License
 
-sc-offline is GPL-3.0 ([LICENSE](LICENSE)). By opening a pull request you agree your contribution is licensed under GPL-3.0.
+sc-offline is GPL-3.0-only ([LICENSE](LICENSE)): version 3 of the GPL, not "any later version", matching the `SPDX-License-Identifier: GPL-3.0-only` tags in its sources and sco-core. By opening a pull request you agree your contribution is licensed under GPL-3.0-only.

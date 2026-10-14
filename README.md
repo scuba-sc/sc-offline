@@ -9,12 +9,12 @@
 **An offline, single-player mod menu for Star Citizen.**<br>
 Spawn ships and buildings, travel the star systems and wear Squadron 42 outfits from the in-game menu; spawn and manage NPCs through the external plugin commands.
 
-<sub>Based on **ChrisWareOffline 0.9.0-rc1** by Chris Ware and cloudyyrust (GPL-3.0). The original project was shut down and its repository removed; sc-offline is maintained independently and is not endorsed by its authors. What this repository has changed since then, with dates: [CHANGELOG.md](CHANGELOG.md). Licensed under GPL-3.0 ([LICENSE](LICENSE)); third-party code keeps its own licence ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). This project is not affiliated with, endorsed by, or sponsored by Cloud Imperium Games or Roberts Space Industries.</sub>
+<sub>Based on **ChrisWareOffline 0.9.0-rc1** by Chris Ware and cloudyyrust (GPL-3.0). The original project was shut down and its repository removed; sc-offline is maintained independently and is not endorsed by its authors. What this repository has changed since then, with dates: [CHANGELOG.md](CHANGELOG.md). Licensed under GPL-3.0-only ([LICENSE](LICENSE)); third-party code keeps its own licence ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). This project is not affiliated with, endorsed by, or sponsored by Cloud Imperium Games or Roberts Space Industries.</sub>
 
 [![Latest release](https://img.shields.io/github/v/release/scubamount/sc-offline?style=flat-square&label=release&color=2ec4d6)](https://github.com/scubamount/sc-offline/releases/latest)
 [![Build](https://img.shields.io/github/actions/workflow/status/scubamount/sc-offline/build.yml?branch=main&style=flat-square&label=build)](https://github.com/scubamount/sc-offline/actions/workflows/build.yml)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20(Wine%2C%20experimental)-555?style=flat-square)
-[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-f0851f?style=flat-square)](LICENSE)
+[![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-f0851f?style=flat-square)](LICENSE)
 
 [**Download**](https://github.com/scubamount/sc-offline/releases/latest) ·
 [**Discord**](https://discord.gg/NJKeVfYCCC) ·
@@ -225,7 +225,7 @@ Each release is built by [`.github/workflows/build.yml`](.github/workflows/build
 
 | Source | What it is | Licence |
 | --- | --- | --- |
-| `src/` (except `src/third_party/`), `launcher/`, `plugins/` | sc-offline's own code: the mod (`dinput8.dll`), the launcher (`sc-offline.exe`) and the plugin DLLs. The plugins compile against sco-core's SDK headers; NPC and inspector against the published SDK archive | GPL-3.0 ([LICENSE](LICENSE)) |
+| `src/` (except `src/third_party/`), `launcher/`, `plugins/` | sc-offline's own code: the mod (`dinput8.dll`), the launcher (`sc-offline.exe`) and the plugin DLLs. The plugins compile against sco-core's SDK headers; NPC and inspector against the published SDK archive | GPL-3.0-only ([LICENSE](LICENSE)) |
 | `src/third_party/imgui/` | Dear ImGui 1.92.8 WIP, vendored; in `dinput8.dll` and `sc-offline.exe` | MIT |
 | `external/sco-core` (git submodule) | [sco-core](https://github.com/scubamount/sco-core) at the commit pinned for that release (on `main` today: `sdk-v2.0.0`, `cd9a686`): the host kit, game pack and plugin runtime, plus the Lua 5.4.8 (modified), SQLite 3.53.4 and toml++ 3.4.0 it vendors | sco-core: GPL-3.0-only; Lua and toml++: MIT; SQLite: public domain |
 
@@ -287,6 +287,6 @@ sc-offline never runs with Easy Anti-Cheat active: while you play, the launcher 
 
 sc-offline is **based on ChrisWareOffline 0.9.0-rc1** by Chris Ware and cloudyyrust (GPL-3.0). The original project has been shut down and its repository removed; this repository is maintained independently and is not endorsed by its authors.
 
-This repository adds the launcher, CI and releases, the Squadron 42 tab and later fixes. It is licensed under GPL-3.0; see [LICENSE](LICENSE). Report bugs on [Issues](https://github.com/scubamount/sc-offline/issues). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md); security problems go to [SECURITY.md](SECURITY.md).
+This repository adds the launcher, CI and releases, the Squadron 42 tab and later fixes. It is licensed under GPL-3.0-only; see [LICENSE](LICENSE). Report bugs on [Issues](https://github.com/scubamount/sc-offline/issues). Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md); security problems go to [SECURITY.md](SECURITY.md).
 
 <sub>AI was used in a limited way to make this project. It's a fan project, not made by or affiliated with Cloud Imperium Games or Roberts Space Industries. Star Citizen is a trademark of Cloud Imperium Games.</sub>
