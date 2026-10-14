@@ -2,11 +2,11 @@
 
 Current picker/copy-list installation and the one targeted module fixture:
 [Public pickers](../../docs/pickers.md). **These sources use `sco_widgets.h` and
-`sco_content.h`, which the pinned published `sdk-v2.1.0` ships** (`sdk-v2.0.0`
+`sco_content.h`, which the pinned published `sdk-v2.2.0` ships** (`sdk-v2.0.0`
 did not). The obtain/proof recipes below use that archive.
 
-External native consumer of **sdk-v2.1.0** (SDK 2.1.0, plugin ABI 1.1,
-Star Citizen game pack 0.4.0). GPL-3.0-only project code. Native plugins are
+External native consumer of **sdk-v2.2.0** (SDK 2.2.0, plugin ABI 1.1,
+Star Citizen game pack 0.5.0). GPL-3.0-only project code. Native plugins are
 trusted process code, not a security sandbox.
 
 ## Public widget boundary
@@ -18,7 +18,7 @@ crew and Flight Ready. Each action rereads public providers; per-seat removal
 refuses foreign/player/NPC-plugin occupants. Manual seat words keep `crew.sit`
 semantics; selected-seat actions use the fresh copied index, not ambiguous names.
 Crew and NPC share SDK-only catalog parsing/filtering/paging, not session IDs.
-Widgets/content ship in the pinned published SDK 2.1.0; SDK 2.0.0 predated
+Widgets/content ship in the pinned published SDK 2.2.0; SDK 2.0.0 predated
 them. No Windows rendering/gameplay result is claimed.
 There is no private ImGui/menu, spawner engine, built-in registration or fallback
 in this module. The command IDs remain available through the host's typed
@@ -26,15 +26,15 @@ in this module. The command IDs remain available through the host's typed
 
 ## Obtain, build/check, install
 
-1. Obtain the published combined `sco-sdk-2.1.0.zip` and its adjacent release
-   `SHA256SUMS` from [sdk-v2.1.0](https://github.com/scubamount/sco-core/releases/tag/sdk-v2.1.0).
+1. Obtain the published combined `sco-sdk-2.2.0.zip` and its adjacent release
+   `SHA256SUMS` from [sdk-v2.2.0](https://github.com/scubamount/sco-core/releases/tag/sdk-v2.2.0).
    The proof verifies both the archive checksum and every extracted inventory
    entry. It never initializes the host submodule or includes host sources.
 2. From the product source, run the focused archive proof (new directory outside
    the checkout):
 
    ```sh
-   python3 tools/check_crew_sdk.py --archive <sco-sdk-2.1.0.zip> \
+   python3 tools/check_crew_sdk.py --archive <sco-sdk-2.2.0.zip> \
      --sums <release-SHA256SUMS> --work <new-outside-checkout-directory>
    ```
 

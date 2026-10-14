@@ -3,7 +3,7 @@
 `loadout` 1.0.0 is a C++20 SDK consumer with three native exports, no product
 headers/ImGui globals, private engine calls, XML loader or gameplay fallback.
 It is **compile-only development work; not run in game**. Its G6/G7/content/widgets
-headers ship in the pinned published `sdk-v2.1.0` (`sdk-v2.0.0` lacked them);
+headers ship in the pinned published `sdk-v2.2.0` (`sdk-v2.0.0` lacked them);
 the release workflow does not yet stage loadout. Do not substitute this local build for a published-release proof.
 
 ## Obtain, build, install
@@ -27,7 +27,7 @@ the release workflow does not yet stage loadout. Do not substitute this local bu
    `items.txt`, `outfits.txt` and `buildables.txt` unchanged into a separate
    `loadout_lists` data pack. It does not grant runtime filesystem access.
    A larger standalone `plugins/` build uses `SCO_LOADOUT_FEATURE=ON`; that switch
-   defaults off until release staging is approved (the pinned sdk-v2.1.0 ships
+   defaults off until release staging is approved (the pinned sdk-v2.2.0 ships
    the headers). Runtime folder metadata
    itself is enabled, user-disableable, with no `disabled` marker.
 3. On Windows x64/MSVC, install the staged `data/plugins/loadout/` module and
@@ -135,4 +135,4 @@ provider result/reply preservation, and unload twice passed. This is not host
 loader/gameplay evidence; partial batches, parsing and unsupported-slot behavior
 were not dynamically exercised. Production G6/G7 adapters are unverified/fail-closed; four actual Windows game
 values, outfits/head/visor mapping and no duplication/corruption remain owner
-acceptance work. Release staging is also pending (SDK 2.1.0 is published and pinned).
+acceptance work. Release staging is also pending (SDK 2.2.0 is published and pinned).

@@ -2,11 +2,11 @@
 
 Current picker/copy-list installation and the one targeted module fixture:
 [Public pickers](../../docs/pickers.md). **These sources use `sco_widgets.h` and
-`sco_content.h`, which the pinned published `sdk-v2.1.0` ships** (`sdk-v2.0.0`
+`sco_content.h`, which the pinned published `sdk-v2.2.0` ships** (`sdk-v2.0.0`
 did not). The obtain/proof recipes below use that archive.
 
-Trusted native code, **GPL-3.0-only**. SDK **2.1.0**, frozen plugin ABI **1.1**,
-Star Citizen game pack **0.4.0**. This source builds independently of the host.
+Trusted native code, **GPL-3.0-only**. SDK **2.2.0**, frozen plugin ABI **1.1**,
+Star Citizen game pack **0.5.0**. This source builds independently of the host.
 No private headers, engine memory, custom spawner, network or ImGui dependency.
 The Vehicles panel uses public `sco.widgets`: class filtering/paging, manual
 class, height, seat-name/pilot/none, Flight Ready, owned boarding/cancel/clear and
@@ -15,19 +15,19 @@ Picker actions use the same command handlers/jobs, not legacy engine helpers.
 Keep `data/ships.txt` as the existing caller-supplied class list;
 `spawn.pack_list` additionally reads enabled `lists/ships.txt` through G14's
 public `sco.content` service. This addition requires `sco_content.h`, which the
-pinned published SDK 2.1.0 ships (SDK 2.0.0 predated it).
+pinned published SDK 2.2.0 ships (SDK 2.0.0 predated it).
 There is no private-index or filesystem fallback.
 
 ## Build, check, install (three stages)
 
-1. Obtain published `sdk-v2.1.0` **`sco-sdk-2.1.0.zip`** and its release
+1. Obtain published `sdk-v2.2.0` **`sco-sdk-2.2.0.zip`** and its release
    **`SHA256SUMS`**. The combined archive supplies core and game public headers.
    Do not point the plugin at `external/sco-core/include` or host `src/`.
 2. Run the isolated proof from the product checkout, with a new work directory
    **outside** it:
 
    ```sh
-   python3 tools/check_spawn_sdk.py --archive /path/to/sco-sdk-2.1.0.zip \
+   python3 tools/check_spawn_sdk.py --archive /path/to/sco-sdk-2.2.0.zip \
      --sums /path/to/SHA256SUMS --work /path/to/new-spawn-proof
    ```
 

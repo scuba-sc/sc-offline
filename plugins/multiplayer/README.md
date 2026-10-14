@@ -95,15 +95,15 @@ frame; no active built-in peer format is silently claimed compatible.
 
 ## Build/install and evidence boundary
 
-The pinned published **sdk-v2.1.0 contains G13, G3 and retained widgets**
+The pinned published **sdk-v2.2.0 contains G13, G3 and retained widgets**
 (`sc_private_session.h`, `sc_game_spatial.h`, `sco_widgets.h`); sdk-v2.0.0 did
 not. The CI release job does not yet stage multiplayer. The external target
 refuses a missing header and never adds a host include root. An isolated local
-compile uses the checksum-verified published `sco-sdk-2.1.0.zip`:
+compile uses the checksum-verified published `sco-sdk-2.2.0.zip`:
 
 ```
 cmake -S plugins/multiplayer -B build-multiplayer -G Ninja \
-  -DSCO_SDK_INCLUDE_DIR=/path/to/extracted/sco-sdk-2.1.0/include \
+  -DSCO_SDK_INCLUDE_DIR=/path/to/extracted/sco-sdk-2.2.0/include \
   -DSCO_WORKFLOW_TESTS=ON
 cmake --build build-multiplayer --target multiplayer-module-test
 ctest --test-dir build-multiplayer -R '^multiplayer-module-workflow$' -V

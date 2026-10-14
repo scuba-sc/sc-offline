@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Standalone spawn module proof from checksum-verified published sdk-v2.1.0.
+"""Standalone spawn module proof from checksum-verified published sdk-v2.2.0.
 
 Reuses the inspector archive/dependency machinery, never host include paths.
 POSIX supports ASan/UBSan plus a physically partial-pointer red arm.

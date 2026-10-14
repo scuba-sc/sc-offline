@@ -30,7 +30,7 @@ The optional `sco.widgets` panel retains ID `quantum.travel` and now has title *
 
 ## Build, install and focused evidence
 
-Use an extracted combined core+game SDK containing `sc_quantum.h`, `sc_game_spatial.h` and `sco_widgets.h`; the pinned published `sdk-v2.1.0` contains all three (`sdk-v2.0.0` did not). The release workflow does not yet stage quantum; archive membership is not a release-staging or game proof.
+Use an extracted combined core+game SDK containing `sc_quantum.h`, `sc_game_spatial.h` and `sco_widgets.h`; the pinned published `sdk-v2.2.0` contains all three (`sdk-v2.0.0` did not). The release workflow does not yet stage quantum; archive membership is not a release-staging or game proof.
 
 ```sh
 cmake -S plugins/quantum -B build-quantum -DSCO_SDK_INCLUDE_DIR=/path/to/extracted/include -DSCO_QUANTUM_TEST=ON -DCMAKE_BUILD_TYPE=Debug

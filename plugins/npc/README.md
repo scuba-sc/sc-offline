@@ -2,7 +2,7 @@
 
 Current picker/copy-list installation and the one targeted module fixture:
 [Public pickers](../../docs/pickers.md). **These sources use `sco_widgets.h` and
-`sco_content.h`, which the pinned published `sdk-v2.1.0` ships** (`sdk-v2.0.0`
+`sco_content.h`, which the pinned published `sdk-v2.2.0` ships** (`sdk-v2.0.0`
 did not). The obtain/proof recipes below use that archive.
 
 Step 1C ships NPC as an **enabled external native plugin**, following inspector
@@ -23,9 +23,9 @@ approval ([review](../discord/README.md)).
 - `plugin.ini`: `id = npc`, independent version `1.1.0`, plugin ABI `1.1`,
   native entry `npc.dll`. Commands handle optional/missing game capabilities.
 
-Build against published **`sdk-v2.1.0`**, combined **`sco-sdk-2.1.0.zip`**, after
-verifying release **`SHA256SUMS`**. SDK 2.1.0, plugin ABI 1.1 and Star Citizen game
-pack 0.4.0 are separate versions. Use only the extracted SDK's `include/`, not
+Build against published **`sdk-v2.2.0`**, combined **`sco-sdk-2.2.0.zip`**, after
+verifying release **`SHA256SUMS`**. SDK 2.2.0, plugin ABI 1.1 and Star Citizen game
+pack 0.5.0 are separate versions. Use only the extracted SDK's `include/`, not
 private host headers, the dependency's source include tree or new ImGui inputs.
 The Windows host independently builds from its tagged submodule.
 
@@ -76,7 +76,7 @@ paging, manual archetype, count 1–10, Spawn, Observe and owned-ticket Remove/C
 Crew uses the same SDK-only parser, with independent selection/ownership state.
 No NPC hotkey was previously registered; none is invented here. Legacy
 `src/npc.cpp` stays untouched and is never a fallback. No plugin ImGui coupling
-is added. Widgets/content ship in the pinned published SDK 2.1.0 (SDK 2.0.0
+is added. Widgets/content ship in the pinned published SDK 2.2.0 (SDK 2.0.0
 predated them); Windows rendering remains NOT VERIFIED.
 
 Normal `sco.reload npc` is a running-host external-consumer route, not provider

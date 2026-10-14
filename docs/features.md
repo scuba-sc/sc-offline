@@ -4,7 +4,7 @@
 
 **M** opens the neutral menu shell. Available tabs depend on enabled modules and
 providers: the external **Vehicles**, **Crew** and **NPCs** panels are restored
-through public widgets, which ship in the pinned published SDK 2.1.0; Windows
+through public widgets, which ship in the pinned published SDK 2.2.0; Windows
 rendering and game acceptance are pending. [Public pickers](pickers.md) documents current catalog and
 ownership behavior; [status](status.md) reconciles implementation/release counts
 and unverified game acceptance. Other sections retain historical feature

@@ -18,10 +18,10 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
-# The one published SDK these proofs consume: sdk-v2.1.0 (signed approval at sco-core 8ef24243).
-SDK_ROOT = 'sco-sdk-2.1.0'
+# The one published SDK these proofs consume: sdk-v2.2.0 (signed approval at sco-core 686187ce).
+SDK_ROOT = 'sco-sdk-2.2.0'
 SDK_ARCHIVE = SDK_ROOT + '.zip'
-SDK_SHA256 = 'f5ee92708360c9df1a6b9986c78acab25ea49da460b37b89b47e5e2091326f64'
+SDK_SHA256 = '4b3ed980c424ef62665a9f496f877eb26850290d856e5eadefd0b514cca93538'
 
 
 def run(argv, cwd, success=True):

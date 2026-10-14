@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Isolated creative build/install/check and one actual module workflow from SDK 2.1.0."""
+"""Isolated creative build/install/check and one actual module workflow from SDK 2.2.0."""
 import argparse
 import os
 from pathlib import Path

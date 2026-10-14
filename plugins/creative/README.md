@@ -1,16 +1,16 @@
 # Creative: opt-in published-SDK native plugin
 
-Creative **1.1.0** is a command-first consumer of the published **sdk-v2.1.0**
-combined `sco-sdk-2.1.0.zip`: plugin ABI **1.1**, `game.creative` **1.0**, Star
-Citizen game pack **0.4.0**. Its module, manifest and empty `disabled` marker
+Creative **1.1.0** is a command-first consumer of the published **sdk-v2.2.0**
+combined `sco-sdk-2.2.0.zip`: plugin ABI **1.1**, `game.creative` **1.0**, Star
+Citizen game pack **0.5.0**. Its module, manifest and empty `disabled` marker
 install under `data/plugins/creative/`. It stays **off by default**. No ImGui,
 private host symbols, engine pointers, network access or new SDK ABI is used.
 Native code is trusted code: the checker is not a sandbox.
 
 ## Three stages: obtain, build/check, install
 
-1. Obtain `sco-sdk-2.1.0.zip` and the adjacent release `SHA256SUMS` from the
-   [sdk-v2.1.0 release](https://github.com/scubamount/sco-core/releases/tag/sdk-v2.1.0).
+1. Obtain `sco-sdk-2.2.0.zip` and the adjacent release `SHA256SUMS` from the
+   [sdk-v2.2.0 release](https://github.com/scubamount/sco-core/releases/tag/sdk-v2.2.0).
    Do not substitute a locally repackaged SDK or a source-checkout include tree.
 2. From this checkout, run the isolated proof below with a **new directory outside
    the checkout**. It verifies the release archive and every extracted inventory
@@ -24,7 +24,7 @@ Native code is trusted code: the checker is not a sandbox.
 
    ```sh
    python3 tools/check_creative_sdk.py \
-     --archive "$ASSETS/sco-sdk-2.1.0.zip" --sums "$ASSETS/SHA256SUMS" \
+     --archive "$ASSETS/sco-sdk-2.2.0.zip" --sums "$ASSETS/SHA256SUMS" \
      --work "$WORK/creative-proof" --sanitize
    ```
 

@@ -15,7 +15,7 @@ install alongside a built-in with the same ID.
 1. Obtain a checksum-verified combined core/game SDK archive containing
    `sc_game_spatial.h` (`game.spatial` full-pose conversion). Do not use a host
    checkout as an include path. This development consumer needs the new public
-   contract; the pinned published SDK 2.1.0 contains it (SDK 2.0.0 did not).
+   contract; the pinned published SDK 2.2.0 contains it (SDK 2.0.0 did not).
 2. Run the focused archive proof (outside the host checkout):
    ```sh
    python3 tools/check_voxel_bridge_sdk.py --archive /path/to/sdk.zip \

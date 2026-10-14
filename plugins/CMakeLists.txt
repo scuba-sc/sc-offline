@@ -87,13 +87,13 @@ if(SCO_ADDITIONAL_FEATURES)
   add_subdirectory(quantum)
   add_subdirectory(teleport)
   add_subdirectory(build)
-  # Default enabled when the SDK has G13 (pinned sdk-v2.1.0 does; 2.0.0 did not).
+  # Default enabled when the SDK has G13 (pinned sdk-v2.2.0 does; 2.0.0 did not).
   if(EXISTS "${SCO_SDK_INCLUDE_DIR}/sc_private_session.h")
     add_subdirectory(multiplayer)
   else()
     message(STATUS "multiplayer unavailable: SDK pin lacks G13; no built-in fallback")
   endif()
-  # Pinned sdk-v2.1.0 ships sc_mining.h (2.0.0 did not); host builds still opt in explicitly.
+  # Pinned sdk-v2.2.0 ships sc_mining.h (2.0.0 did not); host builds still opt in explicitly.
   option(SCO_MINING_FEATURE "Build external mining (requires newer game SDK)" OFF)
   if(SCO_MINING_FEATURE)
     add_subdirectory(mining)

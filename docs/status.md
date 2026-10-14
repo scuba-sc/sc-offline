@@ -11,14 +11,14 @@ goto refuses. See [multiplayer](../plugins/multiplayer/README.md).
 
 The targeted actual-module fixture passed with synthetic public providers;
 core separately exercised its real broker/backend through synthetic transport.
-The pinned published SDK 2.1.0 ships these contracts; 2.0.0 did not. CI release-job staging,
+The pinned published SDK 2.2.0 ships these contracts; 2.0.0 did not. CI release-job staging,
 Windows/MSVC, real renderer/input, live admission, private LAN and gameplay are
 **NOT VERIFIED**. The current shell still reports offline-session/effective
 network evidence Unknown, so production admission refuses rather than inferring
 safety from flags or patch success. The source/SDK migration is not certification
 that the shell can start a production session.
 
-The host is pinned to published sco-core `sdk-v2.1.0`, commit `8ef24243b4b8ee45fb49bde4192bdbdfa7473ace` (the release approval commit; the release archives were built from `77c328fc088f85336f1241c0c054bc461fe8b64c`): SDK **2.1.0**, plugin ABI **1.1** (unchanged), Star Citizen game pack **0.4.0**. The game pack's signature evidence targets Star Citizen **4.10.196.36804**; it is not a game-session result for this product pin.
+The host is pinned to published sco-core `sdk-v2.2.0`, commit `686187ce936400450d448f1fe754b1e58263e4af` (the release approval commit; the release archives were built from `81437e1a12993a4484308bd76443a003ae57b7fa`): SDK **2.2.0**, plugin ABI **1.1** (unchanged), Star Citizen game pack **0.5.0**. The game pack's signature evidence targets Star Citizen **4.10.196.36804**; it is not a game-session result for this product pin.
 
 The release-pin smoke checks remain **NOT RUN** on Windows/in game: offline startup; EAC detection/refusal; services published before plugins; menu; clean exit. CI build success does not close these owner-run checks.
 
@@ -26,7 +26,7 @@ The release-pin smoke checks remain **NOT RUN** on Windows/in game: offline star
 releases; owner Windows/in-game acceptance remains **NOT RUN**. No synthetic
 fixture or checker result certifies gameplay. Policy: [decisions.md](decisions.md).
 
-sco-core keeps the matching table for the `game.*` services, with the evidence level of each capability and what a run has to show: [docs/game/status.md](https://github.com/scubamount/sco-core/blob/8ef24243b4b8ee45fb49bde4192bdbdfa7473ace/docs/game/status.md) at the pinned commit. Read it for the service side (for example `game.actors.state`, `game.entities.query_radius`, `game.entities.watch` and `game.events.vehicle_seat` are held **off** until a run decides them). This page lists the sc-offline side: what each converted feature still needs checked. The steps are the ones in the bodies of [#95](https://github.com/scubamount/sc-offline/pull/95), [#97](https://github.com/scubamount/sc-offline/pull/97) and [#98](https://github.com/scubamount/sc-offline/pull/98); `mod.log` lines are quoted as those PRs wrote them.
+sco-core keeps the matching table for the `game.*` services, with the evidence level of each capability and what a run has to show: [docs/game/status.md](https://github.com/scubamount/sco-core/blob/686187ce936400450d448f1fe754b1e58263e4af/docs/game/status.md) at the pinned commit. Read it for the service side (for example `game.actors.state`, `game.entities.query_radius`, `game.entities.watch` and `game.events.vehicle_seat` are held **off** until a run decides them). This page lists the sc-offline side: what each converted feature still needs checked. The steps are the ones in the bodies of [#95](https://github.com/scubamount/sc-offline/pull/95), [#97](https://github.com/scubamount/sc-offline/pull/97) and [#98](https://github.com/scubamount/sc-offline/pull/98); `mod.log` lines are quoted as those PRs wrote them.
 
 ## Step 7B: tutorial evidence ledger
 
@@ -49,7 +49,7 @@ there, and multiplayer is unregistered at this revision: 13 baseline IDs remain.
 Two optional bridge modules and supporting data packs are counted separately.
 Older command fixtures used published SDK 2.0.0, not engine evidence.
 
-**Picker restoration (SDK 2.1.0):** external spawn, crew and npc own
+**Picker restoration (SDK 2.2.0):** external spawn, crew and npc own
 the Vehicles, Crew and NPCs panels through public `sco.widgets`. Shared public
 `lists/ships.txt` and `lists/npcs.txt` catalogs retain pack/row order and duplicate
 identity; filtered pages and manual classes are available. The supporting
@@ -57,7 +57,7 @@ identity; filtered pages and manual classes are available. The supporting
 are unchanged. The host renders neutral copied panels on its game-thread frame.
 The one `picker-module-workflow` fixture dynamically loads all three actual
 macOS modules and checks UI events against synthetic public providers; it is
-not renderer/game evidence. The pinned published `sdk-v2.1.0` ships widgets
+not renderer/game evidence. The pinned published `sdk-v2.2.0` ships widgets
 and content (`sdk-v2.0.0` did not); Windows rendering and game acceptance remain owed.
 SQ42 ordinary ship shortcuts invoke `spawn.ship_options`; enemy-wing orchestration
 is deferred. Destination startup refuses G2/G3 without a private fallback. Owner
