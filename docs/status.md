@@ -4,7 +4,7 @@ The host is pinned to published sco-core `sdk-v2.0.0`, commit `cd9a686bda4184f1b
 
 The release-pin smoke checks remain **NOT RUN** on Windows/in game: offline startup; EAC detection/refusal; services published before plugins; menu; clean exit. CI build success does not close these owner-run checks.
 
-**Nothing from the SDK conversion has run in a game session.** CI proves the code compiles, the gates hold, and the binaries have the right shape. It does not prove a feature works. The last in-game run of sc-offline itself was 0.6.1, before the conversion ([README](../README.md)). The current owner decision is CI-gated PR merge and user testing of official
+**The only game session reported since the SDK conversion is one maintainer run of v0.7.7** (sco-core `2197dfb`, game pack 0.2.0, NVIDIA Smooth Motion off), recorded in the [v0.7.7 release notes](https://github.com/scubamount/sc-offline/releases/tag/v0.7.7). It was a single run, not a per-feature check, and the newer pins (`main` on `sdk-v2.0.0`, PR #126 on `sdk-v2.1.0`) have not run in game. CI proves the code compiles, the gates hold, and the binaries have the right shape. It does not prove a feature works. The current owner decision is CI-gated PR merge and user testing of official
 releases; owner Windows/in-game acceptance remains **NOT RUN**. No synthetic
 fixture or checker result certifies gameplay. Policy: [decisions.md](decisions.md).
 

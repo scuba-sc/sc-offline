@@ -62,7 +62,8 @@ For Star Citizen 4.10.2.
 
 - Fixes competing death-hook ownership: the game pack owns the detour, captures actor ID before original code under SEH and forwards all three original arguments. `game.actors.died` covers every actor; `game.player.died` remains local-player only. C/C++/C#/Lua adapters carry the 24-byte event payload.
 - Contracts subscribe under their built-in owner with cleanup on unload/failure, ignore unknown ID 0 and preserve the 32-entry recent-death ring. The entity-only fallback logs a degraded-bookkeeping warning once. Core is pinned to `2197dfbf5a630e5a16a201526e628f1d28df908a`.
-- Startup megamap crash #109 remains under investigation. Built/tested in Windows CI; not run in game. Maintainer elects to ship and triage player reports. This hook repair does not prove a startup-crash cure.
+- Startup megamap crash #109 remains under investigation. Built/tested in Windows CI; not run in game when this entry was written. Maintainer elects to ship and triage player reports. This hook repair does not prove a startup-crash cure.
+- Later, per the [v0.7.7 release notes](https://github.com/scubamount/sc-offline/releases/tag/v0.7.7): the maintainer ran v0.7.7 in game once with NVIDIA Smooth Motion off, and Smooth Motion is named as the cause of the startup crash in #109 and #112. That run is not a per-feature check.
 - Crash diagnostics report the fault module/offset and raw-stack executable-address candidates, not an unwound call chain; these candidates do not establish causation.
 
 ## 0.7.6 (2026-10-11) — EXPERIMENTAL
