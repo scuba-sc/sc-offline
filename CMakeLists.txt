@@ -172,7 +172,7 @@ else()
 endif()
 
 # NPC, inspector, crew, spawn and loadout are external modules; no host feature fallback.
-# Loadout requires post-2.0 G6/G7/content/widgets headers; its release/pin promotion is pending.
+# Loadout's G6/G7/content/widgets headers ship in the pinned sdk-v2.1.0; release staging is pending.
 
 # Bridges are independent disabled SDK modules, never host sources or default-release inputs.
 # Configure plugins/titanlink and plugins/voxel_bridge separately (docs/bridges.md).

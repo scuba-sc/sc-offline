@@ -6,8 +6,8 @@ SDK-provided MIT code; no wire/header or peer-game copy is vendored here.
 
 **Disabled by default and outside normal release.** Configure this directory
 alone; it refuses being added to a host/default-plugin build. Its optional
-install component always carries `disabled`. Host built-in removal, dependency
-pin promotion and release composition are separate integration work. Do not
+install component always carries `disabled`. Host built-in removal and release
+composition are separate integration work. Do not
 install alongside a built-in with the same ID.
 
 ## Build, check, install
@@ -15,8 +15,7 @@ install alongside a built-in with the same ID.
 1. Obtain a checksum-verified combined core/game SDK archive containing
    `sc_game_spatial.h` (`game.spatial` full-pose conversion). Do not use a host
    checkout as an include path. This development consumer needs the new public
-   contract; the immutable published SDK 2.0.0 baseline is not claimed to contain
-   it. The repository's published dependency pin is unchanged.
+   contract; the pinned published SDK 2.1.0 contains it (SDK 2.0.0 did not).
 2. Run the focused archive proof (outside the host checkout):
    ```sh
    python3 tools/check_voxel_bridge_sdk.py --archive /path/to/sdk.zip \

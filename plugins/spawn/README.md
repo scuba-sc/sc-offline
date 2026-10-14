@@ -1,13 +1,12 @@
 # Ordinary spawn — public SDK Vehicles picker
 
 Current picker/copy-list installation and the one targeted module fixture:
-[Public pickers](../../docs/pickers.md). **These updated sources require a newer
-local integration SDK with `sco_widgets.h` and `sco_content.h`.** The published
-2.0.0 obtain/proof recipes below describe the earlier command-only boundary, not
-a claim that the unchanged published archive can compile these newer sources.
+[Public pickers](../../docs/pickers.md). **These sources use `sco_widgets.h` and
+`sco_content.h`, which the pinned published `sdk-v2.1.0` ships** (`sdk-v2.0.0`
+did not). The obtain/proof recipes below use that archive.
 
-Trusted native code, **GPL-3.0-only**. SDK **2.0.0**, frozen plugin ABI **1.1**,
-Star Citizen game pack **0.3.0**. This source builds independently of the host.
+Trusted native code, **GPL-3.0-only**. SDK **2.1.0**, frozen plugin ABI **1.1**,
+Star Citizen game pack **0.4.0**. This source builds independently of the host.
 No private headers, engine memory, custom spawner, network or ImGui dependency.
 The Vehicles panel uses public `sco.widgets`: class filtering/paging, manual
 class, height, seat-name/pilot/none, Flight Ready, owned boarding/cancel/clear and
@@ -15,21 +14,20 @@ Infinite ship ammo through the external creative command (reverts on refusal).
 Picker actions use the same command handlers/jobs, not legacy engine helpers.
 Keep `data/ships.txt` as the existing caller-supplied class list;
 `spawn.pack_list` additionally reads enabled `lists/ships.txt` through G14's
-public `sco.content` service. This addition requires a newer SDK containing
-`sco_content.h`; the unchanged published 2.0.0 pin predates it. Use a local
-integration SDK for development until the owner approves a new publication.
+public `sco.content` service. This addition requires `sco_content.h`, which the
+pinned published SDK 2.1.0 ships (SDK 2.0.0 predated it).
 There is no private-index or filesystem fallback.
 
 ## Build, check, install (three stages)
 
-1. Obtain published `sdk-v2.0.0` **`sco-sdk-2.0.0.zip`** and its release
+1. Obtain published `sdk-v2.1.0` **`sco-sdk-2.1.0.zip`** and its release
    **`SHA256SUMS`**. The combined archive supplies core and game public headers.
    Do not point the plugin at `external/sco-core/include` or host `src/`.
 2. Run the isolated proof from the product checkout, with a new work directory
    **outside** it:
 
    ```sh
-   python3 tools/check_spawn_sdk.py --archive /path/to/sco-sdk-2.0.0.zip \
+   python3 tools/check_spawn_sdk.py --archive /path/to/sco-sdk-2.1.0.zip \
      --sums /path/to/SHA256SUMS --work /path/to/new-spawn-proof
    ```
 
@@ -74,7 +72,7 @@ SDK game-thread path. No workers or private thread handoff are created.
 | `spawn.status` | Reports workflow pending/ready/boarding/removing counts. Ready means workflow completed, not guaranteed ongoing visibility. Missing observation provider is unavailable, never absence. |
 | `spawn.cancel <id:int>` | Stops seat/power retries immediately, then requests owned removal, even before streaming. Cleanup refusal retains a cancelling ticket for retry. |
 | `spawn.remove <id:int>` / `spawn.clear` | Removes only ordinary entities this plugin spawned, never NPCs or foreign vehicles. Accepted removal remains a bounded pending-removal ticket; disappearance is not certified. |
-| `spawn.startup` | Explicitly unavailable: destination-specific startup requires **G2/G3** player relocation/full-pose discovery beyond `sdk-v2.0.0`. No Daymar/start-ship/private fallback. |
+| `spawn.startup` | Explicitly unavailable: destination-specific startup requires **G2/G3** player relocation/full-pose discovery, which this plugin does not use. No Daymar/start-ship/private fallback. |
 
 Example shape: `spawn.ship_options synthetic_ship 30 pilot true`. The fixture's
 `synthetic_ship` is not a promised class in any game build; use a class from your

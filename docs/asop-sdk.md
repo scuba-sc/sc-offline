@@ -1,8 +1,10 @@
 # ASOP host composition consumer
 
 `src/asop_shell.*` consumes the game-specific public host-source
-`sco::game::asop_host` interface. It is not a plugin service. The published
-SDK 2.0.0 pin is unchanged and lacks G10, so this staged cutover is opt-in.
+`sco::game::asop_host` interface. It is not a plugin service. The pinned
+published SDK 2.1.0 contains G10 (`include/sco/game/asop_host.h`, also in
+`sco-sdk-host-source-sc-2.1.0.zip`; SDK 2.0.0 lacked it). This staged cutover
+remains opt-in: `SCO_ASOP_HOST_COMPOSITION` defaults to OFF.
 
 ## Configure
 

@@ -20,7 +20,7 @@ publish presence through its own service to other users. The old documentation's
 There was no account/token read in the plugin; that does not make the activity
 fields approved or prevent correlation with a Discord profile.
 
-Published SDK 2.0.0's `sco.ipc` is owner-scoped shared memory with SCO framing,
+Published SDK 2.1.0's `sco.ipc` is owner-scoped shared memory with SCO framing,
 not an arbitrary Discord named-pipe client. `sco.net` is private authenticated
 co-presence, not a Discord transport. Neither contract supplies an approved route
 for this feature. No custom pipe/network exception, invented service name, peer
@@ -49,13 +49,13 @@ and `include/sco_ipc.h`.
 
 ## Build, check, install (three stages)
 
-1. Obtain the published `sdk-v2.0.0` combined `sco-sdk-2.0.0.zip` and its release
-   `SHA256SUMS`. SDK 2.0.0 keeps plugin ABI **1.1**; this plugin is **1.1.0**.
+1. Obtain the published `sdk-v2.1.0` combined `sco-sdk-2.1.0.zip` and its release
+   `SHA256SUMS`. SDK 2.1.0 keeps plugin ABI **1.1**; this plugin is **1.1.0**.
 2. From this repository, run the focused standalone proof with a new work
    directory **outside** the checkout:
 
    ```sh
-   python3 tools/check_discord_sdk.py --archive /path/to/sco-sdk-2.0.0.zip \
+   python3 tools/check_discord_sdk.py --archive /path/to/sco-sdk-2.1.0.zip \
      --sums /path/to/SHA256SUMS --work /path/to/new-discord-proof
    ```
 

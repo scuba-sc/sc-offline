@@ -5,7 +5,7 @@ Use [sco-core’s SDK/MCP tutorial](https://github.com/scubamount/sco-core/blob/
 Copyable source is generated from this checkout by:
 
 ```sh
-python3 tools/check_sdk_tutorial.py --archive /absolute/path/sco-sdk-2.0.0.zip \
+python3 tools/check_sdk_tutorial.py --archive /absolute/path/sco-sdk-2.1.0.zip \
   --sums /absolute/path/SHA256SUMS --work /absolute/new/path/tutorial-dev --prepare-only
 ```
 

@@ -5,7 +5,7 @@
 Retains owner ID/database `teleport`, key `spot`, import marker `spawn.txt.time` and original `spot x y z zone` syntax. Existing `spawn.txt` imports transactionally once per changed Windows FILETIME. `spawn_file` overrides its path; empty inherits launcher `SC_OFFLINE_SPAWN_FILE`, otherwise `data_root/spawn.txt`. Quick-save remains refused; read/import machinery cannot mutate the player.
 
 ## Build and install
-1. Obtain/extract a core+game or combined SDK containing `sc_game_spatial.h`; immutable `sdk-v2.0.0` does not contain this new table. The product pin is not changed by this lane.
+1. Obtain/extract a core+game or combined SDK containing `sc_game_spatial.h`; the pinned published `sdk-v2.1.0` contains it (`sdk-v2.0.0` did not).
 2. Configure `cmake -S plugins/teleport -B build-teleport -DSCO_SDK_INCLUDE_DIR=/path/to/extracted/include`, then build `sc-offline-teleport`.
 3. Install the teleport component into the product root (`cmake --install build-teleport --prefix /path/to/product --component teleport`). The resulting `data/plugins/teleport/` contains its native entry and manifest; enable through ordinary plugin-folder semantics. Built-in IDs/fallbacks are removed, so `plugins=off` really disables these features.
 

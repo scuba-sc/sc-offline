@@ -20,9 +20,9 @@ See [NPC](../npc/README.md).
 - `inspector.lua` / `lua-plugin.ini`: non-default restricted read-only alternative.
 - `inspector_test.lua`: synthetic sandbox fixture, not bundled-runtime/game proof.
 
-Build from published **`sdk-v2.0.0`**, combined **`sco-sdk-2.0.0.zip`**, after
-checking the release **`SHA256SUMS`**. SDK 2.0.0, frozen plugin ABI 1.1 and Star
-Citizen game pack 0.3.0 are distinct versions. Use the extracted SDK `include/`,
+Build from published **`sdk-v2.1.0`**, combined **`sco-sdk-2.1.0.zip`**, after
+checking the release **`SHA256SUMS`**. SDK 2.1.0, frozen plugin ABI 1.1 and Star
+Citizen game pack 0.4.0 are distinct versions. Use the extracted SDK `include/`,
 never private host headers, the source dependency include tree or new ImGui inputs.
 The host itself uses the tagged sco-core submodule, not this plugin archive.
 

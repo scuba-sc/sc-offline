@@ -7,8 +7,8 @@ No engine pointers, detours, account/online balances or G13 session controls.
 
 ## Build / check / install
 
-1. Obtain a checksum-verified SDK archive containing `sc_missions.h` (the published
-   2.0.0 pin does not yet contain this local integrated addition).
+1. Obtain a checksum-verified SDK archive containing `sc_missions.h` (the pinned
+   published `sco-sdk-2.1.0.zip` contains it; 2.0.0 did not).
 2. Run `python3 tools/contracts_sdk_check.py --archive <local-or-published.zip>
    --sums <adjacent-SHA256SUMS> --work <new-outside-root> --slice <read|accept|progress|script|economy>`.
    This verifies hashes, extracts into an isolated root, builds/loads the actual
