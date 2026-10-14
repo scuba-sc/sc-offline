@@ -45,4 +45,36 @@ if(SCO_WORKFLOW_TESTS)
   add_dependencies(multiplayer-module-test sc-offline-multiplayer)
   add_test(NAME multiplayer-module-workflow COMMAND multiplayer-module-test $<TARGET_FILE:sc-offline-multiplayer>)
   set_tests_properties(multiplayer-module-workflow PROPERTIES TIMEOUT 30)
+
+  # The motion test loads this module and, when SCO_MOTION_BASELINE_DIR holds the unmodified sc-offline #126
+  # multiplayer.cpp and multiplayer_wire.h (git show 481b99e:plugins/multiplayer/...), that one too, builds the
+  # same synthetic path for both and compares their ghosts. The unmodified module is built without warnings
+  # shown: it is not this change's code.
+  set(SCO_MOTION_BASELINE_DIR "" CACHE PATH "Folder with the unmodified multiplayer.cpp and multiplayer_wire.h the motion test compares against")
+  find_package(Threads REQUIRED)
+  add_executable(multiplayer-motion-test ../../tools/multiplayer_motion_test.cpp)
+  target_compile_features(multiplayer-motion-test PRIVATE cxx_std_20)
+  target_include_directories(multiplayer-motion-test PRIVATE "${SCO_SDK_INCLUDE_DIR}")
+  target_link_libraries(multiplayer-motion-test PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
+  add_dependencies(multiplayer-motion-test sc-offline-multiplayer)
+  set(SCO_MOTION_MODULES $<TARGET_FILE:sc-offline-multiplayer>)
+  if(SCO_MOTION_BASELINE_DIR)
+    if(NOT EXISTS "${SCO_MOTION_BASELINE_DIR}/multiplayer.cpp" OR NOT EXISTS "${SCO_MOTION_BASELINE_DIR}/multiplayer_wire.h")
+      message(FATAL_ERROR "SCO_MOTION_BASELINE_DIR needs the unmodified multiplayer.cpp and multiplayer_wire.h")
+    endif()
+    add_library(sc-offline-multiplayer-unmodified MODULE "${SCO_MOTION_BASELINE_DIR}/multiplayer.cpp")
+    target_include_directories(sc-offline-multiplayer-unmodified PRIVATE "${SCO_SDK_INCLUDE_DIR}")
+    target_compile_features(sc-offline-multiplayer-unmodified PRIVATE cxx_std_20)
+    set_target_properties(sc-offline-multiplayer-unmodified PROPERTIES PREFIX "" OUTPUT_NAME "multiplayer_unmodified"
+      CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON
+      LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins/multiplayer-unmodified/$<0:>"
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugins/multiplayer-unmodified/$<0:>")
+    if(NOT MSVC)
+      target_compile_options(sc-offline-multiplayer-unmodified PRIVATE -w)
+    endif()
+    add_dependencies(multiplayer-motion-test sc-offline-multiplayer-unmodified)
+    list(APPEND SCO_MOTION_MODULES $<TARGET_FILE:sc-offline-multiplayer-unmodified>)
+  endif()
+  add_test(NAME multiplayer-motion COMMAND multiplayer-motion-test ${SCO_MOTION_MODULES})
+  set_tests_properties(multiplayer-motion PROPERTIES TIMEOUT 120)
 endif()
