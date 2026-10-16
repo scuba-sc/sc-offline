@@ -2,6 +2,8 @@
 
 Thanks for helping. sc-offline is a Star Citizen offline mod: a mod menu plus a launcher that keeps the game offline while you play. Bug reports, fixes, docs and testing on your PC all help.
 
+See [AGENTS.md](AGENTS.md) for the design principles every change follows, from humans and AI agents alike.
+
 ## What fits this project
 
 - **Offline, never CIG's servers.** Two kinds of connection are allowed: local IPC with other processes on the same PC (bridges such as Titanfall 2/Northstar or Minecraft), and private co-presence between sc-offline players over a LAN or VPN through sco-core's `sco.net`. Never: connecting to Star Citizen's servers or online services, public or official online play, getting around anti-cheat or skipping its steps, signature-check bypass, account or entitlement tampering, forcing the game's host type or network context, unauthenticated remote commands between peers, telemetry, or anything that helps anyone cheat in the official game or hurt other players. The same rules bind plugins: [Plugin rules](https://github.com/scubamount/sco-core/blob/main/sdk/docs/plugin-rules.md). PRs like that are closed.
