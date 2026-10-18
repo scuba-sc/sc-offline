@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Inspector candidate snapshots.** With the explicitly verified SDK 2.4.0 candidate, the read-only inspector adds manual diagnostic and inventory snapshots, actor stat pages, action and GameRules definition lookups, and an optional retained widget panel. Missing providers remain unavailable; rendering and cached navigation do not poll. The published SDK defaults remain 2.3.0 until release. Verified with synthetic native workflows and external hostd; not run in game.
+
 - **One SDK for every external plugin.** The creative, discord, crew, spawn, build and mining plugins and the inspector, npc and contracts proof jobs now build and check against the published sco-core SDK 2.3.0 (`sdk-v2.3.0`, game pack 0.6.0), the same archive teleport and quantum already used. Plugin ABI 1.1 is unchanged and no plugin behaviour changes: this is a build-input bump only. Checked on a development machine with synthetic services and the SDK's plugin checker. **Not run in game.**
 
 ## 0.7.8.3 (2026-10-15)

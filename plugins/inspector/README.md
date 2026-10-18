@@ -37,7 +37,7 @@ produces the game DLL; macOS/Linux modules are development-only.
 ## Command and failure behavior
 
 Invoke **`inspector.read`** through the host command registry on the game thread.
-No UI tab, hotkey or mutation is registered. The reply/log reports current player
+The legacy reply/log reports current player
 actor/entity IDs, health and zone-local position/quaternion. Public `game.actors`
 and `game.entities` tables are reopened for each read; no provider table or
 session ID is retained across commands.
@@ -46,6 +46,44 @@ No player, missing provider/capability, truncated/null methods, failed calls,
 non-finite data, zero zone or invalid rotation remain **unknown/unavailable**.
 A health maximum of zero means unknown, not a zero-sized pool or a denominator.
 The tool cannot certify engine state or guess fields the public service lacks.
+
+### Candidate snapshot commands and optional panel
+
+The expanded inspector requires the explicitly verified SDK 2.4.0 candidate
+described in the worked tutorial. Published distribution defaults remain 2.3.0
+until the human release step; the candidate is not a published release.
+
+| Command | Required arguments | Behavior |
+|---|---|---|
+| `inspector.refresh` | none | Capture diagnostics and inventory once; advance generation |
+| `inspector.status` | none | Read copied section status and historical generation |
+| `inspector.stats` | integer page | Read one captured named actor stat |
+| `inspector.gamerules` | integer page | Read one captured live field |
+| `inspector.inventory` | integer page | Read one captured inventory port |
+| `inspector.action_count` | none | Explicit metadata count acquisition |
+| `inspector.action` | string name | Exact case-sensitive metadata lookup |
+| `inspector.action_id` | integer id | Metadata lookup by nonnegative uint32 id |
+| `inspector.params` | integer page | Acquire one definition, not a live value |
+
+Pages are zero-based. Negative pages, wrong argument types and out-of-range
+identifiers are rejected. Inventory pages report total, next-page and provider
+truncated/limited flags. Replies that do not fit return `TOO_MANY`, never a
+successful partial record. Unknown actions return `NOT_FOUND`; unavailable
+captured sections return `UNAVAILABLE`.
+
+When the host offers `sco.widgets`, panel `inspector.main` exposes Diagnostics,
+Inventory, Actions and Parameters. Refresh captures diagnostics/inventory;
+Lookup, Browse parameters and Refresh action count acquire metadata explicitly.
+Drawing, tab selection and cached paging do not poll providers. Without widgets,
+commands remain usable. A failed refresh replaces previous current values with
+unavailable status; an unrefreshed snapshot remains historical, not live.
+Build identity is provider-reported and not game-verified; synthetic hostd
+fixtures are identified separately in test evidence.
+
+The optional `SCO_SCUBA_HOSTD` CMake input registers `inspector_hostd_e2e` against
+an already-built external hostd and the actual inspector module. It stages only
+owned temporary plugin files, exercises synthetic and no-mock scenarios, then
+checks process exit and port closure. This does not certify in-game rendering.
 
 Unload clears borrowed API/owner state; the host withdraws owner-scoped commands.
 The plugin allocates no subscription/worker context. `sco.reload inspector` is
