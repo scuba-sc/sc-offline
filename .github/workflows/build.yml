@@ -20,6 +20,7 @@ concurrency:
 jobs:
   # Seconds on Linux: parse errors and MSVC C2712 risks fail here, before the Windows build.
   check:
+    timeout-minutes: 20
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -74,6 +75,7 @@ jobs:
   # would also hide whether the sources compile. The two answers are independent. Like every job
   # here it runs on pull requests and on each push to main, so a green main shows the gate holds.
   no-scans:
+    timeout-minutes: 10
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -89,6 +91,7 @@ jobs:
   # the exceptions, one reason each, are in tools/sdk-headers-allow.txt. Its own job for the same
   # reason as no-scans.
   sdk-headers:
+    timeout-minutes: 10
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -104,6 +107,7 @@ jobs:
 
   # External workflows use only the published SDK; none of these jobs initializes the host submodule.
   inspector-sdk-posix:
+    timeout-minutes: 20
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -117,6 +121,7 @@ jobs:
         run: python3 tools/check_inspector_sdk.py --archive "$RUNNER_TEMP/sdk-assets/sco-sdk-2.3.0.zip" --sums "$RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$RUNNER_TEMP/inspector-proof"
 
   inspector-sdk:
+    timeout-minutes: 30
     runs-on: windows-2025-vs2026
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -137,6 +142,7 @@ jobs:
           retention-days: 30
 
   npc-sdk-posix:
+    timeout-minutes: 20
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -150,6 +156,7 @@ jobs:
         run: python3 tools/check_npc_sdk.py --archive "$RUNNER_TEMP/sdk-assets/sco-sdk-2.3.0.zip" --sums "$RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$RUNNER_TEMP/npc-proof"
 
   npc-sdk:
+    timeout-minutes: 30
     runs-on: windows-2025-vs2026
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -173,6 +180,7 @@ jobs:
   # published-SDK proof is what stands between the feature and shipping nothing. Refuses in game
   # until the missions/economy providers land; no built-in fallback, no host-side tick.
   contracts-sdk:
+    timeout-minutes: 30
     runs-on: windows-2025-vs2026
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -197,6 +205,7 @@ jobs:
   # Isolated native features; checker and compiler traces use published archives only.
   # Every external plugin consumes the one published sdk-v2.3.0 (game.relocation 1.0 needs it).
   external-sdk:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -227,6 +236,7 @@ jobs:
           retention-days: 30
 
   build:
+    timeout-minutes: 45
     needs: check
     # Pinned: the project builds with the v145 toolset, which this image carries (VS 2026).
     runs-on: windows-2025-vs2026
@@ -338,6 +348,7 @@ jobs:
   # G3 requires a future approved SDK; do not revive host-embedded bridges-test builds.
 
   release:
+    timeout-minutes: 20
     needs: [build, inspector-sdk, npc-sdk, contracts-sdk, external-sdk]
     runs-on: ubuntu-24.04
     if: startsWith(github.ref, 'refs/tags/v')
