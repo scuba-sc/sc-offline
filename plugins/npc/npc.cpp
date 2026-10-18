@@ -5,6 +5,7 @@
 #include "sc_actors.h"
 #include "sc_entities.h"
 #include "sc_spatial.h"
+#include "sc_vehicles.h"
 #include <cstddef>
 #include <cmath>
 #include <limits>
@@ -96,6 +97,13 @@ sco_result Spawn(const sco_arg* args, uint32_t nargs, void*, char* reply, uint32
 sco_result RemoveEntry(Entry& entry, const sc_actors_v1* actors) {
     if (!entry.owned) return SCO_NOT_FOUND;
     if (!HAS_FN(actors, sc_actors_v1, despawn) || !g.api->has("game.actors.despawn")) return SCO_UNAVAILABLE;
+    // Stage 1 (R-5, issue #96): If the NPC is seated in a vehicle seat, eject first to unlink
+    // CVehicleSeat::m_pOccupantEntity (+0x88, F-042) and prevent a dangling pointer crash on despawn.
+    const auto* veh = Open<sc_vehicles_v1>(SC_VEHICLES_SERVICE_NAME);
+    if (HAS_FN(veh, sc_vehicles_v1, eject) && g.api->has("game.vehicles.seat")) {
+        (void)veh->eject(g.self, entry.id); // ignore SCO_FAILED if actor was not in a seat
+    }
+    // Stage 2: Post despawn removal to CEntitySystem
     const sco_result r = actors->despawn(g.self, entry.id);
     if (r == SCO_OK || r == SCO_NOT_FOUND) entry.owned = false;
     return r;
