@@ -18,9 +18,9 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
-# The one published SDK these proofs consume: sdk-v2.3.0.
-SDK_ROOT = 'sco-sdk-2.3.0'
-SDK_ARCHIVE = SDK_ROOT + '.zip'
+# Shipped proof defaults remain on the published SDK until a release is published.
+SDK_VERSION = '2.3.0'
+SDK_ROOT = 'sco-sdk-' + SDK_VERSION
 SDK_SHA256 = 'cc5e0678bd0a701f39ca11ed258f0a1e0a90cf7b1822cc6d3cb8dda0afd3a648'
 
 
@@ -69,7 +69,23 @@ def verify_extract(archive, sums, destination, pin=None):
                              ', '.join(sorted(str(p) for p in extracted ^ listed)))
     if not public:
         raise AssertionError('Empty published header inventory')
-    print('published SDK: SHA256 OK; extracted inventory verified')
+    if sdk_root == 'sco-sdk-2.4.0':
+        contracts = {
+            'sc_game_build.h': ('sc_game_build_v1',),
+            'sc_actor_stats.h': ('sc_actor_stats_v1',),
+            'sc_inventory.h': ('sc_inventory_v1', 'category'),
+            'sc_input.h': ('sc_input_v1', 'by_id', 'by_name'),
+            'sc_gamerules.h': ('sc_gamerules_v1', 'list_params'),
+        }
+        for header, tokens in contracts.items():
+            path = sdk / 'include' / header
+            if path not in public or not path.is_file():
+                raise AssertionError(f'Candidate SDK public header missing: {header}')
+            text = path.read_text(encoding='utf-8')
+            for token in tokens:
+                if token not in text:
+                    raise AssertionError(f'Candidate SDK contract {header} missing {token}')
+    print(f'SDK archive {sdk_root}: SHA256 OK; extracted inventory verified')
     return sdk, public
 
 
@@ -171,8 +187,17 @@ def main(args):
     work = args.work.resolve()
     if contained(work, ROOT):
         raise AssertionError("Inspector proof must live outside the host checkout")
+    sdk_root = 'sco-sdk-' + args.sdk_version
+    pin = (sdk_root, args.sdk_sha256)
+    if args.candidate:
+        if not args.archive_sha256:
+            raise AssertionError('--candidate requires --archive-sha256 from the accepted candidate lock')
+        if args.archive_sha256.lower() != args.sdk_sha256.lower():
+            raise AssertionError('--archive-sha256 and --sdk-sha256 must identify the same locked candidate archive')
+        if args.sdk_version == SDK_VERSION and args.sdk_sha256 == SDK_SHA256:
+            raise AssertionError('--candidate must explicitly select candidate coordinates, not the published default')
     work.mkdir(parents=True, exist_ok=False)
-    sdk, public = verify_extract(args.archive.resolve(), args.sums.resolve(), work / 'sdk')
+    sdk, public = verify_extract(args.archive.resolve(), args.sums.resolve(), work / 'sdk', pin=pin)
     source = work / 'source'
     (source / 'plugins').mkdir(parents=True)
     shutil.copy2(ROOT / 'plugins/CMakeLists.txt', source / 'plugins/CMakeLists.txt')
@@ -184,10 +209,12 @@ def main(args):
     build = work / 'plugin-build'
     configure = ['cmake', '-S', source / 'plugins', '-B', build,
                  '-DSCO_SDK_INCLUDE_DIR=' + str(sdk / 'include'), '-DSCO_WORKFLOW_TESTS=ON',
+                 '-DSCO_SDK_VERSION=' + args.sdk_version, '-DSCO_SDK_SHA256=' + args.sdk_sha256,
+                 '-DSCO_SDK_ARCHIVE=' + str(args.archive.resolve()),
                  '-DSCO_ADDITIONAL_FEATURES=OFF',
                  '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON', '-DSCO_INSPECTOR_DEPENDENCY_TRACE=ON']
     if os.name == 'nt':
-        configure += ['-G', 'Visual Studio 18 2026', '-A', 'x64']
+        configure += ['-G', args.generator, '-A', 'x64']
     else:
         configure += ['-G', 'Unix Makefiles']
     run(configure, work)
@@ -212,7 +239,7 @@ def main(args):
     checker_build = work / 'checker-build'
     configure = ['cmake', '-S', sdk, '-B', checker_build]
     if os.name == 'nt':
-        configure += ['-G', 'Visual Studio 18 2026', '-A', 'x64']
+        configure += ['-G', args.generator, '-A', 'x64']
     run(configure, work)
     run(['cmake', '--build', checker_build, '--config', 'Release', '--target', 'sco-plugin-check'], work)
     checker = checker_build / ('Release/sco-plugin-check.exe' if os.name == 'nt' else 'sco-plugin-check')
@@ -258,7 +285,8 @@ def main(args):
         else:
             raise AssertionError('Dependency trace admitted transitive private header')
         cpp.write_text(original)
-    print('inspector SDK release proof: PASS (synthetic, not run in game)')
+    identity = ('candidate, unpublished' if args.candidate else 'published-default proof')
+    print(f'inspector SDK {identity} {args.sdk_version} SHA-256 {args.sdk_sha256}: PASS (synthetic, not run in game)')
 
 
 if __name__ == '__main__':
@@ -266,4 +294,14 @@ if __name__ == '__main__':
     parser.add_argument('--archive', type=Path, required=True)
     parser.add_argument('--sums', type=Path, required=True)
     parser.add_argument('--work', type=Path, required=True, help='New directory outside checkout')
+    parser.add_argument('--generator', default='Visual Studio 18 2026',
+                        help='CMake generator for Windows (default: Visual Studio 18 2026)')
+    parser.add_argument('--sdk-version', default=SDK_VERSION,
+                        help='Exact SDK archive version (default: published 2.3.0)')
+    parser.add_argument('--sdk-sha256', default=SDK_SHA256,
+                        help='Expected archive SHA-256 for the selected version')
+    parser.add_argument('--candidate', action='store_true',
+                        help='Label this as an explicitly selected, unpublished candidate archive')
+    parser.add_argument('--archive-sha256', default=None,
+                        help='Required with --candidate; independently locked archive SHA-256')
     main(parser.parse_args())

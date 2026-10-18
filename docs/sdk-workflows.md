@@ -36,6 +36,36 @@ release **`SHA256SUMS`**: SDK 2.3.0, plugin ABI 1.1 and Star Citizen game pack 0
 are distinct versions. Every external plugin builds against this one published archive. The Windows host independently uses the submodule pinned to sco-core `main` after `sdk-v2.3.0`,
 `e616ed69d8f9f77b0f4827881c86d91e4a7d1689` (game pack 0.6.0); a plugin archive cannot build the full host.
 
+The standalone plugin build keeps that published 2.3.0 default. To test one explicitly locked,
+unpublished candidate, use the exact archive and its hash from the accepted candidate lock for every
+plugin; do not mix plugin archives or treat this invocation as a published pin:
+
+```powershell
+$Candidate = Join-Path $env:USERPROFILE 'tools/consumer-inspector-candidate-lock'
+cmake -S "$SOURCE/plugins" -B "$WORK/plugin-build-candidate" -A x64 `
+  "-DSCO_SDK_INCLUDE_DIR=$Candidate/legacy/sco-sdk-2.4.0/include" `
+  '-DSCO_SDK_VERSION=2.4.0' `
+  '-DSCO_SDK_SHA256=c93615d2658a62df6d889e1d31027fa18ac5563e08649666e118430fe2c63eed' `
+  "-DSCO_SDK_ARCHIVE=$Candidate/sco-sdk-2.4.0.zip" `
+  -DSCO_WORKFLOW_TESTS=ON -DSCO_ADDITIONAL_FEATURES=OFF
+```
+
+The isolated inspector checker accepts the same locked candidate identity explicitly:
+
+```powershell
+python tools/check_inspector_sdk.py `
+  --archive "$Candidate/sco-sdk-2.4.0.zip" `
+  --sums "$Candidate/SHA256SUMS" `
+  --work "$WORK/inspector-proof-candidate" `
+  --sdk-version 2.4.0 `
+  --sdk-sha256 c93615d2658a62df6d889e1d31027fa18ac5563e08649666e118430fe2c63eed `
+  --candidate --archive-sha256 c93615d2658a62df6d889e1d31027fa18ac5563e08649666e118430fe2c63eed
+```
+
+Configure checks the archive filename and SHA-256 before proceeding. Use the same include directory,
+version, hash and archive for all external plugins in that candidate proof. SDK 2.4.0 remains an
+unpublished candidate until the human release step.
+
 Standalone modules/manifests stage under `<plugin-build>/test-plugins/{npc,inspector}/`.
 Windows emits `npc.dll` and `inspector.dll`; macOS/Linux emit development-only
 native modules, not Windows game-loadable files. Release installation contains

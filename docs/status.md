@@ -1,5 +1,16 @@
 # What is not verified in game
 
+## Inspector SDK 2.4.0 candidate
+
+The candidate-only inspector expansion has local synthetic native tests and an
+external hostd integration test. It does not change published SDK defaults.
+Manual snapshots, inventory pages, actor stats and action/parameter metadata
+remain provider-reported, not game-verified. The unchanged browser studio was
+built and exercised through connected Edge at 1440x900 and 390x844, including
+manual refresh, paging, lookup, parameter browsing and provider withdrawal.
+No in-game renderer or gameplay acceptance is claimed. Official SDK publication and published-archive consumer
+revalidation remain required before distribution pins move to 2.4.0.
+
 ## v0.7.8.1 offline startup
 
 Observed once, on one Windows test PC (game 4.10.196.36804, launched through `sc-offline.exe play` with the game running as administrator): `[g1] evidence: session=Offline officialNetwork=Clear antiCheat=Clear target=Clear`, then every offline patch line as in v0.7.7 (including `offline-force (IsOnline = 0): patched` and `local handshake (accept frontend connection): patched`), `[core] signatures: 316/316 OK`, the game quit hook installed, and `bOnline[0]` in `Game.log`. That session had no desktop, so the game did not render or reach the menu.
