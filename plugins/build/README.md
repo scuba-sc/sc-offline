@@ -63,3 +63,7 @@ speed order. Windows/MSVC/SEH, actual game, streamed prefab cleanup, collision,
 filtered rays, camera restore, rendering and default release staging **NOT VERIFIED**.
 The release workflow downloads sdk-v2.3.0, which ships these headers, but does not
 stage this module: release-folder wiring is required before shipping.
+
+## Widgets migration (F-S-006 / O-4)
+
+The external build module is fully decoupled from host ImGui headers and product menu globals. Commands (`build.place`, `build.undo`, `build.clear`, `build.status`, `build.rotate`) provide scriptable and headless interaction. The host menu renders the Objects list through the public command interface or neutral `sco.widgets` panels, eliminating private ImGui context sharing.
