@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Teleport and quantum travel reject incomplete or mismatched relocation receipts instead of confirming an uncertain arrival. They request cancellation when status is lost and when unloading with a pending move. The actual teleport DLL regression fails before and passes after the fix; all twenty native plugin workflows pass. Not run in game.
+
 - The optional G10 host composition consumes the selector's committed snapshot only at startup. Missing preferences preserve the configured catalogue; empty, invalid, out-of-catalogue and unavailable snapshots retain distinct outcomes. A Windows host-policy fixture verifies those branches. G10 remains off by default and not run in game.
 
 - Add the optional SDK-only `asop_selector` consumer for bounded ship-selection pages and persisted next-start preferences. Failed saves preserve the committed snapshot; invalid data and missing storage refuse. Without the separately enabled host composition it does not filter terminals. Verified with a Windows DLL fixture and the host checker; not run in game.

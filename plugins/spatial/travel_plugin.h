@@ -214,7 +214,11 @@ void TravelTick(const char*,const void*,void*) noexcept {
         const auto r=Poll(Open<sc_relocation_v1>(SC_RELOCATION_NAME),g.self,g.ticket,s);
         if (r==SCO_OK && s.state==SC_RELOCATION_PENDING) return;
         std::string text; sco_result result=SCO_FAILED;
-        if (r!=SCO_OK) text="Lost track of the move to "+g.moving+" (game.relocation status unavailable); arrival not confirmed";
+        if (r!=SCO_OK) {
+            const auto* service=Open<sc_relocation_v1>(SC_RELOCATION_NAME);
+            if (TRAVEL_FN(service,sc_relocation_v1,cancel)) (void)service->cancel(g.self,g.ticket);
+            text="Lost track of the move to "+g.moving+" (game.relocation status unavailable); arrival not confirmed";
+        }
         else if (s.state==SC_RELOCATION_COMPLETE) { result=SCO_OK; text="Arrived at "+g.moving; }
         else text=std::string(s.state==SC_RELOCATION_CANCELLED?"Move cancelled":"Move failed")+" ("+ReasonText(s.reason)+"): "+g.moving+(s.applied?"; the move had started":"; not moved");
         StopTracking(); g.moving.clear();
@@ -478,6 +482,10 @@ inline sco_result Load(const sco_api* api,sco_plugin* self) {
 }
 inline void Unload() noexcept {
     try {
+    if (g.ticket) {
+        const auto* relocation=Open<sc_relocation_v1>(SC_RELOCATION_NAME);
+        if (TRAVEL_FN(relocation,sc_relocation_v1,cancel)) (void)relocation->cancel(g.self,g.ticket);
+    }
     if (g.panel) {
         const auto* widgets=Open<sco_widgets_v1>(SCO_WIDGETS_NAME);
         if (TRAVEL_FN(widgets,sco_widgets_v1,remove_panel)) widgets->remove_panel(g.self,(std::string(id)+".travel").c_str());
@@ -488,6 +496,6 @@ inline void Unload() noexcept {
     }
     if (g.ticking && TRAVEL_FN(g.api,sco_api,unsubscribe)) g.api->unsubscribe(g.self,"tick",TravelTick);
     } catch (...) {}
-    g={}; // game.relocation cancels and forgets this owner's tickets on unload; host removes commands.
+    g={}; // Host owner-release also cancels/forgets tickets if explicit cancellation was unavailable.
 }
 }

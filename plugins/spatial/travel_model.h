@@ -132,7 +132,7 @@ inline sco_result Poll(const sc_relocation_v1* service,sco_plugin* self,uint64_t
     sc_relocation_status s{}; s.size=sizeof(s);
     const auto r=service->status(self,ticket,&s);
     if (r!=SCO_OK) return r;
-    if ((s.ticket && s.ticket!=ticket) || s.state<SC_RELOCATION_PENDING || s.state>SC_RELOCATION_FAILED) return SCO_FAILED;
+    if (s.size<sizeof(s) || s.ticket!=ticket || s.applied>1 || s.state<SC_RELOCATION_PENDING || s.state>SC_RELOCATION_FAILED) return SCO_FAILED;
     out=s; return SCO_OK;
 }
 inline const char* ReasonText(uint32_t reason) {
