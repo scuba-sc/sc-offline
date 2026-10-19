@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add the optional SDK-only `asop_selector` consumer for bounded ship-selection pages and persisted next-start preferences. Failed saves preserve the committed snapshot; invalid data and missing storage refuse. Without the separately enabled host composition it does not filter terminals. Verified with a Windows DLL fixture and the host checker; not run in game.
+
 - The contracts consumer adds an optional retained panel for public offer, balance and stream-radius reads and explicit mission actions. Arguments are validated before submission, receipt keys stay session-only, and no mission progress or payout runs automatically. Commands remain available without widgets; missing providers refuse. Verified with a dynamically loaded Windows DLL and synthetic public providers; not run in game.
 
 - The launcher now uses the SQLite include directory exported by the selected host-source target, so the explicit host-source override builds without an initialized submodule checkout. The default dependency pin is unchanged.
