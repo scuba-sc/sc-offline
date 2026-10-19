@@ -18,6 +18,9 @@
 #include <string>
 #include <vector>
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #else
 #include <dlfcn.h>
@@ -145,9 +148,10 @@ int main(int argc,char** argv) {
     Event("crew.crew",16,SCO_WIDGET_BUTTON);assert(panels.at("crew.crew").nodes.at(4).items[0]=="synthetic seat 32");
     Event("crew.crew",4,SCO_WIDGET_COMBO,0);Event("crew.crew",3,SCO_WIDGET_TEXT_INPUT,-1,"synthetic_crew");Event("crew.crew",18,SCO_WIDGET_BUTTON);
     assert(spawned==2 && lastNpc=="synthetic_crew");
-    occupants[32]=101;Event("crew.crew",19,SCO_WIDGET_BUTTON);assert(ejected==1);
+    const auto beforeCrewEject=ejected;
+    occupants[32]=101;Event("crew.crew",19,SCO_WIDGET_BUTTON);assert(ejected==beforeCrewEject+1);
     occupants[32]=101;Event("crew.crew",20,SCO_WIDGET_BUTTON);assert(removed==2);
-    occupants[32]=9999;Event("crew.crew",20,SCO_WIDGET_BUTTON);Event("crew.crew",19,SCO_WIDGET_BUTTON);assert(removed==2 && ejected==1);
+    occupants[32]=9999;Event("crew.crew",20,SCO_WIDGET_BUTTON);Event("crew.crew",19,SCO_WIDGET_BUTTON);assert(removed==2 && ejected==beforeCrewEject+1);
     Event("spawn.vehicles",16,SCO_WIDGET_TOGGLE,-1,nullptr,1);assert(panels.at("spawn.vehicles").nodes.at(16).value==0);
     Event("spawn.vehicles",17,SCO_WIDGET_BUTTON);assert(panels.at("spawn.vehicles").nodes.at(20).label.find("unavailable")!=std::string::npos);
     vehicle=false;Event("crew.crew",17,SCO_WIDGET_BUTTON);assert(panels.at("crew.crew").nodes.at(21).items.empty());
