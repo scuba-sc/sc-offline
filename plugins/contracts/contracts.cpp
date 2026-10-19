@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "contracts.h"
 #include <sc_missions.h>
+#include <sc_contracts.h>
 #include <sc_economy.h>
 #include <sco_content.h>
+#include <sco_widgets.h>
 #include <cstring>
 #include <string_view>
 #include <charconv>
@@ -14,8 +16,10 @@ namespace {
 const sco_api* api = nullptr;
 sco_plugin* self = nullptr;
 bool cancelled = false;
+char panelReply[512] = "Ready; provider admission is required for every action";
+char missionInputs[3][24] = {"0", "1", "0"};
 const sco_plugin_info info{sizeof(sco_plugin_info), SCO_API_MAJOR, SCO_API_MINOR, "contracts", "1.0.0", "sc-offline"};
-enum Action { Summary, Offer, Mission, Accept, Objective, Advance, Abandon, Ingest, Cancel, Resume, Balance, Apply, Receipt };
+enum Action { Summary, Offer, Mission, Accept, Objective, Advance, Abandon, Ingest, Cancel, Resume, Balance, Apply, Receipt, Radius };
 struct Spec { const char* name; Action action; uint32_t nargs; };
 const Spec specs[] = {{"contracts.status", Summary, 0}, {"contracts.offer", Offer, 1}, {"contracts.mission", Mission, 1}, {"contracts.accept", Accept, 2}, {"contracts.objective", Objective, 3}, {"contracts.advance", Advance, 2}, {"contracts.abandon", Abandon, 1}, {"contracts.ingest", Ingest, 1}, {"contracts.cancel", Cancel, 0}, {"contracts.resume", Resume, 0}, {"contracts.balance", Balance, 0}, {"contracts.apply", Apply, 3}, {"contracts.receipt", Receipt, 1}};
 const sco_arg_def defs[] = {{"id_or_index", SCO_ARG_INT, 0, "Nonnegative offer index or positive mission ID"}, {"key_or_phase", SCO_ARG_INT, 0, "Receipt key or expected phase"}, {"objective", SCO_ARG_INT, 0, "Expected objective"}};
@@ -55,6 +59,15 @@ sco_result Execute(const sco_arg* args, uint32_t count, void* context, char* rep
     if (!api || !self) return SCO_UNAVAILABLE;
     const auto& spec = *static_cast<const Spec*>(context);
     if (count != spec.nargs || (count && !args)) return SCO_BAD_ARG;
+    if (spec.action == Radius) {
+        const auto* c = Service<sc_contracts_v1>(SC_CONTRACTS_SERVICE_NAME, SC_CONTRACTS_SERVICE_VERSION);
+        if (!MEMBER(c, sc_contracts_v1, stream_radius)) return SCO_UNAVAILABLE;
+        float radius = 0;
+        const sco_result r = c->stream_radius(self, &radius);
+        if (r == SCO_OK) std::snprintf(reply, capacity, "Mission stream radius %.3f (game units)", static_cast<double>(radius));
+        else std::snprintf(reply, capacity, "Mission stream radius unavailable (%u)", static_cast<unsigned>(r));
+        return r;
+    }
     for (uint32_t i = 0; i < count; ++i) if (args[i].type != SCO_ARG_INT || (args[i].v.i < 0 && !(spec.action == Apply && i == 2))) return SCO_BAD_ARG;
     if (spec.action == Cancel || spec.action == Resume) {
         cancelled = spec.action == Cancel;
@@ -167,17 +180,98 @@ sco_result Execute(const sco_arg* args, uint32_t count, void* context, char* rep
     return result;
 }
 }
+namespace {
+void PublishPanel();
+void PanelEvent(const char*, const sco_widget_event* event, void*) {
+    if (!event || event->size < sizeof(*event)) return;
+    if (event->node_id >= 10 && event->node_id <= 12 && event->kind == SCO_WIDGET_TEXT_INPUT) {
+        if (!event->text) return;
+        const auto length = std::strlen(event->text);
+        if (length >= sizeof(missionInputs[0])) return;
+        std::memcpy(missionInputs[event->node_id - 10], event->text, length + 1);
+        PublishPanel(); return;
+    }
+    if (event->kind != SCO_WIDGET_BUTTON) return;
+    Spec action{};
+    sco_arg args[3]{};
+    switch (event->node_id) {
+    case 1: action = {"contracts.status", Summary, 0}; break;
+    case 2: action = {"contracts.balance", Balance, 0}; break;
+    case 3: action = {"contracts.radius", Radius, 0}; break;
+    case 4: action = {"contracts.cancel", Cancel, 0}; break;
+    case 5: action = {"contracts.resume", Resume, 0}; break;
+    case 20: action = {"contracts.accept", Accept, 2}; break;
+    case 21: action = {"contracts.mission", Mission, 1}; break;
+    case 22: action = {"contracts.objective", Objective, 3}; break;
+    case 23: action = {"contracts.advance", Advance, 2}; break;
+    case 24: action = {"contracts.abandon", Abandon, 1}; break;
+    default: return;
+    }
+    for (uint32_t i = 0; i < action.nargs; ++i) {
+        args[i].type = SCO_ARG_INT;
+        const char* end = missionInputs[i] + std::strlen(missionInputs[i]);
+        const auto parsed = std::from_chars(missionInputs[i], end, args[i].v.i);
+        if (parsed.ec != std::errc{} || parsed.ptr != end || args[i].v.i < 0) {
+            std::snprintf(panelReply, sizeof(panelReply), "Enter bounded nonnegative integer mission arguments; no action submitted");
+            PublishPanel(); return;
+        }
+    }
+    (void)Execute(action.nargs ? args : nullptr, action.nargs, &action, panelReply, sizeof(panelReply));
+    PublishPanel();
+}
+void PublishPanel() {
+    const auto* widgets = Service<sco_widgets_v1>(SCO_WIDGETS_NAME, SCO_WIDGETS_VERSION_1_0);
+    if (!MEMBER(widgets, sco_widgets_v1, set_panel)) return;
+    const char* labels[] = {"Read offers", "Read local balance", "Read stream radius", "Cancel consumer mutations", "Resume consumer mutations"};
+    sco_widget_node nodes[16]{};
+    for (uint32_t i = 0; i < 5; ++i) {
+        nodes[i].size = sizeof(nodes[i]); nodes[i].kind = SCO_WIDGET_BUTTON;
+        nodes[i].id = i + 1; nodes[i].label = labels[i];
+    }
+    nodes[5].size = sizeof(nodes[5]); nodes[5].kind = SCO_WIDGET_LABEL;
+    nodes[5].id = 6; nodes[5].label = panelReply;
+    nodes[6].size = sizeof(nodes[6]); nodes[6].kind = SCO_WIDGET_LABEL;
+    nodes[6].id = 7; nodes[6].label = cancelled ? "Mutations cancelled" : "Provider admission required; no automatic payout";
+    const char* inputs[] = {"Offer index / mission ID", "Receipt key / expected phase", "Objective index"};
+    for (uint32_t i = 0; i < 3; ++i) {
+        auto& node = nodes[7 + i]; node.size = sizeof(node); node.kind = SCO_WIDGET_TEXT_INPUT;
+        node.id = 10 + i; node.label = inputs[i]; node.text = missionInputs[i];
+    }
+    const char* actions[] = {"Accept offer (explicit)", "Read mission", "Complete objective (explicit)", "Advance phase (explicit)", "Abandon mission (explicit)"};
+    for (uint32_t i = 0; i < 5; ++i) {
+        auto& node = nodes[10 + i]; node.size = sizeof(node); node.kind = SCO_WIDGET_BUTTON;
+        node.id = 20 + i; node.label = actions[i];
+    }
+    nodes[15].size = sizeof(nodes[15]); nodes[15].kind = SCO_WIDGET_LABEL; nodes[15].id = 25;
+    nodes[15].label = "Mission IDs are session-only. Completion never pays automatically; production adapter required.";
+    const auto result = widgets->set_panel(self, "contracts.main", "Contracts", nodes, 16, sizeof(nodes[0]), PanelEvent, nullptr);
+    if (result != SCO_OK && MEMBER(api, sco_api, log)) api->log(self, SCO_LOG_WARN, "Contracts panel refused; commands remain available");
+}
+}
 const sco_plugin_info* Query() { return &info; }
 sco_result Load(const sco_api* host, sco_plugin* owner) {
     if (api) return SCO_BAD_ARG;
     if (!owner || !MEMBER(host, sco_api, query_service) || !MEMBER(host, sco_api, register_command) || host->major != SCO_API_MAJOR || host->minor < SCO_API_MINOR) return SCO_UNAVAILABLE;
     api = host; self = owner; cancelled = false;
+    std::snprintf(missionInputs[0], sizeof(missionInputs[0]), "0");
+    std::snprintf(missionInputs[1], sizeof(missionInputs[1]), "1");
+    std::snprintf(missionInputs[2], sizeof(missionInputs[2]), "0");
+    std::snprintf(panelReply, sizeof(panelReply), "Ready; provider admission is required for every action");
+    static const Spec radiusSpec{"contracts.radius", Radius, 0};
+    const sco_command radiusCommand{sizeof(sco_command), 0, radiusSpec.name, radiusSpec.name, "Read the public mission stream radius", nullptr, nullptr, 0, sizeof(sco_arg_def), Execute, const_cast<Spec*>(&radiusSpec)};
+    const sco_result radiusResult = api->register_command(self, &radiusCommand);
+    if (radiusResult != SCO_OK) { api = nullptr; self = nullptr; return radiusResult; }
     for (const auto& spec : specs) {
         const sco_command command{sizeof(sco_command), 0, spec.name, spec.name, "Guarded public offline contracts boundary", nullptr, spec.nargs ? defs : nullptr, spec.nargs, sizeof(sco_arg_def), Execute, const_cast<Spec*>(&spec)};
         sco_result r = api->register_command(self, &command);
         if (r != SCO_OK) { api = nullptr; self = nullptr; return r; }
     }
+    PublishPanel();
     return SCO_OK;
 }
-void Unload() { cancelled = true; api = nullptr; self = nullptr; } // no late provider mutation; host releases commands
+void Unload() {
+    const auto* widgets = Service<sco_widgets_v1>(SCO_WIDGETS_NAME, SCO_WIDGETS_VERSION_1_0);
+    if (MEMBER(widgets, sco_widgets_v1, remove_panel)) (void)widgets->remove_panel(self, "contracts.main");
+    cancelled = true; api = nullptr; self = nullptr;
+} // no late provider mutation; host releases commands
 }

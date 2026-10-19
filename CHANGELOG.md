@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The contracts consumer adds an optional retained panel for public offer, balance and stream-radius reads and explicit mission actions. Arguments are validated before submission, receipt keys stay session-only, and no mission progress or payout runs automatically. Commands remain available without widgets; missing providers refuse. Verified with a dynamically loaded Windows DLL and synthetic public providers; not run in game.
+
 - The launcher now uses the SQLite include directory exported by the selected host-source target, so the explicit host-source override builds without an initialized submodule checkout. The default dependency pin is unchanged.
 
 - **Keep menu input during frame construction.** Mouse, keyboard and focus messages sent while the game thread builds the menu are queued and replayed before the next frame instead of being dropped. If the bounded queue overflows, input state is cleared so a lost button release cannot leave a control held. Checked with deterministic Windows sent-message and queue tests and an MSVC compile of the menu; **not run in game**.

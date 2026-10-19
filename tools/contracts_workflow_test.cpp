@@ -2,8 +2,10 @@
 // Independently compiled dynamic consumer fixture. Synthetic PUBLIC providers, not engine evidence.
 #include "workflow_module.h"
 #include <sc_missions.h>
+#include <sc_contracts.h>
 #include <sc_economy.h>
 #include <sco_content.h>
+#include <sco_widgets.h>
 #include <cassert>
 #include <cstddef>
 #include <cstring>
@@ -20,9 +22,29 @@ bool available = true;
 const void* missions_table = nullptr;
 const void* economy_table = nullptr;
 const void* content_table = nullptr;
+const void* contracts_table = nullptr;
+unsigned radius_reads = 0;
+sco_result radius_result = SCO_OK;
+sco_result Radius(sco_plugin* self, float* out) {
+    assert(self == owner && out); ++radius_reads;
+    if (radius_result == SCO_OK) *out = 1250.5f;
+    return radius_result;
+}
+sc_contracts_v1 contracts{sizeof(sc_contracts_v1), 0, Radius, nullptr};
 sc_mission_offer offered{sizeof(sc_mission_offer), 0, 11, 22, 2, 1, 100, 1};
 sc_mission_status state{sizeof(sc_mission_status), SC_MISSION_ACTIVE, 77, 11, 0, 0, 2, 1, 1};
 unsigned reads = 0;
+sco_widget_event_fn panelEvent = nullptr;
+void* panelContext = nullptr;
+std::string panelReply;
+sco_result SetPanel(sco_plugin* plugin, const char* id, const char*, const sco_widget_node* nodes, uint32_t count, uint32_t stride, sco_widget_event_fn event, void* context) {
+    assert(plugin == owner && !std::strcmp(id, "contracts.main") && count == 16 && stride == sizeof(*nodes));
+    panelEvent = event; panelContext = context; panelReply = nodes[5].label; return SCO_OK;
+}
+sco_result RemovePanel(sco_plugin* plugin, const char* id) {
+    assert(plugin == owner && !std::strcmp(id, "contracts.main")); panelEvent = nullptr; return SCO_OK;
+}
+sco_widgets_v1 widgets{sizeof(widgets), 0, SetPanel, RemovePanel};
 sco_result Register(sco_plugin* self, const sco_command* command) {
     assert(self == owner && command && command->size == sizeof(*command));
     return commands.emplace(command->name, *command).second ? SCO_OK : SCO_BAD_ARG;
@@ -30,10 +52,13 @@ sco_result Register(sco_plugin* self, const sco_command* command) {
 sco_result Query(const char* name, uint32_t version, const void** out) {
     assert(version == 0x10000u);
     *out = nullptr;
+    if (!std::strcmp(name, SCO_WIDGETS_NAME)) { *out = &widgets; return SCO_OK; }
     if (!available) return SCO_NOT_FOUND;
     if (!std::strcmp(name, SC_MISSIONS_SERVICE_NAME)) *out = missions_table;
     if (!std::strcmp(name, SC_ECONOMY_SERVICE_NAME)) *out = economy_table;
     if (!std::strcmp(name, SCO_CONTENT_NAME)) *out = content_table;
+    if (!std::strcmp(name, SC_CONTRACTS_SERVICE_NAME)) *out = contracts_table;
+    if (!std::strcmp(name, SCO_WIDGETS_NAME)) *out = &widgets;
     return *out ? SCO_OK : SCO_NOT_FOUND;
 }
 sco_result Offer(sco_plugin* self, uint32_t index, sc_mission_offer* out) {
@@ -281,6 +306,23 @@ void AcceptCase() {
     assert(Call("contracts.accept", {Int(0), Int(9)}) == SCO_OK && accept_effects == 3);
 }
 void ReadCase() {
+    contracts_table = &contracts;
+    assert(Call("contracts.radius") == SCO_OK && radius_reads == 1);
+    available = false;
+    assert(Call("contracts.radius") == SCO_UNAVAILABLE && radius_reads == 1);
+    available = true;
+    radius_result = SCO_NOT_FOUND;
+    assert(Call("contracts.radius") == SCO_NOT_FOUND && radius_reads == 2);
+    radius_result = SCO_OK;
+    auto radius_callback = contracts.stream_radius; contracts.stream_radius = nullptr;
+    assert(Call("contracts.radius") == SCO_UNAVAILABLE && radius_reads == 2);
+    contracts.stream_radius = radius_callback;
+    const size_t short_length = offsetof(sc_contracts_v1, stream_radius) + 1;
+    void* short_contracts = std::malloc(short_length); std::memset(short_contracts, 0, short_length);
+    *static_cast<uint32_t*>(short_contracts) = static_cast<uint32_t>(short_length);
+    contracts_table = short_contracts;
+    assert(Call("contracts.radius") == SCO_UNAVAILABLE && radius_reads == 2);
+    std::free(short_contracts); contracts_table = nullptr;
     assert(Call("contracts.status") == SCO_OK);
     assert(reply.find("synthetic") == std::string::npos); // production reply must not pretend provider evidence
     assert(Call("contracts.offer", {Int(0)}) == SCO_OK && reply.find("11") != std::string::npos);
@@ -320,13 +362,48 @@ int main(int argc, char** argv) {
     std::free(partial_api);
     sco_api incompatible = api; incompatible.major = 99;
     assert(test_module::Load(&incompatible, owner) == SCO_UNAVAILABLE);
+    incompatible = api; incompatible.minor = 0;
+    assert(test_module::Load(&incompatible, owner) == SCO_UNAVAILABLE);
     assert(test_module::Load(&api, owner) == SCO_OK);
     if (!std::strcmp(argv[2], "read")) ReadCase();
     else if (!std::strcmp(argv[2], "accept")) AcceptCase();
     else if (!std::strcmp(argv[2], "progress")) ProgressCase();
     else if (!std::strcmp(argv[2], "script")) ScriptCase();
     else if (!std::strcmp(argv[2], "economy")) EconomyCase();
+    else if (!std::strcmp(argv[2], "ui")) {
+        assert(panelEvent);
+        sco_widget_event event{}; event.size = sizeof(event); event.kind = SCO_WIDGET_BUTTON; event.node_id = 1;
+        const auto before = reads; panelEvent("contracts.main", &event, panelContext);
+        assert(reads == before + 1 && panelReply.find("Offer") != std::string::npos);
+        event.node_id = 4; panelEvent("contracts.main", &event, panelContext);
+        assert(Call("contracts.accept", {Int(0), Int(1)}) == SCO_UNAVAILABLE);
+        event.node_id = 5; panelEvent("contracts.main", &event, panelContext);
+        available = false; event.node_id = 1; panelEvent("contracts.main", &event, panelContext);
+        assert(reads == before + 1 && panelReply.find("unavailable") != std::string::npos);
+        available = true; test_module::Unload(); assert(!panelEvent);
+        commands.clear(); assert(test_module::Load(&api, owner) == SCO_OK && panelEvent);
+        event.kind = SCO_WIDGET_BUTTON; event.node_id = 20;
+        const auto acceptedBefore = accept_effects; panelEvent("contracts.main", &event, panelContext);
+        assert(accept_effects == acceptedBefore + 1 && panelReply.find("Accepted mission") != std::string::npos);
+        panelEvent("contracts.main", &event, panelContext); assert(accept_effects == acceptedBefore + 1);
+        event.kind = SCO_WIDGET_TEXT_INPUT; event.node_id = 10; event.text = "bad";
+        panelEvent("contracts.main", &event, panelContext);
+        event.kind = SCO_WIDGET_BUTTON; event.node_id = 20; panelEvent("contracts.main", &event, panelContext);
+        assert(accept_effects == acceptedBefore + 1 && panelReply.find("no action submitted") != std::string::npos);
+        event.kind = SCO_WIDGET_TEXT_INPUT; event.node_id = 10; event.text = "77";
+        panelEvent("contracts.main", &event, panelContext);
+        event.node_id = 11; event.text = "0"; panelEvent("contracts.main", &event, panelContext);
+        event.kind = SCO_WIDGET_BUTTON; event.node_id = 21; panelEvent("contracts.main", &event, panelContext);
+        assert(panelReply.find("Mission 77") != std::string::npos);
+        const auto objectivesBefore = objective_effects, phasesBefore = phase_effects;
+        event.node_id = 22; panelEvent("contracts.main", &event, panelContext);
+        assert(objective_effects == objectivesBefore + 1);
+        event.node_id = 23; panelEvent("contracts.main", &event, panelContext);
+        assert(phase_effects == phasesBefore + 1 && state.phase == 1);
+        event.node_id = 24; panelEvent("contracts.main", &event, panelContext);
+        assert(state.state == SC_MISSION_ABANDONED && abandon_effects == 1);
+    }
     else return 2;
-    test_module::Unload(); test_module::Close();
+    test_module::Unload(); assert(!panelEvent); test_module::Close();
     std::printf("contracts %s: PASS (dynamic module, synthetic public provider; not run in game)\n", argv[2]);
 }
