@@ -57,7 +57,7 @@
 #include "../src/third_party/imgui/imgui_impl_dx11.h"
 #include "../src/third_party/imgui/imgui_internal.h"
 // The plugins page edits a plugin's [settings] in its sco.storage database (sco-core's vendored SQLite).
-#include "../external/sco-core/third_party/sqlite/sqlite3.h"
+#include "sqlite3.h"
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 #pragma comment(lib, "bcrypt.lib")

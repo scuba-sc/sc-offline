@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The launcher now uses the SQLite include directory exported by the selected host-source target, so the explicit host-source override builds without an initialized submodule checkout. The default dependency pin is unchanged.
+
 - **Keep menu input during frame construction.** Mouse, keyboard and focus messages sent while the game thread builds the menu are queued and replayed before the next frame instead of being dropped. If the bounded queue overflows, input state is cleared so a lost button release cannot leave a control held. Checked with deterministic Windows sent-message and queue tests and an MSVC compile of the menu; **not run in game**.
 
 - **One SDK for every external plugin.** The creative, discord, crew, spawn, build and mining plugins and the inspector, npc and contracts proof jobs now build and check against the published sco-core SDK 2.3.0 (`sdk-v2.3.0`, game pack 0.6.0), the same archive teleport and quantum already used. Plugin ABI 1.1 is unchanged and no plugin behaviour changes: this is a build-input bump only. Checked on a development machine with synthetic services and the SDK's plugin checker. **Not run in game.**
