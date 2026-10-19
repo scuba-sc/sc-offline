@@ -13,6 +13,8 @@ struct Options {
 };
 // Atomic bounded parsing of user-supplied class-list bytes; no game records or pointers.
 bool ParseShips(const std::string& bytes, std::vector<std::string>& out);
+// Optional plugin raw snapshot: validated saved classes, applied only at startup.
+bool ApplySelection(const std::string& bytes, Options& options);
 sco::game::asop_host::Result Start(const Options& options, bool offlinePrepared, bool eacAbsent);
 sco::game::asop_host::Status Status();
 sco::game::asop_host::Result StartFromEnvironment(bool offlinePrepared, bool eacAbsent, const char* shipsPath);

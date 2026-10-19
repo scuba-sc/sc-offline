@@ -18,3 +18,9 @@ workflow; install component `asop_selector` stages its folder. Install the copie
 `picker_catalog` data pack too. Optional G10 composition remains OFF by default;
 without it this plugin stores preferences but does not filter terminals.
 No current-game filtering or game verification is claimed.
+
+The optional host-source startup fixture also verifies missing selection,
+committed subset, explicit empty selection, invalid/foreign classes, unavailable
+snapshot and admission refusal. It stubs the game-facing owner and does not
+certify installed hooks or terminal behavior. Host environment parsing builds
+with MSVC warnings-as-errors; no environment or default is changed by the test.

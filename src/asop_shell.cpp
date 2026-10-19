@@ -38,6 +38,14 @@ host::Result Start(const Options& options, bool offlinePrepared, bool eacAbsent)
     config.shipCount = names.size();
     return host::Start(config); // Provider copies the catalogue before returning.
 }
+bool ApplySelection(const std::string& bytes, Options& options) {
+    std::vector<std::string> selected;
+    if (!ParseShips(bytes, selected)) return false;
+    for (const auto& name : selected)
+        if (std::find(options.ships.begin(), options.ships.end(), name) == options.ships.end()) return false;
+    options.ships = std::move(selected);
+    return true;
+}
 host::Status Status() { return host::Snapshot(); }
 void Stop() { host::Stop(); } // Admission closes before app/provider teardown.
 void Pump(uint32_t now) { host::Pump(now); } // Provider retains fleet cadence and lift ownership.
