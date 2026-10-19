@@ -4,6 +4,7 @@
 // the look, the tab bar, the product's own Menu tab, the status strip and the shared widgets
 // (menu_ui.h).
 #include "menu.h"
+#include "menu_input.h"
 #include "menu_imgui.h"
 #include "menu_ui.h"
 #include "common.h"
@@ -76,11 +77,16 @@ static bool CreateDevice() {
 }
 
 static bool GameThreadBuilding();
+static offline::menu::DeferredInput g_deferredInput;
 
 static LRESULT CALLBACK MenuWndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
-    // A message sent to the window while the game thread builds a frame doesn't reach ImGui: the
-    // game thread has it until the frame is built.
-    if (!GameThreadBuilding() && ImGui_ImplWin32_WndProcHandler(h, msg, w, l)) return 1;
+    // The game thread owns ImGui while building. Sent input is copied and replayed
+    // after that frame; dropping a button-up here leaves controls stuck.
+    const bool input = (msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST) ||
+        (msg >= WM_KEYFIRST && msg <= WM_KEYLAST) || msg == WM_SETFOCUS || msg == WM_KILLFOCUS;
+    if (input && GameThreadBuilding()) {
+        g_deferredInput.Route(true, msg, w, l, [](const auto&) {});
+    } else if (!GameThreadBuilding() && ImGui_ImplWin32_WndProcHandler(h, msg, w, l)) return 1;
     switch (msg) {
     case WM_SIZE:
         if (w != SIZE_MINIMIZED) { g_resizeW = LOWORD(l); g_resizeH = HIWORD(l); }
@@ -646,6 +652,15 @@ static DWORD WINAPI MenuThread(LPVOID) {
         // Take ImGui back from a request the game thread hasn't started; let one it has finish.
         InterlockedCompareExchange(&g_frameState, Frame_Idle, Frame_Wanted);
         WaitWhileBuilding();
+        const bool inputOverflow = g_deferredInput.TakeOverflow();
+        g_deferredInput.Drain([](const auto& input) {
+            ImGui_ImplWin32_WndProcHandler(g_wnd, input.message, input.word, input.parameter);
+        });
+        if (inputOverflow) {
+            ImGui::GetIO().ClearInputKeys();
+            ImGui::GetIO().ClearInputMouse();
+            Log("[menu] deferred input capacity exceeded; input state reset");
+        }
         // From here until RequestFrame the game thread doesn't touch ImGui.
         MSG msg;
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
