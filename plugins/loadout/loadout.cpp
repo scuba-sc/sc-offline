@@ -29,6 +29,10 @@ struct State {
     std::string filter, equip, visor; std::vector<std::string> buildables;
     double height = 30, ahead = 8, speed = 30; bool sit = true;
     char status[2048]{};
+#ifdef SCO_LOADOUT_ASYNC_CONSUMER
+    uint64_t job = 0;
+    uint32_t job_count = 0, job_slots[SC_LOADOUT_MAX_ITEMS]{};
+#endif
 } g;
 const sco_plugin_info info{sizeof(sco_plugin_info),SCO_API_MAJOR,SCO_API_MINOR,"loadout","1.0.0","sc-offline"};
 const char* const cvar_names[]{"i_target_selector.targeting2_enabled","pl_lensdisplay.minimap_enabled",
@@ -87,7 +91,24 @@ uint32_t Slot(std::string_view name,bool outfit) {
         {"arms","Armor_Arms",SC_LOADOUT_SLOT_ARMS},{"legs","Armor_Legs",SC_LOADOUT_SLOT_LEGS},
         {"backpack","backpack",SC_LOADOUT_SLOT_BACKPACK},{"visor","Lens_ItemPort",SC_LOADOUT_SLOT_VISOR} };
     for (const auto& m:map) if (Same(name,outfit ? m.port : m.item)) return m.slot;
-    // Never invent G6 extension slots for weapons, clothing, body, head parts or material variants.
+#ifdef SCO_LOADOUT_ASYNC_CONSUMER
+    const Map attachments[]{
+        {"primary","primary",SC_LOADOUT_SLOT_PRIMARY},{"sidearm","sidearm",SC_LOADOUT_SLOT_SIDEARM},
+        {"primary_optic","primary_optic",SC_LOADOUT_SLOT_PRIMARY_OPTIC},
+        {"primary_barrel","primary_barrel",SC_LOADOUT_SLOT_PRIMARY_BARREL},
+        {"primary_underbarrel","primary_underbarrel",SC_LOADOUT_SLOT_PRIMARY_UNDERBARREL},
+        {"sidearm_optic","sidearm_optic",SC_LOADOUT_SLOT_SIDEARM_OPTIC},
+        {"sidearm_barrel","sidearm_barrel",SC_LOADOUT_SLOT_SIDEARM_BARREL},
+        {"sidearm_underbarrel","sidearm_underbarrel",SC_LOADOUT_SLOT_SIDEARM_UNDERBARREL},
+        {"primary_tool_module","primary_tool_module",SC_LOADOUT_SLOT_PRIMARY_TOOL_MODULE},
+        {"primary_tool_canister","primary_tool_canister",SC_LOADOUT_SLOT_PRIMARY_TOOL_CANISTER},
+        {"primary_tool_battery","primary_tool_battery",SC_LOADOUT_SLOT_PRIMARY_TOOL_BATTERY},
+        {"sidearm_tool_module","sidearm_tool_module",SC_LOADOUT_SLOT_SIDEARM_TOOL_MODULE},
+        {"sidearm_tool_canister","sidearm_tool_canister",SC_LOADOUT_SLOT_SIDEARM_TOOL_CANISTER},
+        {"sidearm_tool_battery","sidearm_tool_battery",SC_LOADOUT_SLOT_SIDEARM_TOOL_BATTERY}};
+    for(const auto& m:attachments)if(Same(name,outfit?m.port:m.item))return m.slot;
+#endif
+    // Other legacy clothing/head/material ports remain unsupported.
     return 0;
 }
 sco_result Parse(std::string_view bytes,int kind,Lists& lists,std::vector<std::string>& buildables) {
@@ -170,12 +191,64 @@ sco_result Validate(const sco_arg* args,uint32_t n,uint32_t expected,char* out,u
     return SCO_OK;
 }
 bool String(const sco_arg& arg,size_t max) { return arg.type==SCO_ARG_STRING && arg.v.s && std::strlen(arg.v.s)<=max; }
+#ifndef SCO_LOADOUT_ASYNC_CONSUMER
 const char* Status(uint32_t s) {
     switch(s) { case SC_LOADOUT_APPLIED:return "applied"; case SC_LOADOUT_UNSUPPORTED:return "unsupported";
         case SC_LOADOUT_ITEM_MISSING:return "item-missing"; case SC_LOADOUT_FAILED:return "failed";
         case SC_LOADOUT_UNAVAILABLE:return "unavailable"; default:return "invalid"; }
 }
+#endif
+#ifdef SCO_LOADOUT_ASYNC_CONSUMER
+const sc_loadout_v1_2* Async() {
+    const void* raw=nullptr;
+    return HAS(g.api,sco_api,query_service)&&g.api->query_service(SC_LOADOUT_SERVICE_NAME,SC_LOADOUT_VERSION_1_2,&raw)==SCO_OK
+        ? static_cast<const sc_loadout_v1_2*>(raw):nullptr;
+}
+sco_result CancelJob(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
+    const auto valid=Validate(args,n,0,out,size);if(valid!=SCO_OK)return valid;
+    if(!g.job)return Answer(SCO_OK,out,size,"No retained loadout job; cancellation is already complete.");
+    const auto* table=Async();
+    if(!HAS(table,sc_loadout_v1_2,cancel))return Answer(SCO_UNAVAILABLE,out,size,"Cancellation unavailable; ticket retained.");
+    const auto result=table->cancel(g.self,g.job);
+    if(result==SCO_OK||result==SCO_NOT_FOUND){g.job=0;g.job_count=0;}
+    return Answer(result,out,size,"Loadout cancellation requested; confirmed gear is not rolled back.");
+}
+sco_result JobStatus(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
+    const auto valid=Validate(args,n,0,out,size);if(valid!=SCO_OK)return valid;
+    if(!g.job)return Answer(SCO_OK,out,size,"state=idle; no retained loadout job and no applied result claimed.");
+    const auto* table=Async();
+    if(!HAS(table,sc_loadout_v1_2,status)||!HAS(table,sc_loadout_v1_2,cancel))
+        return Answer(SCO_UNAVAILABLE,out,size,"Job lifecycle unavailable; ticket retained for cleanup.");
+    sc_loadout_job_report report{};report.size=sizeof(report);report.report.size=sizeof(report.report);
+    const auto result=table->status(g.self,g.job,&report);
+    bool valid_report=result==SCO_OK&&report.size>=sizeof(report)&&report.report.size>=sizeof(report.report)&&
+        !report._pad&&!report.report._pad&&static_cast<uint32_t>(report.state)<=SC_LOADOUT_JOB_FAILED&&
+        report.completed<=g.job_count&&report.report.count==g.job_count&&report.report.applied<=report.completed;
+    uint32_t applied=0;
+    if(valid_report)for(uint32_t i=0;i<report.completed;++i){
+        if(report.report.slots[i].slot!=g.job_slots[i]||static_cast<uint32_t>(report.report.slots[i].status)>SC_LOADOUT_UNAVAILABLE){valid_report=false;break;}
+        applied+=report.report.slots[i].status==SC_LOADOUT_APPLIED;
+    }
+    if(valid_report&&(applied!=report.report.applied||
+        (report.state==SC_LOADOUT_JOB_COMPLETE&&report.completed!=g.job_count)))valid_report=false;
+    if(!valid_report){
+        const auto cancelled=table->cancel(g.self,g.job);
+        if(cancelled==SCO_OK||cancelled==SCO_NOT_FOUND){g.job=0;g.job_count=0;}
+        return Answer(result==SCO_OK?SCO_FAILED:result,out,size,"Invalid/unavailable job report; cancellation attempted, no retry.");
+    }
+    const auto state=report.state;const auto total=g.job_count;
+    if(state!=SC_LOADOUT_JOB_PENDING){
+        const auto cancelled=table->cancel(g.self,g.job);
+        if(cancelled==SCO_OK||cancelled==SCO_NOT_FOUND){g.job=0;g.job_count=0;}
+    }
+    char text[160];std::snprintf(text,sizeof(text),"state=%u completed=%u/%u applied=%u; no rollback",state,report.completed,total,applied);
+    return Answer(state==SC_LOADOUT_JOB_FAILED?SCO_FAILED:SCO_OK,out,size,text);
+}
+#endif
 sco_result Apply(const std::vector<Piece>& pieces,char* out,uint32_t size) {
+#ifdef SCO_LOADOUT_ASYNC_CONSUMER
+    if(g.job)return Answer(SCO_FAILED,out,size,"A loadout job is pending; inspect or cancel it before another selection.");
+#endif
     if (pieces.empty()) return Answer(SCO_BAD_ARG,out,size,"No selected pieces; unspecified slots are unchanged (not cleared/defaulted).");
     if (pieces.size()>SC_LOADOUT_MAX_ITEMS) return Answer(SCO_TOO_MANY,out,size,"More than 16 pieces: entire request refused before equip; no split/retry.");
     sc_loadout_item items[SC_LOADOUT_MAX_ITEMS]{};
@@ -189,6 +262,29 @@ sco_result Apply(const std::vector<Piece>& pieces,char* out,uint32_t size) {
         for (size_t j=0;j<i;++j) if (pieces[j].slot==p.slot) return Answer(SCO_BAD_ARG,out,size,"Duplicate logical slot: entire selection refused before equip.");
         items[i].slot=p.slot; std::memcpy(items[i].item_class,p.name.c_str(),p.name.size()+1);
     }
+#ifdef SCO_LOADOUT_ASYNC_CONSUMER
+    const void* raw=nullptr;
+    if(!HAS(g.api,sco_api,query_service)||
+        g.api->query_service(SC_LOADOUT_SERVICE_NAME,SC_LOADOUT_VERSION_1_2,&raw)!=SCO_OK)
+        return Answer(SCO_UNAVAILABLE,out,size,"Async loadout1.2 unavailable; no synchronous fallback.");
+    const auto* async=static_cast<const sc_loadout_v1_2*>(raw);
+    if(!Cap("game.loadout.apply")||!HAS(async,sc_loadout_v1_2,submit)||
+        !HAS(async,sc_loadout_v1_2,status)||!HAS(async,sc_loadout_v1_2,cancel))
+        return Answer(SCO_UNAVAILABLE,out,size,"Async loadout lifecycle unavailable; no equip requested.");
+    // Parent weapon/tool slots precede attachments; preserve relative order otherwise.
+    std::stable_sort(items,items+pieces.size(),[](const auto& a,const auto& b){
+        const bool ap=a.slot==SC_LOADOUT_SLOT_PRIMARY||a.slot==SC_LOADOUT_SLOT_SIDEARM;
+        const bool bp=b.slot==SC_LOADOUT_SLOT_PRIMARY||b.slot==SC_LOADOUT_SLOT_SIDEARM;
+        return ap&&!bp;
+    });
+    sc_loadout_request request{sizeof(request),static_cast<uint32_t>(pieces.size()),sizeof(sc_loadout_item),0,items};
+    uint64_t job=0; const auto result=async->submit(g.self,&request,&job);
+    if(result!=SCO_OK){if(job)(void)async->cancel(g.self,job);return Answer(result,out,size,"Loadout submit refused; no automatic retry.");}
+    if(!job)return Answer(SCO_FAILED,out,size,"Invalid zero loadout ticket; state unknown.");
+    g.job=job;g.job_count=request.count;
+    for(uint32_t i=0;i<request.count;++i)g.job_slots[i]=items[i].slot;
+    return Answer(SCO_OK,out,size,"Loadout accepted pending readback; use loadout.job_status. Not confirmed applied.");
+#else
     const auto* loadout=Open<sc_loadout_v1>(SC_LOADOUT_SERVICE_NAME);
     if (!Cap("game.loadout.apply") || !HAS(loadout,sc_loadout_v1,apply)) return Answer(SCO_UNAVAILABLE,out,size,"Typed game.loadout.apply unavailable; no XML/private equip fallback.");
     sc_loadout_request request{sizeof(request),static_cast<uint32_t>(pieces.size()),sizeof(sc_loadout_item),0,items};
@@ -205,6 +301,7 @@ sco_result Apply(const std::vector<Piece>& pieces,char* out,uint32_t size) {
     std::string message="applied="+std::to_string(applied)+"/"+std::to_string(report.count)+"; no rollback/automatic retry";
     for (uint32_t i=0;i<report.count;++i) message+="; "+pieces[i].port+"="+Status(report.slots[i].status);
     return Answer(result,out,size,message.c_str());
+#endif
 }
 sco_result Equip(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     auto r=Validate(args,n,1,out,size); if (r!=SCO_OK) return r;
@@ -477,6 +574,11 @@ sco_result Load(const sco_api* api,sco_plugin* self) {
         {"loadout.cvars",Cvars,nullptr,0},{"loadout.cvar_set",Refuse,write,2},{"loadout.console",Refuse,&items,1},
         {"loadout.spawn",Spawn,spawn,4},{"loadout.build",Build,build,2} };
     for (const auto& c:commands) { const auto r=Command(c.name,c.fn,c.args,c.count); if (r!=SCO_OK) { g=State{}; return r; } }
+#ifdef SCO_LOADOUT_ASYNC_CONSUMER
+    for(const auto& c:{Registration{"loadout.job_status",JobStatus,nullptr,0},Registration{"loadout.cancel",CancelJob,nullptr,0}}){
+        const auto result=Command(c.name,c.fn,c.args,c.count);if(result!=SCO_OK){g=State{};return result;}
+    }
+#endif
     const auto r=api->subscribe(self,"tick",Tick,nullptr); if (r!=SCO_OK) { g=State{}; return r; }
     const auto lists=ReadLists();
     Answer(lists==SCO_OK ? SCO_OK : SCO_UNAVAILABLE,nullptr,0,lists==SCO_OK ? "Loadout copied lists ready; typed equip availability is independent." : "Loadout copied lists unavailable; no private fallback. Use loadout.reload_lists after installing packs and restarting.");
@@ -484,6 +586,9 @@ sco_result Load(const sco_api* api,sco_plugin* self) {
 }
 void Unload() {
     if (!g.api) return;
+#ifdef SCO_LOADOUT_ASYNC_CONSUMER
+    if(g.job){const auto* table=Async();if(HAS(table,sc_loadout_v1_2,cancel))(void)table->cancel(g.self,g.job);}
+#endif
     const auto* w=Open<sco_widgets_v1>(SCO_WIDGETS_NAME);
     if (HAS(w,sco_widgets_v1,remove_panel)) { (void)w->remove_panel(g.self,"loadout.player"); (void)w->remove_panel(g.self,"loadout.sq42"); }
     if (HAS(g.api,sco_api,unsubscribe)) (void)g.api->unsubscribe(g.self,"tick",Tick);

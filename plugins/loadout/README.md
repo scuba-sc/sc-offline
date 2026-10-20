@@ -44,6 +44,39 @@ public game-thread routes, reopen tables, and guard complete pointer extents/nul
 
 ## Commands and selections
 
+### Optional async candidate consumer
+
+`SCO_LOADOUT_ASYNC_CONSUMER=ON` requires the explicit SDK1.2loadout contract
+from a verified candidate archive; it defaults OFF and does not move any published
+SDK pin or release staging. The default2.3synchronous path remains available.
+Async configure also requires `SCO_LOADOUT_SDK_ARCHIVE` and
+`SCO_LOADOUT_SDK_SHA256`. It hashes the exact archive and compares the full
+selected public include inventory and every header byte against its extraction;
+a separate include directory cannot silently use different candidate headers.
+The optional path queries1.2and requires submit/status/cancel together before
+creating a job; it never falls back to synchronous equip after async refusal.
+
+Copied item sections may explicitly name primary, sidearm, primary_optic,
+primary_barrel, primary_underbarrel and corresponding sidearm selections, plus
+primary_tool_module/canister/battery and sidearm_tool_module/canister/battery.
+These are SDK logical slots, not guessed engine port names. Parent weapons/tools
+are submitted before attachments. Unknown legacy slots still refuse the whole
+selection, with no XML/catalog/private-native import.
+
+Accepted equip reports pending, not applied. `loadout.job_status` reads a fresh
+provider table and validates the job's completed prefix and per-slot results.
+`loadout.cancel` cancels retained work; malformed status attempts cancellation,
+and unload cancels any pending ticket. Confirmed gear is never rolled back.
+Only one job is retained by this consumer; another selection is refused until
+completion/cancellation. Lost lifecycle providers leave an explicit unavailable
+result, not fabricated success or automatic resubmission.
+Without a retained job, status successfully reports idle and cancellation is an
+idempotent no-op; neither claims any equipment was applied.
+
+`SCO_LOADOUT_WORKFLOW_TEST=ON` loads the actual candidate DLL in a public-service
+fixture. This is synthetic consumer validation, not native equip or game evidence.
+Published2.4adoption and owner runtime acceptance remain separate gates.
+
 | Command | Arguments / behavior |
 |---|---|
 | `loadout.equip` | Item-class string, separated by spaces/commas; resolve case-insensitively from copied `items.txt`, at most one item per logical slot |
