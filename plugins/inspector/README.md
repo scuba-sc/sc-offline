@@ -53,6 +53,67 @@ an external command-consumer reload route in the running host; do not replace a
 loaded Windows DLL. Rebuild with the game closed or module unloaded. This is not
 provider hot-reload support, a native sandbox or recovery after corruption.
 
+
+## Optional candidate manual inspector (not a release default)
+
+`SCO_INSPECTOR_CANDIDATE` defaults **OFF**. The published SDK 2.3.0 build and
+`inspector.read` remain unchanged. This optional product-layer consumer uses only
+public game build, actors, actor stats, GameRules, inventory, input and widgets
+services; it does not activate providers or introduce raw engine primitives.
+
+Configure `plugins/` separately with the exact candidate combined SDK include
+directory, `-DSCO_INSPECTOR_CANDIDATE=ON`,
+`-DSCO_INSPECTOR_SDK_ARCHIVE=<exact-combined-archive.zip>` and
+`-DSCO_INSPECTOR_SDK_SHA256=<independently-verified-sha256>`.
+These are explicit local candidate coordinates, not a published SDK pin. CMake
+checks the archive hash, the entire selected include inventory and every file's
+content against its own clean extraction; subsequent include/archive edits
+trigger configuration again. Do not point at host/private headers. For the
+synthetic fixtures add `-DSCO_WORKFLOW_TESTS=ON`, build `sc-offline-inspector`,
+`inspector-test` and `inspector-module-test`, then run CTest's `^inspector-`
+tests in Release. The module test dynamically loads the actual native DLL.
+
+The candidate adds these zero-argument commands:
+
+| Command | Behavior |
+| --- | --- |
+| `inspector.refresh` | Explicitly replace the copied snapshot; no automatic polling |
+| `inspector.status` | Select copied diagnostic availability/build metadata/action count |
+| `inspector.stats` | Select copied raw stats, IDs 1 through 29 |
+| `inspector.inventory` | Select copied item ports |
+| `inspector.params` | Select copied parameter **definitions**, not values |
+| `inspector.previous`, `inspector.next` | Navigate only the selected cached copy |
+
+An optional `inspector.main` panel exposes the same actions and admission path.
+No widget service means command-only operation. Only **Sample now** / refresh
+samples game services. Tab/page navigation may reopen the widget service to
+publish its copied view, but never queries diagnostic providers. Tables are
+requeried per sampling action and never retained; the host owns command and
+panel callback withdrawal, and unload explicitly removes an available panel.
+Historical snapshots persist until an explicit refresh, even after provider
+withdrawal; a refresh replaces them with truthful absence, not stale live data.
+
+Stats negotiate 1.1 before IDs 10–29, falling back to 1.0 for IDs 1–9 only.
+Each absent/non-finite stat stays unknown/unavailable. Values have unverified raw
+units and directions; wear floats are not injury tiers. Inventory is a bounded
+copy of up to 128 ports and may be a limited/truncated tree walk, not a full
+equipment or ownership assertion. Input exposes registry count only, not input
+injection or verified action dispatch. GameRules live reads can be unavailable
+even when static parameter definitions are present.
+
+Parameter acquisition is bounded to 256 definitions in pages of at most 64.
+Every returned record must cover its struct, carry a permitted int/float type,
+and contain bounded NUL-terminated name/group strings before either formatting
+path sees it. Empty top-level groups are valid. Counts must make exact bounded
+progress toward an unchanged total. Any malformed record/page, changing total,
+failure or registry beyond the bound discards the **whole** parameter copy;
+there is no partial-prefix publication. Navigation never fetches more pages.
+
+Candidate Windows x64/MSVC DLL and public-provider synthetic tests do not prove
+game-provider behavior, Windows rendering, reload safety after corruption, or
+release adoption. **Not run in game.** No engine/hostd integration, runtime
+activation or published SDK 2.4 default promotion is claimed.
+
 ## Optional Lua companion example
 
 With the game closed, copy `inspector.lua` into
