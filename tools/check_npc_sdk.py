@@ -38,7 +38,7 @@ def main(args):
                  '-DSCO_SDK_INCLUDE_DIR=' + str(sdk / 'include'), '-DSCO_WORKFLOW_TESTS=ON',
                  '-DSCO_ADDITIONAL_FEATURES=OFF',
                  '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON', '-DSCO_NPC_DEPENDENCY_TRACE=ON']
-    configure += (['-G', 'Visual Studio 18 2026', '-A', 'x64'] if os.name == 'nt'
+    configure += (['-G', args.generator, '-A', 'x64'] if os.name == 'nt'
                   else ['-G', 'Unix Makefiles'])
     run(configure, work)
     run(['cmake', '--build', build, '--config', 'Release', '--target',
@@ -62,7 +62,7 @@ def main(args):
     checker_build = work / 'checker-build'
     configure = ['cmake', '-S', sdk, '-B', checker_build]
     if os.name == 'nt':
-        configure += ['-G', 'Visual Studio 18 2026', '-A', 'x64']
+        configure += ['-G', args.generator, '-A', 'x64']
     run(configure, work)
     run(['cmake', '--build', checker_build, '--config', 'Release', '--target', 'sco-plugin-check'], work)
     checker = checker_build / ('Release/sco-plugin-check.exe' if os.name == 'nt' else 'sco-plugin-check')
@@ -116,4 +116,5 @@ if __name__ == '__main__':
     parser.add_argument('--archive', type=Path, required=True)
     parser.add_argument('--sums', type=Path, required=True)
     parser.add_argument('--work', type=Path, required=True, help='New directory outside checkout')
+    parser.add_argument('--generator', default='Visual Studio 16 2019' if os.name == 'nt' else 'Unix Makefiles', help='CMake generator')
     main(parser.parse_args())
