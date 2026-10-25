@@ -1,6 +1,6 @@
 # Architecture: sc-offline on sco-core
 
-sc-offline is two things on top of [sco-core](https://github.com/scuba-sc/sco-core): the **host** that loads sco-core's kernel into Star Citizen, and the **reference consumer** of what sco-core publishes. The host builds from sco-core `main` at `e616ed69d8f9f77b0f4827881c86d91e4a7d1689`, after the published `sdk-v2.3.0`. The SDK baseline **2.3.0**, plugin ABI **1.1** (unchanged), and Star Citizen game pack **0.6.0** are separate versions. The external plugins build against the published SDK **2.4.0** release candidate 1 ([`sdk-v2.4.0-rc.1`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.1): plugin ABI **1.1**, game pack **0.8.0**); the final signed 2.4.0 release is still to come. The SDK adds public headers and publishes a Star Citizen host-source kit, not a change to the frozen plugin ABI; the full Windows host still builds from pinned source, not a plugin SDK archive. How to build and what CI checks: [build.md](build.md). What nobody has run in game yet: [status.md](status.md).
+sc-offline is two things on top of [sco-core](https://github.com/scuba-sc/sco-core): the **host** that loads sco-core's kernel into Star Citizen, and the **reference consumer** of what sco-core publishes. The host builds from exact sco-core candidate source `48d7055ef49e1b073ec59e4ce8ded7a6006329eb`, tag [`sdk-v2.4.0-rc.1`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.1). External plugins consume the checksum-pinned published `sco-sdk-2.4.0.zip` from that candidate: SDK **2.4.0**, plugin ABI **1.1** (unchanged), Star Citizen game pack **0.8.0**. The full Windows host builds from the pinned source, independently of the plugin archive. Candidate adoption does not approve the final signed SDK or certify gameplay. How to build and what CI checks: [build.md](build.md). What nobody has run in game yet: [status.md](status.md).
 
 ## Loadout/SQ42 development boundary
 
@@ -12,39 +12,51 @@ sc-offline is two things on top of [sco-core](https://github.com/scuba-sc/sco-co
 | --- | --- | --- |
 | **sco-core kernel** | The plugin loader, `sco_api`, `sco.ui`, `sco.storage`, `sco.net`, `sco.ipc`, `sco.settings`, hot reload (`sco.reload`), the detour engine (`sco/hook.h`), the CryPak/DataCore pack loader | `external/sco-core` |
 | **sco-core game pack** | The game's signature rows (`sco/game/*.h`, each address found once, by one unique pattern) and the `game.*` services built on them: `teleport.spatial`, `spawn.entities`, `game.actors`, `game.vehicles`, `game.entities`, `game.world`, `game.creative` | `external/sco-core` |
-| **sc-offline** | The `dinput8.dll` proxy, the offline patches, the main-thread hook, the menu shell, the launcher, the nine remaining built-in plugins, the data lists, and the optional `creative` plugin | `src/`, `launcher/`, `plugins/`, `data/` |
+| **sc-offline** | The `dinput8.dll` proxy, the offline patches, the main-thread hook, the menu shell, the launcher, the external feature modules, supporting data packs and remaining legacy engine helpers | `src/`, `launcher/`, `plugins/`, `data/` |
 
 Under `src/` nothing finds a game address by pattern: `tools/no-scans.sh` fails the build if anything there calls a raw scanner (`FindPattern`, `FindUniquePattern`, `FindCString`, `FindRipLea`, `FunctionStart`, `BytesMatch`, `memchr`). Every address comes from a sco-core row, so a game patch that moves code is fixed in one place, sco-core, which is checked against each game build.
 
 ## Startup
 
-On the main-thread hook's first tick, `dllmain.cpp` calls `sco::app::Start`. In order: capabilities (`SetFeatureCaps`, which turns each feature's capability on from its resolved rows), the `sco_api` table, the game services (`Platform::gameServices`; `mod.log` prints `[game] game services published: ...`), the built-in plugins in the order of `kBuiltins` in `src/builtins/builtins.h`, then the plugins in `data/plugins/` if `plugins = on`. That happens whether or not a feature resolved on this game build: a feature whose rows are missing loses its capability and its commands, and the rest still starts.
+The bootstrap prepares the game-pack host composition with live OS admission
+evidence before engine mutation. The game pack owns startup, signature resolution,
+required quit/DataCore hooks and plugin tick admission. `Platform::gameServices`
+enables the public services; the shell supplies no built-in feature inputs.
+External plugin folders load when `plugins = on`, subject to their manifests and
+capabilities. See [host composition](host-composition.md) for refusal boundaries.
 
 ## What each feature runs on
 
 | Feature | Runs on | Notes |
 | --- | --- | --- |
-| Save / go to a spot (F7, F8) | `teleport` built-in; capability `teleport` | `teleport.spatial` 1.0 is published by the game pack, not by this built-in |
-| Spawn a ship (Vehicles tab, `spawn.ship`) | `spawn` built-in over the spawner engine (`src/spawner.cpp`) | `spawn.entities` 1.2 is published by the game pack; ASOP registers a retrieved ship with the game pack's mover (`RegisterPlayerVehicle`) |
-| Crew commands (`crew.*`) | `game.vehicles` 1.0, `game.actors`, and `teleport.spatial` for the pose | Gated on `game.vehicles.seats`, `game.vehicles.seat`, `game.vehicles.flight_ready`, `game.actors.despawn`. The Crew **tab** still runs on the spawner's seat code |
-| NPCs | External native SDK consumer: `game.actors` lifecycle, `teleport.spatial` pose and `game.entities` observation | `data/plugins/npc/` ships enabled; `npc.spawn`, `npc.observe`, `npc.remove`, `npc.clear`; removal is owned-only, never crew-wide; no NPC tab or fallback; [SDK workflows](sdk-workflows.md) |
-| Read-only inspector | External native SDK consumer using `game.actors` and `game.entities` reads | `data/plugins/inspector/` ships enabled; `inspector.read` logs explicit unknowns. Command-only; restricted Lua uses the non-default `inspector_lua` ID and is not another baseline feature |
-| Build props | `game.entities`: `spawn`, `set_transform`, `despawn`, and `keep()` (1.1) for placed props | Prefabs (`.socpak`) and NPC props still use the spawner. Without `keep()` (a 1.0 game pack) props stay owned by the plugin |
-| Build: ground ray for placement, build camera | `game.world.raycast`, `game.world.camera` | The aim ray that moves the preview stays on the `build.*` rows: it must skip the preview prop and `raycast` 1.0 has no skip list |
-| Noclip, god mode, infinite ammo | The optional `creative` plugin on `game.creative` 1.0 | Not in `dinput8.dll`; see [below](#built-ins-and-optional-plugins) |
-| Natural mining | External `mining` consumer on public `game.mining`; game pack owns the cell hook/admission | Requested setting off by default; native adapter unavailable until verified |
-| Gear, outfits, quantum travel, contracts | Built-ins gated on `loadout`, `quantum`, `contracts`; sco-core rows, no scans | Their engines are still sc-offline's own (`src/loadout.cpp`, `quantum.cpp`, `contracts.cpp`); no `game.*` service covers them yet |
-| Multiplayer | `multiplayer` built-in on `sco.net`, `teleport.spatial`, `spawn.entities` | Gated on `sco.net` |
-| Gladius quantum drive | A data pack applied by sco-core's DataCore loader | `data/builtin/quantum/` |
-| Titanfall 2 and voxel bridges | `sco.ipc`, optional builds only | [bridges.md](bridges.md) |
+| Quick save/return and travel | External `teleport` and `quantum` on `game.relocation` | Requires positive offline admission, resolved rows and a live player; no private movement fallback |
+| Vehicles, Crew and NPCs | External `spawn`, `crew`, `npc` on public actor/vehicle/entity/spatial services and `sco.widgets` | Shared public picker catalogs; ownership and delayed operations remain consumer responsibilities |
+| Read-only inspector | External `inspector` on public actor/entity reads | Explicit unknowns when providers are unavailable; [SDK workflows](sdk-workflows.md) |
+| Build props | External `build` on public entity/spatial services | Interactive camera/aim controls still refuse unavailable providers |
+| Noclip, god mode, infinite ammo | External `creative` on `game.creative` | Ships disabled |
+| Discord presence | External `discord` refusal module | Ships disabled pending approved transport/privacy review |
+| Natural mining | External `mining` on `game.mining` | Requested setting off by default; native adapter unavailable until verified |
+| Contracts | External `contracts` consumer | Missions/economy providers remain deferred |
+| Gear and SQ42 settings | Development `loadout` consumer | Not staged in releases; unsupported slots and writes remain refused |
+| Multiplayer | Separate [sc-mp](https://github.com/scuba-sc/sc-mp) consumer | Excluded from the standard release |
+| Quantum drive and pickers | Ordinary DataCore/content packs | `data/plugins/quantum_drive`, `data/plugins/picker_catalog` |
+| Titanfall 2 and voxel bridges | Independent external consumers of `sco.ipc` | Excluded from the standard release; [bridges.md](bridges.md) |
 
 ## Built-ins and optional plugins
 
-**Built-ins** are compiled into `dinput8.dll`: `teleport`, `spawn`, `crew`, `loadout`, `quantum`, `build`, `contracts`, `mining` and `multiplayer` (plus `titanlink` and `voxel_bridge` in the optional bridge builds). Each has a host-only `sco::plugins::Builtin` registration, a table of the three plugin functions instead of DLL exports, and talks through `sco_api` like any plugin. They load first, with `plugins` on or off, they own their id and command prefix (a plugin folder with one of those ids is refused), and the host cannot reload them (`sco.reload` answers that a built-in cannot be reloaded).
+The shell registers no feature built-ins. G1 early DataCore refuses built-in
+inputs. Unbuilt legacy sources under `src/builtins/` and remaining shared engine
+helpers do not provide a registration, linked consumer or feature tick fallback.
 
 **Optional plugins** are folders under `data/plugins/<id>/` with a `plugin.ini`. They load only with `plugins = on` in `sc-offline.ini`. A plugin is off when its folder holds an entry named `disabled`; the launcher's Plugins page creates and deletes that marker, and a change applies at the next game start. The Plugins page also edits a plugin's `[settings]`. **Hot reload** (`sco.reload <plugin>`) works only inside the running game; the launcher has no channel into it.
 
-The release ships four external feature folders: NPC, inspector, Discord and creative. **`npc`** (`plugins/npc/`, isolated CMake target `sc-offline-npc`) builds against the verified published SDK, ships **on** without a `disabled` marker, and has no host linkage, registration or fallback. Its four lifecycle commands are command-first; the old NPC tab is removed pending renderer-neutral widgets ([sco-core #139](https://github.com/scuba-sc/sco-core/issues/139)). Crew keeps its shared picker; legacy `src/npc.cpp` is untouched. **`inspector`** (`plugins/inspector/`, isolated CMake target `sc-offline-inspector`) uses only published public headers, ships **on** without a `disabled` marker, and has no host registration or fallback. See the [published SDK tutorial](sdk-workflows.md). **`discord`** (`plugins/discord/`, standalone CMake target `sc-offline-discord`) is blocked pending approved host transport and field review. Its folder metadata is **off**; manually enabling it exposes only refused `discord.status` and inactive `sco.settings` preferences, with no game reads or custom IPC/network. Shared release/CI wiring remains an integration task; see [Discord review](../plugins/discord/README.md). **`creative`** (`plugins/creative/`, CMake target `sc-offline-creative`) is `requires = game.creative` and ships with its `disabled` marker, so it is **off** until you turn it on. Its commands are `creative.god`, `creative.noclip`, `creative.noclip_speed`, `creative.ammo`, `creative.ship_ammo` and `creative.status`; the Player and Vehicles tabs' checkboxes run them. Details: [features.md](features.md#the-creative-plugin).
+The release stages 11 external feature folders: creative, discord, crew, spawn,
+build, mining, teleport, quantum, inspector, npc and contracts. Creative and
+Discord keep their disabled markers; the other nine ship enabled. Modules build
+independently from the checksum-verified published SDK, with no host-private
+include path. Loadout remains a development consumer. These assembly defaults do
+not prove that required production services are available or features work in
+game; see [status](status.md) and [candidate limits](sdk-candidate.md).
 
 ## The CI gates
 
@@ -54,7 +66,7 @@ The host gates and isolated SDK-plugin jobs run on every pull request and every 
 | --- | --- |
 | `check` | `tools/check.sh` (clang parse against mingw-w64 headers, MSVC C2712 screen, baseline in `tools/check-baseline.txt`), the release-manifest tests, and that `src/third_party/imgui` matches the ImGui headers the SDK ships |
 | `build` | Release x64 host with MSVC; binaries checked with `dumpbin` and `mt`. NPC and inspector are built in separate SDK jobs against the checksum-verified published archive and staged for the release, not linked or registered in the host |
-| `bridges` | The same build with both bridge options on, only so the bridges keep compiling |
+| Optional bridges | Independent configurations; excluded from the standard host and release |
 | `no-scans` | No raw game scan under `src/` |
 | `sdk-headers` | Every file under `src/builtins/` and `plugins/` includes only SDK headers, its own files, or a header named in `tools/sdk-headers-allow.txt` |
 

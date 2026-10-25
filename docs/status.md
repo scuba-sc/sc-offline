@@ -33,17 +33,24 @@ Since v0.7.8.1 the shell reports offline-session and network
 evidence from live firewall and connection reads (see above); it still never infers
 safety from flags or patch success.
 
-The host is pinned to sco-core `main` at commit `e616ed69d8f9f77b0f4827881c86d91e4a7d1689`, after the published `sdk-v2.3.0` (it adds the `game.relocation` production path and the `game.quantum` backend): SDK baseline **2.3.0**, plugin ABI **1.1** (unchanged), Star Citizen game pack **0.6.0**. The external plugins build separately against the published SDK **2.4.0** release candidate 1 ([`sdk-v2.4.0-rc.1`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.1): plugin ABI **1.1**, game pack **0.8.0**, verified game build 4.10.197.2878; the final signed 2.4.0 release is still to come). Nothing new in 2.4.0 has been run in game. The game pack's signature evidence at this pin targets Star Citizen **4.10.196.36804**; it is not a game-session result for this product pin.
+The embedded host is pinned to exact SDK 2.4.0 candidate source
+`48d7055ef49e1b073ec59e4ce8ded7a6006329eb` (`sdk-v2.4.0-rc.1`). External
+plugins use that candidate's checksum-pinned `sco-sdk-2.4.0.zip`: plugin ABI
+**1.1**, Star Citizen game pack **0.8.0**. Static signature evidence targets
+**4.10.197.2878**. Actor-stats contracts are now present in the host source;
+stat units, ranges, writes and actual game behavior remain **NOT RUN**. The
+candidate's default-off services stay off. See [coordinates and release limits](sdk-candidate.md).
 
-**Not adopted by this product yet:** sco-core `main` has moved past this pin. It now records signature rows resolved on Star Citizen **4.10.197.2878** and has merged the `game.actor_stats` read and write services (the write service is off pending in-game confirmation; stat units, range and direction are not run in game). sc-offline neither pins nor ships those, so nothing here claims support for 4.10.197.2878 or for actor stats.
+No game session has been run for this product candidate. Prior startup
+observations above concern older product and game revisions only.
 
 The release-pin smoke checks: offline startup was **observed once** for v0.7.8.1 (above); EAC detection/refusal, services published before plugins, menu and clean exit remain **NOT RUN** in game. CI build success does not close these owner-run checks.
 
-**The only game session reported since the SDK conversion is one maintainer run of v0.7.7** (sco-core `2197dfb`, game pack 0.2.0, NVIDIA Smooth Motion off), recorded in the [v0.7.7 release notes](https://github.com/scuba-sc/sc-offline/releases/tag/v0.7.7). It was a single run, not a per-feature check, and the newer pins (`main` on `sdk-v2.0.0`, PR #126 on `sdk-v2.1.0`) have not run in game. CI proves the code compiles, the gates hold, and the binaries have the right shape. It does not prove a feature works. The current owner decision is CI-gated PR merge and user testing of official
+**Historical v0.7.7 session:** one maintainer run of v0.7.7 (sco-core `2197dfb`, game pack 0.2.0, NVIDIA Smooth Motion off), recorded in the [v0.7.7 release notes](https://github.com/scuba-sc/sc-offline/releases/tag/v0.7.7). It was a single run, not a per-feature check, and the newer pins (`main` on `sdk-v2.0.0`, PR #126 on `sdk-v2.1.0`) have not run in game. CI proves the code compiles, the gates hold, and the binaries have the right shape. It does not prove a feature works. The current owner decision is CI-gated PR merge and user testing of official
 releases; owner Windows/in-game acceptance remains **NOT RUN**. No synthetic
 fixture or checker result certifies gameplay. Policy: [decisions.md](decisions.md).
 
-sco-core keeps the matching table for the `game.*` services, with the evidence level of each capability and what a run has to show: [docs/game/status.md](https://github.com/scuba-sc/sco-core/blob/e616ed69d8f9f77b0f4827881c86d91e4a7d1689/docs/game/status.md) at the pinned commit. Read it for the service side (for example `game.actors.state`, `game.entities.query_radius`, `game.entities.watch` and `game.events.vehicle_seat` are held **off** until a run decides them). This page lists the sc-offline side: what each converted feature still needs checked. The steps are the ones in the bodies of [#95](https://github.com/scuba-sc/sc-offline/pull/95), [#97](https://github.com/scuba-sc/sc-offline/pull/97) and [#98](https://github.com/scuba-sc/sc-offline/pull/98); `mod.log` lines are quoted as those PRs wrote them.
+sco-core keeps the matching table for the `game.*` services, with the evidence level of each capability and what a run has to show: [docs/game/status.md](https://github.com/scuba-sc/sco-core/blob/48d7055ef49e1b073ec59e4ce8ded7a6006329eb/docs/game/status.md) at the pinned commit. Read it for the service side (for example `game.actors.state`, `game.entities.query_radius`, `game.entities.watch` and `game.events.vehicle_seat` are held **off** until a run decides them). This page lists the sc-offline side: what each converted feature still needs checked. The steps are the ones in the bodies of [#95](https://github.com/scuba-sc/sc-offline/pull/95), [#97](https://github.com/scuba-sc/sc-offline/pull/97) and [#98](https://github.com/scuba-sc/sc-offline/pull/98); `mod.log` lines are quoted as those PRs wrote them.
 
 ## Step 7B: tutorial evidence ledger
 
@@ -59,8 +66,8 @@ SDK pin and 13 baseline + 2 optional feature inventory are unchanged.
 
 Crew and ordinary spawn ship as enabled external folders; their host registrations,
 linked UI and tick fallbacks are removed. Creative stays off; Discord stays off and
-refuses presence pending approved transport/privacy policy. The current host registry has two built-ins (contracts, mining); the release recipe
-stages nine external native IDs (spawn, crew, build, npc, inspector, teleport, quantum, creative, discord).
+refuses presence pending approved transport/privacy policy. The current host registry has no feature built-ins; the release recipe
+stages 11 external native IDs (spawn, crew, build, mining, npc, inspector, teleport, quantum, creative, discord, contracts).
 Loadout has an external implementation not yet staged
 there, and multiplayer is unregistered at this revision: 13 baseline IDs remain.
 Two optional bridge modules and supporting data packs are counted separately.
