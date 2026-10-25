@@ -34,6 +34,9 @@ jobs:
       - name: tools/check.sh
         run: tools/check.sh
 
+      - name: SDK proof generator defaults and explicit overrides
+        run: python3 tools/test_sdk_generators.py
+
       # The result a built-in command answers (sco-core #12): SCO_FAILED once it ran and failed,
       # SCO_UNAVAILABLE only for a capability this build doesn't have.
       - name: Built-in result tests

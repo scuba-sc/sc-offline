@@ -33,8 +33,22 @@ legacy product picker tabs are removed. Legacy `src/npc.cpp` is untouched. `src/
 
 Use published SDK 2.4.0 release candidate 1, tag **`sdk-v2.4.0-rc.1`**, combined **`sco-sdk-2.4.0.zip`**, verified against
 release **`SHA256SUMS`**: SDK 2.4.0, plugin ABI 1.1 and Star Citizen game pack 0.8.0
-are distinct versions. GitHub marks rc.1 as a pre-release; the final signed `sdk-v2.4.0` will follow. Nothing new in 2.4.0 has been run in game. Every external plugin builds against this one published archive. The Windows host independently uses the submodule pinned to sco-core `main` after `sdk-v2.3.0`,
-`e616ed69d8f9f77b0f4827881c86d91e4a7d1689` (game pack 0.6.0); a plugin archive cannot build the full host.
+are distinct versions. The tag identifies RC1; a release-page flag does not grant final signed
+approval. Nothing new in 2.4.0 has been run in game. Every external plugin uses this archive;
+the embedded host independently pins exact candidate source
+`48d7055ef49e1b073ec59e4ce8ded7a6006329eb` (see [SDK candidate coordinates](sdk-candidate.md)).
+
+The expanded inspector uses that same published RC1 by default; no older unpublished candidate
+lock is needed. The proof validates the archive and full extracted inventory before building.
+`plugins/CMakeLists.txt` also checks all inspector contract headers at configure time. An explicitly
+selected non-default version/hash requires the matching archive, rather than accepting host headers.
+For the proof CLI, non-default coordinates also require `--candidate` and an independently locked
+`--archive-sha256`; such runs are labelled unpublished candidates, never the published RC1 proof.
+
+Windows inspector, NPC and build proof scripts accept `--generator` for a locally installed toolchain
+(for example `--generator "Visual Studio 17 2022"`). Their default remains **Visual Studio 18 2026**,
+matching hosted CI. POSIX proofs use Unix Makefiles. This changes toolchain selection, never the
+SDK source/archive identity or dependency-isolation rules.
 
 Standalone modules/manifests stage under `<plugin-build>/test-plugins/{npc,inspector}/`.
 Windows emits `npc.dll` and `inspector.dll`; macOS/Linux emit development-only

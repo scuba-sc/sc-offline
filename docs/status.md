@@ -1,5 +1,13 @@
 # What is not verified in game
 
+## Inspector snapshot integration on SDK 2.4.0 RC1
+
+The inspector snapshot, metadata and optional widget paths use the published RC1
+archive by default. Public module fixtures cover manual acquisition, cached navigation,
+missing providers, bounds and unload. This integration does not certify production
+providers, renderer behavior or game state. External hostd, Windows/MSVC and in-game
+acceptance must be recorded independently; no game run was performed for this repair.
+
 ## v0.7.8.1 offline startup
 
 Observed once, on one Windows test PC (game 4.10.196.36804, launched through `sc-offline.exe play` with the game running as administrator): `[g1] evidence: session=Offline officialNetwork=Clear antiCheat=Clear target=Clear`, then every offline patch line as in v0.7.7 (including `offline-force (IsOnline = 0): patched` and `local handshake (accept frontend connection): patched`), `[core] signatures: 316/316 OK`, the game quit hook installed, and `bOnline[0]` in `Game.log`. That session had no desktop, so the game did not render or reach the menu.
