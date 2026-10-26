@@ -51,12 +51,15 @@
 #include <string>
 #include <vector>
 #include "install_identity_win32.h"
+#include "localization_win32.h"
+#include "locale_ru_builtin.h"
 #include "../src/version.h"
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "../src/third_party/imgui/imgui.h"
 #include "../src/third_party/imgui/imgui_impl_win32.h"
 #include "../src/third_party/imgui/imgui_impl_dx11.h"
 #include "../src/third_party/imgui/imgui_internal.h"
+#include "localization_ui.h"
 // The plugins page edits a plugin's [settings] in its sco.storage database (sco-core's vendored SQLite).
 #include "../external/sco-core/third_party/sqlite/sqlite3.h"
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -156,6 +159,7 @@ static int FailCode(int code, const char* fmt, ...) {
 // sc-offline.ini: `key = value` lines; a line starting with '#' is a comment. Unknown keys are reported, not ignored.
 struct Config {
     wstring game, channel = L"LIVE", bootMap = L"PU_All", startShip = L"DRAK_Cutlass_Black", start;
+    sco::launcher::locale::Language language = sco::launcher::locale::Language::Auto;
     // What the helper changes on the PC while you play, and undoes when the game closes.
     bool firewall = true, eacHosts = true, eacRename = true;
     // After the game closes: offer to delete the logs the game wrote during this session.
@@ -239,6 +243,13 @@ static bool ReadConfig(const wstring& path, Config& c) {
         if (eq == wstring::npos) { Out("[!] sc-offline.ini line %d: expected key = value\n", lineNo); continue; }
         const wstring k = Trim(line.substr(0, eq)), v = Trim(line.substr(eq + 1));
         if      (!_wcsicmp(k.c_str(), L"game"))       c.game = v;
+        else if (!_wcsicmp(k.c_str(), L"language")) {
+            using sco::launcher::locale::Language;
+            c.language = Language::English;
+            if (v == L"ru") c.language = Language::Russian;
+            else if (v == L"auto") c.language = Language::Auto;
+            else if (v != L"en") Out("[!] sc-offline.ini line %d: language must be en, ru or auto; using English\n", lineNo);
+        }
         else if (!_wcsicmp(k.c_str(), L"channel"))    { if (!v.empty()) c.channel = v; }
         else if (!_wcsicmp(k.c_str(), L"boot_map"))   c.bootMap = v;
         else if (!_wcsicmp(k.c_str(), L"start_ship")) c.startShip = v;
@@ -2474,13 +2485,14 @@ enum Icon { kIcoPlay, kIcoInstall, kIcoStatus, kIcoUpdate, kIcoHome, kIcoOutput,
             kIcoPad, kIcoShield, kIcoBolt, kIcoCheck, kIcoMark, kIcoServer, kIcoUsers, kIcoMods, kIcoSearch };
 
 // The home page's list: each row runs `sc-offline.exe <cmd>` as a hidden child (see RunCommand).
-struct GuiCommand { const char* label; const wchar_t* cmd; Action act; Icon icon; };
+using LocaleKey = sco::launcher::locale::Key;
+struct GuiCommand { const char* id; LocaleKey label; const wchar_t* cmd; Action act; Icon icon; };
 static const GuiCommand kGuiCommands[] = {
-    { "Play", L"play", kActPlay, kIcoPlay },
-    { "Status", L"status", kActStatus, kIcoStatus },
-    { "Update", L"update", kActUpdate, kIcoUpdate },
-    { "Install", L"install", kActInstall, kIcoInstall },
-    { "Uninstall", L"uninstall", kActUninstall, kIcoShield },
+    { "Play", LocaleKey::Play, L"play", kActPlay, kIcoPlay },
+    { "Status", LocaleKey::Status, L"status", kActStatus, kIcoStatus },
+    { "Update", LocaleKey::Update, L"update", kActUpdate, kIcoUpdate },
+    { "Install", LocaleKey::Install, L"install", kActInstall, kIcoInstall },
+    { "Uninstall", LocaleKey::Uninstall, L"uninstall", kActUninstall, kIcoShield },
 };
 static const int kGuiCommandCount = int(ARRAYSIZE(kGuiCommands));
 
@@ -2566,8 +2578,69 @@ struct Gui {
     std::string plugOpen;        // folder of the plugin whose settings are open; "" shows the list
     std::string note;            // a short message on the plugins page
     double noteAt = 0;
+    sco::launcher::locale::Localizer locale;
+    bool localeGlyphsChecked = false;
+    bool folderKnown = false;
+    std::vector<std::pair<LocaleKey, std::string>> leftovers;
 };
 static Gui g_gui;
+
+static const char* T(LocaleKey key) { return g_gui.locale.Text(key); }
+static std::string F(LocaleKey key, std::initializer_list<sco::launcher::locale::Argument> arguments) {
+    return g_gui.locale.Format(key, arguments);
+}
+
+static void RefreshWindowTitle() {
+    if (g_gui.wnd) SetWindowTextW(g_gui.wnd, Wide(F(LocaleKey::WindowTitle, {{"version", SCO_VERSION}})).c_str());
+}
+
+static void LoadLocale() {
+    Gui& g = g_gui;
+    Config config;
+    ReadConfig(g.here + L"\\sc-offline.ini", config);
+    g.locale = sco::launcher::locale::Localizer(PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_RUSSIAN);
+    g.locale.Select(config.language);
+    std::string bytes;
+    const auto result = sco::launcher::locale::ReadLocaleFile(g.here + L"\\data\\locales\\ru.ini", bytes);
+    if (result == sco::launcher::locale::FileResult::Ready) g.locale.LoadRussian(bytes);
+    else if (result == sco::launcher::locale::FileResult::Missing)
+        g.locale.LoadRussian(sco::launcher::locale::kBuiltinRussianCatalogue);
+}
+
+static void RefreshLightText() {
+    Gui& g = g_gui;
+    if (g.gameUp) {
+        g.lightTitle = T(LocaleKey::UnsafeRunning);
+        g.lightDetail = T(LocaleKey::RunningDetail);
+    } else if (!g.leftovers.empty()) {
+        g.lightTitle = T(LocaleKey::UnsafeLeftovers);
+        std::string items;
+        for (const auto& leftover : g.leftovers) {
+            if (!items.empty()) items += "; ";
+            items += leftover.first == LocaleKey::LeftFirewall ?
+                F(leftover.first, {{"name", leftover.second}}) : T(leftover.first);
+        }
+        g.lightDetail = F(LocaleKey::UndoDetail, {{"items", items}});
+    } else if (!g.folderKnown) {
+        g.lightTitle = T(LocaleKey::UnknownFolder);
+        g.lightDetail = T(LocaleKey::UnknownFolderDetail);
+    } else {
+        g.lightTitle = T(LocaleKey::SafeOnline);
+        g.lightDetail = T(LocaleKey::SafeDetail);
+    }
+}
+
+static void AdmitLocaleGlyphs() {
+    Gui& g = g_gui;
+    if (g.localeGlyphsChecked) return;
+    const auto& catalogue = g.locale.RussianCatalogue();
+    g.locale.SetGlyphCoverage(sco::launcher::locale::CatalogueGlyphs(catalogue, g.font) &&
+        sco::launcher::locale::CatalogueGlyphs(catalogue, g.bold) &&
+        sco::launcher::locale::CatalogueGlyphs(catalogue, g.mono));
+    g.localeGlyphsChecked = true;
+    RefreshLightText();
+    RefreshWindowTitle();
+}
 
 static double Seconds() {
     static LARGE_INTEGER f{};
@@ -2588,34 +2661,22 @@ static void RefreshLight() {
     g.pluginsOn = cfg.plugins;
     wstring bin = cfg.game.empty() ? L"" : ToBin64(cfg.game, cfg.channel);
     if (bin.empty()) { std::vector<Found> f; FromRemembered(g.here, cfg.channel, f); if (!f.empty()) bin = f.front().bin; }
-    std::vector<std::string> left;
+    g.leftovers.clear();
     if (!bin.empty()) {
         const GamePaths p(bin);
         const DllInfo d = Identify(p.dll);
-        if (IsFile(p.marker) || (d.present && d.ours)) left.push_back("the mod is still in Bin64");
+        if (IsFile(p.marker) || (d.present && d.ours)) g.leftovers.emplace_back(LocaleKey::LeftMod, "");
     }
     const std::string pc = PcChangesLeft();
     if (!pc.empty()) {
-        for (const FwRule& r : kFwRules) if (Field(pc, r.key) == "added") left.push_back("firewall rule \"" + Narrow(r.name) + "\"");
-        if (Field(pc, "hosts") == "added") left.push_back("the EAC line in the hosts file");
-        if (Field(pc, "eac") == "renamed") left.push_back("EasyAntiCheat_EOS.exe renamed to .bak");
+        for (const FwRule& r : kFwRules) if (Field(pc, r.key) == "added") g.leftovers.emplace_back(LocaleKey::LeftFirewall, Narrow(r.name));
+        if (Field(pc, "hosts") == "added") g.leftovers.emplace_back(LocaleKey::LeftHosts, "");
+        if (Field(pc, "eac") == "renamed") g.leftovers.emplace_back(LocaleKey::LeftEac, "");
     }
-    g.hasLeftovers = !left.empty();
+    g.hasLeftovers = !g.leftovers.empty();
     g.gameUp = GameRunning();
-    if (g.gameUp) {
-        g.lightTitle = "Not safe to go online";
-        g.lightDetail = "Star Citizen is running. When it closes, sc-offline takes the mod out and undoes its PC changes.";
-    } else if (!left.empty()) {
-        g.lightTitle = "Not safe to go online yet";
-        g.lightDetail = "Click Uninstall to undo: ";
-        for (size_t i = 0; i < left.size(); ++i) g.lightDetail += (i ? "; " : "") + left[i];
-    } else if (bin.empty()) {
-        g.lightTitle = "Game folder not known yet";
-        g.lightDetail = "Click Status or Play to find it. No PC changes are left over.";
-    } else {
-        g.lightTitle = "Safe to go online";
-        g.lightDetail = "The mod is out of the game folder and no PC changes are left.";
-    }
+    g.folderKnown = !bin.empty();
+    RefreshLightText();
 }
 
 static void IndexLines() {
@@ -2629,7 +2690,7 @@ static void ClearOutput() {
     g.log.clear(); g.lines.assign(1, 0); g.tail.clear(); g.question.clear();
 }
 
-static void AppendOutput(const std::wstring& w) {
+static void AppendOutput(const std::wstring& w, bool parseQuestion = true) {
     Gui& g = g_gui;
     std::string t = Narrow(w);
     t.erase(std::remove(t.begin(), t.end(), '\r'), t.end());
@@ -2642,6 +2703,7 @@ static void AppendOutput(const std::wstring& w) {
     g.log += t;
     for (size_t i = from; i < g.log.size(); ++i) if (g.log[i] == '\n') g.lines.push_back(i + 1);
     g.newOutput = true;
+    if (!parseQuestion) return;
     g.tail += w;
     if (g.tail.size() > 600) g.tail.erase(0, g.tail.size() - 600);
     const size_t q = g.tail.rfind(L"[y/N] ");
@@ -2695,7 +2757,11 @@ static void RunCommand(const wchar_t* cmd) {
     const BOOL ok = CreateProcessW(self, line.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, g.here.c_str(), &si, &pi);
     SetEnvironmentVariableW(L"SC_OFFLINE_GUI", nullptr);
     CloseHandle(outW); CloseHandle(inR);
-    if (!ok) { CloseHandle(outR); CloseHandle(inW); AppendOutput(L"[!] couldn't start sc-offline.exe " + wstring(cmd) + L"\n"); return; }
+    if (!ok) {
+        CloseHandle(outR); CloseHandle(inW);
+        AppendOutput(L"[!] " + Wide(F(LocaleKey::ChildStartError, {{"command", Narrow(cmd)}})) + L"\n", false);
+        return;
+    }
     CloseHandle(pi.hThread);
     g.child = pi.hProcess; g.childIn = inW; g.running = cmd;
     ClearOutput();
@@ -2764,12 +2830,7 @@ static ImU32 Fade(ImU32 c, float a) {
 }
 
 static std::string Fit(std::string s, float width, bool fromLeft) {
-    if (ImGui::CalcTextSize(s.c_str()).x <= width) return s;
-    while (s.size() > 1 && ImGui::CalcTextSize((fromLeft ? "..." + s : s + "...").c_str()).x > width) {
-        if (fromLeft) { s.erase(0, 1); while (!s.empty() && (s[0] & 0xC0) == 0x80) s.erase(0, 1); }
-        else { char c; do { c = s.back(); s.pop_back(); } while (!s.empty() && (c & 0xC0) == 0x80); }
-    }
-    return fromLeft ? "..." + s : s + "...";
+    return sco::launcher::locale::FitText(std::move(s), width, fromLeft);
 }
 
 static void DrawIcon(Icon icon, ImVec2 c, float s, ImU32 col) {
@@ -2881,11 +2942,11 @@ static float UiCard(ImVec2 lo, ImVec2 hi, Icon icon, const char* title) {
 
 enum Look { kAction, kPlain, kQuiet };
 
-static bool UiButton(const char* label, ImVec2 pos, ImVec2 size, Look look, bool enabled = true, int icon = -1) {
+static bool UiButton(const char* idText, ImVec2 pos, ImVec2 size, Look look, bool enabled = true, int icon = -1, const char* display = nullptr) {
     ImGui::SetCursorScreenPos(pos);
-    const ImGuiID id = ImGui::GetID(label);
+    const ImGuiID id = ImGui::GetID(idText);
     ImGui::BeginDisabled(!enabled);
-    const bool clicked = ImGui::InvisibleButton(label, size);
+    const bool clicked = ImGui::InvisibleButton(idText, size);
     const bool hot = ImGui::IsItemHovered(), down = ImGui::IsItemActive();
     ImGui::EndDisabled();
     const float h = Anim(id, hot ? 1.0f : 0.0f), d = Anim(id + 1, down ? 1.0f : 0.0f, 24.0f);
@@ -2899,25 +2960,31 @@ static bool UiButton(const char* label, ImVec2 pos, ImVec2 size, Look look, bool
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float in = d * Px(1);
     if (look != kQuiet) dl->AddRectFilled(pos + ImVec2(in, in), pos + size - ImVec2(in, in), Col(Fade(bg, a)), Px(8));
-    const char* end = label;
-    while (*end && !(end[0] == '#' && end[1] == '#')) ++end;
+    std::string visible;
+    if (display) visible = display;
+    else {
+        const char* end = idText;
+        while (*end && !(end[0] == '#' && end[1] == '#')) ++end;
+        visible.assign(idText, end);
+    }
     UseFont f(g_gui.bold);
-    const ImVec2 ts = ImGui::CalcTextSize(label, end);
     const float iw = icon >= 0 ? Px(20) : 0.0f;
+    visible = Fit(std::move(visible), size.x - iw - Px(8), false);
+    const ImVec2 ts = ImGui::CalcTextSize(visible.c_str());
     const ImVec2 at(pos.x + (size.x - ts.x - iw) * 0.5f, pos.y + (size.y - ts.y) * 0.5f);
     if (icon >= 0) DrawIcon(Icon(icon), ImVec2(at.x + Px(6), pos.y + size.y * 0.5f), Px(6), Col(Fade(fg, a)));
-    dl->AddText(ImVec2(at.x + iw, at.y), Col(Fade(fg, a)), label, end);
+    dl->AddText(ImVec2(at.x + iw, at.y), Col(Fade(fg, a)), visible.c_str());
     return clicked && enabled;
 }
 
 static bool UiRow(const GuiCommand& c, ImVec2 pos, ImVec2 size, bool picked, bool enabled) {
     ImGui::SetCursorScreenPos(pos);
-    const ImGuiID id = ImGui::GetID(c.label);
-    const bool clicked = ImGui::InvisibleButton(c.label, size);
+    const ImGuiID id = ImGui::GetID(c.id);
+    const bool clicked = ImGui::InvisibleButton(c.id, size);
     const float h = Anim(id, ImGui::IsItemHovered() ? 1.0f : 0.0f), on = Anim(id + 1, picked ? 1.0f : 0.0f);
     const float a = enabled ? 1.0f : 0.45f;
     DrawIcon(c.icon, ImVec2(pos.x + Px(22), pos.y + size.y * 0.5f), Px(7), Col(Fade(Mix(Mix(kUiTextFaint, kUiTextDim, h), kUiAccent, on), a)));
-    Label(ImVec2(pos.x + Px(44), pos.y + (size.y - ImGui::GetFontSize()) * 0.5f), Fade(Mix(Mix(kUiTextDim, kUiTextBody, h), kUiText, on), a), c.label);
+    Label(ImVec2(pos.x + Px(44), pos.y + (size.y - ImGui::GetFontSize()) * 0.5f), Fade(Mix(Mix(kUiTextDim, kUiTextBody, h), kUiText, on), a), Fit(T(c.label), size.x - Px(52), false).c_str());
     return clicked;
 }
 
@@ -2937,8 +3004,8 @@ static float DrawQuestion(ImVec2 at, float width) {
         at.y += ImGui::GetFontSize() + Px(10);
     }
     const float bw = (width - Px(10)) * 0.5f, bh = Px(42);
-    if (UiButton("Yes", at, ImVec2(bw, bh), kAction, true, kIcoCheck)) g.action = kActYes;
-    if (UiButton("No", ImVec2(at.x + bw + Px(10), at.y), ImVec2(bw, bh), kPlain)) g.action = kActNo;
+    if (UiButton("Yes", at, ImVec2(bw, bh), kAction, true, kIcoCheck, T(LocaleKey::Yes))) g.action = kActYes;
+    if (UiButton("No", ImVec2(at.x + bw + Px(10), at.y), ImVec2(bw, bh), kPlain, true, -1, T(LocaleKey::No))) g.action = kActNo;
     return at.y + bh;
 }
 
@@ -2991,20 +3058,23 @@ static void DrawSidebar(float H) {
 }
 
 static void Tip(const char* text);
+static void DrawLanguage(ImVec2 at, ImVec2 size);
 
 static void DrawControls(float W) {
     Gui& g = g_gui;
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float s = Px(28), y = Px(9);
     const float sx = W - Px(10) - 4 * s - Px(8), tw = Px(100), tx = sx - Px(8) - tw;
-    g.controlsX = tx - Px(4);
+    const float languageW = Px(104), languageX = tx - Px(8) - languageW;
+    g.controlsX = languageX - Px(4);
+    DrawLanguage(ImVec2(languageX, y), ImVec2(languageW, s));
     {   // Discord status toggle: the Discord plugin's `disabled` marker; the next Play uses it.
         const ImVec2 lo(tx, y);
         ImGui::SetCursorScreenPos(lo);
         if (ImGui::InvisibleButton("##discord", ImVec2(tw, s))) g.action = kActDiscord;
         const ImGuiID id = ImGui::GetID("##discord");
         const float h = Anim(id, ImGui::IsItemHovered() ? 1.0f : 0.0f), on = Anim(id + 1, g.discord ? 1.0f : 0.0f);
-        Tip("Show \"Playing sc-offline\" on your Discord profile from the next Play");
+        Tip(T(LocaleKey::DiscordHint));
         Label(ImVec2(lo.x, y + (s - ImGui::GetFontSize()) * 0.5f), Mix(kUiTextDim, kUiText, (std::max)(h, on)), "Discord");
         DrawSwitch(ImVec2(lo.x + tw - Px(34), y + (s - Px(18)) * 0.5f), on);
     }
@@ -3014,7 +3084,7 @@ static void DrawControls(float W) {
         ImGui::SetCursorScreenPos(p);
         if (ImGui::InvisibleButton(id, ImVec2(s, s))) g.action = i ? kActLogs : kActSettings;
         const float h = Anim(ImGui::GetID(id), ImGui::IsItemHovered() ? 1.0f : 0.0f);
-        Tip(i ? "Logs folder" : "Settings");
+        Tip(T(i ? LocaleKey::LogsFolder : LocaleKey::Settings));
         dl->AddRectFilled(p, p + ImVec2(s, s), Col(kUiRow, h), Px(6));
         DrawIcon(i ? kIcoFolder : kIcoSettings, p + ImVec2(s, s) * 0.5f, Px(6), Col(Mix(kUiTextDim, kUiText, h)));
     }
@@ -3044,7 +3114,7 @@ static void DrawHome(float x0, float y0, float x1) {
     const float bannerH = Px(64), sBot = y0 + Px(44) + Px(14) + bannerH + Px(14);
     const float aTop = sBot + gap, aBot = aTop + Px(44) + Px(14) + Px(42) + Px(14);
 
-    const float y = UiCard(ImVec2(x0, y0), ImVec2(x0 + lw, aBot), kIcoPad, "Launcher") + Px(10);
+    const float y = UiCard(ImVec2(x0, y0), ImVec2(x0 + lw, aBot), kIcoPad, T(LocaleKey::Launcher)) + Px(10);
     const float rh = Px(36), step = Px(40), rowX = x0 + Px(12), rowW = lw - Px(24);
     const float hy = Anim(ImGui::GetID("##pick"), y + float(g.sel) * step, 20.0f);
     dl->AddRectFilled(ImVec2(rowX, hy), ImVec2(rowX + rowW, hy + rh), Col(kUiRow), Px(8));
@@ -3055,7 +3125,7 @@ static void DrawHome(float x0, float y0, float x1) {
         if (on && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) g.action = c.act;
     }
 
-    const float by = UiCard(ImVec2(rx, y0), ImVec2(x1, sBot), kIcoShield, "Status") + Px(14);
+    const float by = UiCard(ImVec2(rx, y0), ImVec2(x1, sBot), kIcoShield, T(LocaleKey::StatusHeading)) + Px(14);
     {
         const ImVec2 lo(rx + Px(14), by), hi(x1 - Px(14), by + bannerH);
         const int v0 = dl->VtxBuffer.Size;
@@ -3063,28 +3133,29 @@ static void DrawHome(float x0, float y0, float x1) {
         ImGui::ShadeVertsLinearColorGradientKeepAlpha(dl, v0, dl->VtxBuffer.Size, lo, ImVec2(hi.x, lo.y), kUiBannerFrom, kUiBannerTo);
         const float fs = ImGui::GetFontSize();
         { UseFont f(g.bold); Label(ImVec2(lo.x + Px(14), lo.y + Px(13)), kUiText, "Star Citizen"); }
-        Label(ImVec2(lo.x + Px(14), lo.y + Px(16) + fs), kUiTextBody, g.lightTitle.c_str());
+        Label(ImVec2(lo.x + Px(14), lo.y + Px(16) + fs), kUiTextBody, Fit(g.lightTitle, hi.x - lo.x - Px(28), false).c_str());
         ImGui::SetCursorScreenPos(lo);
         ImGui::InvisibleButton("##banner", hi - lo);
         Tip(g.lightDetail.c_str());
     }
 
     const float bw = x1 - rx - Px(28);
-    std::string title = "Actions";
+    std::string title = T(LocaleKey::Actions);
     if (!g.question.empty()) { UseFont f(g.bold); title = Fit(g.question, bw - Px(28), false); }
     const float ay = UiCard(ImVec2(rx, aTop), ImVec2(x1, aBot), kIcoBolt, title.c_str()) + Px(14);
     if (!g.question.empty()) {
         const float hw = (bw - Px(10)) * 0.5f;
-        if (UiButton("Yes", ImVec2(rx + Px(14), ay), ImVec2(hw, Px(42)), kAction, true, kIcoCheck)) g.action = kActYes;
-        if (UiButton("No", ImVec2(rx + Px(14) + hw + Px(10), ay), ImVec2(hw, Px(42)), kPlain)) g.action = kActNo;
+        if (UiButton("Yes", ImVec2(rx + Px(14), ay), ImVec2(hw, Px(42)), kAction, true, kIcoCheck, T(LocaleKey::Yes))) g.action = kActYes;
+        if (UiButton("No", ImVec2(rx + Px(14) + hw + Px(10), ay), ImVec2(hw, Px(42)), kPlain, true, -1, T(LocaleKey::No))) g.action = kActNo;
     } else if (!g.running.empty()) {
         const std::string label = "Running " + Narrow(g.running) + "##act";
-        UiButton(label.c_str(), ImVec2(rx + Px(14), ay), ImVec2(bw, Px(42)), kAction, false);
+        const std::string display = F(LocaleKey::Running, {{"command", Narrow(g.running)}});
+        UiButton(label.c_str(), ImVec2(rx + Px(14), ay), ImVec2(bw, Px(42)), kAction, false, -1, display.c_str());
         UiSpinner(ImVec2(rx + Px(34), ay + Px(21)), Px(7), Px(2.0f), kUiActionText);
     } else {
         const GuiCommand& c = kGuiCommands[g.sel];
-        const std::string label = std::string(c.label) + "##act";
-        if (UiButton(label.c_str(), ImVec2(rx + Px(14), ay), ImVec2(bw, Px(42)), kAction, CommandEnabled(c.act), c.icon)) g.action = c.act;
+        const std::string label = std::string(c.id) + "##act";
+        if (UiButton(label.c_str(), ImVec2(rx + Px(14), ay), ImVec2(bw, Px(42)), kAction, CommandEnabled(c.act), c.icon, T(c.label))) g.action = c.act;
     }
 }
 
@@ -3097,6 +3168,55 @@ static void Tip(const char* text) {
     ImGui::SetTooltip("%s", text);
     ImGui::PopStyleColor(2);
     ImGui::PopStyleVar(2);
+}
+
+static bool SelectLanguage(sco::launcher::locale::Language language) {
+    Gui& g = g_gui;
+    if (!g.running.empty() || g.gameUp) return false;
+    if (!sco::launcher::locale::SaveLanguage(g.here + L"\\sc-offline.ini", language)) {
+        g.note = T(LocaleKey::LanguageWriteError);
+        g.noteAt = Seconds();
+        return false;
+    }
+    g.locale.Select(language);
+    RefreshLightText();
+    g.note = T(LocaleKey::LanguageSaved);
+    g.noteAt = Seconds();
+    RefreshWindowTitle();
+    return true;
+}
+
+static void DrawLanguage(ImVec2 at, ImVec2 size) {
+    using sco::launcher::locale::Language;
+    Gui& g = g_gui;
+    const Language choices[] = {Language::English, Language::Russian, Language::Auto};
+    const LocaleKey labels[] = {LocaleKey::LanguageEnglish, LocaleKey::LanguageRussian, LocaleKey::LanguageAuto};
+    const char* ids[] = {"###language-en", "###language-ru", "###language-auto"};
+    int current = 0;
+    for (int i = 0; i < 3; ++i) if (g.locale.Choice() == choices[i]) current = i;
+    const bool editable = g.running.empty() && !g.gameUp;
+    ImGui::SetCursorScreenPos(at);
+    ImGui::SetNextItemWidth(size.x);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(Px(8), (size.y - ImGui::GetFontSize()) * 0.5f));
+    ImGui::BeginDisabled(!editable);
+    if (ImGui::BeginCombo("##language", T(labels[current]))) {
+        for (int i = 0; i < 3; ++i) {
+            const std::string label = std::string(T(labels[i])) + ids[i];
+            if (ImGui::Selectable(label.c_str(), current == i)) SelectLanguage(choices[i]);
+            if (current == i) ImGui::SetItemDefaultFocus();
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::EndDisabled();
+    ImGui::PopStyleVar();
+    if (!editable && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", T(LocaleKey::LanguageBusy));
+    else if (g.locale.RequestsRussian() && !g.locale.RussianLoaded()) Tip(T(LocaleKey::LanguageMissing));
+    else if (g.locale.RequestsRussian() && !g.locale.RussianActive()) Tip(T(LocaleKey::LanguageGlyphs));
+    else {
+        const std::string hint = std::string(T(LocaleKey::Language)) + ": " + T(LocaleKey::LanguageHint);
+        Tip(hint.c_str());
+    }
 }
 
 static float PluginsSlider(const char* id, float left, float top, float bottom, float trackX, float contentH, float step) {
@@ -3216,7 +3336,7 @@ static std::string ZeroText(const PluginSetting& s) {
 // the host would store. On failure `why` says what is wrong.
 static bool CanonSetting(const PluginSetting& s, const std::string& text, std::string& out, std::string& why) {
     if (s.type == "bool") {
-        if (text != "true" && text != "false") { why = "true or false"; return false; }
+        if (text != "true" && text != "false") { why = T(LocaleKey::BoolExpected); return false; }
         out = text;
         return true;
     }
@@ -3224,47 +3344,48 @@ static bool CanonSetting(const PluginSetting& s, const std::string& text, std::s
         size_t i = 0;
         bool neg = false;
         if (i < text.size() && (text[i] == '+' || text[i] == '-')) { neg = text[i] == '-'; ++i; }
-        if (i == text.size() || text.size() - i > 18) { why = "a whole number"; return false; }
+        if (i == text.size() || text.size() - i > 18) { why = T(LocaleKey::IntegerExpected); return false; }
         long long v = 0;
         for (; i < text.size(); ++i) {
-            if (text[i] < '0' || text[i] > '9') { why = "a whole number"; return false; }
+            if (text[i] < '0' || text[i] > '9') { why = T(LocaleKey::IntegerExpected); return false; }
             v = v * 10 + (text[i] - '0');
         }
         if (neg) v = -v;
-        if (s.hasMin && v < s.minI) { why = "at least " + std::to_string(s.minI); return false; }
-        if (s.hasMax && v > s.maxI) { why = "at most " + std::to_string(s.maxI); return false; }
+        if (s.hasMin && v < s.minI) { why = F(LocaleKey::AtLeast, {{"number", std::to_string(s.minI)}}); return false; }
+        if (s.hasMax && v > s.maxI) { why = F(LocaleKey::AtMost, {{"number", std::to_string(s.maxI)}}); return false; }
         out = std::to_string(v);
         return true;
     }
     if (s.type == "float") {
-        if (text.size() > 64 || !PlainDecimal(text)) { why = "a number such as 1.5"; return false; }
+        if (text.size() > 64 || !PlainDecimal(text)) { why = T(LocaleKey::NumberExpected); return false; }
         const double v = std::strtod(text.c_str(), nullptr);
-        if (!std::isfinite(v)) { why = "not a finite number"; return false; }
-        if (s.hasMin && v < s.minF) { why = "at least " + FloatText(s.minF); return false; }
-        if (s.hasMax && v > s.maxF) { why = "at most " + FloatText(s.maxF); return false; }
+        if (!std::isfinite(v)) { why = T(LocaleKey::FiniteExpected); return false; }
+        if (s.hasMin && v < s.minF) { why = F(LocaleKey::AtLeast, {{"number", FloatText(s.minF)}}); return false; }
+        if (s.hasMax && v > s.maxF) { why = F(LocaleKey::AtMost, {{"number", FloatText(s.maxF)}}); return false; }
         out = FloatText(v);
         return true;
     }
     if (s.type == "string") {
-        if (text.size() > 255) { why = "at most 255 characters"; return false; }
-        for (const char c : text) if (c < 0x20 || c > 0x7e) { why = "printable ASCII only"; return false; }
+        if (text.size() > 255) { why = T(LocaleKey::StringLimit); return false; }
+        for (const char c : text) if (c < 0x20 || c > 0x7e) { why = T(LocaleKey::AsciiExpected); return false; }
         out = text;
         return true;
     }
     for (const std::string& c : s.choices) if (c == text) { out = text; return true; }
-    why = "pick one of the choices";
+    why = T(LocaleKey::ChoiceExpected);
     return false;
 }
 
 static std::string SettingHint(const PluginSetting& s) {
     std::string h = s.type;
     if (s.type == "enum") {
-        h = "one of ";
+        h.clear();
         for (size_t i = 0; i < s.choices.size(); ++i) h += (i ? ", " : "") + s.choices[i];
+        h = F(LocaleKey::OneOf, {{"choices", h}});
     } else if (s.hasMin || s.hasMax) {
         const bool f = s.type == "float";
-        if (s.hasMin) h += ", min " + (f ? FloatText(s.minF) : std::to_string(s.minI));
-        if (s.hasMax) h += ", max " + (f ? FloatText(s.maxF) : std::to_string(s.maxI));
+        if (s.hasMin) h += F(LocaleKey::MinHint, {{"number", f ? FloatText(s.minF) : std::to_string(s.minI)}});
+        if (s.hasMax) h += F(LocaleKey::MaxHint, {{"number", f ? FloatText(s.maxF) : std::to_string(s.maxI)}});
     }
     return h;
 }
@@ -3434,7 +3555,7 @@ static bool SavePluginSettings(const wstring& here, const PluginEntry& p, bool r
     CreateDirectoryW((here + L"\\data").c_str(), nullptr);
     CreateDirectoryW((here + L"\\data\\storage").c_str(), nullptr);
     sqlite3* db = OpenPluginDb(PluginDbPath(here, p.folder), SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE);
-    if (!db) { err = "couldn't open data\\storage\\" + p.id + ".db"; return false; }
+    if (!db) { err = F(LocaleKey::StorageOpenError, {{"plugin", p.id}}); return false; }
     bool ok = sqlite3_exec(db, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) == SQLITE_OK &&
               sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS sco_kv(key TEXT PRIMARY KEY NOT NULL, value BLOB NOT NULL) WITHOUT ROWID",
                            nullptr, nullptr, nullptr) == SQLITE_OK;
@@ -3450,7 +3571,7 @@ static bool SavePluginSettings(const wstring& here, const PluginEntry& p, bool r
     }
     if (ok) ok = sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr) == SQLITE_OK;
     if (!ok) {
-        err = std::string("couldn't write the values: ") + sqlite3_errmsg(db);
+        err = F(LocaleKey::StorageWriteError, {{"error", sqlite3_errmsg(db)}});
         sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
     }
     sqlite3_close(db);
@@ -3463,10 +3584,10 @@ static bool NoteLive() { return !g_gui.note.empty() && Seconds() - g_gui.noteAt 
 static void DrawPluginList(float x0, float y0, float x1, float y1) {
     Gui& g = g_gui;
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    UiCard(ImVec2(x0, y0), ImVec2(x1, y1), kIcoMods, "Plugins");
+    UiCard(ImVec2(x0, y0), ImVec2(x1, y1), kIcoMods, T(LocaleKey::Plugins));
     {
         float tw;
-        { UseFont f(g.bold); tw = ImGui::CalcTextSize("Plugins").x; }
+        { UseFont f(g.bold); tw = ImGui::CalcTextSize(T(LocaleKey::Plugins)).x; }
         int on = 0;
         for (const PluginEntry& p : g.plugins) on += !p.disabled;
         const std::string count = std::to_string(on) + " / " + std::to_string(g.plugins.size());
@@ -3480,17 +3601,17 @@ static void DrawPluginList(float x0, float y0, float x1, float y1) {
         ImGui::SetCursorScreenPos(at);
         if (ImGui::InvisibleButton("##plugdir", ImVec2(fb, fb))) g.action = kActPluginsDir;
         const float h = Anim(ImGui::GetID("##plugdir"), ImGui::IsItemHovered() ? 1.0f : 0.0f);
-        Tip("Open the plugins folder");
+        Tip(T(LocaleKey::PluginsFolder));
         dl->AddRectFilled(at, at + ImVec2(fb, fb), Col(kUiRow, h), Px(6));
         DrawIcon(kIcoFolder, at + ImVec2(fb, fb) * 0.5f, Px(6), Col(Mix(kUiTextDim, kUiText, h)));
         headerRight = at.x - Px(8);
     }
     {
         // Hot reload runs in the game (the sco.reload command); the launcher has no way to call it.
-        const float rw = Px(76);
-        if (UiButton("Reload##plug", ImVec2(headerRight - rw, sy), ImVec2(rw, fb), kPlain))
-            PluginNote("Hot reload runs in the game: use the sco.reload command there. The launcher can't call it.");
-        Tip("Plugins reload inside the running game (sco.reload)");
+        const float rw = (std::max)(Px(76), ImGui::CalcTextSize(T(LocaleKey::Reload)).x + Px(20));
+        if (UiButton("Reload##plug", ImVec2(headerRight - rw, sy), ImVec2(rw, fb), kPlain, true, -1, T(LocaleKey::Reload)))
+            PluginNote(T(LocaleKey::HotReloadNote));
+        Tip(T(LocaleKey::HotReloadHint));
         headerRight -= rw + Px(8);
     }
     const float sw = Px(150);
@@ -3502,7 +3623,7 @@ static void DrawPluginList(float x0, float y0, float x1, float y1) {
     ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, kUiRowHover);
     ImGui::PushStyleColor(ImGuiCol_FrameBgActive, kUiRowHover);
     ImGui::SetNextItemWidth(sw);
-    if (ImGui::InputTextWithHint("##plugsearch", "Search", g.plugSearch, sizeof(g.plugSearch))) g.plugScroll = 0;
+    if (ImGui::InputTextWithHint("##plugsearch", T(LocaleKey::Search), g.plugSearch, sizeof(g.plugSearch))) g.plugScroll = 0;
     const bool typing = ImGui::IsItemActive();
     ImGui::PopStyleColor(3);
     ImGui::PopStyleVar(2);
@@ -3527,8 +3648,8 @@ static void DrawPluginList(float x0, float y0, float x1, float y1) {
         const float bh = Px(40);
         dl->AddRectFilled(ImVec2(left, top), ImVec2(right, top + bh), Col(kUiRow), Px(8));
         Label(ImVec2(left + Px(14), top + (bh - ImGui::GetFontSize()) * 0.5f), kUiWarn,
-              Fit("Plugins are off (plugins = off in sc-offline.ini)", right - left - Px(130), false).c_str());
-        if (UiButton("Turn on##plugson", ImVec2(right - Px(104), top + Px(5)), ImVec2(Px(96), bh - Px(10)), kAction)) g.action = kActPluginsOn;
+              Fit(T(LocaleKey::PluginsOff), right - left - Px(130), false).c_str());
+        if (UiButton("Turn on##plugson", ImVec2(right - Px(104), top + Px(5)), ImVec2(Px(96), bh - Px(10)), kAction, true, -1, T(LocaleKey::TurnOn))) g.action = kActPluginsOn;
         top += bh + Px(8);
     }
 
@@ -3536,13 +3657,13 @@ static void DrawPluginList(float x0, float y0, float x1, float y1) {
     for (int i = 0; i < int(g.plugins.size()); ++i) if (has(g.plugins[i].name + " " + g.plugins[i].id + " " + g.plugins[i].author)) shown.push_back(i);
     if (shown.empty()) {
         const float cy = (top + bottom) * 0.5f;
-        const char* text = g.plugins.empty() ? "No plugins yet" : "No matches";
+        const char* text = T(g.plugins.empty() ? LocaleKey::NoPlugins : LocaleKey::NoMatches);
         const ImVec2 ts = ImGui::CalcTextSize(text);
         DrawIcon(g.plugins.empty() ? kIcoMods : kIcoSearch, ImVec2((x0 + x1) * 0.5f, cy - Px(30)), Px(11), Col(kUiTextFaint));
         Label(ImVec2((x0 + x1) * 0.5f - ts.x * 0.5f, cy - ts.y * 0.5f), kUiTextDim, text);
         if (g.plugins.empty()) {
             const float bw = Px(150), bh = Px(34);
-            if (UiButton("Open folder##plugempty", ImVec2((x0 + x1) * 0.5f - bw * 0.5f, cy + Px(16)), ImVec2(bw, bh), kPlain, true, kIcoFolder))
+            if (UiButton("Open folder##plugempty", ImVec2((x0 + x1) * 0.5f - bw * 0.5f, cy + Px(16)), ImVec2(bw, bh), kPlain, true, kIcoFolder, T(LocaleKey::OpenFolder)))
                 g.action = kActPluginsDir;
         }
         return;
@@ -3562,15 +3683,15 @@ static void DrawPluginList(float x0, float y0, float x1, float y1) {
         if (ImGui::InvisibleButton("##plug", size)) {
             if (SetPluginDisabled(g.here, p.folder, !p.disabled)) {
                 p.disabled = !p.disabled;
-                PluginNote(std::string(p.disabled ? "Off" : "On") + ": " + p.name + ". The game picks this up at its next start.");
+                PluginNote(F(LocaleKey::PluginStateNote, {{"state", T(p.disabled ? LocaleKey::Off : LocaleKey::On)}, {"plugin", p.name}}));
             } else {
-                PluginNote("Couldn't change data\\plugins\\" + p.id + "\\disabled (is the folder read-only?)");
+                PluginNote(F(LocaleKey::PluginDisabledError, {{"plugin", p.id}}));
             }
         }
         const ImGuiID id = ImGui::GetID("##plug");
         const float h = Anim(id, ImGui::IsItemHovered() ? 1.0f : 0.0f), on = Anim(id + 1, p.disabled ? 0.0f : 1.0f);
         std::string tip = p.about;
-        if (!p.kind.empty()) tip += (tip.empty() ? "" : "\n") + p.kind + " plugin";
+        if (!p.kind.empty()) tip += (tip.empty() ? "" : "\n") + F(LocaleKey::PluginKind, {{"kind", p.kind}});
         if (!tip.empty()) Tip(tip.c_str());
         dl->AddRectFilled(pos, pos + size, Col(Mix(kUiRow, kUiRowHover, h)), Px(8));
         const float ty = ry + (rowH - ImGui::GetFontSize()) * 0.5f;
@@ -3592,7 +3713,7 @@ static void DrawPluginList(float x0, float y0, float x1, float y1) {
             ImGui::SetCursorScreenPos(ImVec2(gearX, ry + (rowH - Px(28)) * 0.5f));
             const bool open = ImGui::InvisibleButton("##gear", ImVec2(Px(28), Px(28)));
             const float gh = Anim(ImGui::GetID("##gear"), ImGui::IsItemHovered() ? 1.0f : 0.0f);
-            Tip("Settings");
+            Tip(T(LocaleKey::Settings));
             DrawIcon(kIcoSettings, ImVec2(gearX + Px(14), ry + rowH * 0.5f), Px(6), Col(Mix(kUiTextDim, kUiText, gh)));
             if (open) { g.plugOpen = p.id; g.plugScroll = 0; }
         }
@@ -3604,17 +3725,16 @@ static void DrawPluginList(float x0, float y0, float x1, float y1) {
 static void DrawPluginSettings(float x0, float y0, float x1, float y1, PluginEntry& p) {
     Gui& g = g_gui;
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    const std::string title = Fit(p.name + " settings", (x1 - x0) - Px(120), false);
+    const std::string title = Fit(F(LocaleKey::PluginSettings, {{"plugin", p.name}}), (x1 - x0) - Px(120), false);
     UiCard(ImVec2(x0, y0), ImVec2(x1, y1), kIcoSettings, title.c_str());
-    if (UiButton("Back##plugback", ImVec2(x1 - Px(12) - Px(64), y0 + Px(9)), ImVec2(Px(64), Px(26)), kQuiet)) {
+    if (UiButton("Back##plugback", ImVec2(x1 - Px(12) - Px(64), y0 + Px(9)), ImVec2(Px(64), Px(26)), kQuiet, true, -1, T(LocaleKey::Back))) {
         g.plugOpen.clear(); g.plugScroll = 0; g.pluginsAt = 0;
         return;
     }
     const float left = x0 + Px(12), right = x1 - Px(30), top = y0 + Px(44) + Px(10);
     if (p.settingsBad || p.settings.empty()) {
         dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(left + Px(2), top + Px(4)), Col(kUiWarn),
-                    "plugin.ini has a [settings] line this launcher can't read; the game may refuse the plugin. "
-                    "Run sco-plugin-check on the folder.", nullptr, right - left);
+                    T(LocaleKey::SettingsBad), nullptr, right - left);
         return;
     }
     // Edits are written while the game is closed: it reads the values once, at start.
@@ -3680,20 +3800,20 @@ static void DrawPluginSettings(float x0, float y0, float x1, float y1, PluginEnt
     ImGui::PopClipRect();
 
     std::string err;
-    if (UiButton("Save##plugsave", ImVec2(left, footY), ImVec2(bw, bh), kAction, canEdit && dirty, kIcoCheck)) {
-        if (SavePluginSettings(g.here, p, false, err)) PluginNote("Saved. Applies at the next game start.");
+    if (UiButton("Save##plugsave", ImVec2(left, footY), ImVec2(bw, bh), kAction, canEdit && dirty, kIcoCheck, T(LocaleKey::Save))) {
+        if (SavePluginSettings(g.here, p, false, err)) PluginNote(T(LocaleKey::SettingsSaved));
         else PluginNote(err);
         g.plugins = ReadPlugins(g.here);   // p is gone after this; the edits come back from what was saved
         return;
     }
-    if (UiButton("Reset##plugreset", ImVec2(left + bw + Px(8), footY), ImVec2(bw, bh), kPlain, canEdit && anyKept)) {
-        if (SavePluginSettings(g.here, p, true, err)) PluginNote("Back to the defaults. Applies at the next game start.");
+    if (UiButton("Reset##plugreset", ImVec2(left + bw + Px(8), footY), ImVec2(bw, bh), kPlain, canEdit && anyKept, -1, T(LocaleKey::Reset))) {
+        if (SavePluginSettings(g.here, p, true, err)) PluginNote(T(LocaleKey::SettingsReset));
         else PluginNote(err);
         g.plugins = ReadPlugins(g.here);
         return;
     }
     const float mx = left + 2 * bw + Px(20);
-    const std::string msg = !canEdit ? "Close the game to edit." : NoteLive() ? g.note : "Applies at the next game start.";
+    const std::string msg = !canEdit ? T(LocaleKey::CloseToEdit) : NoteLive() ? g.note : T(LocaleKey::AppliesNextStart);
     Label(ImVec2(mx, footY + (bh - ImGui::GetFontSize()) * 0.5f), kUiTextDim, Fit(msg, right - mx, false).c_str());
 }
 
@@ -3712,9 +3832,9 @@ static void DrawPlugins(float x0, float y0, float x1, float y1) {
 
 static void DrawOutputPage(float x0, float y0, float x1, float y1) {
     Gui& g = g_gui;
-    float y = UiCard(ImVec2(x0, y0), ImVec2(x1, y1), kIcoOutput, "Output") + Px(12);
-    const float cw = Px(56);
-    if (UiButton("Copy", ImVec2(x1 - Px(12) - cw, y0 + Px(9)), ImVec2(cw, Px(26)), kQuiet, !g.log.empty())) g.action = kActCopy;
+    float y = UiCard(ImVec2(x0, y0), ImVec2(x1, y1), kIcoOutput, T(LocaleKey::Output)) + Px(12);
+    const float cw = (std::max)(Px(56), ImGui::CalcTextSize(T(LocaleKey::Copy)).x + Px(16));
+    if (UiButton("Copy", ImVec2(x1 - Px(12) - cw, y0 + Px(9)), ImVec2(cw, Px(26)), kQuiet, !g.log.empty(), -1, T(LocaleKey::Copy))) g.action = kActCopy;
     if (!g.running.empty()) UiSpinner(ImVec2(x1 - Px(12) - cw - Px(10), y0 + Px(22)), Px(6), Px(1.8f), kUiAccent);
     if (!g.question.empty()) y = DrawQuestion(ImVec2(x0 + Px(14), y), x1 - x0 - Px(28)) + Px(12);
     ImGui::SetCursorScreenPos(ImVec2(x0 + Px(14), y));
@@ -3854,6 +3974,7 @@ static void RenderFrame() {
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
+    AdmitLocaleGlyphs();
     DrawUi();
     ImGui::Render();
     const ImVec4 bg = ImGui::ColorConvertU32ToFloat4(kUiBg);
@@ -3887,19 +4008,18 @@ static void RunAction() {
     case kActPluginsOn:
         if (SetIniValue(g.here + L"\\sc-offline.ini", "plugins", "on")) {
             RefreshLight();
-            PluginNote("Plugins are on. They load the next time the game starts.");
+            PluginNote(T(LocaleKey::PluginsEnabled));
         } else {
-            PluginNote("Couldn't write sc-offline.ini; set plugins = on there by hand.");
+            PluginNote(T(LocaleKey::PluginsEnableError));
         }
         break;
     case kActDiscord: {   // the Discord plugin's `disabled` marker; the next Play uses it
         const bool on = !g.discord;
         if (SetPluginDisabled(g.here, L"discord", !on)) {
             g.discord = on;
-            AppendOutput(on ? L"\nDiscord status on: your profile shows \"Playing sc-offline\" from the next Play.\n"
-                            : L"\nDiscord status off: from the next Play, nothing is shown on Discord.\n");
+            AppendOutput(L"\n" + Wide(T(on ? LocaleKey::DiscordOn : LocaleKey::DiscordOff)) + L"\n", false);
         } else {
-            AppendOutput(L"\n[!] couldn't change data\\plugins\\discord\\disabled (is the folder read-only?)\n");
+            AppendOutput(L"\n[!] " + Wide(T(LocaleKey::DiscordError)) + L"\n", false);
         }
         break;
     }
@@ -3964,14 +4084,14 @@ static LRESULT CALLBACK GuiProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
             DestroyWindow(wnd);
             return 0;
         }
-        AppendOutput(code == 0 ? L"\n[done]\n" : L"\n[finished with exit code " + std::to_wstring(code) + L"; see above]\n");
+        AppendOutput(code == 0 ? L"\n[done] " + Wide(T(LocaleKey::ChildDone)) + L"\n" :
+                     L"\n[finished] " + Wide(F(LocaleKey::ChildFinished, {{"code", std::to_string(code)}})) + L"\n", false);
         RefreshLight();
         return 0;
     }
     case WM_CLOSE:
         if (!g.running.empty() &&
-            MessageBoxW(wnd, L"A command is still running. If you close this window, sc-offline still takes the mod out and undoes "
-                             L"its PC changes when the game closes, but any question it asks is answered No.\n\nClose anyway?",
+            MessageBoxW(wnd, Wide(T(LocaleKey::CloseConfirm)).c_str(),
                         L"sc-offline", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
             return 0;
         DestroyWindow(wnd);
@@ -4037,6 +4157,7 @@ static void StyleUi() {
 static int RunGui() {
     Gui& g = g_gui;
     g.here = ExeDir();
+    LoadLocale();
     ImGui_ImplWin32_EnableDpiAwareness();
     RefreshLight();
 
@@ -4058,7 +4179,7 @@ static int RunGui() {
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW); wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
     wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
     RegisterClassW(&wc);
-    const wstring title = L"sc-offline " + Wide(SCO_VERSION) + L" - Star Citizen offline mod";
+    const wstring title = Wide(F(LocaleKey::WindowTitle, {{"version", SCO_VERSION}}));
     HWND wnd = CreateWindowExW(0, L"sc-offline", title.c_str(), WS_POPUP | WS_THICKFRAME | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                                g.splash.left, g.splash.top, sw, sh, nullptr, nullptr, wc.hInstance, nullptr);
     if (!wnd) return kExitError;
@@ -4076,8 +4197,7 @@ static int RunGui() {
     if (!CreateDevice(wnd)) {
         DropDevice();
         DestroyWindow(wnd);
-        MessageBoxW(nullptr, L"sc-offline couldn't open its window (Direct3D 11 isn't available).\n\n"
-                             L"Run it from a terminal instead, for example: sc-offline.exe play", L"sc-offline", MB_ICONERROR);
+        MessageBoxW(nullptr, Wide(T(LocaleKey::WindowUnavailable)).c_str(), L"sc-offline", MB_ICONERROR);
         return kExitError;
     }
     IMGUI_CHECKVERSION();

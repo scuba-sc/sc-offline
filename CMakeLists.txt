@@ -206,7 +206,7 @@ add_executable(sc-offline launcher/launcher.cpp launcher/version.rc)
 # Version resource (Properties > Details): src/version.rc, shared with dinput8.dll.
 # sc-offline.exe gets its own .rc so the two targets can define SCO_RC_EXE differently.
 target_compile_definitions(sc-offline PRIVATE ${SCO_COMMON_DEFINES})
-target_compile_options(sc-offline PRIVATE ${SCO_COMMON_OPTIONS} /W3)
+target_compile_options(sc-offline PRIVATE ${SCO_COMMON_OPTIONS} /W3 /utf-8)
 # The window is ImGui on Direct3D 11 (the imgui target above; its INTERFACE libs bring d3d11 and dwmapi), and
 # the Plugins page edits a plugin's [settings] in its sco.storage database through sco-core's vendored
 # SQLite (sco_sqlite). The system libraries are also named by #pragma comment(lib) in launcher.cpp.
