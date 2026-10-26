@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Inspector snapshots on the published SDK 2.4.0 RC1.** Integrate the public consumer commands and retained widget panel from PR #147 without restoring its obsolete SDK 2.3.0 defaults or unpublished archive pin. Manual refresh and cached paging expose explicit unavailable states; missing providers remain unavailable. Configurable proof generators retain the hosted VS 2026 default. Local synthetic checks are separate from Windows, external-host and game acceptance. Tracking: #155.
+- **Inspector snapshots on the published SDK 2.4.0 RC1.** Integrate the public consumer commands and retained widget panel from PR #147 without restoring its obsolete SDK 2.3.0 defaults or unpublished archive pin. Manual refresh and cached paging expose explicit unavailable states; missing providers remain unavailable. Refresh returns to the first page of the new snapshot, including when the inventory shrinks. Configurable proof generators retain the hosted VS 2026 default. Local synthetic checks are separate from Windows, external-host and game acceptance. Tracking: #155.
 
 - **Host and plugins use the same SDK candidate.** Update the embedded sco-core host from `e616ed6` to exact `sdk-v2.4.0-rc.1` source `48d7055ef49e1b073ec59e4ce8ded7a6006329eb` (SDK 2.4.0, game pack 0.8.0, unchanged plugin ABI 1.1). External plugins retain their existing checksum-pinned RC1 archive. The host now includes the candidate service contracts and signature rows for build 4.10.197.2878; default-off and unavailable backends remain deferred. This does not approve a final SDK release. **Not run in game.**
 

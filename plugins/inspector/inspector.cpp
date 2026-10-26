@@ -219,6 +219,7 @@ void Refresh() {
         else next.inventory_status = result == SCO_OK ? SCO_FAILED : result;
     }
     g_snapshot = next;
+    g_page = 0;
 }
 
 const sco_widgets_v1* Widgets() {

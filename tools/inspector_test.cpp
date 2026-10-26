@@ -421,6 +421,48 @@ void RetainedWidgetWorkflow() {
     actors = nullptr; build_service = nullptr; stats_service = nullptr;
     rules_service = nullptr; inventory_service = nullptr; input_service = nullptr;
 }
+void RefreshResetsInventoryWidgetPage() {
+    using namespace entry;
+    auto api = Api();
+    InitWidgets();
+    widgets_published = true;
+    sc_inventory_v1 inventory{};
+    inventory.size = sizeof(inventory);
+    inventory.snapshot = InventoryRead;
+    inventory_service = &inventory;
+    inventory_fixture_count = 3;
+    inventory_fixture_flags = 0;
+    inventory_fixture_ports[0].entity_id = 901;
+    CHECK(Load(&api, owner) == SCO_OK);
+    WidgetEvent(W_REFRESH, SCO_WIDGET_BUTTON);
+    WidgetEvent(W_INVENTORY, SCO_WIDGET_BUTTON);
+    WidgetEvent(W_NEXT, SCO_WIDGET_BUTTON);
+    WidgetEvent(W_NEXT, SCO_WIDGET_BUTTON);
+    Contains(WidgetNode(W_TABLE)->items[0], "Page 3/3");
+
+    inventory_fixture_count = 1;
+    WidgetEvent(W_REFRESH, SCO_WIDGET_BUTTON);
+    Contains(WidgetNode(W_TABLE)->items[0], "Page 1/1 entity=901");
+
+    inventory_fixture_count = 3;
+    WidgetEvent(W_REFRESH, SCO_WIDGET_BUTTON);
+    WidgetEvent(W_NEXT, SCO_WIDGET_BUTTON);
+    WidgetEvent(W_NEXT, SCO_WIDGET_BUTTON);
+    inventory_fixture_count = 1;
+    char reply[256]{};
+    CHECK(Invoke("inspector.refresh", reply, sizeof(reply)) == SCO_OK);
+    Contains(WidgetNode(W_TABLE)->items[0], "Page 1/1 entity=901");
+
+    inventory_fixture_count = 0;
+    WidgetEvent(W_REFRESH, SCO_WIDGET_BUTTON);
+    Contains(WidgetNode(W_TABLE)->items[0], "Inventory empty");
+    inventory_fixture_count = 3;
+    WidgetEvent(W_REFRESH, SCO_WIDGET_BUTTON);
+    Contains(WidgetNode(W_TABLE)->items[0], "Page 1/3");
+    Unload();
+    inventory_service = nullptr;
+    inventory_fixture_count = 1;
+}
 void RegistersReadOnlyCommand() {
     using namespace entry;
     auto api = Api();
@@ -1030,6 +1072,7 @@ int main(int argc, char** argv) {
 #endif
     RegistersReadOnlyCommand();
     RetainedWidgetWorkflow();
+    RefreshResetsInventoryWidgetPage();
     RefreshIsManualAndCopiesProviders();
     RefreshCommandValidationAndUnknownService();
     CachedDiagnosticCommands();
@@ -1043,9 +1086,9 @@ int main(int argc, char** argv) {
     CallbackAndUnloadAreSafe();
 #ifdef INSPECTOR_EXTERNAL_TEST
     ExternalAdapterForwards();
-    std::puts("inspector_test: 14 cases PASS (including external adapter)");
+    std::puts("inspector_test: 15 cases PASS (including external adapter)");
 #else
-    std::puts("inspector_test: 13 cases PASS");
+    std::puts("inspector_test: 14 cases PASS");
 #ifdef WORKFLOW_DYNAMIC_TEST
     test_module::Close();
 #endif
