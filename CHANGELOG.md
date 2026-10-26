@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Clarify legacy startup settings.** The launcher still reads and passes
+  `start` and `start_ship`, but the current external spawn module refuses
+  destination startup. INI comments and launcher docs no longer promise the old
+  timed Daymar arrival or boarding. Wallet precedence is unchanged; this does
+  not add a startup feature or confirm the original settings report in game.
+
 - **Resize the menu.** Drag its native window edges or corners; the size is saved
   in `data/menu-window.ini` when the drag finishes and restored on the next run.
   The window is bounded by the monitor work area, including smaller displays.

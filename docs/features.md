@@ -257,7 +257,7 @@ These need RSI's servers, and the mod doesn't replace them:
 - Character creation and customization: the main menu is skipped. Not planned ([#24](https://github.com/scuba-sc/sc-offline/issues/24)).
 - The mobiGlas vehicle manager lists stored and retrieved ships but can't select them. Use a ship terminal (see [Ship terminals, hangars and ATC](#ship-terminals-hangars-and-atc)) or the **Vehicles** tab.
 - Your account's ships, items and hangar.
-- Choosing a spawn location. You start at the game's own spawn, or over Daymar with `start = Daymar` (see [launcher.md](launcher.md#sc-offlineini)).
+- Choosing a spawn location. The current external spawn module refuses destination startup; the retained `start = Daymar` setting does not enable the old timed arrival or boarding route (see [launcher.md](launcher.md#sc-offlineini)).
 
 ## Not verified in game
 
