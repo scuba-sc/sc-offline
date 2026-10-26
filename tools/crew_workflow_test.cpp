@@ -131,7 +131,17 @@ void Reservation() {
     CHECK(Run("crew.fill","synthetic_actor") == SCO_OK);
     CHECK(Run("crew.sit","pilot 0") == SCO_FAILED);
     CHECK(reply.find("reserved") != std::string::npos);
-    test_module::Unload(); commands.clear(); std::puts("PASS player seat refuses pending crew reservation");
+    test_module::Unload(); commands.clear();
+    Providers(); CHECK(test_module::Load(&api,owner) == SCO_OK);
+    occupants[0] = 700;
+    CHECK(Run("crew.sit","pilot 1") == SCO_OK);
+    CHECK(Run("crew.sit","pilot 0") == SCO_OK);
+    CHECK(reply.find("Already seated") != std::string::npos);
+    uint32_t now = 1000; tick("tick",&now,nullptr);
+    now = 3000; tick("tick",&now,nullptr);
+    CHECK(seated == 0 && occupants[0] == 700 && occupants[1] == 0);
+    CHECK(spawned == 0 && removed == 0 && ejected == 0);
+    test_module::Unload(); commands.clear(); std::puts("PASS player seat reservation refusal / already-seated request cancels older seating job");
 }
 void End() {
     const int calls = removed;

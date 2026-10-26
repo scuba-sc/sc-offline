@@ -162,7 +162,13 @@ sco_result SitSeat(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t siz
     r = Seats(v,ship,seats,count,more); if (r != SCO_OK) return Answer(r,reply,size,"Ship seats unavailable");
     for (uint32_t i = 0; i < count; ++i) {
         const auto& s = seats[i]; if ((selected==UINT32_MAX ? !Matches(s.name,args[0].v.s) : s.index!=selected) || !Usable(s)) continue;
-        if (s.occupant_id == me) return Answer(SCO_OK,reply,size,"Already seated");
+        if (s.occupant_id == me) {
+            // This newer request supersedes any queued move to another seat.
+            // The player is not owned crew, so dropping that job needs no cleanup.
+            auto* pending = Actor(me);
+            if (pending && pending->player && pending->phase == Phase::seating) *pending = {};
+            return Answer(SCO_OK,reply,size,"Already seated");
+        }
         const auto* mine = Actor(me);
         if (Reserved(ship,s.index) && (!mine || mine->ship != ship || mine->seat != s.index))
             return Answer(SCO_FAILED,reply,size,"Seat reserved by a pending crew job; clear or wait first");
