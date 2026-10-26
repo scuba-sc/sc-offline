@@ -14,13 +14,16 @@ G4/G9 headers/services, which the pinned published sdk-v2.4.0-rc.1 ships
    copy `data/plugins/build` to the offline host's data/plugins root and explicitly
    enable plugin loading. Windows requires the MSVC x64 DLL, not a development `.so`.
 
-No build built-in or host feature tick fallback remains. The retained host Build
-and SQ42 grouped pickers only forward public commands (the Build tab is temporarily
-rendered under `loadout.build`, using that existing host UI owner). Its legacy
-buildables.txt categories/strings are preserved; the actual provider validates names.
-The UI observation service `build.state` is plugin-owned, read-only, game-thread-only;
-consumers reopen it per use and guard complete callback extents/nullness.
-Moving this remaining host rendering/data facade to an external UI is still owed.
+No build built-in or host feature tick fallback remains. The external Build module
+owns the public build commands and the read-only, game-thread-only `build.state`
+observation service. Consumers reopen it per use and guard complete callback
+extents/nullness; the actual provider validates object names.
+
+The retained host grouped Build/SQ42 picker sources and `buildables.txt` categories
+remain, but have no active owner binding or tab registration in the current host
+composition. Their former `loadout.build` UI registration exists only in the excluded
+`legacy/loadout` sources. Migrating the full grouped picker and its data facade to
+an owned external UI is still owed.
 
 ## Commands and authority
 
