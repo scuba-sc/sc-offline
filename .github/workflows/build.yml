@@ -52,6 +52,9 @@ jobs:
           c++ -std=c++20 -I src tools/admission_evidence_test.cpp -o admission_evidence_test
           ./admission_evidence_test
 
+      - name: Headless menu size and tab overflow tests
+        run: python3 tools/check_menu_window.py
+
       - name: Release manifest and NPC external wiring tests
         run: |
           python3 tools/test_release_manifest.py

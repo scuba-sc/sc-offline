@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Resize the menu.** Drag its native window edges or corners; the size is saved
+  in `data/menu-window.ini` when the drag finishes and restored on the next run.
+  The window is bounded by the monitor work area, including smaller displays.
+  Long tab titles keep their width and scroll instead of shrinking. Headless
+  geometry, file/restart and actual ImGui overflow checks cover the change;
+  Windows rendering and game acceptance remain pending. **Not run in game.**
+
 - **Linux evidence is dated.** Record the reported sc-offline 0.7.0/Bazzite Wine run with its exact game/toolchain tuple, while retaining experimental status and the current SDK 2.4.0 RC1 acceptance gap. No launcher behavior changed or new game run was performed.
 
 - **Inspector snapshots on the published SDK 2.4.0 RC1.** Integrate the public consumer commands and retained widget panel from PR #147 without restoring its obsolete SDK 2.3.0 defaults or unpublished archive pin. Manual refresh and cached paging expose explicit unavailable states; missing providers remain unavailable. Refresh returns to the first page of the new snapshot, including when the inventory shrinks. Configurable proof generators retain the hosted VS 2026 default. Local synthetic checks are separate from Windows, external-host and game acceptance. Tracking: #155.
