@@ -217,6 +217,17 @@ jobs:
       - name: Install discovery with real directory junctions and hardlinked binaries
         run: python tools/check_install_discovery.py
 
+  install-aliases-wine:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Wine and MinGW
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq wine64 wine g++-mingw-w64-x86-64-posix xvfb xauth
+      - name: 'Install discovery with real Wine C:/Z: aliases'
+        run: xvfb-run -a python3 tools/check_install_discovery_wine.py
+
   launcher-localization:
     runs-on: windows-2025-vs2026
     steps:
