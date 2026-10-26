@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Keep your current Crew seat.** If you queue a move to another seat and then
+  select the seat you are already in, Crew now cancels its older queued move.
+  This stops future consumer retries; it does not undo a native link already
+  accepted by the game. Checked with synthetic services; **not run in game**.
+- **Development Loadout panel.** Empty gear, outfit or buildable lists no longer
+  cause a widget-panel replacement to be rejected, including after SQ42 spoiler
+  confirmation. Loadout remains outside release staging; this does not add slot
+  mappings or verify native equip behavior. Checked with synthetic services;
+  **not run in game**.
+
 - **Clarify legacy startup settings.** The launcher still reads and passes
   `start` and `start_ship`, but the current external spawn module refuses
   destination startup. INI comments and launcher docs no longer promise the old
