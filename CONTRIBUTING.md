@@ -2,6 +2,8 @@
 
 Thanks for helping. sc-offline is a Star Citizen offline mod: a mod menu plus a launcher that keeps the game offline while you play. Bug reports, fixes, docs and testing on your PC all help.
 
+See [AGENTS.md](AGENTS.md#contributor-design-rules) for this repository's design rules and SDK contribution workflow, for human contributors and coding agents.
+
 ## What fits this project
 
 - **Offline, never CIG's servers.** Two kinds of connection are allowed: local IPC with other processes on the same PC (bridges such as Titanfall 2/Northstar or Minecraft), and private co-presence between sc-offline players over a LAN or VPN through sco-core's `sco.net`. Never: connecting to Star Citizen's servers or online services, public or official online play, getting around anti-cheat or skipping its steps, signature-check bypass, account or entitlement tampering, forcing the game's host type or network context, unauthenticated remote commands between peers, telemetry, or anything that helps anyone cheat in the official game or hurt other players. The same rules bind plugins: [Plugin rules](https://github.com/scuba-sc/sco-core/blob/main/sdk/docs/plugin-rules.md). PRs like that are closed.
@@ -24,12 +26,12 @@ Questions and ideas: open an issue or ask in the [Discord](https://discord.gg/NJ
 3. Build and check as described in [docs/build.md](docs/build.md):
    - Windows: build **Release** x64 with CMake (Visual Studio opens the folder, or `cmake` from the command line).
    - macOS or Linux: `tools/check.sh` must report `0 new` diagnostics. It isn't a build; CI's MSVC build is the real check.
-   - `python3 tools/sdk-headers.py` must pass if you touched `src/builtins/`: built-ins include only SDK headers (see [docs/build.md](docs/build.md#include-and-scan-gates)).
+   - `python3 tools/sdk-headers.py` must pass if you touched `src/builtins/` or `plugins/`: it checks public SDK dependencies and recorded legacy exceptions (see [docs/build.md](docs/build.md#include-and-scan-gates)). Do not add an exception for a new feature.
    - Touching the self-update: run `tools/update-test/run.sh` under Wine (see [docs/build.md](docs/build.md#self-update-tests-under-wine)).
 4. Test in game if you can, and say in the PR what you tested and what you didn't.
 5. Update the docs your change affects (`README.md`, `docs/`, `sc-offline.ini` comments) in the same PR.
 6. Add a line under the top section of [CHANGELOG.md](CHANGELOG.md) for anything a player would notice.
-7. Open the PR against `main` and fill in the template. CI (`check`, `build`, `bridges`, `no-scans` and `sdk-headers`) must pass.
+7. Open the PR against `main` and fill in the template. Run the applicable jobs in the [current CI workflow](.github/workflows/build.yml), including the host and published-SDK consumer checks affected by the change. A skipped release job is not release acceptance.
 
 PRs are squash-merged. Keep one change per PR.
 
