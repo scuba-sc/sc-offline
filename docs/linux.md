@@ -46,6 +46,8 @@ There is no current test tuple recorded here for the SDK 2.4.0 RC1 host, later g
 
 It prints which source it used for each. The historical report used the LUG Helper layout. Lutris and Steam/Proton detection follow those tools' file layouts; no current acceptance run is recorded here for either path.
 
+The Windows launcher compares the physical channel and Bin64 directories to combine duplicate install paths, preserving the first discovered spelling and priority. If the filesystem cannot supply directory identity, it retains the existing case-insensitive path comparison. Separate channels or install roots remain separate, including when they share executable files or a Bin64 junction. Whether a Wine runner supplies matching identity for C: and Z: aliases still requires a named Wine fixture; Windows filesystem tests do not establish that behavior.
+
 It also checks that `/etc/hosts` blocks the EAC download server and prints the line to add if not.
 
 The script sets `WINEDLLOVERRIDES=dinput8=n,b`, so Wine loads the mod's `dinput8.dll` instead of its own.

@@ -55,6 +55,9 @@ jobs:
       - name: Headless menu size and tab overflow tests
         run: python3 tools/check_menu_window.py
 
+      - name: Install discovery identity and priority tests
+        run: python3 tools/check_install_discovery.py
+
       - name: Release manifest and NPC external wiring tests
         run: |
           python3 tools/test_release_manifest.py
@@ -201,6 +204,15 @@ jobs:
         run: gh release download sdk-v2.4.0-rc.1 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
       - name: Validate MSVC Loadout module workflows and public dependency traces
         run: python tools/check_loadout_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.4.0.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/loadout-proof"
+
+  install-aliases:
+    runs-on: windows-2025-vs2026
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install discovery with real directory junctions and hardlinked binaries
+        run: python tools/check_install_discovery.py
 
   # Contracts: the built-in is gone (G1 refuses builtin inputs with early DataCore), so its
   # published-SDK proof is what stands between the feature and shipping nothing. Refuses in game
