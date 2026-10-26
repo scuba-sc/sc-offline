@@ -6,6 +6,9 @@
 #include "sco_settings.h"
 #include "sco_ui.h"
 #include "sco_widgets.h"
+#ifndef TRAVEL_TELEPORT
+#include "sco_content.h"
+#endif
 #include <filesystem>
 #include <fstream>
 #include <algorithm>
@@ -26,6 +29,9 @@ struct State {
     Spot saved; bool hotkeys=false,panel=false;
     uint32_t place_page=0,mark_page=0; int32_t selected_place=-1,selected_mark=-1;
     std::string bookmark_name,filter,last_status="Ready"; double altitude=1000;
+#ifndef TRAVEL_TELEPORT
+    std::string curated_status="Not read";
+#endif
     uint64_t ticket=0; bool ticking=false; std::string moving; // one tracked game.relocation request; never persisted
 } g;
 #ifdef TRAVEL_TELEPORT
@@ -170,6 +176,63 @@ void LoadPlaces(const std::filesystem::path& path) {
         if (std::none_of(g.places.begin(),g.places.end(),[&](const auto& p){return Same(p.entity,d.entity);})) g.places.push_back(d);
     }
 }
+#ifndef TRAVEL_TELEPORT
+sco_result LoadCuratedPlaces() {
+    const auto finish=[](sco_result result,const std::string& message) {
+        g.curated_status=message; return result;
+    };
+    const auto* content=Open<sco_content_v1>(SCO_CONTENT_NAME);
+    if (!g.self || !TRAVEL_FN(content,sco_content_v1,item) || !TRAVEL_FN(content,sco_content_v1,read))
+        return finish(SCO_UNAVAILABLE,"Unavailable: sco.content 1.0 item/read required; no base-file fallback");
+    sco_content_item selected{}; bool found=false;
+    for(uint32_t ordinal=0;;++ordinal) {
+        sco_content_item item{}; item.size=sizeof(item);
+        const auto result=content->item(g.self,SCO_CONTENT_LIST,ordinal,&item);
+        if(result==SCO_NOT_FOUND) break;
+        if(result!=SCO_OK) return finish(result,"Curated enumeration refused; no base-file fallback");
+        if(ordinal==SCO_CONTENT_MAX_ITEMS) return finish(SCO_TOO_MANY,"Curated enumeration exceeds 4096 records");
+        if(item.size<sizeof(item) || item.kind!=SCO_CONTENT_LIST || !item.id ||
+           !std::memchr(item.name,0,sizeof(item.name)) || !std::memchr(item.pack,0,sizeof(item.pack)))
+            return finish(SCO_FAILED,"Invalid copied curated-list metadata");
+        if(std::strcmp(item.name,"lists/locations.txt")) continue;
+        if(found) return finish(SCO_BAD_ARG,"Ambiguous lists/locations.txt: enable exactly one source pack; none selected");
+        selected=item; found=true;
+    }
+    if(!found) return finish(SCO_NOT_FOUND,"No enabled lists/locations.txt; no base-file fallback");
+    uint32_t bytes=0; const auto asked=content->read(g.self,selected.id,nullptr,&bytes);
+    if(asked!=SCO_TOO_MANY && !(asked==SCO_OK && !bytes))
+        return finish(asked==SCO_OK ? SCO_FAILED : asked,"Curated size query refused");
+    if(bytes>SCO_CONTENT_MAX_FILE_BYTES) return finish(SCO_TOO_MANY,"Curated list exceeds 1MiB");
+    std::string text(bytes,'\0'); uint32_t copied=bytes;
+    if(bytes) {
+        const auto result=content->read(g.self,selected.id,text.data(),&copied);
+        if(result!=SCO_OK) return finish(result,"Curated copied read refused");
+    }
+    if(copied!=bytes) return finish(SCO_FAILED,"Curated copied byte count changed");
+    if(text.find('\0')!=text.npos) return finish(SCO_BAD_ARG,"Curated list contains embedded NUL; none selected");
+    // Parse atomically; first case-insensitive entity wins in original row order.
+    std::vector<Destination> next; std::istringstream input(text); std::string line;
+    while(std::getline(input,line)) {
+        if(line.size()>512) return finish(SCO_TOO_MANY,"Curated row exceeds 512 bytes; none selected");
+        if(Trim(line).empty() || Trim(line).starts_with('#')) continue;
+        Destination d; std::istringstream fields(line); std::string radius;
+        if(!std::getline(fields,d.system,'|') || !std::getline(fields,d.name,'|') || !std::getline(fields,d.entity,'|'))
+            return finish(SCO_BAD_ARG,"Malformed curated row; none selected");
+        d.system=Trim(d.system); d.name=Trim(d.name); d.entity=Trim(d.entity); std::getline(fields,radius); radius=Trim(radius);
+        if(d.system.size()>31 || d.name.size()>63 || d.entity.empty() || d.entity.size()>95)
+            return finish(SCO_BAD_ARG,"Invalid curated field bounds; none selected");
+        try { size_t used=0; d.radius=radius.empty()?0:std::stod(radius,&used);
+            if(!radius.empty() && used!=radius.size()) return finish(SCO_BAD_ARG,"Malformed curated radius; none selected");
+        } catch(...) { return finish(SCO_BAD_ARG,"Malformed curated radius; none selected"); }
+        if(!std::isfinite(d.radius) || d.radius<0) return finish(SCO_BAD_ARG,"Invalid curated radius; none selected");
+        if(std::any_of(next.begin(),next.end(),[&](const auto& p){return Same(p.entity,d.entity);})) continue;
+        if(next.size()==3000) return finish(SCO_TOO_MANY,"Curated list exceeds 3000 destinations; none selected");
+        next.push_back(std::move(d));
+    }
+    g.places=std::move(next);
+    return finish(SCO_OK,"Loaded "+std::to_string(g.places.size())+" curated destinations from lists/locations.txt");
+}
+#endif
 sco_result LoadSaved() {
     std::string text,seen; const auto time=FileTime(g.spawn); const bool file=ReadFile(g.spawn,text); Spot old;
     const bool parsed=file && ParseSpot(text,old);
@@ -267,7 +330,7 @@ sco_result TravelTo(const sco_arg* a,uint32_t count,void*,char* out,uint32_t n) 
     if (count!=2 || !a || a[0].type!=SCO_ARG_STRING || !SafePlace(a[0].v.s) || a[1].type!=SCO_ARG_FLOAT || !std::isfinite(a[1].v.f) || a[1].v.f<100 || a[1].v.f>20000)
         return Reply(SCO_BAD_ARG,out,n,"Usage: quantum.travel <destination> <altitude 100..20000 m>");
     const auto it=std::find_if(g.places.begin(),g.places.end(),[&](const auto& p){return Same(p.name,a[0].v.s) || Same(p.entity,a[0].v.s);});
-    if (it==g.places.end()) return Reply(SCO_NOT_FOUND,out,n,"No such destination; check locations.txt or run quantum.scan");
+    if (it==g.places.end()) return Reply(SCO_NOT_FOUND,out,n,"No such destination; check lists/locations.txt or run quantum.scan");
     const auto* sp=Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME); sc_game_zone z{}; z.size=sizeof(z);
     if (!TRAVEL_FN(sp,sc_game_spatial_v1,find_zone) || !sp->find_zone(it->entity.c_str(),&z) || !RecordValid(z)) return Reply(SCO_UNAVAILABLE,out,n,"Destination zone '"+it->entity+"' is not loaded; not moved");
     // Arrival: radius + altitude along the destination zone's +Z axis, identity rotation in that frame.
@@ -277,7 +340,11 @@ sco_result TravelTo(const sco_arg* a,uint32_t count,void*,char* out,uint32_t n) 
 sco_result Status(const sco_arg*,uint32_t,void*,char* out,uint32_t n) {
     return Reply(SCO_OK,out,n,std::string(id)+": "+std::to_string(g.marks.size())+" bookmarks, "+std::to_string(g.places.size())+" destinations; moves "+
         (MovesAllowed()?"allowed":"off in settings")+"; game.relocation "+(RelocationOn()?"on":"off")+"; "+(g.ticket?"moving to "+g.moving:std::string("no move in progress"))+
-        "; system identity unknown unless explicitly provided; scan is observed ancestry only");
+        "; system identity unknown unless explicitly provided; scan is observed ancestry only"
+#ifndef TRAVEL_TELEPORT
+        "; curated locations: "+g.curated_status
+#endif
+        );
 }
 sco_result ScanCommand(const sco_arg*,uint32_t,void*,char* out,uint32_t n) {
     std::vector<sc_game_zone> records; const auto r=Scan(Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),records);
@@ -424,7 +491,7 @@ template<sco_command_fn Fn> sco_result Guard(const sco_arg* args,uint32_t nargs,
 inline const sco_plugin_info* Query() { return &info; }
 inline sco_result Load(const sco_api* api,sco_plugin* self) {
     if (!api || !self || g.api) return SCO_BAD_ARG;
-    if (api->major!=SCO_API_MAJOR || api->minor<SCO_API_MINOR || !TRAVEL_FN(api,sco_api,register_command) || !TRAVEL_FN(api,sco_api,query_service)) return SCO_UNAVAILABLE;
+    if (!TRAVEL_FN(api,sco_api,register_command) || !TRAVEL_FN(api,sco_api,query_service) || api->major!=SCO_API_MAJOR || api->minor<SCO_API_MINOR) return SCO_UNAVAILABLE;
     g.api=api; g.self=self;
     try {
         g.root=Setting("data_root","data");
@@ -439,7 +506,9 @@ inline sco_result Load(const sco_api* api,sco_plugin* self) {
 #ifdef TRAVEL_TELEPORT
         const auto loaded=LoadSaved();
 #else
-        LoadPlaces(g.root/"locations.txt"); LoadPlaces(g.root/"locations_found.txt"); const auto loaded=LoadMarks();
+        const auto curated=LoadCuratedPlaces(); g.last_status=g.curated_status;
+        if(curated!=SCO_OK) Reply(curated,nullptr,0,g.curated_status);
+        LoadPlaces(g.root/"locations_found.txt"); const auto loaded=LoadMarks();
 #endif
         if (loaded!=SCO_OK) Reply(loaded,nullptr,0,"Legacy state import/read failed; prior database retained");
         const sco_arg_def name{"name",SCO_ARG_STRING,0,"Legacy display name"};

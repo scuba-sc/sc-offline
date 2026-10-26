@@ -16,6 +16,7 @@ QUANTUM = {
     'feature': 'quantum',
     'test_option': 'SCO_QUANTUM_TEST', 'test_target': 'quantum-workflow-test', 'test_name': 'quantum-workflow',
     'test_source': 'quantum_workflow_test.cpp',
+    'extra_tests': [('quantum_content_test.cpp', 'quantum-content-test', 'quantum-content')],
     'checks': [
         # quantum.travel takes arguments, so it is invoked explicitly.
         (['--invoke', 'quantum.travel', 'Port', '500'],

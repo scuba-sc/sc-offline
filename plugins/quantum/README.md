@@ -24,21 +24,62 @@ Every callback extent is checked before use, tables are reopened per operation, 
 
 Retains `quantum.travel(place, altitude)`, `quantum.bookmark(name)`, `quantum.save_bookmark(name)` and `quantum.scan`. `quantum.travel` and `quantum.bookmark` move you through sco-core's public **`game.relocation` 1.0**: the plugin's `relocation` setting is checked, then the capability `game.relocation` fresh, then the arguments; one request goes out (zone id, pose local to that zone, 30 s timeout), and the plugin follows the ticket each game tick and reports arrival or the failure/cancellation reason once. One move at a time; tickets are never persisted. `quantum.travel` finds the destination zone by its entity name and asks for a point at radius + altitude (100..20000 m) along that zone's own +Z axis, identity rotation; `quantum.bookmark` resolves a saved bookmark's exact/partial pose. `game.relocation` moves only within your current star system and only with sco-core's offline admission, a verified engine backend, a live player and a known system, which needs this release's host, **sco-core main e616ed6 or later**; without those conditions moves answer unavailable. The `relocation` setting (bool, default true, "Allow moving the player (offline only)") turns moves off for this plugin; `relocation = off` in `sc-offline.ini` turns them off for every plugin once the host pin has `SetRelocationEnabled`. `quantum.status`, `quantum.delete_bookmark(name)` and `quantum.inspect_bookmark(name)` remain unchanged. `quantum.scan` copies at most 256 observed zones, 64 per page, with epoch checks; it is not exhaustive system discovery. Unknown system/root/name never authorizes movement; the provider decides the star system.
 
-Legacy destinations remain `system | display name | entity name | radius` in `locations.txt` / `locations_found.txt`. Bookmarks remain `bookmark system|name` followed by `spot x y z zone` lines. Optional `pose x y z w` records preserve orientation; old readers ignore them and old files default to identity. `data_root` selects the legacy root (default `data`). Owner-scoped `quantum.db` keeps the exact `bookmarks(pos,system,name,spots)` schema and `bookmarks.txt.time` marker. Windows markers remain decimal FILETIME. Import/update code is unchanged; absent storage retains text fallback and failed DB transactions do not overwrite it.
+Curated destinations use the public content route described below. Scan-generated `locations_found.txt` retains its existing `system | display name | entity name | radius` format and filesystem policy. Bookmarks remain `bookmark system|name` followed by `spot x y z zone` lines. Optional `pose x y z w` records preserve orientation; old readers ignore them and old files default to identity. `data_root` selects this persistence root (default `data`), not a curated-list source. Owner-scoped `quantum.db` keeps the exact `bookmarks(pos,system,name,spots)` schema and `bookmarks.txt.time` marker. Windows markers remain decimal FILETIME. Import/update code is unchanged; absent storage retains text fallback and failed DB transactions do not overwrite it.
+
+### Curated destinations from an ordinary data pack
+
+While the host is stopped, explicitly install an ordinary enabled `kind = data`
+pack with a `lists/locations.txt` file. The existing published RC1 `sco.content`
+1.0 service provides its copied startup bytes. No default pack or production
+staging is added here. The original `data/locations.txt` is untouched and is no
+longer read by this external module; it is not automatically imported or used
+as a fallback. Users who want those curated rows must copy their own list into
+the pack explicitly. Restart the host after pack changes.
+
+Exactly one public List record must have the case-sensitive relative name
+`lists/locations.txt`. No match leaves curated destinations unavailable; two
+matches, including the same name in different packs, refuse as ambiguous. The
+module does not guess which pack should win. Commands remain available and
+`quantum.status` explains refusal. Generated locations and bookmarks remain
+available under their separate existing persistence policy.
+
+Rows are `system | display name | entity name | radius`, in file order. Blank
+lines and lines beginning with `#` after trimming are ignored. Limits are
+1 MiB/file, 512 bytes/row, 3000 unique destinations, 31/63/95 bytes for the
+system/display/entity fields; entity must be nonempty. An omitted radius means
+zero; otherwise the complete value must parse as finite and nonnegative.
+Embedded NUL, malformed rows or exceeded bounds refuse the entire curated
+list, with no partial selection. Repeated entity names are case-insensitive:
+the first row wins. Existing first display/entity lookup order is preserved.
+Generated locations load afterward and do not replace a curated entity.
+
+Content lookup checks the root/member extents, non-null methods, returned
+metadata and exact copied byte count. Loading retains only destination values,
+not content IDs or service pointers. Consumer reload reads the same host startup
+snapshot; changed disk bytes need a host restart. No query or list discovery
+authorizes relocation, quantum control or native backend activation.
 
 The optional `sco.widgets` panel retains ID `quantum.travel` and now has title **Travel**, combining paged destination/bookmark lists, altitude, bookmark save/delete/read-only inspection and observed scan with bounded G8 controls. No host/ImGui include or renderer callback is added. The panel's Travel and Go-to-bookmark buttons use the same commands. Missing widgets leaves command-only operation.
 
 ## Build, install and focused evidence
 
-Use the published `sdk-v2.4.0-rc.1` archive (it contains `sc_quantum.h`, `sc_game_spatial.h`, `sc_relocation.h` and `sco_widgets.h`). The release workflow stages quantum enabled through `tools/check_quantum_sdk.py`, which builds against that archive outside the checkout, runs the module workflow below, traces compiler dependencies, runs boundary negatives and a relocation red arm (POSIX), and runs the SDK's `sco-plugin-check` with no game services. That is not a game proof.
+Use the published `sdk-v2.4.0-rc.1` archive (it contains `sc_quantum.h`, `sc_game_spatial.h`, `sc_relocation.h`, `sco_widgets.h` and `sco_content.h`). The release workflow stages quantum enabled through `tools/check_quantum_sdk.py`, which builds against that archive outside the checkout, runs the module workflow below, traces compiler dependencies, runs boundary negatives and a relocation red arm (POSIX), and runs the SDK's `sco-plugin-check` with no game services. That is not a game proof.
 
 ```sh
 cmake -S plugins/quantum -B build-quantum -DSCO_SDK_INCLUDE_DIR=/path/to/extracted/include -DSCO_QUANTUM_TEST=ON -DCMAKE_BUILD_TYPE=Debug
-cmake --build build-quantum --target quantum-workflow-test
-ctest --test-dir build-quantum -R '^quantum-workflow$' --output-on-failure
+cmake --build build-quantum
+ctest --test-dir build-quantum -R '^quantum-(workflow|content)$' --output-on-failure
 cmake --install build-quantum --prefix /path/to/product --component quantum
 ```
 
 Installed `data/plugins/quantum/` contains the native module and enabled manifest; ordinary folder disable and `plugins=off` semantics apply. Native modules are trusted code, GPL-3.0-only.
 
-**Observed:** macOS AppleClang compiled/linked the actual module with `-Wall -Wextra -Werror`; one dynamically loaded synthetic public-provider workflow passed (legacy IDs/Travel composition, no startup writes, absent/physically truncated/null callbacks, bounded holds, capability-loss cancellation, the `relocation` switch, the `game.relocation` capability, one request with tick tracking to complete and failed, widget routes, ordinary unload twice/reload). This fixture does not execute the real game-pack adapter or its release hook, Windows input, database transactions or engine effects. **Windows/MSVC, real renderer, storage import twice, native detours, NAV/action forwarding, owned drive/charge/audio/effect restoration, every in-game move and where `quantum.travel` actually puts you, and actual gameplay: NOT VERIFIED; not run in game.**
+The focused content workflow drives the actual module with synthetic public
+snapshots: canonical/ambiguous source selection, first-entity ordering, bounds,
+atomic malformed refusal, short/null service and root members, copied lifetime,
+generated-file precedence and unload/reload. It does not replace the separate
+real-provider integration proof or certify Windows, rendering or gameplay.
+
+**Observed:** macOS AppleClang compiled/linked the actual module with `-Wall -Wextra -Werror`; both dynamically loaded synthetic public-provider workflows passed, including 6,015 content checks, and passed again with ASan/UBSan. The existing control/movement workflow retains legacy IDs/Travel composition, no startup writes, bounded holds, capability-loss cancellation, relocation request/tick tracking, widget routes and unload/reload checks. A separate real content-provider fixture feeds ordinary synthetic packs into the actual Quantum module; it covers copied startup bytes, parsing, ambiguity/refusal, restart and persistence compatibility without game providers.
+
+Independent actual MSVC 19.44 compilation of the production DLL and both test executables passed with strict warnings. Both executables dynamically loaded that DLL and passed, including the 6,015 content checks, against the checksum-verified published RC1 headers. This is Windows compilation and synthetic module behavior, not game or renderer acceptance. The fixtures do not execute the real game-pack adapter, its release hook, Windows input, database transactions or engine effects. **Real renderer, storage import twice, native detours, NAV/action forwarding, owned drive/charge/audio/effect restoration, every in-game move and where `quantum.travel` actually puts you, and actual gameplay remain NOT VERIFIED; not run in game.**

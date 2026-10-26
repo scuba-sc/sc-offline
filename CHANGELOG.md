@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Curated Travel locations use public data packs.** The external Quantum consumer reads one explicit `lists/locations.txt` startup snapshot through published SDK 2.4.0 RC1. Missing, ambiguous or malformed curated lists refuse without a raw-file fallback. The original base file is untouched; users must explicitly copy their curated list into an ordinary pack while stopped. Generated locations/bookmarks keep their existing persistence policy. No pack staging, backend/default or SDK pin changes. **Not run in game.**
+
 - **Development Loadout manual slots.** Add explicit public SDK 2.4.0 RC1 weapon/attachment/multitool assignments to the optional Player panel and commands, plus guarded async submit/progress/cancel. Copied legacy catalogue ports remain unsupported; no None/clear or tool-default preservation is inferred. Synthetic public-provider tests cover refusal, partial results and job lifetime. Loadout remains outside production staging; no backend or capability default changes. **Not run in game.**
 
 - **Keep your current Crew seat.** If you queue a move to another seat and then

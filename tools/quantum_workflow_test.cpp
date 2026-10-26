@@ -4,6 +4,7 @@
 #include <sc_quantum.h>
 #include <sco_widgets.h>
 #include <sco_settings.h>
+#include <sco_content.h>
 #include <sc_game_spatial.h>
 #include <sc_relocation.h>
 #ifdef NDEBUG
@@ -41,6 +42,18 @@ sco_result GetString(sco_plugin*,const char* name,char* out,uint32_t* n) {
     std::memcpy(out,data_root.c_str(),data_root.size()+1); *n=static_cast<uint32_t>(data_root.size()+1); return SCO_OK;
 }
 sco_settings_v1 settings{sizeof(settings),0,GetBool,nullptr,nullptr,GetString,nullptr};
+const char* curated="Stanton | Port | port_zone | 10\n";
+sco_result ContentItem(sco_plugin*,sco_content_kind kind,uint32_t ordinal,sco_content_item* out) {
+    assert(kind==SCO_CONTENT_LIST); if(ordinal)return SCO_NOT_FOUND;
+    *out={};out->size=sizeof(*out);out->kind=kind;out->id=1;
+    std::snprintf(out->pack,sizeof(out->pack),"synthetic_locations");std::snprintf(out->name,sizeof(out->name),"lists/locations.txt");return SCO_OK;
+}
+sco_result ContentRead(sco_plugin*,uint64_t id,void* out,uint32_t* size) {
+    assert(id==1);const auto bytes=static_cast<uint32_t>(std::strlen(curated));
+    if(*size<bytes){*size=bytes;return SCO_TOO_MANY;}
+    std::memcpy(out,curated,bytes);*size=bytes;return SCO_OK;
+}
+sco_content_v1 content{sizeof(content),0,ContentItem,ContentRead};
 int FindZone(const char* name,sc_game_zone* z) {
     if (std::strcmp(name,"port_zone")) return 0;
     *z={sizeof(*z),SC_GAME_ZONE_SYSTEM_UNKNOWN,5,77,0,77,0,{}}; std::snprintf(z->name,sizeof(z->name),"port_zone"); return 1;
@@ -81,6 +94,7 @@ sco_result Query(const char* name,uint32_t version,const void** out) {
     if (!std::strcmp(name,SC_QUANTUM_SERVICE_NAME)) *out=service;
     if (!std::strcmp(name,SCO_WIDGETS_NAME)) *out=&widgets;
     if (!std::strcmp(name,SCO_SETTINGS_NAME)) *out=&settings;
+    if (!std::strcmp(name,SCO_CONTENT_NAME)) *out=&content;
     if (!std::strcmp(name,SC_GAME_SPATIAL_NAME)) *out=&spatial;
     if (!std::strcmp(name,SC_RELOCATION_NAME) && relocation_cap) *out=&relocation;
     return *out ? SCO_OK:SCO_NOT_FOUND;
@@ -104,7 +118,7 @@ int main(int argc,char** argv) {
     spatial.size=sizeof(spatial); spatial.find_zone=FindZone;
     const auto root=std::filesystem::temp_directory_path()/"sco-quantum-workflow-test";
     std::filesystem::remove_all(root); std::filesystem::create_directories(root); data_root=root.string();
-    { std::ofstream(root/"locations.txt")<<"Stanton | Port | port_zone | 10\n"; }
+    { std::ofstream(root/"locations.txt")<<"Raw | Ignored base | wrong_zone | 999\n"; }
     int identity=1; auto* self=reinterpret_cast<sco_plugin*>(&identity);
     assert(load(&api,self)==SCO_OK && panels && ticks.size()==1 && enables==0 && holds==0);
     for (const auto* name:{"quantum.travel","quantum.bookmark","quantum.save_bookmark","quantum.scan","quantum.status","quantum.enable","quantum.hold","quantum.release","quantum.boost","quantum.control_status"}) assert(commands.count(name));

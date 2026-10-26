@@ -50,7 +50,9 @@ def prove(args, spec):
     for folder in (feature, 'spatial'):
         shutil.copytree(ROOT / 'plugins' / folder, source / 'plugins' / folder)
     (source / 'tools').mkdir()
-    shutil.copy2(ROOT / 'tools' / spec['test_source'], source / 'tools' / spec['test_source'])
+    extra_tests = spec.get('extra_tests', ())
+    for test_source in [spec['test_source']] + [test[0] for test in extra_tests]:
+        shutil.copy2(ROOT / 'tools' / test_source, source / 'tools' / test_source)
     build = work / 'plugin-build'
     configure = ['cmake', '-S', source / 'plugins' / feature, '-B', build,
                  '-DSCO_SDK_INCLUDE_DIR=' + str(sdk / 'include'), f'-D{spec["test_option"]}=ON',
@@ -62,10 +64,12 @@ def prove(args, spec):
 
     def build_all():
         run(['cmake', '--build', build, '--config', 'Release', '--target', target], work)
-        run(['cmake', '--build', build, '--config', 'Release', '--target', spec['test_target']], work)
+        for test_target in [spec['test_target']] + [test[1] for test in extra_tests]:
+            run(['cmake', '--build', build, '--config', 'Release', '--target', test_target], work)
 
     def workflow():
-        print(run(['ctest', '--test-dir', build, '-C', 'Release', '-R', '^' + spec['test_name'] + '$',
+        names = [spec['test_name']] + [test[2] for test in extra_tests]
+        print(run(['ctest', '--test-dir', build, '-C', 'Release', '-R', '^(' + '|'.join(names) + ')$',
                    '--output-on-failure', '-V'], work).stdout)
     build_all()
     workflow()

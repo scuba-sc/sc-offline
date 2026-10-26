@@ -30,6 +30,15 @@ paging and bounded ownership rules: [pickers.md](pickers.md).
 
 ## Ordinary data packs and content access
 
+The external Quantum Travel consumer reads curated destinations from exactly
+one enabled public `lists/locations.txt` record in an ordinary data pack.
+Explicitly copy a user-owned curated list there while stopped; no automatic
+base-file import or production catalogue staging is added. Duplicate matching
+pack records refuse as ambiguous. The top-level `locations.txt` remains on disk
+but is not this consumer's input. Scan-generated `locations_found.txt` and
+bookmark storage keep their separate existing filesystem policy. Bounds and
+restart behavior: [Quantum curated destinations](../plugins/quantum/README.md#curated-destinations-from-an-ordinary-data-pack).
+
 `data/plugins/quantum_drive/plugin.ini` declares an ordinary `kind = data`
 pack, separate from native/built-in `quantum`. It has no entry or code dependency.
 `plugins = off`, a `disabled` marker, a missing/invalid manifest or discovery
