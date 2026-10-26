@@ -19,11 +19,38 @@ owns the public build commands and the read-only, game-thread-only `build.state`
 observation service. Consumers reopen it per use and guard complete callback
 extents/nullness; the actual provider validates object names.
 
-The retained host grouped Build/SQ42 picker sources and `buildables.txt` categories
-remain, but have no active owner binding or tab registration in the current host
-composition. Their former `loadout.build` UI registration exists only in the excluded
-`legacy/loadout` sources. Migrating the full grouped picker and its data facade to
-an owned external UI is still owed.
+## Grouped Build and SQ42 picker
+
+The same external owner publishes `build.picker` through public `sco.widgets`
+1.0. It supplies categories, case-insensitive word search across all groups,
+64-row pages, selection, reach, preview/start/stop, near-player placement,
+Undo/Clear, and an SQ42 shortcut with in-front/ahead controls. Search labels
+include their group. Changing category, search or page clears selection. Labels
+are shortened only for display; commands receive the complete original value,
+including duplicate rows and any pipe characters. Build lists do not use the
+Loadout catalogue's pipe-field format.
+
+The picker reads exactly one enabled public `lists/buildables.txt` List using
+`sco.content` 1.0. To use a legally held, user-owned list, explicitly copy it to
+`data/plugins/<your-pack>/lists/buildables.txt` while the host is stopped and
+provide an ordinary `kind = data` manifest. Restart after edits or enabling a
+pack. The original `data/buildables.txt` remains unchanged; this consumer neither
+imports it automatically nor stages a new pack in release folders.
+
+The format is `[category]` followed by raw object identifiers, with `#` comments
+and blank lines. Copied bytes are bounded to 1 MiB and parsed atomically: at most
+24 distinct categories (23 bytes each), 4096 rows, 511 bytes per row and 1023
+bytes per input line. Identifiers and categories use printable ASCII. Missing,
+ambiguous, oversized or malformed lists produce an explicit panel/status
+message and no partial catalogue. An empty list is valid. Search is limited to
+63 printable ASCII bytes. Row ordering and duplicate identifiers are retained.
+
+Only successful panel replacement installs its row mapping and callback cookie.
+Failed publication pauses actions until a successful retry; callbacks from an
+older publication, unload or reload cannot place a new selection. Unload removes
+this owner's panel. Public service callbacks are reopened and checked for full
+member extent and nullness rather than treated as a permanent provider lease.
+The retained host/legacy picker sources are not rebound by this module.
 
 ## Commands and authority
 
@@ -60,9 +87,17 @@ used by other features are not deleted by this lane.
 
 ## Evidence
 
-Local macOS module configure/compile/link and portable host command-facade object
-compile only. Tests/checker/archive boundary proofs/reviews **NOT RUN** by owner
-speed order. Windows/MSVC/SEH, actual game, streamed prefab cleanup, collision,
-filtered rays, camera restore, rendering and default release staging **NOT VERIFIED**.
-The release workflow downloads sdk-v2.4.0-rc.1, which ships these headers, but does not
-stage this module: release-folder wiring is required before shipping.
+`tools/check_build_sdk.py` extracts and verifies the published SDK archive,
+builds and loads this actual module with copied synthetic content/widgets,
+checks public command routing and the existing missing-world/G5 refusals, runs
+the picker fixture with ASan/UBSan on supported POSIX hosts, checks installation
+and compiler dependencies, and retains four private-dependency negative controls.
+A missing-publication red arm must fail the same fixture. These are source and
+synthetic integration checks, **not run in game**.
+
+Windows/MSVC validation is recorded separately by the source review. Streamed
+prefab cleanup, collision, filtered rays, camera restore, rendering and default
+release staging remain unverified. The release workflow downloads
+sdk-v2.4.0-rc.1, which ships these headers, but does not stage this module:
+release-folder wiring is required before shipping. This change enables no native
+backend or default and changes no SDK pin.

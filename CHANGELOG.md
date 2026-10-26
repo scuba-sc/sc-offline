@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **External Build and SQ42 picker.** The existing Build owner now publishes grouped categories, global search, 64-row pages and SQ42 placement controls through public widgets and one explicit `lists/buildables.txt` data-pack snapshot. Row changes clear selection; full identifiers reach the existing guarded commands. Missing/ambiguous/malformed content and failed publication refuse safely. No raw-file import, pack staging, backend/default or SDK pin change. **Not run in game.**
 - **Read copied contract references.** External Contracts adds bounded summary and single-reference commands for explicit `lists/contract_scripts.txt` data packs through published SDK 2.4.0 RC1. Source GUIDs remain metadata; native XML installation is explicitly unknown. No mission/economy calls, implicit imports, retained engine, staging, default or pin changes. **Not run in game.**
 
 - **Curated Travel locations use public data packs.** The external Quantum consumer reads one explicit `lists/locations.txt` startup snapshot through published SDK 2.4.0 RC1. Missing, ambiguous or malformed curated lists refuse without a raw-file fallback. The original base file is untouched; users must explicitly copy their curated list into an ordinary pack while stopped. Generated locations/bookmarks keep their existing persistence policy. No pack staging, backend/default or SDK pin changes. **Not run in game.**

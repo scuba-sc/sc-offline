@@ -39,6 +39,14 @@ but is not this consumer's input. Scan-generated `locations_found.txt` and
 bookmark storage keep their separate existing filesystem policy. Bounds and
 restart behavior: [Quantum curated destinations](../plugins/quantum/README.md#curated-destinations-from-an-ordinary-data-pack).
 
+The external Build module similarly reads exactly one enabled public
+`lists/buildables.txt` grouped list. Explicitly copy a user-owned list to an
+ordinary data pack while stopped and restart; the top-level `buildables.txt`
+remains untouched. Categories, global search, 64-row pages and SQ42 controls
+belong to the external owner. Missing, ambiguous or malformed lists refuse
+without a partial catalogue or raw-file fallback. No catalogue staging is added.
+Format, limits and ownership: [Build picker](../plugins/build/README.md#grouped-build-and-sq42-picker).
+
 `data/plugins/quantum_drive/plugin.ini` declares an ordinary `kind = data`
 pack, separate from native/built-in `quantum`. It has no entry or code dependency.
 `plugins = off`, a `disabled` marker, a missing/invalid manifest or discovery

@@ -4,8 +4,8 @@
 
 Reuses the inspector archive/dependency machinery, never host include paths.
 Ships build.place/undo/clear; the G5 interactive commands must keep refusing.
-The module has no synthetic workflow fixture: the published checker loads it
-with absent services, so no provider-backed placement is exercised here.
+The actual-module picker fixture exercises copied synthetic providers and public
+command routes. The checker separately verifies missing native service refusals.
 """
 import argparse
 import os
@@ -29,14 +29,19 @@ def main(args):
     source = work / 'source'
     (source / 'plugins').mkdir(parents=True)
     shutil.copytree(ROOT / 'plugins/build', source / 'plugins/build')
+    (source / 'tools').mkdir()
+    for name in ('build_picker_test.cpp', 'workflow_module.h'):
+        shutil.copy2(ROOT / 'tools' / name, source / 'tools' / name)
     build = work / 'plugin-build'
     configure = ['cmake', '-S', source / 'plugins/build', '-B', build,
-                 '-DSCO_SDK_INCLUDE_DIR=' + str(sdk / 'include'),
+                 '-DSCO_SDK_INCLUDE_DIR=' + str(sdk / 'include'), '-DSCO_BUILD_TEST=ON',
                  '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON', '-DSCO_BUILD_DEPENDENCY_TRACE=ON']
     configure += (['-G', args.generator, '-A', 'x64'] if os.name == 'nt'
                   else ['-G', 'Unix Makefiles'])
     run(configure, work)
-    run(['cmake', '--build', build, '--config', 'Release', '--target', 'sc-offline-build'], work)
+    run(['cmake', '--build', build, '--config', 'Release', '--target', 'sc-offline-build', 'build-picker-test'], work)
+    focused = ['ctest', '--test-dir', build, '-C', 'Release', '-R', '^build-picker$', '--output-on-failure', '-V']
+    print(run(focused, work).stdout)
     trace = trace_windows if os.name == 'nt' else trace_posix
     trace(build, source, sdk, public, feature='build')
     stage = work / 'stage'
@@ -70,11 +75,35 @@ def main(args):
         if token not in checked:
             raise AssertionError('Missing-service checker reply missing: ' + token)
     if os.name != 'nt':
+        sanitized = work / 'sanitizer-build'
+        run(['cmake', '-S', source / 'plugins/build', '-B', sanitized,
+             '-DSCO_SDK_INCLUDE_DIR=' + str(sdk / 'include'), '-DSCO_BUILD_TEST=ON',
+             '-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer',
+             '-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address,undefined',
+             '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined'], work)
+        run(['cmake', '--build', sanitized, '--target', 'build-picker-test'], work)
+        print(run(['ctest', '--test-dir', sanitized, '-R', '^build-picker$', '--output-on-failure', '-V'], work).stdout)
         cpp = source / 'plugins/build/build.cpp'
         original = cpp.read_text()
         mtime = cpp.stat().st_mtime_ns
         cmake = source / 'plugins/build/CMakeLists.txt'
         cmake_original = cmake.read_text()
+        # The same fixture must detect the missing active picker owner.
+        publish = source / 'plugins/build/picker.h'
+        publish_original = publish.read_text()
+        if 'Message("Choose a row;' not in publish_original:
+            raise AssertionError('Picker publication red-arm marker missing')
+        publish.write_text(publish_original.replace('state.api=api;', 'state.api=nullptr;'))
+        run(['cmake', '--build', build, '--target', 'clean'], work)
+        run(['cmake', '--build', build, '--target', 'build-picker-test'], work)
+        red = run(focused, work, False)
+        if not red.returncode or 'existing Build owner publishes grouped picker' not in red.stdout:
+            raise AssertionError('Picker missing-owner red arm failed incorrectly:\n' + red.stdout)
+        print('Build picker red arm: fixture detects missing active publication (expected)')
+        publish.write_text(publish_original)
+        run(['cmake', '--build', build, '--target', 'clean'], work)
+        run(['cmake', '--build', build, '--target', 'build-picker-test'], work)
+        print(run(focused, work).stdout)
         mutants = {
             'private host header': ('#include "sco/plugins.h"\n', 'sco/plugins.h'),
             'product header': ('#include "version.h"\n', 'version.h'),
@@ -110,9 +139,10 @@ def main(args):
         (cpp.parent / 'transitive.h').unlink()
         run(['cmake', '-S', source / 'plugins/build', '-B', build], work)
         run(['cmake', '--build', build, '--target', 'clean'], work)
-        run(['cmake', '--build', build, '--target', 'sc-offline-build'], work)
+        run(['cmake', '--build', build, '--target', 'build-picker-test'], work)
         trace_posix(build, source, sdk, public, feature='build')
-    print('Build SDK release proof: PASS (checker with absent services, not run in game)')
+        print(run(focused, work).stdout)
+    print('Build SDK source proof: PASS (actual-module synthetic picker, absent-service checker; not run in game)')
 
 
 def parse_args(argv=None):

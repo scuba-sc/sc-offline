@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "build.h"
 #include "build_state.h"
+#include "picker.h"
 #include "sc_entities.h"
 #include "sc_actors.h"
 #include "sc_spawn.h"
@@ -44,6 +45,7 @@ template<class T> const T* Open(const char* name) {
     return static_cast<const T*>(out);
 }
 sco_result Reply(sco_result r, char* out, uint32_t size, const char* text) {
+    picker::Message(text);
     if (out && size) std::snprintf(out, size, "%s", text);
     if (HAS(g.api, sco_api, log)) g.api->log(g.self, r == SCO_OK ? SCO_LOG_INFO : SCO_LOG_WARN, text);
     return r;
@@ -308,10 +310,11 @@ sco_result Camera(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) 
 }
 uint32_t Count() {uint32_t count=0;for(uint32_t i=0;i<g.count;++i)if(!g.placed[i].removing)++count;return count;}
 int Active(){return g.active;}
+picker::Observation ObservePicker(){return {g.reach,g.active,Count(),g.count-Count()};}
 const sc_offline_build_state_v1 kState{sizeof(sc_offline_build_state_v1),Count,Active};
 sco_result Status(const sco_arg*,uint32_t n,void*,char* out,uint32_t size) {
     if(n||(!out&&size))return SCO_BAD_ARG;
-    char text[224];std::snprintf(text,sizeof(text),"Build retained=%u removal-requested=%u preview=%s; G5 aim/freecam %s; no across-reload persistence",Count(),g.count-Count(),g.preview||g.ghost?"pending/streamed":"none",ControlReady()?"enabled":"unavailable (no production adapter)");
+    char text[512];std::snprintf(text,sizeof(text),"Build retained=%u removal-requested=%u preview=%s; G5 aim/freecam %s; no across-reload persistence; %s",Count(),g.count-Count(),g.preview||g.ghost?"pending/streamed":"none",ControlReady()?"enabled":"unavailable (no production adapter)",picker::state.source);
     return Reply(SCO_OK,out,size,text);
 }
 void Input() {
@@ -334,6 +337,7 @@ void Input() {
 #endif
 }
 void Tick(const char*,const void* data,void*) {
+    picker::Tick();
     if(!g.api || !g.active || !data || !g.selected[0])return;
     if(!ControlReady()){(void)Stop();return;}
     Input();
@@ -374,8 +378,8 @@ void Tick(const char*,const void* data,void*) {
 const sco_plugin_info* Query(){return &kInfo;}
 sco_result Load(const sco_api* api,sco_plugin* self) {
     if(!api||!self||g.api)return SCO_BAD_ARG;
-    if(api->major!=SCO_API_MAJOR || api->minor<SCO_API_MINOR || !HAS(api,sco_api,log) || !HAS(api,sco_api,has) ||
-       !HAS(api,sco_api,query_service) || !HAS(api,sco_api,register_command) || !HAS(api,sco_api,provide_service) || !HAS(api,sco_api,subscribe))return SCO_UNAVAILABLE;
+    if(!HAS(api,sco_api,log) || !HAS(api,sco_api,has) ||
+       !HAS(api,sco_api,query_service) || !HAS(api,sco_api,register_command) || !HAS(api,sco_api,provide_service) || !HAS(api,sco_api,subscribe) || api->major!=SCO_API_MAJOR || api->minor<SCO_API_MINOR)return SCO_UNAVAILABLE;
     g.api=api;g.self=self;
     const sco_arg_def place[]={{"object",SCO_ARG_STRING,0,"Buildable class or canonical content prefab path"},{"ahead",SCO_ARG_FLOAT,0,"0..100 metres ahead, grounded"}};
     const sco_arg_def select[]={{"object",SCO_ARG_STRING,0,"Buildable class or canonical content prefab path"},{"reach",SCO_ARG_FLOAT,0,"5..300 metres"}};
@@ -395,12 +399,14 @@ sco_result Load(const sco_api* api,sco_plugin* self) {
     if(r!=SCO_OK){Unload();return r;}
     const auto* ui=Open<sco_ui_v1>(SCO_UI_NAME);
     if(HAS(ui,sco_ui_v1,bind_hotkey))(void)ui->bind_hotkey(self,"f6","build.toggle",nullptr,0);
+    picker::Load(api,self,ObservePicker);
     return SCO_OK;
 }
 void Unload() {
     if(!g.api)return;
     if(Stop()!=SCO_OK)g.api->log(g.self,SCO_LOG_WARN,"Build preview/camera cleanup refused; public host owner-release required");
     char reply[192];if(Clear(nullptr,0,nullptr,reply,sizeof(reply))!=SCO_OK)g.api->log(g.self,SCO_LOG_WARN,"Build removal refused; host owner-release required (no private deletion)");
+    picker::Unload();
     g={};
 }
 #undef HAS
