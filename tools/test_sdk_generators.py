@@ -33,7 +33,7 @@ def proof_module(feature):
 
 class GeneratorSelection(unittest.TestCase):
     def test_default_matches_hosted_toolchain_and_override_reaches_configure(self):
-        for feature in ('inspector', 'npc', 'build'):
+        for feature in ('inspector', 'npc', 'build', 'loadout'):
             for requested in (None, 'Visual Studio 17 2022'):
                 with self.subTest(feature=feature, requested=requested), tempfile.TemporaryDirectory() as temp:
                     module = proof_module(feature)

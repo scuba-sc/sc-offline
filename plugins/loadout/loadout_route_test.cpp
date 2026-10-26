@@ -17,6 +17,7 @@ unsigned checks=0, applies=0, submits=0, statuses=0, cancels=0;
 sco_plugin* owner=nullptr;
 std::map<std::string,sco_command_fn> commands;
 sco_widget_event_fn panel_event=nullptr;
+void* panel_context=nullptr;
 std::map<uint32_t,sco_widget_node> player;
 std::string copied_status;
 bool apply_cap=true, weapons_cap=true, async_cap=true, present=true;
@@ -90,7 +91,7 @@ sco_result Register(sco_plugin* self,const sco_command* command) {
 sco_result Subscribe(sco_plugin*,const char*,sco_event_fn,void*) { return SCO_OK; }
 sco_result Unsubscribe(sco_plugin*,const char*,sco_event_fn) { return SCO_OK; }
 sco_result SetPanel(sco_plugin*,const char* id,const char*,const sco_widget_node* nodes,uint32_t count,
-                    uint32_t stride,sco_widget_event_fn event,void*) {
+                    uint32_t stride,sco_widget_event_fn event,void* context) {
     Require(stride==sizeof(*nodes),"widget stride");
     if (!std::strcmp(id,"loadout.player")) {
         player.clear(); for (uint32_t i=0;i<count;++i) {
@@ -98,6 +99,7 @@ sco_result SetPanel(sco_plugin*,const char* id,const char*,const sco_widget_node
             if (nodes[i].id==14) copied_status=nodes[i].label ? nodes[i].label : "";
         }
         panel_event=event;
+        panel_context=context;
     }
     return SCO_OK;
 }
@@ -126,7 +128,7 @@ void Reset() {
 void Send(uint32_t node,uint32_t kind,const char* text=nullptr) {
     Require(panel_event!=nullptr,"player callback");
     sco_widget_event event{}; event.size=sizeof(event); event.node_id=node; event.kind=kind; event.text=text;
-    panel_event("loadout.player",&event,nullptr);
+    panel_event("loadout.player",&event,panel_context);
 }
 void SetProgress(sc_loadout_job_state state,uint32_t completed) {
     progress={}; progress.size=sizeof(progress); progress.state=state; progress.completed=completed;

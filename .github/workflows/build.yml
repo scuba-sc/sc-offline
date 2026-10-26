@@ -175,6 +175,33 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # Loadout development proofs only: no upload or production release-folder input.
+  loadout-sdk-posix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download published SDK (combined core + game)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download sdk-v2.4.0-rc.1 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$RUNNER_TEMP/sdk-assets"
+      - name: Validate Loadout module workflows, sanitizers and public dependency boundaries
+        run: python3 tools/check_loadout_sdk.py --archive "$RUNNER_TEMP/sdk-assets/sco-sdk-2.4.0.zip" --sums "$RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$RUNNER_TEMP/loadout-proof"
+
+  loadout-sdk:
+    runs-on: windows-2025-vs2026
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download published SDK (combined core + game)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download sdk-v2.4.0-rc.1 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
+      - name: Validate MSVC Loadout module workflows and public dependency traces
+        run: python tools/check_loadout_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.4.0.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/loadout-proof"
+
   # Contracts: the built-in is gone (G1 refuses builtin inputs with early DataCore), so its
   # published-SDK proof is what stands between the feature and shipping nothing. Refuses in game
   # until the missions/economy providers land; no built-in fallback, no host-side tick.

@@ -9,6 +9,7 @@ Everything the menu reads is plain text in `data/`. Most files explain their own
 | `ships.txt` | 1102 spawnable vehicles |
 | `npcs.txt` | 2239 NPC archetypes |
 | `items.txt` | 1489 gear items, in ten slot sections |
+| `loadout_slots.txt` | Optional catalogue: 344 public logical weapon/attachment/tool choices in fourteen explicit target sections; copy into an enabled data pack to use it |
 | `buildables.txt` | 3728 objects in 18 groups, for Build mode and the Squadron 42 Spawn section |
 | `outfits.txt` | 35 outfits: each is a `[name]` line, then one line per piece |
 | `locations.txt` | Places for the Travel tab: system, name, entity, radius |
@@ -29,6 +30,16 @@ base-file import or private-reader fallback. Restart after edits. Shared filter/
 paging and bounded ownership rules: [pickers.md](pickers.md).
 
 ## Ordinary data packs and content access
+
+The external Loadout Player panel reads curated weapon/tool choices from exactly
+one enabled public `lists/loadout_slots.txt` List. The optional source catalogue
+is not installed by the Loadout component or imported from the top-level file.
+Copy it explicitly into an ordinary data pack while the host is stopped, then
+restart. `loadout.reload_slots` re-reads the copied startup snapshot; it does not
+refresh files on disk. Duplicate canonical Lists refuse as ambiguous. Logical
+target sections request equipment; they do not certify parent/item compatibility
+or engine ports. Format, attribution and unchanged-slot semantics:
+[curated Loadout selectors](../plugins/loadout/README.md#curated-weapon-and-tool-selectors).
 
 The external Quantum Travel consumer reads curated destinations from exactly
 one enabled public `lists/locations.txt` record in an ordinary data pack.

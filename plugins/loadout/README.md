@@ -49,6 +49,7 @@ public game-thread routes, reopen tables, and guard complete pointer extents/nul
 | `loadout.equip` | Item-class string, separated by spaces/commas; resolve case-insensitively from copied `items.txt`, at most one item per logical slot |
 | `loadout.items` | Filter string; list first 12 matches with original slot labels and unsupported markers |
 | `loadout.reload_lists` | Re-read the public startup snapshot; no filesystem refresh; changed packs require host restart |
+| `loadout.reload_slots` | Re-read exactly one public `lists/loadout_slots.txt` startup snapshot; reset curated picks on success or refusal; no disk refresh |
 | `loadout.spoilers` | Bool; session-only SQ42 confirmation, reset on unload/reload |
 | `loadout.wear` | Exact outfit label, case-insensitive; requires spoiler confirmation |
 | `loadout.visor` | Explicit visor item-class string; typed logical VISOR request, no implicit face/lens/default replacement |
@@ -69,6 +70,71 @@ The Player panel invokes optional creative commands and displays the public
 provider's requested-state flags, not an invented engine-state observation.
 SQ42 ship labels/reference classes are retained; enemy-wing orchestration remains
 deferred rather than silently spawning an ordinary ship as a substitute.
+
+### Curated weapon and tool selectors
+
+The Player panel offers fourteen independent selectors using the same public
+logical slot names as the manual route below. Every selector starts at
+**Unchanged (omit slot)**. Selecting a class adds only that explicit assignment.
+Apply uses `loadout.slots`' synchronous 1.1 path; Submit uses `loadout.submit`'s
+1.2 job path. Both keep the same parent-first ordering, version/capability gates,
+per-slot partial results and retained-job/cancel policy. Clear curated selection
+changes only local picks; it does not clear equipment or cancel a retained job.
+The manual assignment field remains a separate selection route.
+
+Install one ordinary `kind = data` pack containing `lists/loadout_slots.txt`.
+For example, while the host is stopped, explicitly copy the optional source
+`data/loadout_slots.txt` to `data/plugins/my_loadout/lists/loadout_slots.txt` and
+create `data/plugins/my_loadout/plugin.ini` with:
+
+```ini
+id = my_loadout
+name = My curated logical slots
+version = 1.0.0
+api = 1.1
+kind = data
+```
+
+Enable ordinary plugin loading and restart the host. This file is not staged by
+the Loadout install component, including when `SCO_LOADOUT_BASE_LIST_DIR` is set.
+There is no automatic top-level-file import. Content is copied at host startup;
+`loadout.reload_slots` re-reads that snapshot and cannot see disk edits until
+restart. More than one exact canonical List is ambiguous and refuses rather
+than choosing a pack. Missing, disabled or invalid packs expose no choices and
+an explicit unavailable message; the manual route remains independent.
+
+The format has exact case-sensitive section names from the fourteen-slot table
+below, followed by ASCII `[A-Za-z0-9_]` classes, 1–95 bytes each. `#` introduces
+comments; blank lines and surrounding whitespace are ignored. Parsing is atomic:
+at most 1 MiB, 255 bytes per input line, fourteen distinct known sections,
+255 classes per section and 3000 classes total. Duplicate sections, duplicate
+case-insensitive classes in one section, unknown sections, malformed records,
+embedded NULs and `None` refuse the whole catalogue. Explicit choices of the
+same class in different target sections remain independent. An empty catalogue
+is valid. Each combo's first unchanged option plus its classes fits the public
+256-option limit. Reload success or failure clears previous curated selections;
+failed panel replacement pauses old Player actions, and publication cookies
+reject callbacks from older publications or loaded sessions.
+
+The optional source catalogue contains **344 target choices**: 101 primary,
+31 sidearm, and, for each parent, 53 optics, 35 barrels, 10 underbarrel choices,
+5 tool modules, 2 tool canisters and 1 tool battery. Primary/sidearm identifiers come unchanged from
+[the existing project list at `9b2b71f`](https://github.com/scuba-sc/sc-offline/blob/9b2b71f6916bd40129ed89965d1a2585c799e520/data/items.txt).
+The attachment/tool identifiers and their independent primary/sidearm selector
+classification come from Alpha-Rome0's public GPL-3.0-only
+[PR #127 at `7ea9731`](https://github.com/scuba-sc/sc-offline/pull/127/commits/7ea9731b693bb9042ccbb721099ca88acb80d6f4).
+The file retains source attribution. These are logical target requests, not a
+verified compatibility matrix: the native provider must decide whether a class
+exists and fits the currently equipped parent. No class spelling is used to
+infer a native port, no SRT defaults or battery are synthesized, and no installed
+game files or community-site data were copied for this catalogue.
+
+For manual research, searchable references include
+[Cornerstone's Universal Item Finder](https://finder.cstone.space/) and
+[Star Citizen Wiki's Pyro RYT Multi-Tool page](https://starcitizen.tools/Pyro_RYT_Multi-Tool).
+They are navigation references, not runtime inputs or proof for an installed
+build's compatibility. Historical game-acceptance statements on PR127 do not
+validate this SDK consumer.
 
 ### Manual weapon and tool slots
 
@@ -137,7 +203,7 @@ grenades, clothing, body/head/eyes/hair/accessories/material variants, implicit
 magazine/default face/undersuit/medpen synthesis and old empty-slot clearing need
 separate consumer mappings, additional public contract coverage where absent,
 and validation. Copied-list/outfit selections still query 1.0 and use the
-synchronous armor/visor subset. The separate manual route uses the published
+synchronous armor/visor subset. The separate manual and curated-selector routes use the published
 1.1/1.2 contracts without assigning meanings to old catalogue ports. Public
 contract availability does not verify native equip or attachment behavior.
 Most legacy outfits therefore refuse; this is not full feature-parity acceptance.
@@ -167,48 +233,55 @@ cvar on unload. Forged write widget events also refuse. Failed reads clear prior
 values to unknown. Tick-driven observations are capped at 5 Hz; explicit refresh
 reads on request. The game's own values may change independently.
 
-**Step 4C / G8 quantum control is NOT approved.** This lane does not change the
-existing private boost/keeper sources, their startup/ticks or hook ownership.
-Migration to public quantum control remains pending separate approval.
+Loadout does not own quantum control. This lane changes no Quantum commands,
+providers, startup/ticks or hook ownership; that consumer's source and native
+acceptance remain separate from the gear selectors.
 
 ## Evidence and pending acceptance
 
-The standalone plugin and focused widget test configure, compile and link with
-LLVM-MinGW against the checksum-verified published `sdk-v2.4.0-rc.1` combined
+The consumer proof uses the checksum-verified published `sdk-v2.4.0-rc.1` combined
 archive (`sco-sdk-2.4.0.zip`, SHA-256
 `124751534277b89f0516af1897919c3485923811596e159a1f683bb80b1c243b`).
-The synthetic public-service workflow covers an items-only snapshot with no
-outfits/buildables, populated pickers, an empty gear filter, and unload cleanup.
-The items-only case failed before the empty-array correction and passes after
-it. Enable this development-only test with `-DSCO_WORKFLOW_TESTS=ON`, then run:
+Enable the three development workflows with `-DSCO_WORKFLOW_TESTS=ON`, then run:
 
 ```sh
-cmake --build <plugin-build> --config Release --target loadout-widget-test
-ctest --test-dir <plugin-build> -C Release -R '^loadout-widget-workflow$' --output-on-failure
+cmake --build <plugin-build> --config Release
+ctest --test-dir <plugin-build> -C Release --output-on-failure
 ```
 
-These tests link the feature source
-against public headers and synthetic callbacks; they do not load the native DLL
-or exercise the real widgets service/renderer.
+`loadout-widget-workflow` and `loadout-public-route` link the feature source to
+synthetic public services. They cover copied legacy lists, empty panels, all
+fourteen manual slots, ordering, version/capability/extent guards, partial and
+invalid reports, retained jobs and cleanup after capability revocation.
+`loadout-curated-catalogue` loads the actual native module and exercises the
+catalogue, copied selectors, existing apply/job paths, exact limits, ambiguity,
+failed publication, stale callbacks, unload/reload and the attributed seed file.
 
-The manual route's `loadout-public-route` test also uses the exact published RC1
-headers. It covers all 14 public weapon/tool slots, parent-first ordering, input
-refusals, old/missing providers, physically truncated/null members, independent
-async capability, copied submit buffers, partial/malformed reports, retained jobs,
-provider withdrawal, cancellation after capability revocation and unload/reload.
-It failed on the unchanged consumer because the new command was absent. Run both
-focused workflows with `ctest --test-dir <plugin-build> -C Release --output-on-failure`.
-This is consumer behavior against synthetic providers, not native slot mapping,
-Windows/MSVC ABI, actual async resource cleanup, renderer or game acceptance.
+`tools/check_loadout_sdk.py` copies only public consumer/test inputs into an
+isolated directory, verifies the archive, builds/runs all three workflows,
+checks the installation inventory and full compiler dependencies, and on POSIX
+runs ASan/UBSan plus missing-selector and four private-dependency negatives.
+The published RC1 generic checker has a separate known limitation: it treats
+the existing argument-free `loadout.progress` and `loadout.cancel` no-job
+`NOT_FOUND` observations as failures. Its raw **FAILED: 2 failure(s)** result is
+retained. The helper narrowly recognizes those exact two messages and rejects
+other failures; it does not call that a clean checker pass or change the
+published checker or product return values.
 
-**Canonical suites, loadout checker/dependency proofs, Windows host/MSVC/DLL
-calling conventions, renderer, runtime reload/cleanup and actual gameplay
-NOT RUN.** A prior focused ad-hoc
-probe loaded the actual native module against synthetic public cvar callbacks:
-four exact-name 0/1 reads, absent/failed reads invalidating prior values,
-write/console refusal without querying a write service, synchronous external
-provider result/reply preservation, and unload twice passed. This is not host
-loader/gameplay evidence; that earlier probe did not exercise partial batches or
-list parsing. Production G6/G7 adapters are unverified/fail-closed; four actual Windows game
-values, outfits/head/visor mapping and no duplication/corruption remain owner
-acceptance work. Release staging is also pending (SDK 2.4.0 release candidate 1 is published and pinned).
+The build workflow defines separate `loadout-sdk-posix` and `loadout-sdk`
+validation jobs for this helper. They upload no artifacts and are outside the
+production release-folder matrix; validation does not add Loadout to releases.
+
+Separate source-review evidence records actual MSVC 19.44 x64 strict compilation
+of five translation units, linked workflow runs and actual-DLL catalogue tests.
+The same new fixture fails on the unchanged old DLL because selectors are
+absent, then passes on the new DLL. A separate verified RC1 host-content and
+headless widgets-renderer harness covers real discovery, copied panels and
+event admission with an authored synthetic typed equip backend. These are
+source, ABI and host integration evidence, **not run in game**.
+
+Production G6/G7 adapters remain unverified/fail-closed. Native class/parent/port
+compatibility, actual async resource cleanup, game rendering, SRT parent-default
+behavior, outfits/head/visor mapping and duplication/corruption checks remain
+game acceptance work. Release staging, tagging/publication, backend defaults and
+SDK pin adoption are separate decisions.
