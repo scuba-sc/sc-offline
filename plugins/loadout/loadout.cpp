@@ -87,7 +87,7 @@ uint32_t Slot(std::string_view name,bool outfit) {
         {"arms","Armor_Arms",SC_LOADOUT_SLOT_ARMS},{"legs","Armor_Legs",SC_LOADOUT_SLOT_LEGS},
         {"backpack","backpack",SC_LOADOUT_SLOT_BACKPACK},{"visor","Lens_ItemPort",SC_LOADOUT_SLOT_VISOR} };
     for (const auto& m:map) if (Same(name,outfit ? m.port : m.item)) return m.slot;
-    // Never invent G6 extension slots for weapons, clothing, body, head parts or material variants.
+    // This consumer retains its 1.0 armor/visor mapping; newer slot families are not selected here.
     return 0;
 }
 sco_result Parse(std::string_view bytes,int kind,Lists& lists,std::vector<std::string>& buildables) {
@@ -182,7 +182,7 @@ sco_result Apply(const std::vector<Piece>& pieces,char* out,uint32_t size) {
     for (size_t i=0;i<pieces.size();++i) {
         const auto& p=pieces[i];
         if (!p.slot) {
-            const auto message="Unsupported legacy slot/port '"+p.port+"': whole selection refused; clothing/head parts/weapons need approved G6 extension.";
+            const auto message="Unsupported legacy slot/port '"+p.port+"': whole selection refused; this consumer does not map that slot.";
             return Answer(SCO_UNAVAILABLE,out,size,message.c_str());
         }
         if (!Class(p.name)) return SCO_BAD_ARG;
@@ -401,7 +401,7 @@ void Publish() {
         const auto& p=g.lists.items[matches[i]]; text.push_back(p.port+": "+p.name+(p.slot ? "" : " [unsupported]")); options.push_back(text.back().c_str());
     }
     add(SCO_WIDGET_TEXT_INPUT,1,"Search gear (case-sensitive)").text=g.filter.c_str();
-    auto& picker=add(SCO_WIDGET_COMBO,2,"Gear list (64 per page)"); picker.items=options.data(); picker.item_count=static_cast<uint32_t>(options.size()); picker.index=-1;
+    auto& picker=add(SCO_WIDGET_COMBO,2,"Gear list (64 per page)"); picker.items=options.empty() ? nullptr : options.data(); picker.item_count=static_cast<uint32_t>(options.size()); picker.index=-1;
     add(SCO_WIDGET_BUTTON,3,"Previous page",g.page ? 0u : SCO_WIDGET_DISABLED);
     add(SCO_WIDGET_BUTTON,4,"Next page",(g.page+1)*64<matches.size() ? 0u : SCO_WIDGET_DISABLED);
     // widgets text fields are bounded to 255 bytes; commands support the full 1023-byte multi-slot request.
@@ -421,7 +421,7 @@ void Publish() {
     if (!g.spoilers) { add(SCO_WIDGET_LABEL,99,"This tab may contain Squadron 42 spoilers. Confirmation is session-only."); add(SCO_WIDGET_BUTTON,100,"OK: show SQ42 spoilers"); }
     else {
         for (const auto& o:g.lists.outfits) options.push_back(o.name.c_str());
-        auto& outfit=add(SCO_WIDGET_COMBO,101,"SQ42 outfit"); outfit.items=options.data(); outfit.item_count=static_cast<uint32_t>(options.size()); outfit.index=g.outfit;
+        auto& outfit=add(SCO_WIDGET_COMBO,101,"SQ42 outfit"); outfit.items=options.empty() ? nullptr : options.data(); outfit.item_count=static_cast<uint32_t>(options.size()); outfit.index=g.outfit;
         add(SCO_WIDGET_BUTTON,102,"Wear SQ42 outfit",g.outfit>=0 ? 0u : SCO_WIDGET_DISABLED);
         add(SCO_WIDGET_TEXT_INPUT,103,"Visor item class (no implicit head replacement)").text=g.visor.c_str();
         add(SCO_WIDGET_BUTTON,104,"Equip visor"); add(SCO_WIDGET_BUTTON,105,"Refresh real SQ42 values");
@@ -436,7 +436,7 @@ void Publish() {
         add(SCO_WIDGET_TOGGLE,122,"Pilot seat and Flight Ready").value=g.sit ? 1 : 0;
         add(SCO_WIDGET_BUTTON,123,"Spawn via external spawn.ship_options");
         std::vector<const char*> builds; for (const auto& name:g.buildables) builds.push_back(name.c_str());
-        auto& build=add(SCO_WIDGET_COMBO,130,"SQ42 buildables"); build.items=builds.data(); build.item_count=static_cast<uint32_t>(builds.size()); build.index=g.build;
+        auto& build=add(SCO_WIDGET_COMBO,130,"SQ42 buildables"); build.items=builds.empty() ? nullptr : builds.data(); build.item_count=static_cast<uint32_t>(builds.size()); build.index=g.build;
         auto& ahead=add(SCO_WIDGET_SLIDER,131,"Metres ahead (0 = feet)"); ahead.value=g.ahead; ahead.minimum=0; ahead.maximum=100;
         add(SCO_WIDGET_BUTTON,132,"Place via build.place",g.build>=0 ? 0u : SCO_WIDGET_DISABLED);
         add(SCO_WIDGET_LABEL,133,"Enemy-wing orchestration remains deferred. Missing spawn/build commands refuse; no private fallback.");
