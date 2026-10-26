@@ -37,6 +37,39 @@ inline bool Same(std::string_view a,std::string_view b) {
     }
     return true;
 }
+// Display names from Alpha-Rome0's public GPL PR127, source 7ea9731b693bb9042ccbb721099ca88acb80d6f4.
+inline std::string_view Alias(std::string_view value) {
+    struct Name { const char* cls; const char* label; };
+    static constexpr Name names[]{
+        {"grin_multitool_01_mining","OreBit Mining Attachment"},
+        {"grin_multitool_01_cutter","OxyTorch Cutter Attachment"},
+        {"grin_multitool_01_tractorbeam","TruHold Tractor Beam Attachment"},
+        {"grin_multitool_01_healing","LifeGuard Medical Attachment"},
+        {"grin_multitool_01_salvage_repair","Cambio-Lite SRT Attachment"},
+        {"grin_multitool_resource_salvage_repair_01","Cambio-Lite SRT Canister (empty)"},
+        {"grin_multitool_resource_salvage_repair_01_filled","Cambio-Lite SRT Canister (filled)"},
+    };
+    for(const auto& name:names)if(Same(value,name.cls))return name.label;
+    return {};
+}
+inline std::string Display(std::string_view value) {
+    const auto alias=Alias(value);
+    return alias.empty()?std::string(value):std::string(alias)+" ["+std::string(value)+"]";
+}
+inline bool Contains(std::string_view text,std::string_view query) {
+    if(query.size()>text.size())return false;
+    for(size_t i=0;i<=text.size()-query.size();++i)if(Same(text.substr(i,query.size()),query))return true;
+    return false;
+}
+inline bool Matches(std::string_view value,std::string_view query) {
+    return Contains(value,query)||Contains(Alias(value),query);
+}
+inline std::vector<int32_t> Rows(const std::vector<std::string>& classes,int32_t selected,std::string_view filter) {
+    std::vector<int32_t> rows{0};
+    for(size_t i=0;i<classes.size();++i)
+        if(selected==static_cast<int32_t>(i+1)||Matches(classes[i],filter))rows.push_back(static_cast<int32_t>(i+1));
+    return rows;
+}
 inline bool Class(std::string_view value) {
     if(value.empty()||value.size()>=SC_LOADOUT_ITEM_NAME_BYTES||Same(value,"none"))return false;
     for(unsigned char c:value)if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'))return false;

@@ -33,6 +33,7 @@ struct State {
     uint64_t job = 0; std::vector<Piece> job_pieces;
     std::shared_ptr<const catalogue::Data> curated, published_curated;
     std::array<int32_t,std::size(catalogue::kSlots)> curated_picks{};
+    std::array<std::vector<int32_t>,std::size(catalogue::kSlots)> published_rows;
     bool player_events = false; uintptr_t player_cookie = 0;
     char curated_status[256]{};
     double height = 30, ahead = 8, speed = 30; bool sit = true;
@@ -447,7 +448,7 @@ std::vector<size_t> Filtered() {
     std::vector<size_t> matches;
     for (size_t i=0;i<g.lists.items.size();++i) {
         const auto& p=g.lists.items[i];
-        if (g.filter.empty() || p.name.find(g.filter)!=p.name.npos || p.port.find(g.filter)!=p.port.npos) matches.push_back(i);
+        if (catalogue::Matches(p.name,g.filter) || catalogue::Contains(p.port,g.filter)) matches.push_back(i);
     }
     return matches;
 }
@@ -462,10 +463,18 @@ void Event(const char* panel,const sco_widget_event* e,void* context) {
     };
     if(!sq&&e->node_id>=200&&e->node_id<200+std::size(weapon_slots)) {
         const auto slot=static_cast<size_t>(e->node_id-200);
-        if(e->kind==SCO_WIDGET_COMBO&&e->index>=0&&g.published_curated&&static_cast<size_t>(e->index)<=g.published_curated->classes[slot].size())g.curated_picks[slot]=e->index;
+        if(e->kind==SCO_WIDGET_COMBO&&e->index>=0&&g.published_curated&&static_cast<size_t>(e->index)<g.published_rows[slot].size())
+            g.curated_picks[slot]=g.published_rows[slot][static_cast<size_t>(e->index)];
     }
     else if (!sq) switch(e->node_id) {
-        case 1: string(g.filter,63); g.page=0; break;
+        case 1:
+            if(e->kind==SCO_WIDGET_TEXT_INPUT&&e->text) {
+                size_t length=0;while(length<=63&&e->text[length])++length;
+                bool valid=length<=63;
+                for(size_t i=0;i<length&&valid;++i)valid=static_cast<unsigned char>(e->text[i])>=32&&static_cast<unsigned char>(e->text[i])<=126;
+                if(valid){g.filter.assign(e->text,length);g.page=0;}
+            }
+            break;
         case 2: if (e->kind==SCO_WIDGET_COMBO && e->index>=0 && e->index<64) {
             const auto matches=Filtered(); const auto index=static_cast<size_t>(g.page)*64+static_cast<size_t>(e->index);
             if (index<matches.size()) {
@@ -537,7 +546,7 @@ void Publish() {
     for (size_t i=static_cast<size_t>(g.page)*64;i<matches.size() && options.size()<64;++i) {
         const auto& p=g.lists.items[matches[i]]; text.push_back(p.port+": "+p.name+(p.slot ? "" : " [unsupported]")); options.push_back(text.back().c_str());
     }
-    add(SCO_WIDGET_TEXT_INPUT,1,"Search gear (case-sensitive)").text=g.filter.c_str();
+    add(SCO_WIDGET_TEXT_INPUT,1,"Search gear/curated names or classes (63 ASCII characters)").text=g.filter.c_str();
     auto& picker=add(SCO_WIDGET_COMBO,2,"Gear list (64 per page)"); picker.items=options.empty() ? nullptr : options.data(); picker.item_count=static_cast<uint32_t>(options.size()); picker.index=-1;
     add(SCO_WIDGET_BUTTON,3,"Previous page",g.page ? 0u : SCO_WIDGET_DISABLED);
     add(SCO_WIDGET_BUTTON,4,"Next page",(g.page+1)*64<matches.size() ? 0u : SCO_WIDGET_DISABLED);
@@ -552,13 +561,25 @@ void Publish() {
     add(SCO_WIDGET_BUTTON,24,"Cancel/release loadout job",g.job ? 0u : SCO_WIDGET_DISABLED);
     add(SCO_WIDGET_LABEL,25,"Use known item classes. Unspecified slots stay unchanged; None/clear is unavailable.");
     std::array<std::vector<const char*>,std::size(weapon_slots)> curated_options;
+    std::array<std::vector<std::string>,std::size(weapon_slots)> curated_labels;
+    std::array<std::vector<int32_t>,std::size(weapon_slots)> curated_rows;
     bool chosen=false;
     for(size_t i=0;i<std::size(weapon_slots);++i) {
         auto& choices=curated_options[i];choices.push_back("Unchanged (omit slot)");
-        if(g.curated)for(const auto& value:g.curated->classes[i])choices.push_back(value.c_str());
+        auto& rows=curated_rows[i];rows={0};
+        int32_t selected=0;
+        if(g.curated) {
+            const auto& classes=g.curated->classes[i];rows=catalogue::Rows(classes,g.curated_picks[i],g.filter);
+            auto& labels=curated_labels[i];labels.reserve(rows.size()-1);
+            for(size_t row=1;row<rows.size();++row) {
+                labels.push_back(catalogue::Display(classes[static_cast<size_t>(rows[row])-1]));
+                if(rows[row]==g.curated_picks[i])selected=static_cast<int32_t>(row);
+            }
+            for(const auto& label:labels)choices.push_back(label.c_str());
+        }
         text.push_back(std::string("Curated ")+weapon_slots[i].name);
         auto& slot=add(SCO_WIDGET_COMBO,200+static_cast<uint32_t>(i),text.back().c_str(),choices.size()>1?0u:SCO_WIDGET_DISABLED);
-        slot.items=choices.data();slot.item_count=static_cast<uint32_t>(choices.size());slot.index=g.curated_picks[i];chosen|=slot.index>0;
+        slot.items=choices.data();slot.item_count=static_cast<uint32_t>(choices.size());slot.index=selected;chosen|=g.curated_picks[i]>0;
     }
     add(SCO_WIDGET_BUTTON,220,"Apply curated choices (1.1)",chosen&&!g.job?0u:SCO_WIDGET_DISABLED);
     add(SCO_WIDGET_BUTTON,221,"Submit curated choices job (1.2)",chosen&&!g.job?0u:SCO_WIDGET_DISABLED);
@@ -576,7 +597,7 @@ void Publish() {
     if(next_player_cookie<std::numeric_limits<uintptr_t>::max()) {
         const auto cookie=++next_player_cookie;
         if(w->set_panel(g.self,"loadout.player","Player",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(sco_widget_node),Event,reinterpret_cast<void*>(cookie))==SCO_OK) {
-            g.published_curated=g.curated;g.player_cookie=cookie;g.player_events=true;
+            g.published_curated=g.curated;g.published_rows=std::move(curated_rows);g.player_cookie=cookie;g.player_events=true;
         }
     }
     nodes.clear(); options.clear(); text.clear();

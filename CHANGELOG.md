@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Loadout friendly names and shared search.** Curated selectors show seven attributed public tool/canister labels alongside their unchanged class IDs. The shared filter matches names/classes without clearing or rebinding selected choices; apply/jobs keep their existing ordering, admission and partial/cancel behavior. No defaults, native compatibility or release staging change. **Not run in game.**
+
 - **Quantum controls show received GameRules.** The existing panel shows allowed/forbidden/unknown quantum travel and boost gates, pauses new UI boosts when rules are unreadable or forbid them, and rechecks before starting. Owned release remains available; group membership is never inferred. Automatic presentation reads occur at most once per 250 ms. Relocation and provider-authorized command behavior, native/default settings and the SDK pin stay unchanged. **Not run in game.**
 
 - **External Build and SQ42 picker.** The existing Build owner now publishes grouped categories, global search, 64-row pages and SQ42 placement controls through public widgets and one explicit `lists/buildables.txt` data-pack snapshot. Row changes clear selection; full identifiers reach the existing guarded commands. Missing/ambiguous/malformed content and failed publication refuse safely. No raw-file import, pack staging, backend/default or SDK pin change. **Not run in game.**
