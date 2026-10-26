@@ -30,7 +30,7 @@ def main(args):
     (source / 'plugins').mkdir(parents=True)
     shutil.copytree(ROOT / 'plugins/contracts', source / 'plugins/contracts')
     (source / 'tools').mkdir()
-    for name in ('contracts_workflow_test.cpp', 'workflow_module.h'):
+    for name in ('contracts_workflow_test.cpp', 'contracts_metadata_test.cpp', 'workflow_module.h'):
         shutil.copy2(ROOT / 'tools' / name, source / 'tools' / name)
     build = work / 'plugin-build'
     configure = ['cmake', '-S', source / 'plugins/contracts', '-B', build,
@@ -41,7 +41,7 @@ def main(args):
     run(configure, work)
 
     def compile_module():
-        run(['cmake', '--build', build, '--config', 'Release', '--target', 'contracts-module-test'], work)
+        run(['cmake', '--build', build, '--config', 'Release', '--target', 'contracts-module-test', 'contracts-metadata-test'], work)
 
     def workflow():
         print(run(['ctest', '--test-dir', build, '-C', 'Release', '-R',
@@ -132,7 +132,8 @@ def main(args):
         run(['cmake', '--build', build, '--target', 'clean'], work)
         compile_module()
         module = build / 'test-plugins/contracts' / modules[0].name
-        failed = run([build / 'contracts-module-test', module, args.slice], work, False)
+        executable = build / ('contracts-metadata-test' if args.slice == 'metadata' else 'contracts-module-test')
+        failed = run([executable, module] + ([] if args.slice == 'metadata' else [args.slice]), work, False)
         if not failed.returncode or 'AddressSanitizer: heap-buffer-overflow' not in failed.stdout:
             raise AssertionError('Physical partial-pointer red arm did not catch overread:\n' + failed.stdout)
         print('Contracts partial-pointer red arm: ASan heap-buffer-overflow (expected)')
@@ -148,7 +149,7 @@ if __name__ == '__main__':
     parser.add_argument('--archive', type=Path, required=True)
     parser.add_argument('--sums', type=Path, required=True)
     parser.add_argument('--work', type=Path, required=True, help='New isolated directory')
-    parser.add_argument('--slice', choices=('read', 'accept', 'progress', 'script', 'economy'), required=True)
+    parser.add_argument('--slice', choices=('read', 'accept', 'progress', 'script', 'economy', 'metadata'), required=True)
     parser.add_argument('--boundary', action='store_true', help='POSIX boundary negative controls')
     parser.add_argument('--sanitizers', action='store_true', help='POSIX physical-pointer red/green probe')
     main(parser.parse_args())

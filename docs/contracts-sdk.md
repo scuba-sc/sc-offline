@@ -10,7 +10,7 @@ No engine pointers, detours, account/online balances or G13 session controls.
 1. Obtain a checksum-verified SDK archive containing `sc_missions.h` (the pinned
    published `sco-sdk-2.4.0.zip` from `sdk-v2.4.0-rc.1` contains it; 2.0.0 did not).
 2. Run `python3 tools/contracts_sdk_check.py --archive <local-or-published.zip>
-   --sums <adjacent-SHA256SUMS> --work <new-outside-root> --slice <read|accept|progress|script|economy>`.
+   --sums <adjacent-SHA256SUMS> --work <new-outside-root> --slice <read|accept|progress|script|economy|metadata>`.
    This verifies hashes, extracts into an isolated root, builds/loads the actual
    module, checks its exact public dependencies, installs its two-file folder,
    and runs the SDK checker with absent services. POSIX `--boundary` adds
@@ -77,9 +77,59 @@ Read commands: `contracts.status`, `contracts.offer <index>`,
 complete callback extents and non-null methods. Unload clears consumer admission;
 no unload mutation or worker/queued tick exists. The host releases registrations.
 
+## Copied script-reference metadata
+
+`contracts.references <list-ordinal> <row-index>` reads one metadata row from an
+explicit enabled data pack's `lists/contract_scripts.txt`. The ordinal is within
+the public `sco.content` **List** kind, including other List names; selecting a
+different name refuses. Ordinals and row/reference indices are zero-based and
+startup-scoped. Duplicate pack files and duplicate GUID rows remain independently
+addressable, in provider/file order; no pack precedence or GUID merge is inferred.
+`contracts.reference <list-ordinal> <row-index> <reference-index>` reads one
+reference, avoiding truncation of a long list. Replies that do not fit return
+`TOO_MANY`, never truncated success.
+
+The supported text format preserves the legacy reference layout:
+
+```text
+# Synthetic metadata; these are not game mission IDs or installed scripts.
+0123456789abcdef0123456789abcdef Example first.xml|-|second.xml
+abcdef0123456789abcdef0123456789 NoReferences -
+```
+
+A row has exactly 32 hexadecimal GUID characters, a space, a nonempty name token,
+a space and nonempty pipe-separated reference tokens. `-` contributes no
+reference; other tokens and duplicates retain their byte order and are display
+metadata only. LF/CRLF and a final line without LF are supported. Empty lines and
+lines beginning `#` do not count as rows. NULs, control bytes in metadata tokens,
+empty reference tokens or malformed noncomment rows refuse the whole file, even when an earlier
+selected row is valid. Limits are 1 MiB/file, 16,384 rows, 8191 bytes/line, 255
+bytes/name, 32 non-dash references/row and 255 bytes/reference. These are bounded
+consumer parsing rules, not a new native mission format or ABI.
+
+The reply identifies the source GUID as metadata, **not a public mission offer
+ID**, and reports native installation **UNKNOWN/UNAVAILABLE**. The published
+mission table has no legacy XML installation query or source-GUID-to-offer
+mapping. Copied bytes and `-` do not establish successful script installation,
+eligibility, offering, acceptance or execution. These commands never call
+mission/economy providers, ingest, `HaveScript` or private host functions. They
+remain available while consumer mutations are cancelled and require the normal
+public game-thread/live-owner content admission. Each invocation reopens and
+copies the selected item; unload retains no metadata/table/ID.
+
+There is no base-file import or new pack staging. Supply an ordinary user-authored
+data pack explicitly while the host is stopped, then restart. The retained host
+`ReadContractScripts` and its successfully-added XML availability checks remain
+unchanged. This diagnostic source slice does not migrate the retained engine or
+its native mission, wallet, offering and persistence behavior.
+
 **Pending:** production adapter, full retained mobiGlas/UI/mission-kind parity,
 15-second automatic offering, actor-death orchestration, wallet precedence/import/
 save/payout policy and reload persistence. Legacy host sources remain untouched,
-not counted as migrated. Windows/MSVC, actual loader fault guards and gameplay
-acceptance are NOT VERIFIED. Dynamic synthetic public-provider proof is separate
-from engine/provider acceptance and from durable exactly-once persistence.
+not counted as migrated. Strict MSVC 19.44 builds and all six synthetic workflow
+checks pass against the published RC1 headers, including loading the production
+DLL. The new metadata fixture fails against the prior accepted module as expected.
+The real RC1 content provider also passes a separate synthetic-pack/module check.
+Actual game loader fault guards and gameplay acceptance remain unverified.
+**Not run in game.** These checks do not establish native XML installation or
+durable exactly-once persistence.

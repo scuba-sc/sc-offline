@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "contracts.h"
+#include "reference_metadata.h"
 #include <sc_missions.h>
 #include <sc_economy.h>
 #include <sco_content.h>
@@ -8,6 +9,8 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdio>
+#include <string>
+#include <new>
 #define MEMBER(t, type, m) ((t) && (t)->size >= offsetof(type, m) + sizeof((t)->m) && (t)->m)
 namespace sco::features::contracts {
 namespace {
@@ -15,14 +18,71 @@ const sco_api* api = nullptr;
 sco_plugin* self = nullptr;
 bool cancelled = false;
 const sco_plugin_info info{sizeof(sco_plugin_info), SCO_API_MAJOR, SCO_API_MINOR, "contracts", "1.0.0", "sc-offline"};
-enum Action { Summary, Offer, Mission, Accept, Objective, Advance, Abandon, Ingest, Cancel, Resume, Balance, Apply, Receipt };
+enum Action { Summary, Offer, Mission, Accept, Objective, Advance, Abandon, Ingest, Cancel, Resume, Balance, Apply, Receipt, References, Reference };
 struct Spec { const char* name; Action action; uint32_t nargs; };
-const Spec specs[] = {{"contracts.status", Summary, 0}, {"contracts.offer", Offer, 1}, {"contracts.mission", Mission, 1}, {"contracts.accept", Accept, 2}, {"contracts.objective", Objective, 3}, {"contracts.advance", Advance, 2}, {"contracts.abandon", Abandon, 1}, {"contracts.ingest", Ingest, 1}, {"contracts.cancel", Cancel, 0}, {"contracts.resume", Resume, 0}, {"contracts.balance", Balance, 0}, {"contracts.apply", Apply, 3}, {"contracts.receipt", Receipt, 1}};
+const Spec specs[] = {{"contracts.status", Summary, 0}, {"contracts.offer", Offer, 1}, {"contracts.mission", Mission, 1}, {"contracts.accept", Accept, 2}, {"contracts.objective", Objective, 3}, {"contracts.advance", Advance, 2}, {"contracts.abandon", Abandon, 1}, {"contracts.ingest", Ingest, 1}, {"contracts.cancel", Cancel, 0}, {"contracts.resume", Resume, 0}, {"contracts.balance", Balance, 0}, {"contracts.apply", Apply, 3}, {"contracts.receipt", Receipt, 1}, {"contracts.references", References, 2}, {"contracts.reference", Reference, 3}};
 const sco_arg_def defs[] = {{"id_or_index", SCO_ARG_INT, 0, "Nonnegative offer index or positive mission ID"}, {"key_or_phase", SCO_ARG_INT, 0, "Receipt key or expected phase"}, {"objective", SCO_ARG_INT, 0, "Expected objective"}};
+const sco_arg_def referenceDefs[] = {{"list_ordinal", SCO_ARG_INT, 0, "Startup-scoped public List ordinal for lists/contract_scripts.txt"}, {"row_index", SCO_ARG_INT, 0, "Zero-based metadata row; comments/blank lines excluded"}, {"reference_index", SCO_ARG_INT, 0, "Zero-based non-dash reference; no native installation claim"}};
 template<class T> const T* Service(const char* name, uint32_t version) {
     const void* table = nullptr;
     if (!MEMBER(api, sco_api, query_service) || !self || api->query_service(name, version, &table) != SCO_OK) return nullptr;
     return static_cast<const T*>(table);
+}
+sco_result MetadataReply(sco_result result, const char* text, char* reply, uint32_t capacity) {
+    if (std::strlen(text) >= capacity) {
+        std::snprintf(reply, capacity, "Metadata reply buffer too small");
+        return SCO_TOO_MANY;
+    }
+    std::memcpy(reply, text, std::strlen(text) + 1);
+    return result;
+}
+sco_result ReadReferences(const sco_arg* args, bool one, char* reply, uint32_t capacity) {
+    auto fail = [&](sco_result r, const char* why) { return MetadataReply(r, why, reply, capacity); };
+    if (args[0].v.i >= SCO_CONTENT_MAX_ITEMS || args[1].v.i >= metadata::kMaxRows ||
+        (one && args[2].v.i >= metadata::kMaxReferences))
+        return fail(SCO_BAD_ARG, "Metadata index exceeds its bound; native installation UNKNOWN");
+    const auto* content = Service<sco_content_v1>(SCO_CONTENT_NAME, SCO_CONTENT_VERSION_1_0);
+    if (!MEMBER(content, sco_content_v1, item) || !MEMBER(content, sco_content_v1, read))
+        return fail(SCO_UNAVAILABLE, "Copied reference metadata unavailable; native installation UNKNOWN; no private fallback");
+    sco_content_item item{}; item.size = sizeof(item);
+    auto r = content->item(self, SCO_CONTENT_LIST, static_cast<uint32_t>(args[0].v.i), &item);
+    if (r != SCO_OK) return fail(r, "Metadata List ordinal unavailable; native installation UNKNOWN");
+    if (item.size < sizeof(item) || item.kind != SCO_CONTENT_LIST || !item.id ||
+        !std::memchr(item.name, 0, sizeof(item.name)) || !std::memchr(item.pack, 0, sizeof(item.pack)) ||
+        !item.pack[0] || std::strcmp(item.name, "lists/contract_scripts.txt"))
+        return fail(SCO_BAD_ARG, "Select an exact lists/contract_scripts.txt List record; native installation UNKNOWN");
+    uint32_t needed = 0;
+    r = content->read(self, item.id, nullptr, &needed);
+    if (!((r == SCO_TOO_MANY && needed > 0) || (r == SCO_OK && needed == 0)))
+        return fail(r == SCO_OK || r == SCO_TOO_MANY ? SCO_FAILED : r, "Metadata size unavailable; native installation UNKNOWN");
+    if (needed > SCO_CONTENT_MAX_FILE_BYTES)
+        return fail(SCO_TOO_MANY, "Metadata file exceeds 1 MiB; native installation UNKNOWN");
+    try {
+        std::string bytes(needed, '\0');
+        uint32_t written = needed;
+        if (needed) {
+            r = content->read(self, item.id, bytes.data(), &written);
+            if (r != SCO_OK) return fail(r, "Metadata read refused; native installation UNKNOWN");
+        }
+        if (written != needed) return fail(SCO_FAILED, "Metadata byte count changed; native installation UNKNOWN");
+        metadata::Row row{};
+        const auto parsed = metadata::Parse(bytes, static_cast<uint32_t>(args[1].v.i), row);
+        if (parsed == metadata::Result::Malformed) return fail(SCO_BAD_ARG, "Malformed metadata file; no partial row result; native installation UNKNOWN");
+        if (parsed == metadata::Result::Limit) return fail(SCO_TOO_MANY, "Metadata parser limit exceeded; no partial row result; native installation UNKNOWN");
+        if (parsed == metadata::Result::NotFound) return fail(SCO_NOT_FOUND, "Metadata row not found; native installation UNKNOWN");
+        char text[1024]{};
+        if (one) {
+            const auto index = static_cast<uint32_t>(args[2].v.i);
+            if (index >= row.count) return fail(SCO_NOT_FOUND, "Metadata reference not found; dash means no reference; native installation UNKNOWN");
+            const auto ref = row.references[index];
+            std::snprintf(text, sizeof(text), "Pack %s row %lld source GUID %.*s reference %u: %.*s; metadata only; native installation UNKNOWN/UNAVAILABLE (no public XML-installation query)", item.pack, static_cast<long long>(args[1].v.i), 32, row.guid.data(), index, static_cast<int>(ref.size()), ref.data());
+        } else {
+            std::snprintf(text, sizeof(text), "Pack %s row %lld source GUID %.*s name %.*s references %u; metadata only, not a mission offer ID; native installation UNKNOWN/UNAVAILABLE (no public XML-installation query)", item.pack, static_cast<long long>(args[1].v.i), 32, row.guid.data(), static_cast<int>(row.name.size()), row.name.data(), row.count);
+        }
+        return fail(SCO_OK, text);
+    } catch (const std::bad_alloc&) {
+        return fail(SCO_TOO_MANY, "Metadata copy allocation refused; native installation UNKNOWN");
+    }
 }
 bool MissionPath(const char* name, size_t capacity) {
     const void* end = std::memchr(name, 0, capacity);
@@ -54,8 +114,12 @@ sco_result Execute(const sco_arg* args, uint32_t count, void* context, char* rep
     std::snprintf(reply, capacity, "Contracts provider unavailable; no private fallback");
     if (!api || !self) return SCO_UNAVAILABLE;
     const auto& spec = *static_cast<const Spec*>(context);
+    if (spec.action == References || spec.action == Reference)
+        std::snprintf(reply, capacity, "Invalid metadata indices; native installation UNKNOWN");
     if (count != spec.nargs || (count && !args)) return SCO_BAD_ARG;
     for (uint32_t i = 0; i < count; ++i) if (args[i].type != SCO_ARG_INT || (args[i].v.i < 0 && !(spec.action == Apply && i == 2))) return SCO_BAD_ARG;
+    if (spec.action == References || spec.action == Reference)
+        return ReadReferences(args, spec.action == Reference, reply, capacity);
     if (spec.action == Cancel || spec.action == Resume) {
         cancelled = spec.action == Cancel;
         std::snprintf(reply, capacity, cancelled ? "Consumer mutations cancelled; receipts preserved" : "Consumer resumed; provider admission still required");
@@ -173,7 +237,8 @@ sco_result Load(const sco_api* host, sco_plugin* owner) {
     if (!owner || !MEMBER(host, sco_api, query_service) || !MEMBER(host, sco_api, register_command) || host->major != SCO_API_MAJOR || host->minor < SCO_API_MINOR) return SCO_UNAVAILABLE;
     api = host; self = owner; cancelled = false;
     for (const auto& spec : specs) {
-        const sco_command command{sizeof(sco_command), 0, spec.name, spec.name, "Guarded public offline contracts boundary", nullptr, spec.nargs ? defs : nullptr, spec.nargs, sizeof(sco_arg_def), Execute, const_cast<Spec*>(&spec)};
+        const auto* arguments = spec.action == References || spec.action == Reference ? referenceDefs : defs;
+        const sco_command command{sizeof(sco_command), 0, spec.name, spec.name, "Guarded public offline contracts boundary", nullptr, spec.nargs ? arguments : nullptr, spec.nargs, sizeof(sco_arg_def), Execute, const_cast<Spec*>(&spec)};
         sco_result r = api->register_command(self, &command);
         if (r != SCO_OK) { api = nullptr; self = nullptr; return r; }
     }
