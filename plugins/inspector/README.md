@@ -116,3 +116,4 @@ and leave launcher/EAC/online refusal unchanged in this step. No bypass, remote
 console or runtime MCP control is authorized. Project licensing/provenance is
 unchanged; use the root [LICENSE](../../LICENSE) and upstream SDK notices, not an
 assumption that the four MIT wire headers license the entire SDK/plugin as MIT.
+The optional `language` setting belongs to each Inspector plugin, independently of the launcher. `en` is the default; `ru` translates fixed native panel labels and the Lua command title/help. Missing settings, unsupported choices or an unavailable service use English. Native labels refresh on a `settings.changed` event when subscriptions are available; otherwise they refresh on the next panel interaction. Command metadata is registered once; reload the Lua plugin after changing its language. Native command metadata, formatted status/result text and structured diagnostics remain English. No game or glyph coverage is claimed.

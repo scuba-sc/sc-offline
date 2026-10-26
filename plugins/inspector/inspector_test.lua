@@ -1,10 +1,11 @@
 -- SPDX-License-Identifier: GPL-3.0-only
 -- Stock-Lua sandbox stand-in, not a game/runtime integration test.
 local reads = 0
-local function run(game, disabled)
+local function run(game, disabled, locale)
     local command, logged
     local sco = {
         game = game,
+        settings = locale and { get = function(name) assert(name == "language"); return locale end } or nil,
         has = function(capability) return capability ~= disabled end,
         log = function(level, text) assert(level == "info"); logged = text end,
         register_command = function(cmd) command = cmd; return true end,
@@ -14,16 +15,28 @@ local function run(game, disabled)
     assert(loadfile("plugins/inspector/inspector.lua", "t", env))()
     assert(command and command.name == "inspector_lua.read", "missing read-only command")
     assert(command.capability == nil and #(command.args or {}) == 0)
+    if locale == "ru" then
+        assert(command.title == "Данные игрока (Lua)")
+        assert(command.help == "Получить данные игрока без изменения игры")
+    else
+        assert(command.title == "Read player (Lua)")
+        assert(command.help == "Read the current player without changing the game")
+    end
     local function read()
         local text = command.fn()
         assert(type(text) == "string" and text == logged, "log/reply must agree")
         reads = reads + 1
         return text
     end
-    return read(), read, sco
+    return read(), read, sco, command
 end
 local function contains(text, field) assert(text:find(field, 1, true), "missing " .. field .. " in " .. text) end
 local text = run(nil)
+local _, _, localized_host, localized_command = run(nil, nil, "ru")
+localized_host.settings.get = function() return "en" end
+assert(localized_command.title == "Данные игрока (Lua)") -- metadata changes only on reload
+run(nil, nil, "en")
+run(nil, nil, "unsupported")
 contains(text, "actor=unavailable")
 contains(text, "entity=unavailable")
 local game = {
