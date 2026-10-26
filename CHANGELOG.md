@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Development Loadout manual slots.** Add explicit public SDK 2.4.0 RC1 weapon/attachment/multitool assignments to the optional Player panel and commands, plus guarded async submit/progress/cancel. Copied legacy catalogue ports remain unsupported; no None/clear or tool-default preservation is inferred. Synthetic public-provider tests cover refusal, partial results and job lifetime. Loadout remains outside production staging; no backend or capability default changes. **Not run in game.**
+
 - **Linux evidence is dated.** Record the reported sc-offline 0.7.0/Bazzite Wine run with its exact game/toolchain tuple, while retaining experimental status and the current SDK 2.4.0 RC1 acceptance gap. No launcher behavior changed or new game run was performed.
 
 - **Inspector snapshots on the published SDK 2.4.0 RC1.** Integrate the public consumer commands and retained widget panel from PR #147 without restoring its obsolete SDK 2.3.0 defaults or unpublished archive pin. Manual refresh and cached paging expose explicit unavailable states; missing providers remain unavailable. Refresh returns to the first page of the new snapshot, including when the inventory shrinks. Configurable proof generators retain the hosted VS 2026 default. Local synthetic checks are separate from Windows, external-host and game acceptance. Tracking: #155.

@@ -26,7 +26,8 @@ struct State {
     Lists lists; bool lists_known = false, spoilers = false, clocked = false;
     uint32_t last_read = 0, page = 0; int32_t outfit = -1, ship = 0, build = -1;
     int cvars[4]{-1,-1,-1,-1};
-    std::string filter, equip, visor; std::vector<std::string> buildables;
+    std::string filter, equip, visor, slots; std::vector<std::string> buildables;
+    uint64_t job = 0; std::vector<Piece> job_pieces;
     double height = 30, ahead = 8, speed = 30; bool sit = true;
     char status[2048]{};
 } g;
@@ -49,9 +50,9 @@ const Ship ships[]{
     {"Vanduul Stinger (AI)","VNCL_Stinger_PU_AI_VAN",300,false},
     {"Bengal (UEE)","RSI_Bengal_PU_AI_UEE",1500,false},
 };
-template<class T> const T* Open(const char* name) {
+template<class T> const T* Open(const char* name,uint32_t version=0x10000u) {
     const void* table = nullptr;
-    if (!HAS(g.api,sco_api,query_service) || g.api->query_service(name,0x10000u,&table) != SCO_OK) return nullptr;
+    if (!HAS(g.api,sco_api,query_service) || g.api->query_service(name,version,&table) != SCO_OK) return nullptr;
     return static_cast<const T*>(table);
 }
 bool Cap(const char* name) { return HAS(g.api,sco_api,has) && g.api->has(name); }
@@ -175,7 +176,8 @@ const char* Status(uint32_t s) {
         case SC_LOADOUT_ITEM_MISSING:return "item-missing"; case SC_LOADOUT_FAILED:return "failed";
         case SC_LOADOUT_UNAVAILABLE:return "unavailable"; default:return "invalid"; }
 }
-sco_result Apply(const std::vector<Piece>& pieces,char* out,uint32_t size) {
+sco_result Apply(const std::vector<Piece>& pieces,char* out,uint32_t size,uint32_t version=SC_LOADOUT_VERSION_1_0) {
+    if (g.job) return Answer(SCO_UNAVAILABLE,out,size,"Retained loadout job: inspect progress and cancel/release it before another equip request.");
     if (pieces.empty()) return Answer(SCO_BAD_ARG,out,size,"No selected pieces; unspecified slots are unchanged (not cleared/defaulted).");
     if (pieces.size()>SC_LOADOUT_MAX_ITEMS) return Answer(SCO_TOO_MANY,out,size,"More than 16 pieces: entire request refused before equip; no split/retry.");
     sc_loadout_item items[SC_LOADOUT_MAX_ITEMS]{};
@@ -189,8 +191,9 @@ sco_result Apply(const std::vector<Piece>& pieces,char* out,uint32_t size) {
         for (size_t j=0;j<i;++j) if (pieces[j].slot==p.slot) return Answer(SCO_BAD_ARG,out,size,"Duplicate logical slot: entire selection refused before equip.");
         items[i].slot=p.slot; std::memcpy(items[i].item_class,p.name.c_str(),p.name.size()+1);
     }
-    const auto* loadout=Open<sc_loadout_v1>(SC_LOADOUT_SERVICE_NAME);
-    if (!Cap("game.loadout.apply") || !HAS(loadout,sc_loadout_v1,apply)) return Answer(SCO_UNAVAILABLE,out,size,"Typed game.loadout.apply unavailable; no XML/private equip fallback.");
+    const auto* loadout=Open<sc_loadout_v1>(SC_LOADOUT_SERVICE_NAME,version);
+    if (!Cap("game.loadout.apply") || (version>=SC_LOADOUT_VERSION_1_1 && !Cap("game.loadout.weapons")) || !HAS(loadout,sc_loadout_v1,apply))
+        return Answer(SCO_UNAVAILABLE,out,size,"Required typed loadout version/method/capability unavailable; no XML/private equip fallback.");
     sc_loadout_request request{sizeof(request),static_cast<uint32_t>(pieces.size()),sizeof(sc_loadout_item),0,items};
     sc_loadout_report report{}; report.size=sizeof(report);
     const auto result=loadout->apply(g.self,&request,&report);
@@ -198,13 +201,104 @@ sco_result Apply(const std::vector<Piece>& pieces,char* out,uint32_t size) {
     if (report.size<sizeof(report) || report.count!=request.count || report.applied>report.count) return Answer(SCO_FAILED,out,size,"Invalid loadout report; state unknown, no retry.");
     uint32_t applied=0;
     for (uint32_t i=0;i<report.count;++i) {
-        if (report.slots[i].slot!=items[i].slot || report.slots[i].status>SC_LOADOUT_UNAVAILABLE) return Answer(SCO_FAILED,out,size,"Invalid slot report; state unknown, no retry.");
+        if (report.slots[i].slot!=items[i].slot || static_cast<uint32_t>(report.slots[i].status)>SC_LOADOUT_UNAVAILABLE) return Answer(SCO_FAILED,out,size,"Invalid slot report; state unknown, no retry.");
         applied+=report.slots[i].status==SC_LOADOUT_APPLIED;
     }
     if (applied!=report.applied || (result==SCO_OK && applied!=report.count) || (result==SCO_UNAVAILABLE && applied)) return Answer(SCO_FAILED,out,size,"Inconsistent loadout report; state unknown, no retry.");
     std::string message="applied="+std::to_string(applied)+"/"+std::to_string(report.count)+"; no rollback/automatic retry";
     for (uint32_t i=0;i<report.count;++i) message+="; "+pieces[i].port+"="+Status(report.slots[i].status);
     return Answer(result,out,size,message.c_str());
+}
+struct NamedSlot { const char* name; uint32_t slot; };
+// Public RC1 logical vocabulary; no legacy catalogue section or native port inference.
+const NamedSlot weapon_slots[]{
+    {"primary",SC_LOADOUT_SLOT_PRIMARY},{"sidearm",SC_LOADOUT_SLOT_SIDEARM},
+    {"primary_optic",SC_LOADOUT_SLOT_PRIMARY_OPTIC},{"primary_barrel",SC_LOADOUT_SLOT_PRIMARY_BARREL},
+    {"primary_underbarrel",SC_LOADOUT_SLOT_PRIMARY_UNDERBARREL},{"sidearm_optic",SC_LOADOUT_SLOT_SIDEARM_OPTIC},
+    {"sidearm_barrel",SC_LOADOUT_SLOT_SIDEARM_BARREL},{"sidearm_underbarrel",SC_LOADOUT_SLOT_SIDEARM_UNDERBARREL},
+    {"primary_tool_module",SC_LOADOUT_SLOT_PRIMARY_TOOL_MODULE},{"primary_tool_canister",SC_LOADOUT_SLOT_PRIMARY_TOOL_CANISTER},
+    {"primary_tool_battery",SC_LOADOUT_SLOT_PRIMARY_TOOL_BATTERY},{"sidearm_tool_module",SC_LOADOUT_SLOT_SIDEARM_TOOL_MODULE},
+    {"sidearm_tool_canister",SC_LOADOUT_SLOT_SIDEARM_TOOL_CANISTER},{"sidearm_tool_battery",SC_LOADOUT_SLOT_SIDEARM_TOOL_BATTERY},
+};
+sco_result SlotPieces(const sco_arg* args,uint32_t n,char* out,uint32_t size,std::vector<Piece>& pieces) {
+    const auto refuse=[&] {
+        return Answer(SCO_BAD_ARG,out,size,"Manual slots refused: use unique public slot=Class pairs (at most 2047 bytes). Classes need 1-95 ASCII letters, digits or underscores. None/clear is unsupported; no new request.");
+    };
+    const auto r=Validate(args,n,1,out,size); if (r!=SCO_OK) return r==SCO_BAD_ARG ? refuse() : r;
+    if (!String(args[0],2047) || !*args[0].v.s) return refuse();
+    std::string_view input=args[0].v.s;
+    while (!input.empty()) {
+        const auto comma=input.find(','); const auto assignment=input.substr(0,comma);
+        const auto equal=assignment.find('='); if (equal==assignment.npos) return refuse();
+        const auto name=Trim(assignment.substr(0,equal)),cls=Trim(assignment.substr(equal+1));
+        if (!Class(cls) || Same(cls,"none")) return refuse();
+        uint32_t slot=0;
+        for (const auto& entry:weapon_slots) if (name==entry.name) slot=entry.slot;
+        if (!slot) return refuse();
+        for (const auto& piece:pieces) if (piece.slot==slot) return refuse();
+        pieces.push_back({name,cls,slot});
+        if (comma==input.npos) break;
+        input.remove_prefix(comma+1); if (input.empty()) return refuse();
+    }
+    // Parents 8/9 precede every attachment in the same batch, regardless of input order.
+    std::sort(pieces.begin(),pieces.end(),[](const Piece& a,const Piece& b) { return a.slot<b.slot; });
+    return SCO_OK;
+}
+sco_result Slots(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
+    std::vector<Piece> pieces; const auto r=SlotPieces(args,n,out,size,pieces);
+    return r==SCO_OK ? Apply(pieces,out,size,SC_LOADOUT_VERSION_1_1) : r;
+}
+sco_result Submit(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
+    std::vector<Piece> pieces; const auto parsed=SlotPieces(args,n,out,size,pieces); if (parsed!=SCO_OK) return parsed;
+    if (g.job) return Answer(SCO_UNAVAILABLE,out,size,"One retained job: inspect progress and cancel/release before submitting another batch.");
+    const auto* service=Open<sc_loadout_v1_2>(SC_LOADOUT_SERVICE_NAME,SC_LOADOUT_VERSION_1_2);
+    if (!Cap("game.loadout.async") || !HAS(service,sc_loadout_v1_2,submit) ||
+        !HAS(service,sc_loadout_v1_2,status) || !HAS(service,sc_loadout_v1_2,cancel))
+        return Answer(SCO_UNAVAILABLE,out,size,"Loadout 1.2 job lifecycle/capabilities unavailable; no synchronous fallback.");
+    sc_loadout_item items[SC_LOADOUT_MAX_ITEMS]{};
+    for (size_t i=0;i<pieces.size();++i) { items[i].slot=pieces[i].slot; std::memcpy(items[i].item_class,pieces[i].name.c_str(),pieces[i].name.size()+1); }
+    sc_loadout_request request{sizeof(request),static_cast<uint32_t>(pieces.size()),sizeof(sc_loadout_item),0,items};
+    uint64_t job=0; const auto result=service->submit(g.self,&request,&job);
+    if (result!=SCO_OK) return Answer(result,out,size,"Loadout submit refused; no retry or synchronous fallback.");
+    if (!job) return Answer(SCO_FAILED,out,size,"Invalid zero job id; state unknown, no retry.");
+    g.job=job; g.job_pieces=std::move(pieces);
+    return Answer(SCO_OK,out,size,"Loadout job submitted, not confirmed equipped. Use loadout.progress; cancel releases pending work without rollback.");
+}
+sco_result Progress(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
+    const auto valid=Validate(args,n,0,out,size); if (valid!=SCO_OK) return valid;
+    if (!g.job) return Answer(SCO_NOT_FOUND,out,size,"No retained loadout job.");
+    const auto* service=Open<sc_loadout_v1_2>(SC_LOADOUT_SERVICE_NAME,SC_LOADOUT_VERSION_1_2);
+    if (!HAS(service,sc_loadout_v1_2,status)) return Answer(SCO_UNAVAILABLE,out,size,"Loadout 1.2 status unavailable; job retained for cancellation, no retry.");
+    sc_loadout_job_report progress{}; progress.size=sizeof(progress); progress.report.size=sizeof(progress.report);
+    const auto result=service->status(g.self,g.job,&progress);
+    if (result!=SCO_OK) return Answer(result,out,size,"Loadout status refused; no completion inferred or automatic retry.");
+    const auto& report=progress.report;
+    if (progress.size<sizeof(progress) || report.size<sizeof(report) || report.count!=g.job_pieces.size() ||
+        progress.completed>report.count || report.applied>progress.completed || static_cast<uint32_t>(progress.state)>SC_LOADOUT_JOB_FAILED ||
+        (progress.state==SC_LOADOUT_JOB_COMPLETE && progress.completed!=report.count))
+        return Answer(SCO_FAILED,out,size,"Invalid loadout progress; state unknown, retain job for cancellation.");
+    uint32_t applied=0;
+    for (uint32_t i=0;i<progress.completed;++i) {
+        if (report.slots[i].slot!=g.job_pieces[i].slot || static_cast<uint32_t>(report.slots[i].status)>SC_LOADOUT_UNAVAILABLE)
+            return Answer(SCO_FAILED,out,size,"Invalid completed slot; state unknown, retain job for cancellation.");
+        applied+=report.slots[i].status==SC_LOADOUT_APPLIED;
+    }
+    if (applied!=report.applied) return Answer(SCO_FAILED,out,size,"Inconsistent completed count; no success inferred.");
+    const char* state=progress.state==SC_LOADOUT_JOB_PENDING ? "pending" : progress.state==SC_LOADOUT_JOB_COMPLETE ? "complete" : "failed";
+    std::string message=std::string(state)+"; completed="+std::to_string(progress.completed)+"/"+std::to_string(report.count)+
+        "; applied="+std::to_string(applied)+"/"+std::to_string(report.count)+"; no rollback/automatic retry; cancel to release retained job";
+    for (uint32_t i=0;i<progress.completed;++i) message+="; "+g.job_pieces[i].port+"="+Status(report.slots[i].status);
+    return Answer(result,out,size,message.c_str());
+}
+sco_result Cancel(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
+    const auto valid=Validate(args,n,0,out,size); if (valid!=SCO_OK) return valid;
+    if (!g.job) return Answer(SCO_NOT_FOUND,out,size,"No retained loadout job.");
+    const auto* service=Open<sc_loadout_v1_2>(SC_LOADOUT_SERVICE_NAME,SC_LOADOUT_VERSION_1_2);
+    if (!HAS(service,sc_loadout_v1_2,cancel)) return Answer(SCO_UNAVAILABLE,out,size,"Loadout cancellation unavailable; job retained, owner unload remains the host cleanup boundary.");
+    // Cleanup remains callable after mutation capability revocation; never undo confirmed equipment.
+    const auto result=service->cancel(g.self,g.job);
+    if (result==SCO_OK || result==SCO_NOT_FOUND) { g.job=0; g.job_pieces.clear(); }
+    return Answer(result,out,size,result==SCO_OK ? "Loadout job released; confirmed equipment remains, no rollback." : "Loadout cancellation refused/not found; no rollback or retry.");
 }
 sco_result Equip(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     auto r=Validate(args,n,1,out,size); if (r!=SCO_OK) return r;
@@ -352,6 +446,11 @@ void Event(const char* panel,const sco_widget_event* e,void*) {
         case 6: if (e->kind==SCO_WIDGET_BUTTON) { auto a=Text(g.equip.c_str()); Equip(&a,1,nullptr,nullptr,0); } break;
         case 7: if (e->kind==SCO_WIDGET_BUTTON) { g.equip.clear(); } break;
         case 8: if (e->kind==SCO_WIDGET_BUTTON) Reload(nullptr,0,nullptr,nullptr,0); break;
+        case 20: string(g.slots,255); break;
+        case 21: if (e->kind==SCO_WIDGET_BUTTON) { auto a=Text(g.slots.c_str()); Slots(&a,1,nullptr,nullptr,0); } break;
+        case 22: if (e->kind==SCO_WIDGET_BUTTON) { auto a=Text(g.slots.c_str()); Submit(&a,1,nullptr,nullptr,0); } break;
+        case 23: if (e->kind==SCO_WIDGET_BUTTON) Progress(nullptr,0,nullptr,nullptr,0); break;
+        case 24: if (e->kind==SCO_WIDGET_BUTTON) Cancel(nullptr,0,nullptr,nullptr,0); break;
         case 10: case 11: case 12: if (e->kind==SCO_WIDGET_TOGGLE && (e->value==0 || e->value==1)) {
             auto a=Boolean(e->value!=0); Forward(e->node_id==10 ? "creative.noclip" : e->node_id==11 ? "creative.god" : "creative.ammo",&a,1,nullptr,0);
         } break;
@@ -408,6 +507,12 @@ void Publish() {
     add(SCO_WIDGET_TEXT_INPUT,5,"Selected classes (commas/spaces)").text=g.equip.size()<=255 ? g.equip.c_str() : "Selection exceeds UI field; use loadout.equip command or clear";
     add(SCO_WIDGET_BUTTON,6,"Equip selected gear"); add(SCO_WIDGET_BUTTON,7,"Clear selection"); add(SCO_WIDGET_BUTTON,8,"Reload copied lists");
     add(SCO_WIDGET_LABEL,9,"Unspecified slots stay unchanged. Unsupported legacy slots refuse the whole selection. No defaults/XML fallback.");
+    add(SCO_WIDGET_TEXT_INPUT,20,"Manual public slots: primary_optic=Class,sidearm_barrel=Class").text=g.slots.c_str();
+    add(SCO_WIDGET_BUTTON,21,"Apply manual slots (requires loadout 1.1)",g.job ? SCO_WIDGET_DISABLED : 0u);
+    add(SCO_WIDGET_BUTTON,22,"Submit manual slots job (requires 1.2)",g.job ? SCO_WIDGET_DISABLED : 0u);
+    add(SCO_WIDGET_BUTTON,23,"Inspect loadout job",g.job ? 0u : SCO_WIDGET_DISABLED);
+    add(SCO_WIDGET_BUTTON,24,"Cancel/release loadout job",g.job ? 0u : SCO_WIDGET_DISABLED);
+    add(SCO_WIDGET_LABEL,25,"Use known item classes. Unspecified slots stay unchanged; None/clear is unavailable.");
     const auto* creative=Open<sc_creative_v1>(SC_CREATIVE_SERVICE_NAME);
     uint32_t creative_flags=0;
     const bool creative_known=HAS(creative,sc_creative_v1,state) && creative->state(g.self,&creative_flags)==SCO_OK;
@@ -473,6 +578,7 @@ sco_result Load(const sco_api* api,sco_plugin* self) {
     const sco_arg_def write[]{Arg("name",SCO_ARG_STRING),Arg("on",SCO_ARG_BOOL)};
     struct Registration { const char* name; sco_command_fn fn; const sco_arg_def* args; uint32_t count; };
     const Registration commands[]{ {"loadout.equip",Equip,&items,1},{"loadout.wear",Wear,&outfit,1},{"loadout.spoilers",Spoilers,&spoilers,1},
+        {"loadout.slots",Slots,&items,1},{"loadout.submit",Submit,&items,1},{"loadout.progress",Progress,nullptr,0},{"loadout.cancel",Cancel,nullptr,0},
         {"loadout.visor",Visor,&visor,1},{"loadout.items",Items,&filter,1},{"loadout.reload_lists",Reload,nullptr,0},
         {"loadout.cvars",Cvars,nullptr,0},{"loadout.cvar_set",Refuse,write,2},{"loadout.console",Refuse,&items,1},
         {"loadout.spawn",Spawn,spawn,4},{"loadout.build",Build,build,2} };
@@ -484,6 +590,7 @@ sco_result Load(const sco_api* api,sco_plugin* self) {
 }
 void Unload() {
     if (!g.api) return;
+    if (g.job) (void)Cancel(nullptr,0,nullptr,nullptr,0);
     const auto* w=Open<sco_widgets_v1>(SCO_WIDGETS_NAME);
     if (HAS(w,sco_widgets_v1,remove_panel)) { (void)w->remove_panel(g.self,"loadout.player"); (void)w->remove_panel(g.self,"loadout.sq42"); }
     if (HAS(g.api,sco_api,unsubscribe)) (void)g.api->unsubscribe(g.self,"tick",Tick);

@@ -34,8 +34,9 @@ the release workflow does not yet stage loadout. Do not substitute this local bu
    is stopped; enable `plugins = on`. macOS/Linux modules are development
    artifacts, not Windows-loadable game DLLs. No tag/release is authorized here.
 
-The newer host must publish `game.loadout` 1.0, `game.cvars` 1.0 and `sco.content`
-1.0. Missing/unready services leave commands available with explicit refusal.
+The copied-list routes use `game.loadout` 1.0, `game.cvars` 1.0 and `sco.content`
+1.0. Explicit weapon/tool slots require loadout 1.1 for synchronous apply or 1.2
+for jobs. Missing/unready services leave commands available with explicit refusal.
 Optional `sco.widgets` 1.0 adds renderer-neutral Player/SQ42 panels; without it
 use commands. Actual product renderer integration remains a separate dependency.
 Native code is trusted, not sandboxed. Commands/tick/widget callbacks use only the
@@ -51,6 +52,10 @@ public game-thread routes, reopen tables, and guard complete pointer extents/nul
 | `loadout.spoilers` | Bool; session-only SQ42 confirmation, reset on unload/reload |
 | `loadout.wear` | Exact outfit label, case-insensitive; requires spoiler confirmation |
 | `loadout.visor` | Explicit visor item-class string; typed logical VISOR request, no implicit face/lens/default replacement |
+| `loadout.slots` | Explicit comma-separated `slot=Class` assignments, at most one per named public weapon/tool slot; synchronous 1.1 apply |
+| `loadout.submit` | The same explicit assignments; submit one retained 1.2 job, without synchronous fallback |
+| `loadout.progress` | Inspect the retained job's completed prefix and per-slot results; does not advance it |
+| `loadout.cancel` | Cancel/release the retained job; confirmed equipment remains equipped |
 | `loadout.cvars` | Refresh and report four real public observations; failed/missing/invalid reads are `unknown/unavailable`, never silently off |
 | `loadout.cvar_set` | Name string, bool; **always refused** |
 | `loadout.console` | Command string; **always refused** |
@@ -64,6 +69,46 @@ The Player panel invokes optional creative commands and displays the public
 provider's requested-state flags, not an invented engine-state observation.
 SQ42 ship labels/reference classes are retained; enemy-wing orchestration remains
 deferred rather than silently spawning an ordinary ship as a substitute.
+
+### Manual weapon and tool slots
+
+The development Player panel has a manual assignment field (255 bytes) and apply,
+submit, progress and cancel buttons. Commands accept up to 2047 bytes. For example,
+`primary=KnownWeaponClass,primary_optic=KnownOpticClass` selects a parent and optic;
+the names here are syntax examples, not an item catalogue. The caller must supply
+known classes; only the provider can report whether they exist or can be equipped.
+This route does not require copied lists or infer a class's slot from those lists.
+
+The case-sensitive slot names are the published logical vocabulary:
+
+| Parent | Weapon | Attachments | Multitool |
+|---|---|---|---|
+| Primary | `primary` | `primary_optic`, `primary_barrel`, `primary_underbarrel` | `primary_tool_module`, `primary_tool_canister`, `primary_tool_battery` |
+| Sidearm | `sidearm` | `sidearm_optic`, `sidearm_barrel`, `sidearm_underbarrel` | `sidearm_tool_module`, `sidearm_tool_canister`, `sidearm_tool_battery` |
+
+Classes require 1–95 ASCII `[A-Za-z0-9_]` bytes. Unknown slots, duplicate slots,
+empty classes, `None` (case-insensitive) and malformed assignments refuse the
+whole batch before mutation. Whitespace around names/classes is ignored. The
+consumer orders assignments by public slot number so both parent weapons precede
+attachments. Omitting a parent targets its currently equipped item. Replacing a
+parent does not preserve attachments; spawned defaults are engine-defined. There
+is no remove/clear operation and no promise to preserve an SRT tool's built-in
+configuration. Existing ambiguous legacy catalogue/outfit ports remain unsupported.
+
+Synchronous apply queries 1.1 and requires `game.loadout.apply` plus
+`game.loadout.weapons`. Job submission queries 1.2, checks complete non-null
+submit/status/cancel members and requires **`game.loadout.async`**, independently
+of those synchronous capabilities. No route falls back to a lower version or
+another mutation method. Table publication alone does not enable a backend.
+
+One job is retained until explicit cancellation/release, including after terminal
+status. While retained, another submit or synchronous equip refuses. Progress
+reports only completed slots: pending is not equip confirmation, and complete
+does not mean every slot applied. Failed/partial results are displayed without
+retry or rollback. Status/cancel remain usable after mutation-capability revocation.
+Unload attempts cancellation while the owner is live, then clears local state;
+if the service has withdrawn or cancellation refuses, host owner-unload/stop is
+the remaining cleanup boundary. No confirmed equipment is removed on unload.
 
 ## Copied list formats and refusal
 
@@ -87,14 +132,14 @@ Consumer mappings select logical UNDERSUIT, HEAD (helmet), TORSO, ARMS, LEGS,
 BACKPACK and VISOR. These are **not certified engine port mappings**. Unknown
 legacy sections/ports remain visible; any selected unknown port refuses the
 whole request before mutation. Duplicate logical slots or more than 16 pieces
-also refuse before mutation; batches are never silently split. Weapons, ammo,
+also refuse before mutation; batches are never silently split. Legacy weapon, ammo,
 grenades, clothing, body/head/eyes/hair/accessories/material variants, implicit
 magazine/default face/undersuit/medpen synthesis and old empty-slot clearing need
 separate consumer mappings, additional public contract coverage where absent,
-and validation. The pinned SDK already defines
-weapon/multitool slots in `game.loadout` 1.1 and asynchronous jobs in 1.2; this
-consumer still queries 1.0 and uses its synchronous armor/visor subset. That
-public contract availability does not verify native equip or attachment behavior.
+and validation. Copied-list/outfit selections still query 1.0 and use the
+synchronous armor/visor subset. The separate manual route uses the published
+1.1/1.2 contracts without assigning meanings to old catalogue ports. Public
+contract availability does not verify native equip or attachment behavior.
 Most legacy outfits therefore refuse; this is not full feature-parity acceptance.
 The inactive original sources remain
 under `legacy/loadout` for reference, not as a runtime escape hatch.
@@ -142,9 +187,19 @@ cmake --build <plugin-build> --config Release --target loadout-widget-test
 ctest --test-dir <plugin-build> -C Release -R '^loadout-widget-workflow$' --output-on-failure
 ```
 
-It links the feature source
-against public headers and synthetic callbacks; it does not load the native DLL
+These tests link the feature source
+against public headers and synthetic callbacks; they do not load the native DLL
 or exercise the real widgets service/renderer.
+
+The manual route's `loadout-public-route` test also uses the exact published RC1
+headers. It covers all 14 public weapon/tool slots, parent-first ordering, input
+refusals, old/missing providers, physically truncated/null members, independent
+async capability, copied submit buffers, partial/malformed reports, retained jobs,
+provider withdrawal, cancellation after capability revocation and unload/reload.
+It failed on the unchanged consumer because the new command was absent. Run both
+focused workflows with `ctest --test-dir <plugin-build> -C Release --output-on-failure`.
+This is consumer behavior against synthetic providers, not native slot mapping,
+Windows/MSVC ABI, actual async resource cleanup, renderer or game acceptance.
 
 **Canonical suites, loadout checker/dependency proofs, Windows host/MSVC/DLL
 calling conventions, renderer, runtime reload/cleanup and actual gameplay
@@ -153,7 +208,7 @@ probe loaded the actual native module against synthetic public cvar callbacks:
 four exact-name 0/1 reads, absent/failed reads invalidating prior values,
 write/console refusal without querying a write service, synchronous external
 provider result/reply preservation, and unload twice passed. This is not host
-loader/gameplay evidence; partial batches, parsing and unsupported-slot behavior
-were not dynamically exercised. Production G6/G7 adapters are unverified/fail-closed; four actual Windows game
+loader/gameplay evidence; that earlier probe did not exercise partial batches or
+list parsing. Production G6/G7 adapters are unverified/fail-closed; four actual Windows game
 values, outfits/head/visor mapping and no duplication/corruption remain owner
 acceptance work. Release staging is also pending (SDK 2.4.0 release candidate 1 is published and pinned).
