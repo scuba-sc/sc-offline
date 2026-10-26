@@ -4,6 +4,29 @@
 
 - **Development Loadout manual slots.** Add explicit public SDK 2.4.0 RC1 weapon/attachment/multitool assignments to the optional Player panel and commands, plus guarded async submit/progress/cancel. Copied legacy catalogue ports remain unsupported; no None/clear or tool-default preservation is inferred. Synthetic public-provider tests cover refusal, partial results and job lifetime. Loadout remains outside production staging; no backend or capability default changes. **Not run in game.**
 
+- **Keep your current Crew seat.** If you queue a move to another seat and then
+  select the seat you are already in, Crew now cancels its older queued move.
+  This stops future consumer retries; it does not undo a native link already
+  accepted by the game. Checked with synthetic services; **not run in game**.
+- **Development Loadout panel.** Empty gear, outfit or buildable lists no longer
+  cause a widget-panel replacement to be rejected, including after SQ42 spoiler
+  confirmation. Loadout remains outside release staging; this does not add slot
+  mappings or verify native equip behavior. Checked with synthetic services;
+  **not run in game**.
+
+- **Clarify legacy startup settings.** The launcher still reads and passes
+  `start` and `start_ship`, but the current external spawn module refuses
+  destination startup. INI comments and launcher docs no longer promise the old
+  timed Daymar arrival or boarding. Wallet precedence is unchanged; this does
+  not add a startup feature or confirm the original settings report in game.
+
+- **Resize the menu.** Drag its native window edges or corners; the size is saved
+  in `data/menu-window.ini` when the drag finishes and restored on the next run.
+  The window is bounded by the monitor work area, including smaller displays.
+  Long tab titles keep their width and scroll instead of shrinking. Headless
+  geometry, file/restart and actual ImGui overflow checks cover the change;
+  Windows rendering and game acceptance remain pending. **Not run in game.**
+
 - **Linux evidence is dated.** Record the reported sc-offline 0.7.0/Bazzite Wine run with its exact game/toolchain tuple, while retaining experimental status and the current SDK 2.4.0 RC1 acceptance gap. No launcher behavior changed or new game run was performed.
 
 - **Inspector snapshots on the published SDK 2.4.0 RC1.** Integrate the public consumer commands and retained widget panel from PR #147 without restoring its obsolete SDK 2.3.0 defaults or unpublished archive pin. Manual refresh and cached paging expose explicit unavailable states; missing providers remain unavailable. Refresh returns to the first page of the new snapshot, including when the inventory shrinks. Configurable proof generators retain the hosted VS 2026 default. Local synthetic checks are separate from Windows, external-host and game acceptance. Tracking: #155.

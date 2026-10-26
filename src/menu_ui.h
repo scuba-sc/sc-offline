@@ -5,6 +5,8 @@
 #include "third_party/imgui/imgui.h"
 #include <cstddef>
 
+constexpr ImGuiTabBarFlags kMenuTabBarFlags = ImGuiTabBarFlags_FittingPolicyScroll;
+
 extern const ImVec4 kMuted;      // hints
 extern const ImVec4 kLeaf;       // accent
 extern const ImVec4 kLeafDeep;

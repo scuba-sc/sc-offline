@@ -6,6 +6,7 @@
 #include "menu.h"
 #include "menu_imgui.h"
 #include "menu_ui.h"
+#include "menu_window.h"
 #include "common.h"
 #include "version.h"
 #include <atomic>
@@ -40,7 +41,41 @@ static IDXGISwapChain*         g_swap;
 static ID3D11RenderTargetView* g_rtv;
 static UINT                    g_resizeW, g_resizeH;
 
-constexpr int kMenuW = 600, kMenuH = 900;
+namespace Window = sc_offline::menu_window;
+static Window::Size g_menuSize;
+static char g_menuSizePath[MAX_PATH];
+static bool g_clipped = false;
+static RECT g_clipRect = {};
+
+static Window::Bounds MenuBounds(RECT rect) {
+    return {static_cast<int>(rect.left), static_cast<int>(rect.top), static_cast<int>(rect.right), static_cast<int>(rect.bottom)};
+}
+
+static Window::Size MenuSize(RECT rect) {
+    return {static_cast<int>(rect.right - rect.left), static_cast<int>(rect.bottom - rect.top)};
+}
+
+static RECT MenuWorkArea(HWND window) {
+    MONITORINFO monitor = {sizeof(monitor)};
+    if (GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor)) return monitor.rcWork;
+    RECT work = {0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)};
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+    return work;
+}
+
+static RECT FitMenu(Window::Size size, int x, int y, HWND monitorWindow) {
+    const RECT work = MenuWorkArea(monitorWindow);
+    const auto fit = Window::Fit(size, x, y, MenuBounds(work));
+    return {fit.left, fit.top, fit.right, fit.bottom};
+}
+
+static void RememberMenuSize(HWND window) {
+    RECT rect{};
+    if (!GetWindowRect(window, &rect)) return;
+    g_menuSize = MenuSize(rect);
+    if (g_menuSizePath[0] && !Window::Save(g_menuSizePath, g_menuSize))
+        Log("[menu] couldn't save menu-window.ini; size will not persist");
+}
 
 static void CreateRenderTarget() {
     ID3D11Texture2D* back = nullptr;
@@ -82,6 +117,27 @@ static LRESULT CALLBACK MenuWndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
     // game thread has it until the frame is built.
     if (!GameThreadBuilding() && ImGui_ImplWin32_WndProcHandler(h, msg, w, l)) return 1;
     switch (msg) {
+    case WM_GETMINMAXINFO: {
+        const RECT work = MenuWorkArea(h);
+        const auto minimum = Window::Fit({Window::kMinWidth, Window::kMinHeight}, work.left, work.top,
+                                         MenuBounds(work));
+        auto* limits = reinterpret_cast<MINMAXINFO*>(l);
+        limits->ptMinTrackSize = {minimum.right - minimum.left, minimum.bottom - minimum.top};
+        limits->ptMaxTrackSize = {work.right - work.left, work.bottom - work.top};
+        return 0;
+    }
+    case WM_SIZING: {
+        auto* rect = reinterpret_cast<RECT*>(l);
+        *rect = FitMenu(MenuSize(*rect), rect->left, rect->top, h);
+        return TRUE;
+    }
+    case WM_ENTERSIZEMOVE:
+        ClipCursor(nullptr);
+        g_clipped = false;
+        return 0;
+    case WM_EXITSIZEMOVE:
+        RememberMenuSize(h);
+        return 0;
     case WM_SIZE:
         if (w != SIZE_MINIMIZED) { g_resizeW = LOWORD(l); g_resizeH = HIWORD(l); }
         return 0;
@@ -101,9 +157,6 @@ static bool OurProcessHasFocus() {
     return pid == GetCurrentProcessId();
 }
 
-static bool g_clipped = false;
-static RECT g_clipRect = {};   // the rect last clipped to
-
 static void KeepCursorInMenu() {
     if (GetForegroundWindow() != g_wnd) {
         if (g_clipped) { ClipCursor(nullptr); g_clipped = false; }
@@ -122,9 +175,10 @@ static void ShowMenu(bool show) {
     if (show) {
         RECT r = {};
         GetWindowRect(g_game, &r);
-        SetWindowPos(g_wnd, HWND_TOPMOST, r.left + 60, r.top + 60, kMenuW, kMenuH, SWP_SHOWWINDOW);
+        const RECT fit = FitMenu(g_menuSize, r.left + 60, r.top + 60, g_game);
+        SetWindowPos(g_wnd, HWND_TOPMOST, fit.left, fit.top, fit.right - fit.left, fit.bottom - fit.top, SWP_SHOWWINDOW);
         SetForegroundWindow(g_wnd);
-        SetCursorPos(r.left + 60 + kMenuW / 2, r.top + 60 + kMenuH / 2);
+        SetCursorPos(fit.left + (fit.right - fit.left) / 2, fit.top + (fit.bottom - fit.top) / 2);
         KeepCursorInMenu();
     } else {
         ClipCursor(nullptr);
@@ -490,7 +544,7 @@ static bool DrawMenu() {
 
     const float statusHeight = ImGui::GetTextLineHeight() * 2 + 18;
     const float bodyHeight = -(statusHeight + ImGui::GetStyle().ItemSpacing.y);
-    if (ImGui::BeginTabBar("##tabs", ImGuiTabBarFlags_FittingPolicyShrink)) {
+    if (ImGui::BeginTabBar("##tabs", kMenuTabBarFlags)) {
         auto body = [&](auto draw) {
             if (ImGui::BeginChild("##body", ImVec2(0, bodyHeight))) draw();
             ImGui::EndChild();
@@ -612,14 +666,24 @@ static void WaitWhileBuilding() {
 }
 
 static DWORD WINAPI MenuThread(LPVOID) {
+    if (ModLogSibling(g_menuSizePath, sizeof(g_menuSizePath), "menu-window.ini"))
+        g_menuSize = Window::Load(g_menuSizePath);
+    else {
+        g_menuSizePath[0] = '\0';
+        Log("[menu] size persistence unavailable: no configured mod-log directory");
+    }
+    RECT game{};
+    GetWindowRect(g_game, &game);
+    const RECT initial = FitMenu(g_menuSize, game.left + 60, game.top + 60, g_game);
     WNDCLASSEXW wc = { sizeof(wc) };
     wc.lpfnWndProc = MenuWndProc;
     wc.hInstance = GetModuleHandleW(nullptr);
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.lpszClassName = L"starcitzenofflinemods_menu";
     RegisterClassExW(&wc);
-    g_wnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, wc.lpszClassName, L"sc-offline", WS_POPUP,
-                            100, 100, kMenuW, kMenuH, nullptr, nullptr, wc.hInstance, nullptr);
+    g_wnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, wc.lpszClassName, L"sc-offline", WS_POPUP | WS_THICKFRAME,
+                            initial.left, initial.top, initial.right - initial.left, initial.bottom - initial.top,
+                            nullptr, nullptr, wc.hInstance, nullptr);
     g_frameBuilt = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     if (!g_wnd || !g_frameBuilt || !CreateDevice()) return 0;
 

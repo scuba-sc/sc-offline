@@ -281,6 +281,15 @@ Each line is `key = value`. Lines starting with `#` are comments. An unknown key
 
 There is no wallet setting: your aUEC balance is kept in `data\storage\contracts.db` and `data\wallet.txt`, which you can edit (see [Features](features.md#player)).
 
+Reading a setting does not establish that its requested game feature is available.
+The launcher retains `start` and `start_ship` and passes them to the host for
+compatibility. The current [external spawn module](../plugins/spawn/README.md)
+explicitly refuses destination startup (`spawn.startup`): it does not implement
+the G2/G3 player relocation/full-pose route. Setting `start = Daymar` therefore
+does not restore the old timed arrival or boarding feature. Legacy helper source
+is not a registered feature or a fallback. This is separate from whether the
+launcher read the INI file; game acceptance remains pending.
+
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `game` | (found automatically) | Your Star Citizen folder. You can point at `Roberts Space Industries`, at `StarCitizen`, at the channel folder, or at the folder that holds `StarCitizen`. |
@@ -290,8 +299,8 @@ There is no wallet setting: your aUEC balance is kept in `data\storage\contracts
 | `clean_logs` | `ask` | After the game closes, list this session's game logs and ask (twice) before deleting them. `off` skips it. |
 | `channel` | `LIVE` | Which install to use when `game` points above it: `LIVE`, `PTU`, `EPTU`, and so on. |
 | `boot_map` | `PU_All` | `PU_All` loads every star system, so Travel can reach Pyro and Nyx. |
-| `start_ship` | `DRAK_Cutlass_Black` | The ship used by `start = Daymar`. **Without `start = Daymar` it does nothing.** |
-| `start` | (empty) | Empty: the game's own spawn (Orison with `boot_map = PU`, a Pyro station with `PU_All`). `Daymar`: about 10 seconds after you spawn, `start_ship` is spawned over Daymar and you're put in its pilot seat. |
+| `start_ship` | `DRAK_Cutlass_Black` | Retained legacy startup ship request, parsed and passed to the host. The current external spawn module does not implement destination startup; this key does not select an ordinary menu spawn or enable boarding. |
+| `start` | (empty) | Empty leaves the game's own spawn policy. The legacy `Daymar` request is retained in configuration, but destination startup is unavailable in the current external spawn module. No timed arrival or pilot-seat guarantee. |
 | `plugins` | `on` | `on`: load plugins from `data\plugins\<id>\`. See [Plugins](features.md#plugins). |
 | `asop_fleet_list` | `ships` | Which ship list the terminals show with `asop = on`: `game` (the game's own; offline its entitlement query fails, so it's empty) or `ships` (every ship in `data\ships.txt`). |
 | `mining` / `mining_debug` (legacy) | ignored | Moved to the mining plugin enabled/debug settings, default false. Launcher warns; no automatic import. See [deliberate migration](../plugins/mining/README.md). |

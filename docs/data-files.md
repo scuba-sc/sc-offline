@@ -110,8 +110,8 @@ When one of these files is present, `src/contracts.cpp` or `src/spawner.cpp` cha
 | Variable | Effect |
 | --- | --- |
 | `SC_OFFLINE_BOOT_MAP` | The boot map, from `boot_map` (default `PU_All`). |
-| `SC_OFFLINE_START_SHIP` | The ship you start in, from `start_ship` |
-| `SC_OFFLINE_START` | From `start`. `Daymar` starts you over Daymar |
+| `SC_OFFLINE_START_SHIP` | Retained legacy startup ship request from `start_ship`; current external destination startup is unavailable |
+| `SC_OFFLINE_START` | Retained legacy destination request from `start`; `Daymar` does not enable the current spawn module's deferred destination-startup route |
 | `SC_OFFLINE_PLUGINS` | From `plugins`: `on` loads plugins from `plugins\` beside the ship list (`data\plugins`); anything else is off |
 | `SC_OFFLINE_MULTIPLAYER` | From `multiplayer`: `off` switches the Multiplayer tab off; anything else (or unset) leaves it on |
 | `SC_OFFLINE_MULTIPLAYER_ALLOW` | From `multiplayer_allow`, checked by the launcher: extra IPv4 ranges a session may use |

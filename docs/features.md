@@ -12,6 +12,17 @@ ownership behavior; [status](status.md) reconciles implementation/release counts
 and unverified game acceptance. Other sections retain historical feature
 requests where their owning modules have not yet closed parity.
 
+The menu window can be resized from its edges and corners. Finishing a resize
+saves its outer width and height beside `mod.log`, normally `data/menu-window.ini`;
+the next game start restores them. Opening the menu again keeps that size. The
+window is fitted inside the monitor's work area, with a 400×300 minimum unless
+the work area itself is smaller. Long tab titles keep their width; use the tab
+bar's arrow buttons when they overflow. Missing or invalid saved dimensions fall
+back to 600×900 before fitting to the display. Delete `menu-window.ini` while the
+game is closed to reset the size. This file does not change `sc-offline.ini`, game
+settings, or plugin preferences. These paths have headless regression coverage;
+native Windows resizing, rendering and game acceptance remain unverified.
+
 Most of the lists below are plain text files in `data/`, and the counts are taken from those files. Remove lines from a file and its list gets shorter. See [data-files.md](data-files.md).
 
 ## Player
@@ -246,7 +257,7 @@ These need RSI's servers, and the mod doesn't replace them:
 - Character creation and customization: the main menu is skipped. Not planned ([#24](https://github.com/scuba-sc/sc-offline/issues/24)).
 - The mobiGlas vehicle manager lists stored and retrieved ships but can't select them. Use a ship terminal (see [Ship terminals, hangars and ATC](#ship-terminals-hangars-and-atc)) or the **Vehicles** tab.
 - Your account's ships, items and hangar.
-- Choosing a spawn location. You start at the game's own spawn, or over Daymar with `start = Daymar` (see [launcher.md](launcher.md#sc-offlineini)).
+- Choosing a spawn location. The current external spawn module refuses destination startup; the retained `start = Daymar` setting does not enable the old timed arrival or boarding route (see [launcher.md](launcher.md#sc-offlineini)).
 
 ## Not verified in game
 
