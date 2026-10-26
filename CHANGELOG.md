@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Development ASOP selection and host menu.** The spawn panel can edit a
+  host-owned `asop_ships.txt` through the candidate SDK file service when the
+  development composition is enabled; it is off by default. The menu uses host
+  services and widgets 1.3 numeric presentation. A saved selection is not a
+  published or observed terminal list; native terminal and game acceptance remain
+  unverified. The existing SDK pin is unchanged.
+
 - **Choose the launcher language.** Stable text keys, strict UTF-8 catalogues, checked named placeholders and an English/Russian/auto selector use the system language by default with built-in Russian and an English fallback. Existing control and command identities stay fixed. An optional `data/locales/ru.ini` can override Russian text; plugin language APIs stay separate. Checked headlessly and with synthetic files; **not run in game**.
 
 - **Find one entry for each physical game installation.** Discovery combines paths only when both the channel directory and Bin64 match, preserving the first path and discovery priority. Relative and drive-relative paths use the actual channel parent for user files and checks. Unavailable directory identity keeps the existing path comparison. Separate installs and channels remain separate even when they share executable files or a Bin64 junction. Checked with synthetic filesystem fixtures; **not run in game**.
