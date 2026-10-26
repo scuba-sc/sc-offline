@@ -56,9 +56,10 @@ rm -rf "$UT"; mkdir -p "$UT/build/launcher" "$UT/build/src" "$UT/bin" "$UT/fixtu
 cp -cR "$WINE_ROOT/prefix" "$UT/prefix" 2>/dev/null || cp -R "$WINE_ROOT/prefix" "$UT/prefix" || die "can't copy the Wine prefix"
 
 # --- Builds ---------------------------------------------------------------------------------
-LIBS="-lbcrypt -lwinhttp -lshlwapi -lole32 -lcomctl32 -luuid -lgdi32 -luser32 -lshell32 -ladvapi32"
+LIBS="-lbcrypt -lwinhttp -lshlwapi -lpathcch -lole32 -lcomctl32 -luuid -lgdi32 -luser32 -lshell32 -ladvapi32"
 build_launcher() {  # <version> <out.exe>
     cp "$CPP" "$UT/build/launcher/launcher.cpp"
+    cp "$SRC_REPO"/launcher/*.h "$UT/build/launcher/" 2>/dev/null
     cp "$SRC_REPO"/src/*.h "$UT/build/src/" 2>/dev/null
     perl -0pi -e "s/#define\\s+SCO_VERSION\\s+\"[^\"]*\"/#define SCO_VERSION  \"$1\"/" "$UT/build/src/version.h"
     grep -q "SCO_VERSION  \"$1\"" "$UT/build/src/version.h" || die "couldn't set SCO_VERSION $1"

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Find one entry for each physical game installation.** Discovery combines paths only when both the channel directory and Bin64 match, preserving the first path and discovery priority. Relative and drive-relative paths use the actual channel parent for user files and checks. Unavailable directory identity keeps the existing path comparison. Separate installs and channels remain separate even when they share executable files or a Bin64 junction. Checked with synthetic filesystem fixtures; **not run in game**.
+
 - **Loadout friendly names and shared search.** Curated selectors show seven attributed public tool/canister labels alongside their unchanged class IDs. The shared filter matches names/classes without clearing or rebinding selected choices; apply/jobs keep their existing ordering, admission and partial/cancel behavior. No defaults, native compatibility or release staging change. **Not run in game.**
 
 - **Quantum controls show received GameRules.** The existing panel shows allowed/forbidden/unknown quantum travel and boost gates, pauses new UI boosts when rules are unreadable or forbid them, and rechecks before starting. Owned release remains available; group membership is never inferred. Automatic presentation reads occur at most once per 250 ms. Relocation and provider-authorized command behavior, native/default settings and the SDK pin stay unchanged. **Not run in game.**

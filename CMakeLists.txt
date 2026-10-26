@@ -210,7 +210,7 @@ target_compile_options(sc-offline PRIVATE ${SCO_COMMON_OPTIONS} /W3)
 # The window is ImGui on Direct3D 11 (the imgui target above; its INTERFACE libs bring d3d11 and dwmapi), and
 # the Plugins page edits a plugin's [settings] in its sco.storage database through sco-core's vendored
 # SQLite (sco_sqlite). The system libraries are also named by #pragma comment(lib) in launcher.cpp.
-target_link_libraries(sc-offline PRIVATE imgui sco_sqlite bcrypt shell32 shlwapi advapi32 ole32 winhttp user32 gdi32 comctl32)
+target_link_libraries(sc-offline PRIVATE imgui sco_sqlite bcrypt shell32 shlwapi pathcch advapi32 ole32 winhttp user32 gdi32 comctl32)
 
 # --- test plugins (CI artifact "test-plugins"; never part of a release) ---------------------------
 # spawn_probe exercises the spawn built-in's command and service, and the teleport built-in's

@@ -50,6 +50,7 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+#include "install_identity_win32.h"
 #include "../src/version.h"
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "../src/third_party/imgui/imgui.h"
@@ -1378,14 +1379,14 @@ static int DeleteSessionLogs(const wstring& channelDir, ULONGLONG since) {
 // bounded search of every fixed drive, and finally a folder picker. Every candidate is only
 // accepted when <channel>\Bin64\StarCitizen.exe exists, so a stale or wrong path is skipped.
 
-struct Found { wstring bin; const char* how; };
+using Found = sco::launcher::discovery::Found;
 
-static bool SamePath(const wstring& a, const wstring& b) { return !_wcsicmp(a.c_str(), b.c_str()); }
+static sco::launcher::discovery::InstallIdentity InstallIdentity(const wstring& bin) {
+    return sco::launcher::discovery::ReadInstallIdentity(bin);
+}
 
 static void AddFound(std::vector<Found>& out, const wstring& bin, const char* how) {
-    if (bin.empty()) return;
-    for (const Found& f : out) if (SamePath(f.bin, bin)) return;
-    out.push_back({ bin, how });
+    sco::launcher::discovery::AppendUnique(out, bin, how, InstallIdentity);
 }
 
 // A path the RSI Launcher wrote may point anywhere inside the install (the library folder,
@@ -1624,8 +1625,7 @@ static bool CanWriteTo(const wstring& dir) {
 
 // Drops the last path component: ...\LIVE\Bin64 -> ...\LIVE.
 static wstring ParentDir(const wstring& p) {
-    const size_t s = p.find_last_of(L"\\/");
-    return s == wstring::npos ? p : p.substr(0, s);
+    return sco::launcher::discovery::ParentForSuffix(p);
 }
 
 
