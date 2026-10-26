@@ -2,17 +2,16 @@
 
 `loadout` 1.0.0 is a C++20 SDK consumer with three native exports, no product
 headers/ImGui globals, private engine calls, XML loader or gameplay fallback.
-It is **compile-only development work; not run in game**. Its G6/G7/content/widgets
+It is **development work; not run in game**. Its G6/G7/content/widgets
 headers ship in the pinned published `sdk-v2.4.0-rc.1` (`sdk-v2.0.0` lacked them);
 the release workflow does not yet stage loadout. Do not substitute this local build for a published-release proof.
 
 ## Obtain, build, install
 
-1. Obtain an approved newer combined core+game SDK containing `sc_loadout.h`,
+1. Obtain the pinned published combined core+game SDK containing `sc_loadout.h`,
    `sc_cvars.h`, `sco_content.h` and `sco_widgets.h`, plus `sco_api.h` and the
    existing `sc_creative.h`. Use its extracted public `include/` directory and
-   checksum inventory, never the host checkout's headers. The wave-2 local
-   integration archive supplies these headers for development only.
+   checksum inventory, never the host checkout's headers.
 2. Build separately from the Windows host:
 
    ```sh
@@ -91,8 +90,13 @@ whole request before mutation. Duplicate logical slots or more than 16 pieces
 also refuse before mutation; batches are never silently split. Weapons, ammo,
 grenades, clothing, body/head/eyes/hair/accessories/material variants, implicit
 magazine/default face/undersuit/medpen synthesis and old empty-slot clearing need
-approved G6 extensions/verified mappings. Most legacy outfits therefore refuse;
-this is not full feature-parity acceptance. The inactive original sources remain
+separate consumer mappings, additional public contract coverage where absent,
+and validation. The pinned SDK already defines
+weapon/multitool slots in `game.loadout` 1.1 and asynchronous jobs in 1.2; this
+consumer still queries 1.0 and uses its synchronous armor/visor subset. That
+public contract availability does not verify native equip or attachment behavior.
+Most legacy outfits therefore refuse; this is not full feature-parity acceptance.
+The inactive original sources remain
 under `legacy/loadout` for reference, not as a runtime escape hatch.
 
 A supported typed batch reports input-ordered applied/unsupported/item-missing/
@@ -124,10 +128,27 @@ Migration to public quantum control remains pending separate approval.
 
 ## Evidence and pending acceptance
 
-The touched native plugin configures, compiles and links against the local
-integration SDK. **Canonical suites, checker/archive/dependency proofs, reviews,
-Windows host/MSVC/DLL calling conventions, renderer, runtime reload/cleanup and
-actual gameplay NOT RUN** by owner speed order. A follow-up focused ad-hoc
+The standalone plugin and focused widget test configure, compile and link with
+LLVM-MinGW against the checksum-verified published `sdk-v2.4.0-rc.1` combined
+archive (`sco-sdk-2.4.0.zip`, SHA-256
+`124751534277b89f0516af1897919c3485923811596e159a1f683bb80b1c243b`).
+The synthetic public-service workflow covers an items-only snapshot with no
+outfits/buildables, populated pickers, an empty gear filter, and unload cleanup.
+The items-only case failed before the empty-array correction and passes after
+it. Enable this development-only test with `-DSCO_WORKFLOW_TESTS=ON`, then run:
+
+```sh
+cmake --build <plugin-build> --config Release --target loadout-widget-test
+ctest --test-dir <plugin-build> -C Release -R '^loadout-widget-workflow$' --output-on-failure
+```
+
+It links the feature source
+against public headers and synthetic callbacks; it does not load the native DLL
+or exercise the real widgets service/renderer.
+
+**Canonical suites, loadout checker/dependency proofs, Windows host/MSVC/DLL
+calling conventions, renderer, runtime reload/cleanup and actual gameplay
+NOT RUN.** A prior focused ad-hoc
 probe loaded the actual native module against synthetic public cvar callbacks:
 four exact-name 0/1 reads, absent/failed reads invalidating prior values,
 write/console refusal without querying a write service, synchronous external

@@ -65,7 +65,7 @@ in this module. The command IDs remain available through the host's typed
 | Command | Behavior |
 | --- | --- |
 | `crew.target` | Pin the ship currently aboard; session-only, never persisted. |
-| `crew.sit <seat>` | Case-insensitive words from seat name, at most 47 bytes. Seat the local player only; foreign/unknown occupants and pending crew reservations are refused. A seated NPC spawned by this plugin may be removed before the player seat job starts. |
+| `crew.sit <seat>` | Case-insensitive words from seat name, at most 47 bytes. Seat the local player only; foreign/unknown occupants and pending crew reservations are refused. Selecting the player's current seat cancels an older queued player move. A seated NPC spawned by this plugin may be removed before the player seat job starts. |
 | `crew.stand_all` | Cancel target-ship seating jobs, then eject the local player and this plugin's owned crew only. Foreign/unknown occupants are counted, not moved. |
 | `crew.fill <npc>` | Caller-supplied archetype, at most 127 bytes. Spawn owned NPCs beside the current player pose and queue empty, known-usable seats. Report copied-batch truncation, skipped seats and partial spawn failure. |
 | `crew.clear` | Start actors-specific removal of target-ship NPCs spawned by this plugin. Refused removals retain retry authority; accepted removal is not confirmed world disappearance. Never delete player, foreign occupants or another plugin's NPCs. |
@@ -112,7 +112,8 @@ The one named `crew-module-workflow` dynamically loads the actual independently
 compiled module. Eight focused groups cover missing/null/physically truncated
 methods, failed service reopen, typed invalid input/capability refusal, target,
 Flight Ready, player sit/eject, owned fill/clear, partial seat/spawn batches,
-unusable/unknown seats, no player, foreign NPCs, pending reservations, fifth-link
+unusable/unknown seats, no player, foreign NPCs, pending reservations, cancellation
+of an older player move when already seated, fifth-link
 confirmation, timeout/refused removal retry, retained ticket quota, reload and
 unload twice; the same fixture also checks pre-first-tick absolute clock handling.
 The archive proof checks exact enabled install inventory, two full compiler
