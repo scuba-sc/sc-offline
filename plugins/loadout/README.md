@@ -82,6 +82,22 @@ per-slot partial results and retained-job/cancel policy. Clear curated selection
 changes only local picks; it does not clear equipment or cancel a retained job.
 The manual assignment field remains a separate selection route.
 
+The shared search field filters both the gear browser and curated selectors by
+class or friendly name, ignoring ASCII case (at most 63 printable ASCII characters).
+Every selector keeps **Unchanged (omit slot)** first. A selected class stays
+visible even when it does not match the filter; changing the search never clears
+or rebinds it. Friendly labels show the original class in brackets, and apply/jobs
+send that exact class through the existing routes. Invalid filter input preserves
+the previous search and selections. Failed panel publication pauses old callbacks
+until a successful retry; it does not reinterpret an old filtered index.
+
+Seven display aliases retain Alpha-Rome0's public GPL [PR #127](https://github.com/scuba-sc/sc-offline/pull/127) intent at
+[`7ea9731b693bb9042ccbb721099ca88acb80d6f4`](https://github.com/scuba-sc/sc-offline/blob/7ea9731b693bb9042ccbb721099ca88acb80d6f4/src/builtins/loadout_ui.cpp):
+OreBit Mining, OxyTorch Cutter, TruHold Tractor Beam, LifeGuard Medical and
+Cambio-Lite SRT attachments, plus empty/filled Cambio-Lite SRT canisters.
+These names are presentation only. They add no item compatibility, automatic
+battery, None/clear operation, XML fallback or default-SRT policy.
+
 Install one ordinary `kind = data` pack containing `lists/loadout_slots.txt`.
 For example, while the host is stopped, explicitly copy the optional source
 `data/loadout_slots.txt` to `data/plugins/my_loadout/lists/loadout_slots.txt` and

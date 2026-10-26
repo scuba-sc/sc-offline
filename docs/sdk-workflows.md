@@ -152,7 +152,7 @@ a development module to `.dll` and call it a Windows build.
 The module test already takes the actual native path. Native plugins run trusted
 code; a stand-in checker is not a sandbox or a real-host fault-containment test.
 
-### Stage 3 — Install, enable and exercise the command
+### Stage 3 — Install, enable and exercise Inspector
 
 Use only the **Windows x64** output for installation. With the game closed:
 
@@ -169,13 +169,19 @@ Keep `plugins = on` in `sc-offline.ini`; enable Inspector in the launcher's
 Plugins page if a preserved `disabled` marker exists. Fresh release folders have
 no marker. Start only through the existing offline launcher and inspect
 `data/mod.log` for native inspector load or the precise refusal. Invoke
-`inspector.read` through the host command registry; no new menu tab or hotkey is
-installed. Before player spawn, dependent fields must remain unknown.
+`inspector.read` through the host command registry on the game thread for a fresh
+player read. When the host offers `sco.widgets`, the optional `inspector.main`
+panel exposes Diagnostics, Inventory, Actions and Parameters. Use **Refresh** or
+`inspector.refresh` to capture diagnostics and inventory explicitly; drawing,
+tab selection and cached paging do not poll providers. Commands remain usable
+without widgets. See [read and snapshot behavior](#read-only-inspector). Before
+player spawn, dependent fields must remain unknown.
 
-For this command-only consumer, `sco.reload inspector` is the running-host reload
-route: unload withdraws its owner-scoped command, then a fresh load registers it
-and future reads reopen services. Rebuild while the module is unloaded or with
-the game closed, not by overwriting a loaded Windows DLL. Disabling the folder
+For this external consumer, `sco.reload inspector` is the running-host reload
+route: unload removes its optional panel and clears captured state; the host
+withdraws its owner-scoped commands. A fresh load registers commands and, when
+available, the panel starts **Not sampled**. Rebuild while the module is unloaded
+or with the game closed, not by overwriting a loaded Windows DLL. Disabling the folder
 applies at next game start; `plugins = off` prevents the external inspector from
 loading. Neither mode resurrects a built-in inspector. Queried native service
 providers can be session-lifetime/restart-only; this consumer example does not
@@ -256,8 +262,20 @@ exact build/archetype and the [pending checks](status.md) before certifying beha
 
 Run `inspector.read` through the host command registry. The reply and plugin log
 show the current player actor/entity IDs, health current/maximum, zone-local
-position and quaternion rotation. Each read re-queries public services and
-retains no provider table or session ID. There is no mutation or required UI.
+position and quaternion rotation. Each `inspector.read` re-queries the public
+actor/entity services and retains no provider table or session ID across these
+calls. There is no mutation or required UI.
+
+`inspector.refresh` captures copied diagnostics and inventory on request and
+advances the snapshot generation. `inspector.status`, `inspector.stats`,
+`inspector.gamerules` and `inspector.inventory` read those captured sections;
+they do not refresh them. An unrefreshed snapshot is historical, not live. A
+failed or unavailable section replaces its previous captured values instead of
+presenting them as current. Action lookups/counts and parameter definitions are
+acquired explicitly through their commands or the optional panel controls;
+parameter definitions are metadata, not live GameRules values. See the
+[Inspector command reference](../plugins/inspector/README.md#snapshot-commands-and-optional-panel)
+for arguments, paging and refusal results.
 
 - Before the player spawns, IDs and dependent readings are unknown.
 - Missing providers, capabilities, null methods or incomplete method extents
@@ -266,8 +284,9 @@ retains no provider table or session ID. There is no mutation or required UI.
   zero-sized health pool and is never used as a denominator.
 - Failed calls, non-finite values, zero zones and invalid rotations are not
   promoted to valid data. These are observations, not new engine fields.
-- Unload clears the borrowed API/owner; the host withdraws owner-scoped commands.
-  No event subscription or asynchronous callback context is allocated here.
+- Unload removes the optional widget panel and clears copied snapshots and
+  borrowed widget/API/owner state; the host withdraws owner-scoped commands.
+  There is no background polling or worker.
 
 The restricted Lua counterpart is `plugins/inspector/inspector.lua`, a
 **non-default companion example** with the existing `inspector_lua` ID and

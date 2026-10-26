@@ -17,7 +17,7 @@ sco_plugin* owner=nullptr;
 void Check(bool ok,const char* why){++checks;if(!ok){std::fprintf(stderr,"loadout catalogue: %s\n",why);std::exit(1);}}
 struct File{std::string name,bytes;};
 std::vector<File> files={{"lists/loadout_slots.txt","[primary_optic]\nFixtureOptic\n[primary]\nFixtureWeapon\n[sidearm_tool_battery]\nFixtureBattery\n"}};
-struct Node{uint32_t kind=0,flags=0;int32_t index=0;std::string label;std::vector<std::string> options;};
+struct Node{uint32_t kind=0,flags=0;int32_t index=0;std::string label,text;std::vector<std::string> options;};
 struct Panel{std::map<uint32_t,Node> nodes;sco_widget_event_fn fn=nullptr;void* ctx=nullptr;} panel;
 std::map<std::string,sco_command> commands;
 sco_widgets_v1 widgets{};sco_content_v1 content{};sc_loadout_v1_2 loadout{};
@@ -54,7 +54,7 @@ sco_result SetPanel(sco_plugin* self,const char* id,const char*,const sco_widget
     Check(self==owner&&stride==sizeof(*nodes),"widget owner/stride");if(std::strcmp(id,"loadout.player"))return SCO_OK;if(panelResult!=SCO_OK)return panelResult;
     Panel next;next.fn=fn;next.ctx=ctx;
     for(uint32_t i=0;i<count;++i){Check(nodes[i].size==sizeof(*nodes),"node extent");Check((nodes[i].item_count==0)==(nodes[i].items==nullptr),"empty array invariant");Check(nodes[i].label&&std::strlen(nodes[i].label)<=255,"label byte bound");
-        auto& n=next.nodes[nodes[i].id];n.kind=nodes[i].kind;n.flags=nodes[i].flags;n.index=nodes[i].index;n.label=nodes[i].label;
+        auto& n=next.nodes[nodes[i].id];n.kind=nodes[i].kind;n.flags=nodes[i].flags;n.index=nodes[i].index;n.label=nodes[i].label;n.text=nodes[i].text?nodes[i].text:"";
         if(nodes[i].kind==SCO_WIDGET_COMBO)Check(nodes[i].item_count<=256&&nodes[i].index>=-1&&(nodes[i].index<0||static_cast<uint32_t>(nodes[i].index)<nodes[i].item_count),"combo contract bounds");
         for(uint32_t j=0;j<nodes[i].item_count;++j){Check(nodes[i].items[j]&&std::strlen(nodes[i].items[j])<=255,"option bound");n.options.emplace_back(nodes[i].items[j]);}
     }
@@ -75,8 +75,9 @@ sco_result Query(const char* name,uint32_t requested,const void** out){
     return *out?SCO_OK:SCO_NOT_FOUND;
 }
 sco_result Call(const char* name){Check(commands.count(name)!=0,"registered command");char text[2048]{};const auto& c=commands.at(name);return c.fn(nullptr,0,c.ctx,text,sizeof(text));}
-void Send(const Panel& target,uint32_t id,uint32_t kind,int32_t index=0){Check(target.fn!=nullptr,"published callback");sco_widget_event e{};e.size=sizeof(e);e.node_id=id;e.kind=kind;e.index=index;target.fn("loadout.player",&e,target.ctx);}
-void Send(uint32_t id,uint32_t kind,int32_t index=0){const auto old=panel;Send(old,id,kind,index);}
+void Send(const Panel& target,uint32_t id,uint32_t kind,int32_t index=0,const char* text=nullptr){Check(target.fn!=nullptr,"published callback");sco_widget_event e{};e.size=sizeof(e);e.node_id=id;e.kind=kind;e.index=index;e.text=text;target.fn("loadout.player",&e,target.ctx);}
+void Send(uint32_t id,uint32_t kind,int32_t index=0,const char* text=nullptr){const auto old=panel;Send(old,id,kind,index,text);}
+void Filter(const char* text){Send(1,SCO_WIDGET_TEXT_INPUT,0,text);}
 void Select(uint32_t slot,int32_t row){Send(200+slot,SCO_WIDGET_COMBO,row);}
 void Button(uint32_t id){Send(id,SCO_WIDGET_BUTTON);}
 bool Disabled(uint32_t id){return (panel.nodes.at(id).flags&SCO_WIDGET_DISABLED)!=0;}
@@ -111,6 +112,37 @@ int main(int argc,char** argv){
     for(uint32_t size=4;size<offsetof(sc_loadout_v1_2,cancel)+sizeof(loadout.cancel);++size){auto shortTable=std::make_unique<unsigned char[]>(size);std::memcpy(shortTable.get(),&loadout,size);std::memcpy(shortTable.get(),&size,4);loadoutTable=shortTable.get();Button(221);Check(submits==1,"curated async full member extent");}loadoutTable=&loadout;
     loadout.cancel=nullptr;Button(221);Check(submits==1,"curated async requires cleanup callback");loadout.cancel=Cancel;
     auto reload=[&]{Check(Call("loadout.reload_slots")==SCO_OK,"reload copied slot catalogue");Tick();};
+    files.push_back({"lists/items.txt","[helmet]\nFixtureAlpha\nFixtureBeta\n"});Check(Call("loadout.reload_lists")==SCO_OK,"copied legacy gear for shared-filter proof");Tick();
+    files[0].bytes="[primary]\nFixtureAlpha\nFixtureBeta\nFixtureGamma\n";reload();const auto filterReads=reads;
+    Filter("bEtA");Check(panel.nodes[200].options==std::vector<std::string>{"Unchanged (omit slot)","FixtureBeta"},"shared filter is case-insensitive and uses original class");
+    Check(panel.nodes[2].options==std::vector<std::string>{"helmet: FixtureBeta"},"same shared filter narrows copied legacy gear browser");
+    Select(0,1);Filter("Gamma");Check(panel.nodes[200].options==std::vector<std::string>{"Unchanged (omit slot)","FixtureBeta","FixtureGamma"}&&panel.nodes[200].index==1,"nonmatching selected class remains visible with original identity");
+    Select(0,2);Button(220);Check(captured.size()==1&&!std::strcmp(captured[0].item_class,"FixtureGamma"),"filtered visible row maps to original third class");
+    stale=panel;Filter("Alpha");Send(stale,200,SCO_WIDGET_COMBO,1);Select(0,-1);Select(0,3);Select(0,0x7fffffff);Send(200,SCO_WIDGET_BUTTON);
+    Button(220);Check(!std::strcmp(captured[0].item_class,"FixtureGamma")&&panel.nodes[200].index==2,"changed-filter stale and malformed selections cannot rebind class");
+    Filter("no matches");Check(panel.nodes[200].options==std::vector<std::string>{"Unchanged (omit slot)","FixtureGamma"}&&!Disabled(220),"empty matches retain selected class and apply");
+    const std::string longest(63,'x');Filter(longest.c_str());Check(panel.nodes[1].text==longest,"exact63byte printable filter accepted");
+    const std::string oversized(64,'x');for(const char* bad:{oversized.c_str(),"bad\nfilter","\x7f","\xff",static_cast<const char*>(nullptr)}){Filter(bad);Check(panel.nodes[1].text==longest&&panel.nodes[200].index==1,"malformed/oversized filter preserves filter and picks");}
+    char unterminated[64];std::memset(unterminated,'x',sizeof(unterminated));Filter(unterminated);Check(panel.nodes[1].text==longest,"unterminated filter is read only through the fixed63byte bound");
+    Send(1,SCO_WIDGET_BUTTON,0,"Alpha");Check(panel.nodes[1].text==longest,"wrong filter event kind ignored");
+    auto shortEvent=sco_widget_event{};shortEvent.size=sizeof(shortEvent)-1;shortEvent.node_id=1;shortEvent.kind=SCO_WIDGET_TEXT_INPUT;shortEvent.text="Alpha";panel.fn("loadout.player",&shortEvent,panel.ctx);Check(panel.nodes[1].text==longest,"short filter event ignored");
+    Filter("");Select(0,2);stale=panel;panelResult=SCO_FAILED;const auto filteredApplies=applies;Filter("Gamma");Send(stale,200,SCO_WIDGET_COMBO,1);Send(stale,220,SCO_WIDGET_BUTTON);Check(applies==filteredApplies,"failed filtered publication pauses stale callbacks");panelResult=SCO_OK;Tick();Button(220);Check(!std::strcmp(captured[0].item_class,"FixtureBeta"),"filter publication retry preserves exact selected class");
+    Button(221);Check(captured.size()==1&&!std::strcmp(captured[0].item_class,"FixtureBeta"),"filtered selection uses unchanged async route and raw class");Filter("Alpha");const auto heldApplies=applies;Button(220);Check(applies==heldApplies&&Disabled(221),"filter edits preserve retained job admission");Button(24);
+    Button(222);Filter("no matches");Check(panel.nodes[200].options.size()==1&&Disabled(200)&&Disabled(220),"no matches with no selection omits slot only");Check(reads==filterReads,"search, selection and jobs use copied catalogue without content reads");
+    struct Alias{const char* cls;const char* label;uint32_t slot;};
+    const Alias aliases[]{
+        {"grin_multitool_01_mining","OreBit Mining Attachment",8},{"grin_multitool_01_cutter","OxyTorch Cutter Attachment",8},
+        {"grin_multitool_01_tractorbeam","TruHold Tractor Beam Attachment",8},{"grin_multitool_01_healing","LifeGuard Medical Attachment",8},
+        {"grin_multitool_01_salvage_repair","Cambio-Lite SRT Attachment",8},
+        {"grin_multitool_resource_salvage_repair_01","Cambio-Lite SRT Canister (empty)",9},
+        {"grin_multitool_resource_salvage_repair_01_filled","Cambio-Lite SRT Canister (filled)",9},
+    };
+    files[0].bytes="[primary_tool_module]\n";for(const auto& alias:aliases)if(alias.slot==8)files[0].bytes+=std::string(alias.cls)+'\n';
+    files[0].bytes+="[primary_tool_canister]\n";for(const auto& alias:aliases)if(alias.slot==9)files[0].bytes+=std::string(alias.cls)+'\n';
+    Filter("");reload();
+    for(const auto& alias:aliases){Button(222);Filter(alias.label);const auto id=200+alias.slot;Check(panel.nodes[id].options==std::vector<std::string>{"Unchanged (omit slot)",std::string(alias.label)+" ["+alias.cls+"]"},"public friendly label remains paired with raw identity");Select(alias.slot,1);Button(220);Check(captured.size()==1&&!std::strcmp(captured[0].item_class,alias.cls),"friendly-name selection sends exact raw public class");}
+    Button(222);Filter("TRUHOLD");Check(panel.nodes[208].options.size()==2,"friendly alias matching ignores ASCII case");Filter("resource_salvage");Check(panel.nodes[209].options.size()==3,"raw canister identity remains searchable");
+    Filter("");Button(222);files[1].bytes.clear();Check(Call("loadout.reload_lists")==SCO_OK,"clear synthetic legacy list snapshot");Tick();files.resize(1);
     std::string all;const char* names[]{"primary","sidearm","primary_optic","primary_barrel","primary_underbarrel","sidearm_optic","sidearm_barrel","sidearm_underbarrel","primary_tool_module","primary_tool_canister","primary_tool_battery","sidearm_tool_module","sidearm_tool_canister","sidearm_tool_battery"};
     for(const auto* name:names)all+=std::string("[")+name+"]\nSharedClass\n";
     files[0].bytes=all;reload();
