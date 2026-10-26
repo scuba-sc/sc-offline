@@ -46,7 +46,9 @@ sco_result Read(sco_plugin* self,uint64_t id,void* out,uint32_t* size){
     if(!out&&badRead==2){*size=static_cast<uint32_t>(b.size());return SCO_OK;}
     if(out&&badRead==3)return SCO_UNAVAILABLE;
     if(*size<b.size()){*size=static_cast<uint32_t>(b.size());return SCO_TOO_MANY;}
-    if(out&&!b.empty())std::memcpy(out,b.data(),b.size());*size=static_cast<uint32_t>(b.size())-(badRead==4&&!b.empty()?1u:0u);return SCO_OK;
+    if(out&&!b.empty())std::memcpy(out,b.data(),b.size());
+    *size=static_cast<uint32_t>(b.size())-(badRead==4&&!b.empty()?1u:0u);
+    return SCO_OK;
 }
 sco_result SetPanel(sco_plugin* self,const char* id,const char*,const sco_widget_node* nodes,uint32_t count,uint32_t stride,sco_widget_event_fn fn,void* ctx){
     Check(self==owner&&stride==sizeof(*nodes),"widget owner/stride");if(std::strcmp(id,"loadout.player"))return SCO_OK;if(panelResult!=SCO_OK)return panelResult;
@@ -110,7 +112,11 @@ int main(int argc,char** argv){
     loadout.cancel=nullptr;Button(221);Check(submits==1,"curated async requires cleanup callback");loadout.cancel=Cancel;
     auto reload=[&]{Check(Call("loadout.reload_slots")==SCO_OK,"reload copied slot catalogue");Tick();};
     std::string all;const char* names[]{"primary","sidearm","primary_optic","primary_barrel","primary_underbarrel","sidearm_optic","sidearm_barrel","sidearm_underbarrel","primary_tool_module","primary_tool_canister","primary_tool_battery","sidearm_tool_module","sidearm_tool_canister","sidearm_tool_battery"};
-    for(const auto* name:names)all+=std::string("[")+name+"]\nSharedClass\n";files[0].bytes=all;reload();for(uint32_t i=0;i<14;++i)Select(i,1);Button(220);Check(captured.size()==14,"all fourteen independent selections");for(uint32_t i=0;i<14;++i)Check(captured[i].slot==8+i,"canonical parent-before-attachment order");
+    for(const auto* name:names)all+=std::string("[")+name+"]\nSharedClass\n";
+    files[0].bytes=all;reload();
+    for(uint32_t i=0;i<14;++i)Select(i,1);
+    Button(220);Check(captured.size()==14,"all fourteen independent selections");
+    for(uint32_t i=0;i<14;++i)Check(captured[i].slot==8+i,"canonical parent-before-attachment order");
     const auto loadedReads=reads;files[0].bytes="[primary]\nChanged\n";Button(220);Check(captured.size()==14&&reads==loadedReads,"widget selections own startup copies, no read on apply");
     stale=panel;Check(Call("loadout.reload_slots")==SCO_OK,"explicit reload");oldApplies=applies;Send(stale,220,SCO_WIDGET_BUTTON);Check(applies==oldApplies,"reload invalidates old mapping before publication");Tick();Check(Disabled(220)&&panel.nodes[200].options[1]=="Changed","reload clears picks and installs new copied snapshot");
     Select(0,1);stale=panel;panelResult=SCO_FAILED;Button(222);Send(stale,220,SCO_WIDGET_BUTTON);Check(applies==oldApplies,"failed publication pauses old actions");panelResult=SCO_OK;Tick();Check(Disabled(220),"publication retry retains clear selection");
@@ -125,8 +131,10 @@ int main(int argc,char** argv){
     files[0].bytes="";reload();Check(panel.nodes[200].options.size()==1&&Disabled(200),"empty catalogue valid and no mutation choices");
     files[0].bytes="[primary]\nFixture\n";files.push_back(files[0]);const auto readBefore=reads;Check(Call("loadout.reload_slots")==SCO_BAD_ARG&&reads==readBefore,"multiple exact Lists refuse without guessing");files.resize(1);Tick();
     for(const char* wrong:{"loadout_slots.txt","Lists/loadout_slots.txt","lists/loadout_slots.TXT","lists/nested/loadout_slots.txt"}){files[0].name=wrong;Check(Call("loadout.reload_slots")==SCO_NOT_FOUND,"canonical namespace exact");}files[0].name="lists/loadout_slots.txt";
-    for(badMetadata=1;badMetadata<=5;++badMetadata)Check(Call("loadout.reload_slots")!=SCO_OK,"malformed copied metadata refuses");badMetadata=0;
-    for(badRead=1;badRead<=4;++badRead)Check(Call("loadout.reload_slots")!=SCO_OK,"oversized/refused/inconsistent copied read refuses");badRead=0;
+    for(badMetadata=1;badMetadata<=5;++badMetadata)Check(Call("loadout.reload_slots")!=SCO_OK,"malformed copied metadata refuses");
+    badMetadata=0;
+    for(badRead=1;badRead<=4;++badRead)Check(Call("loadout.reload_slots")!=SCO_OK,"oversized/refused/inconsistent copied read refuses");
+    badRead=0;
     endless=true;const auto beforeItems=items;Check(Call("loadout.reload_slots")==SCO_TOO_MANY&&items-beforeItems==SCO_CONTENT_MAX_ITEMS+1,"bounded content enumeration");endless=false;
     for(uint32_t size=4;size<offsetof(sco_content_v1,read)+sizeof(content.read);++size){auto bytes=std::make_unique<unsigned char[]>(size);std::memcpy(bytes.get(),&content,size);std::memcpy(bytes.get(),&size,4);contentTable=bytes.get();Check(Call("loadout.reload_slots")==SCO_UNAVAILABLE,"physically short content member refuses");}contentTable=&content;
     content.read=nullptr;Check(Call("loadout.reload_slots")==SCO_UNAVAILABLE,"null read callback");content.read=Read;contentPresent=false;Check(Call("loadout.reload_slots")==SCO_UNAVAILABLE,"missing content provider");contentPresent=true;
