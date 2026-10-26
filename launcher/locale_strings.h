@@ -80,7 +80,7 @@
     X(LanguageRussian, "launcher.language.russian", "Russian (ru)") \
     X(LanguageAuto, "launcher.language.auto", "Auto") \
     X(LanguageHint, "launcher.language.hint", "Choose the launcher language. Auto uses the Windows UI language (English or Russian).") \
-    X(LanguageMissing, "launcher.language.missing", "Russian catalogue is missing or invalid; English is shown.") \
+    X(LanguageMissing, "launcher.language.missing", "Russian override is unreadable or invalid; fix or remove it to use built-in text. English is shown.") \
     X(LanguageGlyphs, "launcher.language.glyphs", "Required font glyphs are unavailable; English is shown.") \
     X(LanguageSaved, "launcher.language.saved", "Language saved.") \
     X(LanguageWriteError, "launcher.language.write_error", "Couldn't write sc-offline.ini; the language choice was kept.") \

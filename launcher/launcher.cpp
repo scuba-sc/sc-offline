@@ -52,6 +52,7 @@
 #include <vector>
 #include "install_identity_win32.h"
 #include "localization_win32.h"
+#include "locale_ru_builtin.h"
 #include "../src/version.h"
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "../src/third_party/imgui/imgui.h"
@@ -158,7 +159,7 @@ static int FailCode(int code, const char* fmt, ...) {
 // sc-offline.ini: `key = value` lines; a line starting with '#' is a comment. Unknown keys are reported, not ignored.
 struct Config {
     wstring game, channel = L"LIVE", bootMap = L"PU_All", startShip = L"DRAK_Cutlass_Black", start;
-    sco::launcher::locale::Language language = sco::launcher::locale::Language::English;
+    sco::launcher::locale::Language language = sco::launcher::locale::Language::Auto;
     // What the helper changes on the PC while you play, and undoes when the game closes.
     bool firewall = true, eacHosts = true, eacRename = true;
     // After the game closes: offer to delete the logs the game wrote during this session.
@@ -2600,8 +2601,10 @@ static void LoadLocale() {
     g.locale = sco::launcher::locale::Localizer(PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_RUSSIAN);
     g.locale.Select(config.language);
     std::string bytes;
-    if (sco::launcher::locale::ReadLocaleFile(g.here + L"\\data\\locales\\ru.ini", bytes) ==
-        sco::launcher::locale::FileResult::Ready) g.locale.LoadRussian(bytes);
+    const auto result = sco::launcher::locale::ReadLocaleFile(g.here + L"\\data\\locales\\ru.ini", bytes);
+    if (result == sco::launcher::locale::FileResult::Ready) g.locale.LoadRussian(bytes);
+    else if (result == sco::launcher::locale::FileResult::Missing)
+        g.locale.LoadRussian(sco::launcher::locale::kBuiltinRussianCatalogue);
 }
 
 static void RefreshLightText() {

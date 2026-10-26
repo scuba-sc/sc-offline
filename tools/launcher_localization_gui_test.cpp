@@ -27,6 +27,35 @@ int wmain(int argc, wchar_t** argv) {
     owned /= L"gui-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64());
     CHECK(fs::create_directories(owned));
     g_gui.here = owned.wstring();
+    LoadLocale();
+    CHECK(g_gui.locale.Choice() == Language::Auto && g_gui.locale.RussianLoaded());
+    const auto override_dir = owned / L"data" / L"locales";
+    CHECK(fs::create_directories(override_dir));
+    const auto override_path = override_dir / L"ru.ini";
+    {
+        std::ofstream out(override_path, std::ios::binary);
+        CHECK(bool(out << "launcher.action.play=Запуск\n"));
+    }
+    LoadLocale();
+    g_gui.locale.Select(Language::Russian);
+    g_gui.locale.SetGlyphCoverage(true);
+    CHECK(std::string(T(LocaleKey::Play)) == "Запуск");
+    {
+        std::ofstream out(override_path, std::ios::binary | std::ios::trunc);
+        CHECK(bool(out << "launcher.action.play=invalid{\n"));
+    }
+    LoadLocale();
+    g_gui.locale.Select(Language::Russian);
+    g_gui.locale.SetGlyphCoverage(true);
+    CHECK(!g_gui.locale.RussianLoaded() && std::string(T(LocaleKey::Play)) == "Play");
+    CHECK(fs::remove_all(owned / L"data") > 0);
+    {
+        std::ofstream out(owned / L"sc-offline.ini", std::ios::binary);
+        CHECK(bool(out << "language = en\n"));
+    }
+    LoadLocale();
+    CHECK(g_gui.locale.Choice() == Language::English && g_gui.locale.RussianLoaded());
+    CHECK(fs::remove(owned / L"sc-offline.ini"));
     g_gui.dpi = 1.0f;
     g_gui.wnd = CreateWindowExW(0, L"STATIC", L"owned hidden locale fixture", WS_OVERLAPPED,
                                0, 0, 800, 800, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);

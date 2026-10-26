@@ -1,34 +1,32 @@
 # Launcher language
 
 The launcher has an active English fallback for its actions, status, hints, plugin-page controls
-and window messages. It starts in English. Command names, child output and questions in the
+and window messages. By default it follows the Windows UI language: Russian on Russian systems, English otherwise. Command names, child output and questions in the
 Output page remain English. Parent-authored launcher notices around that output are localized;
 their fixed style tags and the child's confirmation protocol remain separate from catalogue text.
 Plugin names, descriptions, setting labels, enum values and stored
 identifiers remain owned by each plugin.
 
 Set `language = en`, `ru` or `auto` in `sc-offline.ini`, or use the language selector at the top
-of the launcher. `auto` is an explicit choice: it uses Russian for a Russian Windows UI language,
-and English otherwise. The selector saves only the language setting. It is unavailable while
+of the launcher. `auto` is the default and uses Russian for a Russian Windows UI language,
+and English otherwise. An existing explicit `en` or `ru` setting is preserved. The selector saves only the language setting. It is unavailable while
 a command or game is running. A failed save retains the previous choice and original ini.
 Manual ini edits take effect on the next launcher start.
 The selector refuses a reparse-linked ini so it cannot replace the user's link; edit that file
 manually and restart instead.
 
-## Install the initial Russian catalogue
+## Built-in Russian and optional override
 
-The source examples are [English](../locales/launcher/en.ini) and
-[Russian](../locales/launcher/ru.ini). They contain project-authored launcher text; they do not
-contain a game translation or unpublished fork assets. These examples are outside the release
-data tree and are **not automatically staged, installed or updated** by this change.
+Russian launcher text is built into the executable from the [source catalogue](../locales/launcher/ru.ini),
+so it works without copying a separate file. English is compiled in too. The source
+[English example](../locales/launcher/en.ini) documents the stable keys and fallback text.
+These are project-authored launcher strings, not a game translation or unpublished fork assets.
 
-With the launcher closed, create `data/locales` beside `sc-offline.exe` and copy the source
-`locales/launcher/ru.ini` to `data/locales/ru.ini`. Start the launcher and select Russian, or set
-`language = ru` before starting it. The file is read once at startup; close and restart the
-launcher to adopt catalogue edits. English needs no catalogue file.
-
-Missing or rejected catalogues use compiled English. Missing individual keys also use English.
-The selector explains when a requested Russian catalogue or required font glyphs are unavailable.
+To customize Russian text, close the launcher, create `data/locales` beside `sc-offline.exe`, and
+place a UTF-8 `ru.ini` there. A present file overrides the built-in catalogue and is read once at
+startup; restart after editing it. Remove the override to restore the built-in Russian text. An
+unreadable or rejected override uses English until the file is corrected or removed. Missing keys
+in a valid partial override use English. The selector reports a rejected override or missing glyphs.
 Body, bold and output fonts must cover the catalogue; otherwise the launcher uses English.
 The current system-font choices are Segoe UI and Consolas, with the existing default-font fallback.
 This is an English/Russian launcher phase. Shaping and right-to-left layout are not provided.
@@ -36,8 +34,9 @@ This is an English/Russian launcher phase. Shaping and right-to-left layout are 
 ## Add or update text
 
 Stable keys and English templates live in [locale_strings.h](../launcher/locale_strings.h).
-Change a template there, update both source examples, then run
-`python3 tools/check_launcher_localization.py`. The check requires complete source examples,
+Change a template there, update both source examples, run
+`python3 tools/generate_launcher_locale.py --write` to refresh the built-in Russian header,
+and then run `python3 tools/check_launcher_localization.py`. The check requires complete source examples,
 reports missing or obsolete keys and validates placeholder contracts. Runtime catalogues can be
 partial; contributor examples must be complete. The English example must equal compiled English.
 

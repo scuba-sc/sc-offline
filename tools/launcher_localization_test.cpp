@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "../launcher/localization.h"
+#include "../launcher/locale_ru_builtin.h"
 #include <cstdlib>
 #include <iostream>
 #include <vector>
@@ -129,6 +130,14 @@ int main(int argc, char** argv) {
             for (const auto& key : reference.Diagnostic().obsolete) std::cerr << "obsolete: " << key << '\n';
             CHECK(loaded);
             CHECK(reference.Diagnostic().missing.empty());
+            if (file == 2) {
+                Catalogue builtin;
+                CHECK(builtin.Load(kBuiltinRussianCatalogue) && builtin.Diagnostic().missing.empty());
+                for (size_t i = 0; i < kMessageCount; ++i) {
+                    const auto key = static_cast<Key>(i);
+                    CHECK(std::string(builtin.Text(key)) == reference.Text(key));
+                }
+            }
             if (file == 1)
                 for (size_t key = 0; key < kMessageCount; ++key)
                     CHECK(std::string(reference.Text(static_cast<Key>(key))) == kMessages[key].english);

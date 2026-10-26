@@ -5,6 +5,7 @@ import argparse
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -19,6 +20,7 @@ def system_font():
 
 
 def check(work, font):
+    subprocess.run([sys.executable, str(ROOT / 'tools/generate_launcher_locale.py')], check=True)
     work.mkdir(parents=True, exist_ok=False)
     build = work / 'build'
     subprocess.run(['cmake', '-S', str(ROOT / 'tools/launcher-localization'), '-B', str(build),
