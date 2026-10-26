@@ -41,7 +41,7 @@ if(SCO_GEAR_PRESETS_TESTS)
     target_compile_options(gear-presets-model-test PRIVATE -Wall -Wextra -Werror)
   endif()
   add_test(NAME gear-presets-model COMMAND gear-presets-model-test)
-  if(SCO_CORE_HOST_TEST_ROOT AND SCO_CORE_HOST_BUILD_DIR AND NOT WIN32)
+  if(SCO_CORE_HOST_TEST_ROOT AND SCO_CORE_HOST_BUILD_DIR)
     add_executable(gear-presets-storage-test model.cpp store.cpp ../../tools/gear_presets_storage_test.cpp)
     add_executable(gear-presets-workflow-test ../../tools/gear_presets_workflow_test.cpp
       "${SCO_CORE_HOST_TEST_ROOT}/src/game/services/inventory.cpp"
@@ -49,10 +49,17 @@ if(SCO_GEAR_PRESETS_TESTS)
     foreach(target gear-presets-storage-test gear-presets-workflow-test)
       target_include_directories(${target} PRIVATE "${SCO_SDK_INCLUDE_DIR}" "${SCO_CORE_HOST_TEST_ROOT}/include" "${SCO_CORE_HOST_TEST_ROOT}/src" "${CMAKE_CURRENT_SOURCE_DIR}")
       target_compile_features(${target} PRIVATE cxx_std_20)
-      target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
-      target_link_libraries(${target} PRIVATE "${SCO_CORE_HOST_BUILD_DIR}/libsco_widgets.a" "${SCO_CORE_HOST_BUILD_DIR}/libsco_storage.a"
-        "${SCO_CORE_HOST_BUILD_DIR}/libsco_host.a" "${SCO_CORE_HOST_BUILD_DIR}/libsco_runtime.a"
-        "${SCO_CORE_HOST_BUILD_DIR}/libsco_core.a" "${SCO_CORE_HOST_BUILD_DIR}/libsco_sqlite.a" ${CMAKE_DL_LIBS})
+      if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /WX /permissive-)
+        target_link_libraries(${target} PRIVATE "${SCO_CORE_HOST_BUILD_DIR}/sco_widgets.lib" "${SCO_CORE_HOST_BUILD_DIR}/sco_storage.lib"
+          "${SCO_CORE_HOST_BUILD_DIR}/sco_host.lib" "${SCO_CORE_HOST_BUILD_DIR}/sco_runtime.lib"
+          "${SCO_CORE_HOST_BUILD_DIR}/sco_core.lib" "${SCO_CORE_HOST_BUILD_DIR}/sco_sqlite.lib")
+      else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
+        target_link_libraries(${target} PRIVATE "${SCO_CORE_HOST_BUILD_DIR}/libsco_widgets.a" "${SCO_CORE_HOST_BUILD_DIR}/libsco_storage.a"
+          "${SCO_CORE_HOST_BUILD_DIR}/libsco_host.a" "${SCO_CORE_HOST_BUILD_DIR}/libsco_runtime.a"
+          "${SCO_CORE_HOST_BUILD_DIR}/libsco_core.a" "${SCO_CORE_HOST_BUILD_DIR}/libsco_sqlite.a" ${CMAKE_DL_LIBS})
+      endif()
     endforeach()
     add_dependencies(gear-presets-workflow-test sc-offline-gear-presets)
     add_test(NAME gear-presets-storage COMMAND gear-presets-storage-test "${CMAKE_BINARY_DIR}/storage-fixture")

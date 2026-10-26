@@ -10,21 +10,30 @@
 #include <filesystem>
 #include <chrono>
 #include <string>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#else
 #include <dlfcn.h>
+#endif
 namespace W=sco::widgets;
 namespace S=sco::game::services;
 static unsigned checks;
 static void Check(bool ok) { ++checks; if(!ok) { std::fprintf(stderr,"workflow failure %u\n",checks); std::exit(1); } }
+template<size_t N,size_t M> static void Copy(char (&destination)[N],const char (&source)[M]) {
+    static_assert(M<=N); std::memcpy(destination,source,M);
+}
 struct World { bool admitted=true; uint32_t category=22, storage=100; uint64_t generation=1; } world;
 static bool Admitted(void* p) { return static_cast<World*>(p)->admitted; }
 static sco_result Read(void* p,sc_inventory_layout_snapshot* out,sc_inventory_layout_entry* rows,uint32_t capacity) {
     auto& w=*static_cast<World*>(p); if(capacity!=128) return SCO_BAD_ARG;
     out->count=out->total_seen=2; out->flags=1; out->source_epoch=1; out->observation_generation=w.generation;
-    std::strcpy(out->identity_domain,"dev.gear.v1"); std::strcpy(out->layout_key,"human.v1");
+    Copy(out->identity_domain,"dev.gear.v1"); Copy(out->layout_key,"human.v1");
     rows[0].role=1; rows[0].state=2; rows[0].flags=3; rows[0].raw_item_type=w.category; rows[0].entity_id=999;
-    std::strcpy(rows[0].port_key,"helmet");
+    Copy(rows[0].port_key,"helmet");
     rows[1].role=2; rows[1].state=2; rows[1].flags=1; rows[1].raw_item_type=w.storage;
-    std::strcpy(rows[1].port_key,"pack"); return SCO_OK;
+    Copy(rows[1].port_key,"pack"); return SCO_OK;
 }
 struct Renderer:W::Renderer {
     W::Event event;
@@ -49,9 +58,20 @@ static void Done(sco_result result,const char* text,void* context) {
 }
 int main(int argc,char** argv) {
     Check(argc==3);
+    using LoadFn=sco_result (*)(const sco_api*,sco_plugin*);
+    using UnloadFn=void (*)();
+#ifdef _WIN32
+    HMODULE module=LoadLibraryA(argv[2]); Check(module!=nullptr);
+    const auto rawLoad=GetProcAddress(module,"sco_plugin_load"), rawUnload=GetProcAddress(module,"sco_plugin_unload");
+    LoadFn load=nullptr; UnloadFn unload=nullptr;
+    static_assert(sizeof(load)==sizeof(rawLoad) && sizeof(unload)==sizeof(rawUnload));
+    std::memcpy(&load,&rawLoad,sizeof(load)); std::memcpy(&unload,&rawUnload,sizeof(unload));
+#else
     void* module=dlopen(argv[2],RTLD_NOW|RTLD_LOCAL); Check(module!=nullptr);
-    auto load=reinterpret_cast<sco_result (*)(const sco_api*,sco_plugin*)>(dlsym(module,"sco_plugin_load"));
-    auto unload=reinterpret_cast<void (*)()>(dlsym(module,"sco_plugin_unload")); Check(load && unload);
+    auto load=reinterpret_cast<LoadFn>(dlsym(module,"sco_plugin_load"));
+    auto unload=reinterpret_cast<UnloadFn>(dlsym(module,"sco_plugin_unload"));
+#endif
+    Check(load && unload);
     sco::SetGameThread(); const auto* api=sco::host::BuildApi({"preset workflow fixture"});
     sco::storage::Options options; options.dataRoot=std::filesystem::path(argv[1]) /
         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
@@ -78,6 +98,10 @@ int main(int argc,char** argv) {
     unload(); Check(sco::Release(owner)==sco::Result::Ok);
     Check(sco::host::WithdrawGameService(SC_INVENTORY_SERVICE_NAME)==sco::Result::Ok);
     W::Stop(); sco::storage::Stop();
+#ifdef _WIN32
+    Check(FreeLibrary(module)!=0);
+#else
     Check(dlclose(module)==0);
+#endif
     std::printf("real host preset workflow: %u checks, 0 failed\n",checks);
 }
