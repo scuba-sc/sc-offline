@@ -25,8 +25,10 @@ inline InstallDirectories ResolveDirectories(const std::wstring& bin) {
     std::vector<wchar_t> buffer(capacity);
     if (bin.compare(0, 4, L"\\\\?\\") == 0) {
         // GetFullPathName strips literal trailing dots/spaces even in extended paths.
+        // PATHCCH_ENSURE_IS_EXTENDED_LENGTH_PATH is absent from older MinGW headers.
+        constexpr ULONG ensureExtendedLengthPath = 0x00000010;
         if (FAILED(PathCchCanonicalizeEx(buffer.data(), buffer.size(), operational.c_str(),
-                                        PATHCCH_ENSURE_IS_EXTENDED_LENGTH_PATH))) return result;
+                                        ensureExtendedLengthPath))) return result;
     } else {
         const DWORD length = GetFullPathNameW(operational.c_str(), capacity, buffer.data(), nullptr);
         if (!length || length >= capacity) return result;

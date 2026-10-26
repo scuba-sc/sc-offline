@@ -214,6 +214,17 @@ jobs:
       - name: Install discovery with real directory junctions and hardlinked binaries
         run: python tools/check_install_discovery.py
 
+  install-aliases-wine:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Wine and MinGW
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq wine64 wine g++-mingw-w64-x86-64-posix xvfb xauth
+      - name: 'Install discovery with real Wine C:/Z: aliases'
+        run: xvfb-run -a python3 tools/check_install_discovery_wine.py
+
   # Contracts: the built-in is gone (G1 refuses builtin inputs with early DataCore), so its
   # published-SDK proof is what stands between the feature and shipping nothing. Refuses in game
   # until the missions/economy providers land; no built-in fallback, no host-side tick.

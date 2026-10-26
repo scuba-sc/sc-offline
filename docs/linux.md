@@ -48,6 +48,8 @@ It prints which source it used for each. The historical report used the LUG Help
 
 The Windows launcher compares the physical channel and Bin64 directories to combine duplicate install paths, preserving the first discovered spelling and priority. If the filesystem cannot supply directory identity, it retains the existing case-insensitive path comparison. Separate channels or install roots remain separate, including when they share executable files or a Bin64 junction. Whether a Wine runner supplies matching identity for C: and Z: aliases still requires a named Wine fixture; Windows filesystem tests do not establish that behavior.
 
+The synthetic `install-aliases-wine` CI job runs `tools/check_install_discovery_wine.py` with Ubuntu's Wine in a fresh temporary prefix. It checks the production identity helper against a C: symlink and its Z: host path, then verifies separate roots, PTU and a shared Bin64 remain separate. Its log records the Wine version and returned directory identities. It creates no game installation and executes only the fixture program. This job tests that named Wine runner; game and launcher acceptance remain separate.
+
 It also checks that `/etc/hosts` blocks the EAC download server and prints the line to add if not.
 
 The script sets `WINEDLLOVERRIDES=dinput8=n,b`, so Wine loads the mod's `dinput8.dll` instead of its own.
