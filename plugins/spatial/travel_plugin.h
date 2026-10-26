@@ -396,7 +396,10 @@ sco_result InspectBookmark(const sco_arg* a,uint32_t count,void*,char* out,uint3
     return Reply(SCO_OK,out,n,std::string(r.partial?"Partial restoration candidate":"Exact restoration candidate")+" at saved level "+std::to_string(r.level)+"; "+(r.system_known?"provider system known":"system unknown")+"; read-only, not moved");
 }
 void Panel();
-void PanelEvent(const char*,const sco_widget_event* event,void*) noexcept {
+void PanelEvent(const char*,const sco_widget_event* event,void* context) noexcept {
+#ifndef TRAVEL_QUANTUM_CONTROLS
+    (void)context;
+#endif
     if (!event || event->size<sizeof(*event) || !g.api) return;
     try {
         char reply[512]{}; sco_arg name{}; name.type=SCO_ARG_STRING;
@@ -437,7 +440,7 @@ void PanelEvent(const char*,const sco_widget_event* event,void*) noexcept {
         case 14: if (event->kind==SCO_WIDGET_BUTTON && (g.mark_page+1)*128<g.marks.size()) { ++g.mark_page; g.selected_mark=-1; } break;
         default:
 #ifdef TRAVEL_QUANTUM_CONTROLS
-            sco::features::quantum::Event(event);
+            sco::features::quantum::Event(event,context);
 #endif
             break;
         }
@@ -479,7 +482,11 @@ void Panel() {
 #else
     constexpr const char* title=id;
 #endif
-    if (widgets->set_panel(g.self,(std::string(id)+".travel").c_str(),title,nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(nodes[0]),PanelEvent,nullptr)==SCO_OK) g.panel=true;
+    void* context=nullptr;
+#ifdef TRAVEL_QUANTUM_CONTROLS
+    context=sco::features::quantum::CallbackContext();
+#endif
+    if (widgets->set_panel(g.self,(std::string(id)+".travel").c_str(),title,nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(nodes[0]),PanelEvent,context)==SCO_OK) g.panel=true;
 }
 }
 using namespace implementation;

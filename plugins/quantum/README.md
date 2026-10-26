@@ -20,6 +20,39 @@ Charging, drive input forwarding, audio handles/effect state and restoration rem
 
 Every callback extent is checked before use, tables are reopened per operation, durations/arguments/copied observations are validated, and the plugin never steals another owner's control. Capability/admission loss stops input refresh and requests owner cancellation. Ordinary unload unsubscribes, removes its hotkey and requests cancellation/disable for its own lease; the provider's actual owner-release hook remains authoritative for quarantine/fault cleanup. Failed cleanup is not a reload-safety claim.
 
+## Received GameRules in the control panel
+
+The existing Travel panel copies the public `game.gamerules` 1.0 snapshot only
+when `game.gamerules.read` is available. It shows the received generation,
+quantum-travel and boost gates, and whether group QT is enforced. Group
+membership remains unknown; enforcement is never treated as proof that the
+player belongs to a group. A generation is an opaque update token, including
+zero, and is not ordered or treated as a session identity.
+
+Automatic presentation reads occur at most once per 250 ms. Explicit state
+refresh and a UI request to start boost reopen and read the service immediately.
+Every read checks the current capability, complete callback extent/non-nullness,
+record size, boolean gates and finite thresholds. Thresholds are not used to
+invent range or membership rules. Missing/unreadable, malformed or not-yet-valid
+snapshots clear any previously displayed permission and show an explicit unknown
+state. The last allowed snapshot is never used after a failed refresh.
+
+The boost affordance requires a received, valid snapshot allowing both quantum
+travel and boost, plus the existing capability and explicit owner lease. Unknown
+or forbidden rules pause new boost through this panel. The UI rechecks before
+starting a hold, so a stale or forged click cannot use an old allowed snapshot.
+A held boost can still be released when rules or capabilities become unreadable;
+the separate owned Release control and disable/cancel routes remain available.
+Control callbacks carry an opaque per-load identity, so callbacks retained from a
+previous load cannot start or release the new owner's controller.
+
+This is control-panel guidance. Existing commands, hotkeys and focused Windows
+input retain their G8 provider checks and authority; the snapshot does not replace
+native admission or enable a backend. These quantum-travel rules do not gate the
+separate `game.relocation` destination/bookmark operations. The default production
+GameRules reader and G8 adapter remain unavailable; no default, SDK pin, staging
+or native activation changes here.
+
 ## Existing travel and storage compatibility
 
 Retains `quantum.travel(place, altitude)`, `quantum.bookmark(name)`, `quantum.save_bookmark(name)` and `quantum.scan`. `quantum.travel` and `quantum.bookmark` move you through sco-core's public **`game.relocation` 1.0**: the plugin's `relocation` setting is checked, then the capability `game.relocation` fresh, then the arguments; one request goes out (zone id, pose local to that zone, 30 s timeout), and the plugin follows the ticket each game tick and reports arrival or the failure/cancellation reason once. One move at a time; tickets are never persisted. `quantum.travel` finds the destination zone by its entity name and asks for a point at radius + altitude (100..20000 m) along that zone's own +Z axis, identity rotation; `quantum.bookmark` resolves a saved bookmark's exact/partial pose. `game.relocation` moves only within your current star system and only with sco-core's offline admission, a verified engine backend, a live player and a known system, which needs this release's host, **sco-core main e616ed6 or later**; without those conditions moves answer unavailable. The `relocation` setting (bool, default true, "Allow moving the player (offline only)") turns moves off for this plugin; `relocation = off` in `sc-offline.ini` turns them off for every plugin once the host pin has `SetRelocationEnabled`. `quantum.status`, `quantum.delete_bookmark(name)` and `quantum.inspect_bookmark(name)` remain unchanged. `quantum.scan` copies at most 256 observed zones, 64 per page, with epoch checks; it is not exhaustive system discovery. Unknown system/root/name never authorizes movement; the provider decides the star system.
@@ -63,16 +96,25 @@ The optional `sco.widgets` panel retains ID `quantum.travel` and now has title *
 
 ## Build, install and focused evidence
 
-Use the published `sdk-v2.4.0-rc.1` archive (it contains `sc_quantum.h`, `sc_game_spatial.h`, `sc_relocation.h`, `sco_widgets.h` and `sco_content.h`). The release workflow stages quantum enabled through `tools/check_quantum_sdk.py`, which builds against that archive outside the checkout, runs the module workflow below, traces compiler dependencies, runs boundary negatives and a relocation red arm (POSIX), and runs the SDK's `sco-plugin-check` with no game services. That is not a game proof.
+Use the published `sdk-v2.4.0-rc.1` archive (it contains `sc_quantum.h`, `sc_game_spatial.h`, `sc_relocation.h`, `sc_gamerules.h`, `sco_widgets.h` and `sco_content.h`). The release workflow stages quantum enabled through `tools/check_quantum_sdk.py`, which builds against that archive outside the checkout, runs the module workflow below, traces compiler dependencies, runs boundary negatives and a relocation red arm (POSIX), and runs the SDK's `sco-plugin-check` with no game services. That is not a game proof.
 
 ```sh
 cmake -S plugins/quantum -B build-quantum -DSCO_SDK_INCLUDE_DIR=/path/to/extracted/include -DSCO_QUANTUM_TEST=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build build-quantum
-ctest --test-dir build-quantum -R '^quantum-(workflow|content)$' --output-on-failure
+ctest --test-dir build-quantum -R '^quantum-(workflow|content|gamerules)$' --output-on-failure
 cmake --install build-quantum --prefix /path/to/product --component quantum
 ```
 
 Installed `data/plugins/quantum/` contains the native module and enabled manifest; ordinary folder disable and `plugins=off` semantics apply. Native modules are trusted code, GPL-3.0-only.
+
+The GameRules workflow drives the actual module/published panel with synthetic
+public providers, covering cache timing and clock wrap, opaque generations,
+malformed/short/null/refused reads, capability loss/recovery, current-owner
+cancellation, stale callbacks across unload/reload and unchanged relocation.
+The isolated helper runs all three workflows normally and with ASan/UBSan on
+POSIX, retains the relocation red arm and private-dependency negatives, and
+requires the GameRules workflow to fail if the unknown-policy guard is removed.
+These fixtures do not exercise the game or a live GameRules reader.
 
 The focused content workflow drives the actual module with synthetic public
 snapshots: canonical/ambiguous source selection, first-entity ordering, bounds,
@@ -80,6 +122,6 @@ atomic malformed refusal, short/null service and root members, copied lifetime,
 generated-file precedence and unload/reload. It does not replace the separate
 real-provider integration proof or certify Windows, rendering or gameplay.
 
-**Observed:** macOS AppleClang compiled/linked the actual module with `-Wall -Wextra -Werror`; both dynamically loaded synthetic public-provider workflows passed, including 6,015 content checks, and passed again with ASan/UBSan. The existing control/movement workflow retains legacy IDs/Travel composition, no startup writes, bounded holds, capability-loss cancellation, relocation request/tick tracking, widget routes and unload/reload checks. A separate real content-provider fixture feeds ordinary synthetic packs into the actual Quantum module; it covers copied startup bytes, parsing, ambiguity/refusal, restart and persistence compatibility without game providers.
+**Historical content-migration evidence (PR #165):** macOS AppleClang compiled/linked the actual module with `-Wall -Wextra -Werror`; both dynamically loaded synthetic public-provider workflows passed, including 6,015 content checks, and passed again with ASan/UBSan. The existing control/movement workflow retains legacy IDs/Travel composition, no startup writes, bounded holds, capability-loss cancellation, relocation request/tick tracking, widget routes and unload/reload checks. A separate real content-provider fixture feeds ordinary synthetic packs into the actual Quantum module; it covers copied startup bytes, parsing, ambiguity/refusal, restart and persistence compatibility without game providers.
 
-Independent actual MSVC 19.44 compilation of the production DLL and both test executables passed with strict warnings. Both executables dynamically loaded that DLL and passed, including the 6,015 content checks, against the checksum-verified published RC1 headers. This is Windows compilation and synthetic module behavior, not game or renderer acceptance. The fixtures do not execute the real game-pack adapter, its release hook, Windows input, database transactions or engine effects. **Real renderer, storage import twice, native detours, NAV/action forwarding, owned drive/charge/audio/effect restoration, every in-game move and where `quantum.travel` actually puts you, and actual gameplay remain NOT VERIFIED; not run in game.**
+For that earlier content slice, independent actual MSVC 19.44 compilation of the production DLL and both test executables passed with strict warnings. Both executables dynamically loaded that DLL and passed, including the 6,015 content checks, against the checksum-verified published RC1 headers. This is Windows compilation and synthetic module behavior, not game or renderer acceptance. The fixtures do not execute the real game-pack adapter, its release hook, Windows input, database transactions or engine effects. **Real renderer, storage import twice, native detours, NAV/action forwarding, owned drive/charge/audio/effect restoration, every in-game move and where `quantum.travel` actually puts you, and actual gameplay remain NOT VERIFIED; not run in game.**

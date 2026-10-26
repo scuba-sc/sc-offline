@@ -2,10 +2,13 @@
 // SDK-only quantum policy. Engine charge, sound and effect state stays behind G8.
 #pragma once
 #include <sc_quantum.h>
+#include <sc_gamerules.h>
 #include <sco_settings.h>
 #include <sco_widgets.h>
 #include <sco_ui.h>
 #include <cstddef>
+#include <cmath>
+#include <limits>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -18,11 +21,16 @@ struct ControlState {
     const sco_api* api=nullptr; sco_plugin* self=nullptr;
     bool subscribed=false, hotkey=false, leased=false, input_held=false;
     bool caps_input=true, mouse_input=false, clocked=false;
-    uint32_t last_tick=0, last_panel=0;
+    uint32_t last_tick=0, last_panel=0; uintptr_t epoch=0;
     sc_quantum_state observed{}; sco_result result=SCO_UNAVAILABLE;
+    sc_gamerules_state rules{}; sco_result rules_result=SCO_UNAVAILABLE; bool rules_known=false;
+    char rules_message[192]="GameRules unknown: no received parameter snapshot";
+    char group_message[128]="Group QT enforcement unknown; group membership is never inferred";
     char message[256]="G8 unavailable: no admitted game-pack adapter";
 };
 inline ControlState g;
+inline uintptr_t next_epoch=0;
+inline void* CallbackContext() { return reinterpret_cast<void*>(g.epoch); }
 template<class T> const T* Open(const char* name) {
     const void* table=nullptr;
     if (!QHAS(g.api,sco_api,query_service) || g.api->query_service(name,0x10000u,&table)!=SCO_OK) return nullptr;
@@ -35,6 +43,33 @@ inline sco_result Answer(sco_result r,char* out,uint32_t n,const char* text) {
     if (out && n) std::snprintf(out,n,"%s",g.message);
     return r;
 }
+inline void ReadRules() {
+    sc_gamerules_state next{}; next.size=sizeof(next);
+    const bool readable=QHAS(g.api,sco_api,has) && g.api->has("game.gamerules.read");
+    auto result=readable ? sc_gamerules_read(Open<sc_gamerules_v1>(SC_GAMERULES_SERVICE_NAME),g.self,&next) : SCO_UNAVAILABLE;
+    if (result==SCO_OK) {
+        const float thresholds[]{next.travel_target_threshold_angle,next.target_lock_angular_player,
+            next.target_lock_angular_ai,next.target_lock_linear_player,next.target_lock_linear_ai,
+            next.boost_group_distance_threshold};
+        if (next.size<sizeof(next) || next.valid>1 || next.enforce_group_qt>1 ||
+            next.quantum_travel_allowed>1 || next.quantum_boost_allowed>1) result=SCO_FAILED;
+        for (float value:thresholds) if (!std::isfinite(value)) result=SCO_FAILED;
+    }
+    g.rules_result=result; g.rules_known=result==SCO_OK && next.valid==1;
+    g.rules=g.rules_known ? next : sc_gamerules_state{};
+    if (g.rules_known) {
+        std::snprintf(g.rules_message,sizeof(g.rules_message),"GameRules generation=%llu: quantum travel %s; boost %s",
+            static_cast<unsigned long long>(next.generation),next.quantum_travel_allowed?"allowed":"forbidden",next.quantum_boost_allowed?"allowed":"forbidden");
+        std::snprintf(g.group_message,sizeof(g.group_message),"%s; group membership unknown (provider decides admission)",
+            next.enforce_group_qt?"Group QT enforced":"Group QT not enforced");
+    } else {
+        if (result==SCO_OK) std::snprintf(g.rules_message,sizeof(g.rules_message),"GameRules unknown: parameter set not received; boost UI paused");
+        else std::snprintf(g.rules_message,sizeof(g.rules_message),"GameRules unknown/unreadable (result=%d); boost UI paused",static_cast<int>(result));
+        std::snprintf(g.group_message,sizeof(g.group_message),"Group QT enforcement unknown; group membership is never inferred");
+    }
+}
+inline bool RulesAllowBoost() { return g.rules_known && g.rules.quantum_travel_allowed && g.rules.quantum_boost_allowed; }
+inline bool Held() { return g.leased && g.result==SCO_OK && g.observed.held; }
 inline sco_result Read() {
     sc_quantum_state next{}; next.size=sizeof(next);
     auto r=sc_quantum_read_state(Control(),g.self,&next);
@@ -82,7 +117,7 @@ inline sco_result BoostCommand(const sco_arg*,uint32_t n,void*,char* out,uint32_
 }
 inline sco_result StateCommand(const sco_arg*,uint32_t n,void*,char* out,uint32_t cap) noexcept {
     if ((!out && cap) || n) return SCO_BAD_ARG;
-    const auto r=Read(); char text[256]{};
+    ReadRules(); const auto r=Read(); char text[256]{};
     if (r==SCO_OK) std::snprintf(text,sizeof(text),"G8 enabled=%u held=%u phase=%u block=%u progress=%u/1000000; owned=%u",g.observed.enabled,g.observed.held,g.observed.phase,g.observed.block,g.observed.progress,g.leased?1u:0u);
     else std::snprintf(text,sizeof(text),"G8 state unknown/unavailable (result=%d); no private fallback",static_cast<int>(r));
     return Answer(r,out,cap,text);
@@ -121,7 +156,7 @@ inline void Tick(const char*,const void* data,void*) noexcept {
             if (r!=SCO_OK) Answer(r,nullptr,0,"G8 input hold refused; no private boost/effect fallback");
         } else if (g.input_held) Release();
     }
-    if (now-g.last_panel>=250u) { g.last_panel=now; try { RefreshPanel(); } catch (...) {} }
+    if (now-g.last_panel>=250u) { g.last_panel=now; ReadRules(); try { RefreshPanel(); } catch (...) {} }
 }
 inline void AppendPanel(std::vector<sco_widget_node>& nodes) {
     auto add=[&](uint32_t kind,uint32_t id,const char* label)->sco_widget_node& {
@@ -132,17 +167,30 @@ inline void AppendPanel(std::vector<sco_widget_node>& nodes) {
     add(SCO_WIDGET_LABEL,101,"G8 owns charge/audio/effects; NAV interception unavailable without game-pack adapter");
     auto& enable=add(SCO_WIDGET_TOGGLE,102,"Enable owned quantum controller"); enable.value=g.leased?1:0;
     if (!Cap() && !g.leased) enable.flags=SCO_WIDGET_DISABLED;
-    auto& boost=add(SCO_WIDGET_BUTTON,103,"Bounded boost (1000 ms maximum)"); if (!Cap() || !g.leased) boost.flags=SCO_WIDGET_DISABLED;
+    auto& boost=add(SCO_WIDGET_BUTTON,103,Held()?"Release current bounded hold":RulesAllowBoost()?"Bounded boost (1000 ms maximum)":
+        g.rules_known?"Boost forbidden by received GameRules":"Boost unavailable: GameRules unknown");
+    if (!Held() && (!Cap() || !g.leased || !RulesAllowBoost())) boost.flags=SCO_WIDGET_DISABLED;
     auto& release=add(SCO_WIDGET_BUTTON,104,"Release quantum hold"); if (!g.leased) release.flags=SCO_WIDGET_DISABLED;
-    add(SCO_WIDGET_BUTTON,105,"Refresh quantum state");
+    add(SCO_WIDGET_BUTTON,105,"Refresh quantum state and GameRules");
+    add(SCO_WIDGET_LABEL,106,g.rules_message); add(SCO_WIDGET_LABEL,107,g.group_message);
 }
-inline void Event(const sco_widget_event* event) noexcept {
-    if (!g.api || !event || event->size<sizeof(*event)) return;
+inline void Event(const sco_widget_event* event,void* context) noexcept {
+    if (!g.api || reinterpret_cast<uintptr_t>(context)!=g.epoch || !event || event->size<sizeof(*event)) return;
     char reply[256]{};
     if (event->node_id==102 && event->kind==SCO_WIDGET_TOGGLE && (event->value==0 || event->value==1)) {
         sco_arg arg{}; arg.type=SCO_ARG_BOOL; arg.v.i=event->value==1 ? 1:0; EnableCommand(&arg,1,nullptr,reply,sizeof(reply));
     } else if (event->kind==SCO_WIDGET_BUTTON) {
-        if (event->node_id==103) BoostCommand(nullptr,0,nullptr,reply,sizeof(reply));
+        if (event->node_id==103) {
+            Read();
+            if (Held()) ReleaseCommand(nullptr,0,nullptr,reply,sizeof(reply));
+            else {
+                ReadRules();
+                if (RulesAllowBoost()) BoostCommand(nullptr,0,nullptr,reply,sizeof(reply));
+                else Answer(SCO_UNAVAILABLE,reply,sizeof(reply),g.rules_known ?
+                    "Boost UI refused: received GameRules forbid quantum travel or boost" :
+                    "Boost UI refused: GameRules unknown/unreadable; native provider remains authoritative");
+            }
+        }
         if (event->node_id==104) ReleaseCommand(nullptr,0,nullptr,reply,sizeof(reply));
         if (event->node_id==105) StateCommand(nullptr,0,nullptr,reply,sizeof(reply));
     }
@@ -150,7 +198,8 @@ inline void Event(const sco_widget_event* event) noexcept {
 inline sco_result Load(const sco_api* api,sco_plugin* self) {
     if (!api || !self || g.api || !QHAS(api,sco_api,register_command) ||
         !QHAS(api,sco_api,subscribe) || !QHAS(api,sco_api,unsubscribe)) return SCO_UNAVAILABLE;
-    g.api=api; g.self=self;
+    if (next_epoch==(std::numeric_limits<uintptr_t>::max)()) return SCO_TOO_MANY;
+    g.api=api; g.self=self; g.epoch=++next_epoch;
     const sco_arg_def on{"on",SCO_ARG_BOOL,0,"Enable this owner's bounded G8 controller"};
     const sco_arg_def ms{"milliseconds",SCO_ARG_INT,0,"1..1000 ms; expires on game ticks"};
     const sco_command commands[]{
@@ -165,7 +214,7 @@ inline sco_result Load(const sco_api* api,sco_plugin* self) {
     g.subscribed=true;
     const auto* ui=Open<sco_ui_v1>(SCO_UI_NAME);
     if (QHAS(ui,sco_ui_v1,bind_hotkey) && QHAS(ui,sco_ui_v1,unbind_hotkey)) g.hotkey=ui->bind_hotkey(self,"ctrl+alt+b","quantum.boost",nullptr,0)==SCO_OK;
-    Read(); return SCO_OK; // No enable, hold, charge write or effect starts at load.
+    ReadRules(); Read(); return SCO_OK; // No enable, hold, charge write or effect starts at load.
 }
 inline void Unload() noexcept {
     if (!g.api) return;

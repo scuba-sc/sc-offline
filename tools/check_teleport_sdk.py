@@ -103,6 +103,17 @@ def prove(args, spec):
             if token not in checked:
                 raise AssertionError('Missing-service checker reply missing: ' + token)
     if os.name != 'nt':
+        sanitized = work / 'sanitizer-build'
+        run(['cmake', '-S', source / 'plugins' / feature, '-B', sanitized,
+             '-DSCO_SDK_INCLUDE_DIR=' + str(sdk / 'include'), f'-D{spec["test_option"]}=ON',
+             '-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer',
+             '-DCMAKE_MODULE_LINKER_FLAGS=-fsanitize=address,undefined',
+             '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined'], work)
+        for test_target in [spec['test_target']] + [test[1] for test in extra_tests]:
+            run(['cmake', '--build', sanitized, '--target', test_target], work)
+        names = [spec['test_name']] + [test[2] for test in extra_tests]
+        print(run(['ctest', '--test-dir', sanitized, '-R', '^(' + '|'.join(names) + ')$',
+                   '--output-on-failure', '-V'], work).stdout)
         cpp = source / 'plugins' / feature / f'{feature}.cpp'
         original = cpp.read_text()
         mtime = cpp.stat().st_mtime_ns
@@ -124,6 +135,23 @@ def prove(args, spec):
         run(['cmake', '--build', build, '--target', 'clean'], work)
         build_all()
         workflow()
+        if 'policy_red_arm' in spec:
+            path, enabled, broken, test_name, failure = spec['policy_red_arm']
+            policy = source / path
+            policy_original = policy.read_text()
+            if enabled not in policy_original:
+                raise AssertionError('Policy red-arm marker missing')
+            policy.write_text(policy_original.replace(enabled, broken))
+            run(['cmake', '--build', build, '--target', 'clean'], work)
+            build_all()
+            red = run(['ctest', '--test-dir', build, '-R', '^' + test_name + '$', '--output-on-failure'], work, False)
+            if not red.returncode or failure not in red.stdout:
+                raise AssertionError('Policy red arm failed incorrectly:\n' + red.stdout)
+            print(f'{feature} policy red arm: workflow detects missing UI rules guard (expected)')
+            policy.write_text(policy_original)
+            run(['cmake', '--build', build, '--target', 'clean'], work)
+            build_all()
+            workflow()
         mutants = {
             'private host header': ('#include "sco/plugins.h"\n', 'sco/plugins.h'),
             'product header': ('#include "version.h"\n', 'version.h'),

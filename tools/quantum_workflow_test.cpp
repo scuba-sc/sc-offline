@@ -2,6 +2,7 @@
 // Actual module, synthetic public providers; NOT Windows/game/effects evidence.
 #include <sco_api.h>
 #include <sc_quantum.h>
+#include <sc_gamerules.h>
 #include <sco_widgets.h>
 #include <sco_settings.h>
 #include <sco_content.h>
@@ -34,7 +35,7 @@ int enables=0,holds=0,releases=0,panels=0; uint32_t duration=0;
 const void* service=nullptr;
 bool relocation_cap=false; int32_t allow=1; std::string data_root,last_status;
 int requests=0; uint32_t reloc_state=SC_RELOCATION_PENDING; sc_relocation_request last_request{};
-int Has(const char* name) { return (capability && !std::strcmp(name,"game.quantum.control")) || (relocation_cap && !std::strcmp(name,SC_RELOCATION_NAME)); }
+int Has(const char* name) { return !std::strcmp(name,"game.gamerules.read") || (capability && !std::strcmp(name,"game.quantum.control")) || (relocation_cap && !std::strcmp(name,SC_RELOCATION_NAME)); }
 sco_result GetBool(sco_plugin*,const char* name,int32_t* out) { if (std::strcmp(name,"relocation")) return SCO_NOT_FOUND; *out=allow; return SCO_OK; }
 sco_result GetString(sco_plugin*,const char* name,char* out,uint32_t* n) {
     if (std::strcmp(name,"data_root") || data_root.empty()) return SCO_NOT_FOUND;
@@ -81,6 +82,8 @@ sco_result Hold(sco_plugin*,uint32_t ms) { ++holds; assert(ms>=1 && ms<=1000); i
 sco_result Release(sco_plugin*) { ++releases; held=false; return enabled ? SCO_OK:SCO_NOT_FOUND; }
 sco_result State(sco_plugin*,sc_quantum_state* s) { assert(s->size==sizeof(*s)); if (!available) return SCO_UNAVAILABLE; *s={sizeof(*s),enabled?1u:0u,held?1u:0u,SC_QUANTUM_CHARGING,0,250000,1}; return SCO_OK; }
 sc_quantum_v1 q{sizeof(q),0,Enable,Hold,Release,State};
+sco_result Rules(sco_plugin*,sc_gamerules_state* out) { *out={};out->size=sizeof(*out);out->valid=1;out->quantum_travel_allowed=1;out->quantum_boost_allowed=1;return SCO_OK; }
+sc_gamerules_v1 rules{sizeof(rules),0,Rules,nullptr};
 sco_result Panel(sco_plugin*,const char* id,const char* title,const sco_widget_node* nodes,uint32_t n,uint32_t stride,sco_widget_event_fn fn,void* ctx) {
     assert(!std::strcmp(id,"quantum.travel") && !std::strcmp(title,"Travel")); assert(stride==sizeof(*nodes));
     bool bookmarks=false,control=false;
@@ -92,6 +95,7 @@ sco_widgets_v1 widgets{sizeof(widgets),0,Panel,Remove};
 sco_result Query(const char* name,uint32_t version,const void** out) {
     assert(version==0x10000u); *out=nullptr;
     if (!std::strcmp(name,SC_QUANTUM_SERVICE_NAME)) *out=service;
+    if (!std::strcmp(name,SC_GAMERULES_SERVICE_NAME)) *out=&rules;
     if (!std::strcmp(name,SCO_WIDGETS_NAME)) *out=&widgets;
     if (!std::strcmp(name,SCO_SETTINGS_NAME)) *out=&settings;
     if (!std::strcmp(name,SCO_CONTENT_NAME)) *out=&content;
