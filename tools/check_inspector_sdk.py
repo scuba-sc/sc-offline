@@ -37,15 +37,31 @@ def contained(path, root):
     return path == root or root in path.parents
 
 
+def explicit_preflight_pin(args):
+    """Preserve published defaults; bind preflight overrides to an explicit digest."""
+    pin = ('sco-sdk-' + args.sdk_version, args.sdk_sha256.lower())
+    published = args.sdk_version == SDK_VERSION and pin[1] == SDK_SHA256
+    if args.archive_sha256 and not args.candidate:
+        raise AssertionError('--archive-sha256 requires --candidate')
+    if not published and not args.candidate:
+        raise AssertionError('Non-default SDK identity requires --candidate and --archive-sha256')
+    if args.candidate:
+        if not args.archive_sha256 or args.archive_sha256.lower() != pin[1]:
+            raise AssertionError('--candidate requires matching --archive-sha256 and --sdk-sha256')
+        if published:
+            raise AssertionError('--candidate must select a non-default archive identity')
+    return pin
+
+
 def verify_extract(archive, sums, destination, pin=None):
     sdk_root, sdk_sha256 = pin or (SDK_ROOT, SDK_SHA256)
     if archive.name != sdk_root + '.zip':
-        raise AssertionError(f'Expected published {sdk_root}.zip, got {archive.name}')
+        raise AssertionError(f'Expected SDK archive {sdk_root}.zip, got {archive.name}')
     rows = [line.split() for line in sums.read_text().splitlines() if line.strip()]
     hashes = [row[0] for row in rows if row[1].lstrip('*') == archive.name]
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     if len(hashes) != 1 or digest != hashes[0] or digest != sdk_sha256:
-        raise AssertionError('Published SDK SHA256 mismatch')
+        raise AssertionError('SDK archive SHA256 mismatch')
     with zipfile.ZipFile(archive) as z:
         for item in z.infolist():
             if not item.filename.startswith(sdk_root + '/'):

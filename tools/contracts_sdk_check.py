@@ -13,7 +13,8 @@ import shutil
 import sys
 
 sys.dont_write_bytecode = True
-from check_inspector_sdk import contained, run, trace_posix, trace_windows, verify_extract
+from check_inspector_sdk import (SDK_VERSION, SDK_SHA256, contained, explicit_preflight_pin,
+                                 run, trace_posix, trace_windows, verify_extract)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -24,8 +25,11 @@ def main(args):
         raise AssertionError('Contracts proof must be outside the host checkout')
     if args.sanitizers and os.name == 'nt':
         raise AssertionError('Sanitizer proof requires POSIX')
+    pin = explicit_preflight_pin(args)
     work.mkdir(parents=True, exist_ok=False)
-    sdk, public = verify_extract(args.archive.resolve(), args.sums.resolve(), work / 'sdk')
+    sdk, public = verify_extract(args.archive.resolve(), args.sums.resolve(), work / 'sdk', pin=pin)
+    if args.candidate:
+        print('Explicit unpublished development compatibility preflight; SHA-256 ' + pin[1])
     source = work / 'source'
     (source / 'plugins').mkdir(parents=True)
     shutil.copytree(ROOT / 'plugins/contracts', source / 'plugins/contracts')
@@ -149,6 +153,10 @@ if __name__ == '__main__':
     parser.add_argument('--archive', type=Path, required=True)
     parser.add_argument('--sums', type=Path, required=True)
     parser.add_argument('--work', type=Path, required=True, help='New isolated directory')
+    parser.add_argument('--sdk-version', default=SDK_VERSION)
+    parser.add_argument('--sdk-sha256', default=SDK_SHA256)
+    parser.add_argument('--candidate', action='store_true', help='Explicit unpublished preflight archive')
+    parser.add_argument('--archive-sha256', help='Required locked digest with --candidate')
     parser.add_argument('--slice', choices=('read', 'accept', 'progress', 'script', 'economy', 'metadata'), required=True)
     parser.add_argument('--boundary', action='store_true', help='POSIX boundary negative controls')
     parser.add_argument('--sanitizers', action='store_true', help='POSIX physical-pointer red/green probe')
