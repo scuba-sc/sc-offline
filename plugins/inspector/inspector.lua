@@ -74,9 +74,14 @@ local function read()
     return text
 end
 
+-- Command metadata is copied at registration; a language change needs a reload.
+local locale = sco.settings and sco.settings.get and sco.settings.get("language") or "en"
+local titles = { en = "Read player (Lua)", ru = "Данные игрока (Lua)" }
+local helps = { en = "Read the current player without changing the game",
+                ru = "Получить данные игрока без изменения игры" }
 assert(sco.register_command{
     name = "inspector_lua.read",
-    title = "Read player (Lua)",
-    help = "Read the current player without changing the game",
+    title = titles[locale] or titles.en,
+    help = helps[locale] or helps.en,
     fn = read,
 })

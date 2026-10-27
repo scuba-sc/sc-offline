@@ -8,6 +8,8 @@
 #include "sc_inventory.h"
 #include "sc_input.h"
 #include "sco_widgets.h"
+#include "sco_settings.h"
+#include "inspector_locale.h"
 
 #include <cmath>
 #include <cstddef>
@@ -63,6 +65,7 @@ enum : uint32_t { kRefresh = 10, kStatus = 11, kDiagnostics = 20, kInventory = 2
                   kPrevious = 50, kNext = 51 };
 const sco_widgets_v1* g_widgets = nullptr;
 bool g_panel = false;
+bool g_settings_subscribed = false;
 uint32_t g_tab = kDiagnostics, g_page = 0;
 char g_query[SC_INPUT_ACTION_NAME_BYTES]{};
 char g_widget_status[128] = "Not sampled";
@@ -243,6 +246,23 @@ sco_result AcquireParams(uint32_t offset, sc_gamerules_param_info* out, uint32_t
 }
 
 bool RenderPanel();
+const char* Locale() {
+    static char locale[32];
+    locale[0] = 0;
+    const auto* settings = Service<sco_settings_v1>(SCO_SETTINGS_NAME, SCO_SETTINGS_VERSION_1_0);
+    uint32_t size = sizeof(locale);
+    if (!HAS_FN(settings, sco_settings_v1, get_string) ||
+        settings->get_string(g_self, "language", locale, &size) != SCO_OK ||
+        size == 0 || size > sizeof(locale) || locale[size - 1] != '\0') return "en";
+    return locale;
+}
+void SettingsChanged(const char*, const void* data, void* ctx) {
+    if (ctx != g_self || !data) return;
+    const auto* change = static_cast<const sco_settings_changed*>(data);
+    if (change->size < sizeof(*change) || !change->plugin || !change->name ||
+        std::strcmp(change->plugin, "inspector") || std::strcmp(change->name, "language")) return;
+    RenderPanel();
+}
 bool ValidName(const char* name, size_t capacity);
 void PanelEvent(const char* panel, const sco_widget_event* event, void* ctx) {
     if (!ctx || ctx != g_self || !g_api || !panel || std::strcmp(panel, kPanelId) || !event ||
@@ -333,21 +353,23 @@ bool RenderPanel() {
             std::snprintf(row[0], sizeof(row[0]), "Named action count: %u", g_snapshot.action_count); cells[0] = row[0];
         } else cells[0] = "Lookup action by exact name";
     }
+    const char* locale = Locale();
+    auto tr = [&](const char* key) { return inspector_locale::Lookup(locale, key); };
     sco_widget_node nodes[16]{};
     auto node = [&](size_t i, uint32_t kind, uint32_t id, uint32_t parent, const char* label) {
         nodes[i].size = sizeof(sco_widget_node); nodes[i].kind = kind; nodes[i].id = id;
         nodes[i].parent = parent; nodes[i].label = label;
     };
-    node(0,SCO_WIDGET_COLUMN,1,0,"Inspector"); node(1,SCO_WIDGET_BUTTON,kRefresh,1,"Refresh");
-    node(2,SCO_WIDGET_LABEL,kStatus,1,g_widget_status); node(3,SCO_WIDGET_BUTTON,kDiagnostics,1,"Diagnostics");
-    node(4,SCO_WIDGET_BUTTON,kInventory,1,"Inventory"); node(5,SCO_WIDGET_BUTTON,kActions,1,"Actions");
-    node(6,SCO_WIDGET_BUTTON,kParameters,1,"Parameters"); node(7,SCO_WIDGET_TABLE,kTable,1,"Results");
+    node(0,SCO_WIDGET_COLUMN,1,0,tr("title")); node(1,SCO_WIDGET_BUTTON,kRefresh,1,tr("refresh"));
+    node(2,SCO_WIDGET_LABEL,kStatus,1,g_widget_status); node(3,SCO_WIDGET_BUTTON,kDiagnostics,1,tr("diagnostics"));
+    node(4,SCO_WIDGET_BUTTON,kInventory,1,tr("inventory")); node(5,SCO_WIDGET_BUTTON,kActions,1,tr("actions"));
+    node(6,SCO_WIDGET_BUTTON,kParameters,1,tr("parameters")); node(7,SCO_WIDGET_TABLE,kTable,1,tr("results"));
     nodes[7].columns = 1; nodes[7].items = cells; nodes[7].item_count = cell_count;
-    node(8,SCO_WIDGET_TEXT_INPUT,kActionName,1,"Action name"); nodes[8].text = g_query;
-    node(9,SCO_WIDGET_BUTTON,kLookup,1,"Lookup"); node(10,SCO_WIDGET_BUTTON,kBrowseParams,1,"Browse parameters");
-    node(11,SCO_WIDGET_BUTTON,kRefreshCount,1,"Refresh action count");
-    node(12,SCO_WIDGET_BUTTON,kPrevious,1,"Previous"); node(13,SCO_WIDGET_BUTTON,kNext,1,"Next");
-    return g_widgets->set_panel(g_self,kPanelId,"Inspector",nodes,14,sizeof(sco_widget_node),PanelEvent,g_self) == SCO_OK;
+    node(8,SCO_WIDGET_TEXT_INPUT,kActionName,1,tr("action_name")); nodes[8].text = g_query;
+    node(9,SCO_WIDGET_BUTTON,kLookup,1,tr("lookup")); node(10,SCO_WIDGET_BUTTON,kBrowseParams,1,tr("browse_parameters"));
+    node(11,SCO_WIDGET_BUTTON,kRefreshCount,1,tr("refresh_action_count"));
+    node(12,SCO_WIDGET_BUTTON,kPrevious,1,tr("previous")); node(13,SCO_WIDGET_BUTTON,kNext,1,tr("next"));
+    return g_widgets->set_panel(g_self,kPanelId,tr("title"),nodes,14,sizeof(sco_widget_node),PanelEvent,g_self) == SCO_OK;
 }
 
 sco_result RefreshCommand(const sco_arg*, uint32_t nargs, void*, char* reply, uint32_t reply_size) {
@@ -660,11 +682,16 @@ sco_result Load(const sco_api* api, sco_plugin* self) {
         g_panel = true;
         if (!RenderPanel()) { g_panel = false; g_widgets = nullptr; }
     }
+    if (r == SCO_OK && HAS_FN(api, sco_api, subscribe) && HAS_FN(api, sco_api, unsubscribe))
+        g_settings_subscribed = api->subscribe(self, SCO_SETTINGS_CHANGED_EVENT, SettingsChanged, self) == SCO_OK;
     if (r != SCO_OK) Unload();
     return r;
 }
 
 void Unload() {
+    if (g_settings_subscribed && HAS_FN(g_api, sco_api, unsubscribe))
+        (void)g_api->unsubscribe(g_self, SCO_SETTINGS_CHANGED_EVENT, SettingsChanged);
+    g_settings_subscribed = false;
     // The host removes commands at unload. No borrowed service, id or callback context survives.
     if (g_panel && g_widgets && g_api && g_self) (void)g_widgets->remove_panel(g_self, kPanelId);
     g_api = nullptr;

@@ -9,6 +9,8 @@
 #include "sc_inventory.h"
 #include "sc_input.h"
 #include "sco_widgets.h"
+#include "sco_settings.h"
+#include "../plugins/inspector/inspector_locale.h"
 
 #include <cstddef>
 #if defined(INSPECTOR_EXTERNAL_TEST)
@@ -81,12 +83,26 @@ bool stat_nonfinite = false;
 const char* disabled_capability = nullptr;
 sco_result registration_result = SCO_OK;
 int Has(const char* name) { return !disabled_capability || std::strcmp(name, disabled_capability) != 0; }
+const char* locale_value = nullptr;
+bool settings_available = true;
+sco_event_fn settings_callback = nullptr;
+void* settings_context = nullptr;
+sco_result GetLocale(sco_plugin*, const char*, char* out, uint32_t* size) {
+    if (!locale_value) return SCO_NOT_FOUND;
+    const auto need = static_cast<uint32_t>(std::strlen(locale_value) + 1);
+    if (*size < need) { *size = need; return SCO_TOO_MANY; }
+    std::memcpy(out, locale_value, need); *size = need; return SCO_OK;
+}
+sco_settings_v1 settings_table = {sizeof(sco_settings_v1), 0, nullptr, nullptr, nullptr, GetLocale, nullptr};
+sco_result Subscribe(sco_plugin*, const char*, sco_event_fn fn, void* ctx) { settings_callback = fn; settings_context = ctx; return SCO_OK; }
+sco_result Unsubscribe(sco_plugin*, const char*, sco_event_fn) { settings_callback = nullptr; return SCO_OK; }
 sco_result QueryService(const char* name, uint32_t version, const void** out) {
     if (!name || !out) return SCO_BAD_ARG;
     if (std::strcmp(name, SCO_WIDGETS_NAME) == 0) ++widget_service_queries;
-    else ++diagnostic_service_queries;
+    else if (std::strcmp(name, SCO_SETTINGS_NAME)) ++diagnostic_service_queries;
     *out = nullptr;
-    if (std::strcmp(name, SC_ACTORS_NAME) == 0 && version == SC_ACTORS_VERSION_1_0) *out = actors;
+    if (std::strcmp(name, SCO_SETTINGS_NAME) == 0 && settings_available && version == SCO_SETTINGS_VERSION_1_0) *out = &settings_table;
+    else if (std::strcmp(name, SC_ACTORS_NAME) == 0 && version == SC_ACTORS_VERSION_1_0) *out = actors;
     else if (std::strcmp(name, SC_ENTITIES_NAME) == 0 && version == SC_ENTITIES_VERSION_1_0) *out = entities;
     else if (std::strcmp(name, SC_GAME_BUILD_SERVICE_NAME) == 0 && version == SC_GAME_BUILD_SERVICE_VERSION) *out = build_service;
     else if (std::strcmp(name, SC_ACTOR_STATS_NAME) == 0 && version == SC_ACTOR_STATS_VERSION_1_0) *out = stats_service;
@@ -102,7 +118,7 @@ sco_result QueryService(const char* name, uint32_t version, const void** out) {
 }
 sco_result WidgetSet(sco_plugin*, const char* id, const char* title, const sco_widget_node* nodes,
                      uint32_t count, uint32_t stride, sco_widget_event_fn fn, void* ctx) {
-    CHECK(id && std::strcmp(id, "inspector.main") == 0 && title && std::strcmp(title, "Inspector") == 0);
+    CHECK(id && std::strcmp(id, "inspector.main") == 0 && title && std::strcmp(title, inspector_locale::Lookup(locale_value, "title")) == 0);
     CHECK(nodes && count <= 16 && stride >= sizeof(sco_widget_node));
     for (uint32_t n = 0; n < count; ++n) {
         widget_nodes[n] = nodes[n];
@@ -116,9 +132,10 @@ sco_result WidgetSet(sco_plugin*, const char* id, const char* title, const sco_w
         }
         if (nodes[n].items && nodes[n].item_count) {
             static const char* cells[16]{};
+            static char table_cells[16][256]{};
             for (uint32_t c = 0; c < nodes[n].item_count; ++c) {
-                std::snprintf(widget_cells[c], sizeof(widget_cells[c]), "%s", nodes[n].items[c]);
-                cells[c] = widget_cells[c];
+                std::snprintf(table_cells[c], sizeof(table_cells[c]), "%s", nodes[n].items[c]);
+                cells[c] = table_cells[c];
             }
             widget_nodes[n].items = cells;
         }
@@ -287,6 +304,7 @@ sco_api Api() {
     api.log = Log;
     api.register_command = Register;
     api.query_service = QueryService;
+    api.subscribe = Subscribe; api.unsubscribe = Unsubscribe;
     return api;
 }
 void RetainedWidgetWorkflow() {
@@ -309,6 +327,21 @@ void RetainedWidgetWorkflow() {
     CHECK(diagnostic_service_queries == diagnostic_queries_before_load);
     CHECK(widget_service_queries == widget_queries_before_load + 1);
     CHECK(widget_callback && widget_node_count == 14 && widget_sets > 0);
+    CHECK(std::strcmp(WidgetNode(W_REFRESH)->label, "Refresh") == 0);
+    CHECK(std::strcmp(inspector_locale::Lookup("ru", "results"), "Results") == 0);
+    CHECK(std::strcmp(inspector_locale::Lookup("unsupported", "refresh"), "Refresh") == 0);
+    CHECK(std::strcmp(inspector_locale::Lookup("ru", "missing", "Missing fallback"), "Missing fallback") == 0);
+    locale_value = "ru";
+    sco_settings_changed change{sizeof(change), 0, "inspector", "language"};
+    CHECK(settings_callback); settings_callback(SCO_SETTINGS_CHANGED_EVENT, &change, settings_context);
+    CHECK(std::strcmp(WidgetNode(W_REFRESH)->label, "Обновить") == 0);
+    CHECK(WidgetNode(W_REFRESH)->id == W_REFRESH);
+    WidgetEvent(W_DIAGNOSTICS, SCO_WIDGET_BUTTON);
+    locale_value = "unsupported";
+    settings_callback(SCO_SETTINGS_CHANGED_EVENT, &change, settings_context);
+    CHECK(std::strcmp(WidgetNode(W_REFRESH)->label, "Refresh") == 0);
+    locale_value = nullptr;
+
     const uint64_t reads = TotalProviderReads();
     const uint32_t metadata = metadata_calls;
     const int diagnostic_queries = diagnostic_service_queries;
