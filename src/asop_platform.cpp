@@ -6,12 +6,20 @@
 namespace offline::asop {
 namespace {
 bool Environment(const char* key, std::string& value) {
+#ifdef _MSC_VER
+    char bytes[32]{};
+    std::size_t required = 0;
+    if (getenv_s(&required, bytes, sizeof(bytes), key) != 0) return false;
+    if (required == 0) { value.clear(); return true; }
+    value.assign(bytes, required - 1);
+#else
     const char* bytes = std::getenv(key);
     if (!bytes) { value.clear(); return true; }
     std::size_t n = 0;
     while (n < 32 && bytes[n]) ++n;
     if (n == 32) return false;
     value.assign(bytes, n);
+#endif
     for (char& c : value) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     return true;
 }

@@ -101,3 +101,14 @@ release staging remain unverified. The release workflow downloads
 sdk-v2.4.0-rc.1, which ships these headers, but does not stage this module:
 release-folder wiring is required before shipping. This change enables no native
 backend or default and changes no SDK pin.
+
+For a connected no-game preflight, build the actual module against an extracted
+checksum-verified SDK and build the matching Core source's `sco_host`,
+`sco_runtime` and `sco_core` libraries. On POSIX,
+`tools/test_build_core_integration.sh <core-source> <core-build> <build-module>`
+connects the module to Core's `WorldControl` and `Owned` policy through synthetic
+entity, ray and camera providers. It checks exclusive leases, foreign ownership,
+preview cleanup refusal, provider withdrawal and owner release. Synthetic entity
+removal is fixture behavior; this does not prove native cleanup, rendering or game
+acceptance. Keep the exact SDK archive, Core source and module identities in the
+receipt.

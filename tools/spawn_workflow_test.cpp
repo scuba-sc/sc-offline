@@ -65,6 +65,13 @@ sco_result Run(const char*,const sco_arg*,uint32_t);
 sco_result Options(const char* seat="pilot",bool power=true){sco_arg a[4]{};a[0].type=SCO_ARG_STRING;a[0].v.s="synthetic_ship";a[1].type=SCO_ARG_FLOAT;a[1].v.f=30;a[2].type=SCO_ARG_STRING;a[2].v.s=seat;a[3].type=SCO_ARG_BOOL;a[3].v.i=power;return Run("spawn.ship_options",a,4);}
 
 void Log(sco_plugin* self,sco_log_level,const char*) { CHECK(self==owner); }
+int cleanup_warnings=0,unsubscriptions=0;
+void CleanupLog(sco_plugin* self,sco_log_level level,const char* text) {
+ CHECK(self==owner);if(level==SCO_LOG_WARN && !std::strcmp(text,"Cleanup refused; host owner-release is required"))++cleanup_warnings;
+}
+sco_result Unsubscribe(sco_plugin* self,const char* topic,sco_event_fn fn) {
+ CHECK(self==owner && !std::strcmp(topic,"tick") && fn==tick);++unsubscriptions;tick=nullptr;return SCO_OK;
+}
 sco_result Register(sco_plugin* self,const sco_command* c) {
  CHECK(self==owner);if(registrations++==fail_registration)return SCO_FAILED; commands[c->name]=*c;
  if(c->nargs) definitions[c->name]={c->args,c->args+c->nargs}; return SCO_OK;
@@ -212,5 +219,12 @@ void Lifecycle(){Reset();auto api=Api();CHECK(test_module::Load(&api,owner)==SCO
  // Host deregistration/release is a stand-in, not real host guard evidence.
  commands.clear();tick=nullptr;test_module::Close();
 }
+void RefusedCleanupReload(){Reset();auto api=Api();api.log=CleanupLog;api.unsubscribe=Unsubscribe;cleanup_warnings=unsubscriptions=0;
+ CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Ship()==SCO_OK);remove_result=SCO_WRONG_THREAD;
+ test_module::Unload();CHECK(unsubscriptions==1 && cleanup_warnings==1 && removed==1 && issued.count(101));
+ test_module::Unload();CHECK(unsubscriptions==1 && cleanup_warnings==1 && removed==1);
+ remove_result=SCO_OK;CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Run("spawn.status")==SCO_OK);Contains("pending=0");
+ CHECK(Id("spawn.remove",101)==SCO_NOT_FOUND && removed==1);test_module::Unload();CHECK(unsubscriptions==2 && removed==1);
 }
-int main(int argc,char** argv){test_module::Open(argc,argv);ProviderNegatives();HostAndCommandNegatives();BoundedOwnership();SeatRefusals();BoardLaterAndStartup();TimeoutCancel();Boarding();Lifecycle();test_module::Open(argc,argv);Reset();auto api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Ship()==SCO_OK);test_module::Unload();CHECK(removed==1);test_module::Close();std::puts("spawn dynamic workflow: owned lifecycle, delayed board/power, timeout/cancel, providers/tails/reopen, bounds, unload/reload PASS (synthetic, not game)");}
+}
+int main(int argc,char** argv){test_module::Open(argc,argv);ProviderNegatives();HostAndCommandNegatives();BoundedOwnership();SeatRefusals();BoardLaterAndStartup();TimeoutCancel();Boarding();RefusedCleanupReload();Lifecycle();test_module::Open(argc,argv);Reset();auto api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Ship()==SCO_OK);test_module::Unload();CHECK(removed==1);test_module::Close();std::puts("spawn dynamic workflow: owned lifecycle, delayed board/power, timeout/cancel, providers/tails/reopen, bounds, unload/reload PASS (synthetic, not game)");}

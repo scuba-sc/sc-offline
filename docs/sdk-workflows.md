@@ -44,6 +44,14 @@ lock is needed. The proof validates the archive and full extracted inventory bef
 selected non-default version/hash requires the matching archive, rather than accepting host headers.
 For the proof CLI, non-default coordinates also require `--candidate` and an independently locked
 `--archive-sha256`; such runs are labelled unpublished candidates, never the published RC1 proof.
+The spawn, build and contracts proof CLIs also accept `--candidate`, `--sdk-version`,
+`--sdk-sha256` and `--archive-sha256` for an explicitly identified unpublished preflight.
+The two digests must agree with each other, the archive bytes and its supplied checksum
+inventory; extracted files are verified before use. Record the independently selected Core
+source revision and its relation to the archive separately. A development preflight is not
+published-candidate approval or an installed-host capability claim. Run the matching
+connected quantum, build and contracts fixtures documented by those consumers when a
+matching host-source build is available.
 
 Windows inspector, NPC and build proof scripts accept `--generator` for a locally installed toolchain
 (for example `--generator "Visual Studio 17 2022"`). Their default remains **Visual Studio 18 2026**,
