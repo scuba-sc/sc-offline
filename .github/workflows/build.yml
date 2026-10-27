@@ -31,8 +31,69 @@ jobs:
       - name: Install clang + mingw-w64 headers
         run: sudo apt-get update -qq && sudo apt-get install -y -qq clang g++-mingw-w64-x86-64-posix
 
-      - name: tools/check.sh
+      # Pinned-host check remains a distinct gate. Candidate-only source files
+      # refuse old SDK builds and are additionally parsed in the next step.
+      - name: tools/check.sh (pinned host source)
         run: tools/check.sh
+
+      - name: Verify development source and SDK archive
+        run: |
+          set -eu
+          git -C external/sco-core fetch --depth=1 origin 26f0d9e140a1766cfd6adb6ebecc26f1aa0f3c72
+          git -C external/sco-core checkout --detach 26f0d9e140a1766cfd6adb6ebecc26f1aa0f3c72
+          tools/ci-dev-sdk-preflight.sh external/sco-core "$RUNNER_TEMP/sdk-development"
+
+      - name: Check candidate-only sources against development host
+        run: tools/check.sh
+
+      - name: Test development gear consumer when present
+        run: |
+          set -eu
+          if [ -d plugins/gear_presets ]; then
+            SDK_INCLUDE="$RUNNER_TEMP/sdk-development/extracted/sco-sdk-2.4.0/include"
+            test -f "$SDK_INCLUDE/scosdk/game/inventory_layout.hpp"
+            cmake -S external/sco-core -B "$RUNNER_TEMP/core-development" -DCMAKE_BUILD_TYPE=Release -DSCO_BUILD_TESTS=OFF
+            cmake --build "$RUNNER_TEMP/core-development" --parallel 2 --target sco_widgets sco_storage sco_host sco_runtime sco_core sco_sqlite
+            cmake -S plugins/gear_presets -B "$RUNNER_TEMP/gear-development" -DSCO_SDK_INCLUDE_DIR="$SDK_INCLUDE" -DSCO_GEAR_PRESETS_TESTS=ON -DSCO_CORE_HOST_TEST_ROOT="$GITHUB_WORKSPACE/external/sco-core" -DSCO_CORE_HOST_BUILD_DIR="$RUNNER_TEMP/core-development"
+            cmake --build "$RUNNER_TEMP/gear-development" --parallel 2
+            for t in gear-presets-model gear-presets-storage gear-presets-workflow; do
+              ctest --test-dir "$RUNNER_TEMP/gear-development" -R "^$t$" --no-tests=error --output-on-failure
+            done
+          fi
+
+      - name: Configure development spawn and ASOP consumers
+        run: |
+          set -eu
+          SDK_INCLUDE="$RUNNER_TEMP/sdk-development/extracted/sco-sdk-2.4.0/include"
+          test -f tools/asop_selection_workflow_test.cpp
+          test -f "$SDK_INCLUDE/sc_asop_selection.h"
+          cmake -S plugins/spawn -B "$RUNNER_TEMP/spawn-development" -DSCO_SDK_INCLUDE_DIR="$SDK_INCLUDE" -DSCO_WORKFLOW_TESTS=ON
+
+      - name: Build development spawn feature
+        run: cmake --build "$RUNNER_TEMP/spawn-development" --target sco-feature-spawn --parallel 2
+
+      - name: Build development spawn module
+        run: cmake --build "$RUNNER_TEMP/spawn-development" --target sc-offline-spawn --parallel 2
+
+      - name: Build development spawn fixture
+        run: cmake --build "$RUNNER_TEMP/spawn-development" --target spawn-module-test --parallel 2
+
+      - name: Build development ASOP fixture
+        run: cmake --build "$RUNNER_TEMP/spawn-development" --target asop-selection-workflow-test --parallel 2
+
+      - name: Test development spawn consumer
+        run: ctest --test-dir "$RUNNER_TEMP/spawn-development" -R '^spawn-module-workflow$' --no-tests=error --output-on-failure
+
+      - name: Test development ASOP consumer
+        run: ctest --test-dir "$RUNNER_TEMP/spawn-development" -R '^asop-selection-workflow$' --no-tests=error --output-on-failure
+
+      - name: Restore pinned host source for remaining checks
+        run: |
+          set -eu
+          EMBEDDED_SOURCE="$(git rev-parse HEAD:external/sco-core)"
+          git -C external/sco-core checkout --detach "$EMBEDDED_SOURCE"
+          test "$(git -C external/sco-core rev-parse HEAD)" = "$EMBEDDED_SOURCE"
+          echo "Restored pinned host source $EMBEDDED_SOURCE"
 
       - name: SDK proof generator defaults and explicit overrides
         run: python3 tools/test_sdk_generators.py
@@ -51,6 +112,11 @@ jobs:
           set -eu
           c++ -std=c++20 -I src tools/admission_evidence_test.cpp -o admission_evidence_test
           ./admission_evidence_test
+
+      - name: Host menu opt-in and ASOP fixture gate
+        run: |
+          test -f tools/asop_selection_workflow_test.cpp
+          python3 tools/test_host_menu_gate.py
 
       - name: Headless menu size and tab overflow tests
         run: python3 tools/check_menu_window.py

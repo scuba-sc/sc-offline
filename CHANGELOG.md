@@ -2,7 +2,15 @@
 
 ## Unreleased
 
+- **Development ASOP selection and host menu.** The spawn panel can edit a
+  host-owned `asop_ships.txt` through the candidate SDK file service when the
+  development composition is enabled; it is off by default. The separate host
+  menu client is also off by default and uses widgets 1.3 numeric presentation. A saved selection is not a
+  published or observed terminal list; native terminal and game acceptance remain
+  unverified. The existing SDK pin is unchanged.
+
 - **Inspector language setting.** Choose English or Russian for fixed Inspector panel labels and the Lua command description. The setting is independent of the launcher; structured diagnostic output remains English. Synthetic checks only; **not run in game**.
+
 
 - **Choose the launcher language.** Stable text keys, strict UTF-8 catalogues, checked named placeholders and an English/Russian/auto selector use the system language by default with built-in Russian and an English fallback. Existing control and command identities stay fixed. An optional `data/locales/ru.ini` can override Russian text; plugin language APIs stay separate. Checked headlessly and with synthetic files; **not run in game**.
 

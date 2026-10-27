@@ -1,5 +1,9 @@
 #pragma once
 #include <windows.h>
+#ifdef SCO_HOST_MENU_CLIENT
+#include "sco/host_menu.h"
+sco::app::HostMenuClient MenuHostDescriptor();
+#endif
 
 struct MenuShip { char name[64]; int size; float length; };
 

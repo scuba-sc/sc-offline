@@ -6,6 +6,9 @@
 #include "sc_actors.h"
 #include "sc_vehicles.h"
 #include "sco_content.h"
+#if __has_include(<sc_asop_selection.h>)
+#include <sc_asop_selection.h>
+#endif
 #include "../picker.h"
 #include <string>
 #include <cctype>
@@ -247,7 +250,9 @@ void Progress(Ticket& t,uint32_t now) {
         return;
     }
 }
+void PollAsop();
 void Tick(const char*,const void* data,void*) {
+    PollAsop();
     if (!g.api || !data) return;
     const uint32_t now=*static_cast<const uint32_t*>(data);
     const auto* ent=Open<sc_entities_v1>(SC_ENTITIES_NAME);
@@ -264,6 +269,7 @@ void Tick(const char*,const void* data,void*) {
     }
 }
 #include "picker.inc"
+#include "asop_picker.inc"
 } // namespace
 const sco_plugin_info* Query(){return &kInfo;}
 sco_result Load(const sco_api* api,sco_plugin* self) {
@@ -290,8 +296,8 @@ sco_result Load(const sco_api* api,sco_plugin* self) {
        {sizeof(sco_command),0,"spawn.clear","Clear ships","Request owned cleanup","game.entities.spawn",nullptr,0,sizeof(sco_arg_def),Clear,&g}
     };
     for(const auto& c:commands) {auto r=api->register_command(self,&c);if(r!=SCO_OK){Unload();return r;}}
-    auto r=api->subscribe(self,"tick",Tick,&g);if(r!=SCO_OK) Unload();else StartPicker();return r;
+    auto r=api->subscribe(self,"tick",Tick,&g);if(r!=SCO_OK) Unload();else {StartPicker();StartAsop();}return r;
 }
-void Unload(){if(!g.api)return;StopPicker();if(HAS(g.api,sco_api,unsubscribe))g.api->unsubscribe(g.self,"tick",Tick);char b[160];if(Clear(nullptr,0,nullptr,b,sizeof(b))!=SCO_OK)g.api->log(g.self,SCO_LOG_WARN,"Cleanup refused; host owner-release is required");g={};}
+void Unload(){if(!g.api)return;StopAsop();StopPicker();if(HAS(g.api,sco_api,unsubscribe))g.api->unsubscribe(g.self,"tick",Tick);char b[160];if(Clear(nullptr,0,nullptr,b,sizeof(b))!=SCO_OK)g.api->log(g.self,SCO_LOG_WARN,"Cleanup refused; host owner-release is required");g=State{};}
 #undef HAS
 } // namespace sco::features::spawn

@@ -7,6 +7,7 @@
 #include "menu_imgui.h"
 #include "menu_ui.h"
 #include "menu_window.h"
+#include "menu_frame_protocol.h"
 #include "common.h"
 #include "version.h"
 #include <atomic>
@@ -18,9 +19,18 @@
 #include <cstdio>
 #include <cstring>
 #include "sco/ui.h"
+#ifdef SCO_HOST_MENU_CLIENT
+#include "menu_widgets.h"
+#include "sco/app.h"
+#include "sco/plugins.h"
+static sc_offline::menu_sdk::Client g_widgetMenu;
+static std::atomic<bool> g_imguiUsable{false};
+sco::app::HostMenuClient MenuHostDescriptor() { return g_widgetMenu.Descriptor(); }
+#endif
 #ifdef SCO_WIDGETS_HOST_RENDERER
 #include "sco/widgets.h"
 #include "sco/widgets_imgui.h"
+#include "menu_panel_group.h"
 #endif
 #include "third_party/imgui/imgui.h"
 #include "third_party/imgui/imgui_internal.h"
@@ -115,7 +125,11 @@ static bool GameThreadBuilding();
 static LRESULT CALLBACK MenuWndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
     // A message sent to the window while the game thread builds a frame doesn't reach ImGui: the
     // game thread has it until the frame is built.
-    if (!GameThreadBuilding() && ImGui_ImplWin32_WndProcHandler(h, msg, w, l)) return 1;
+    if (!GameThreadBuilding()
+#ifdef SCO_HOST_MENU_CLIENT
+        && g_imguiUsable.load()
+#endif
+        && ImGui_ImplWin32_WndProcHandler(h, msg, w, l)) return 1;
     switch (msg) {
     case WM_GETMINMAXINFO: {
         const RECT work = MenuWorkArea(h);
@@ -462,6 +476,15 @@ void PrettyBuildName(char* out, size_t n, const char* name) {
 // =============================================================================================
 
 static void DrawMenuTab() {
+#ifdef SCO_HOST_MENU_CLIENT
+    if (g_widgetMenu.MainReady() && sco::app::IsHostMenuPanel("menu.main")) {
+        sco::widgets::ImGuiRenderer renderer(false);
+        if (sco::widgets::RenderPanel("menu.main", renderer) != sco::Result::Ok)
+            Hint("Menu settings are unavailable.");
+    } else {
+        Hint("Menu settings are unavailable.");
+    }
+#else
     SectionHeading("Background");
     if (g_bgSrv) {
         ImGui::Checkbox("Show background image", &g_bgShow);
@@ -483,6 +506,7 @@ static void DrawMenuTab() {
     SectionHeading("About");
     Hint(SCO_TITLE " is a work in progress, " SCO_BASED_ON ".");
     Hint("Bug reports: github.com/scuba-sc/sc-offline/issues");
+#endif
 }
 
 // =============================================================================================
@@ -490,14 +514,26 @@ static void DrawMenuTab() {
 // =============================================================================================
 
 static void DrawStatusStrip(float height) {
+#ifndef SCO_HOST_MENU_CLIENT
     char status[256];
     Menu_GetStatus(status, sizeof(status));
+#endif
     ImGui::PushStyleColor(ImGuiCol_ChildBg, Hex(0x0B140D, 0.92f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 8));
     ImGui::BeginChild("##status", ImVec2(0, height), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
     const ImVec2 p = ImGui::GetWindowPos();
     ImGui::GetWindowDrawList()->AddRectFilled(p, ImVec2(p.x + 4, p.y + height), ImGui::GetColorU32(kLeaf));
+#ifdef SCO_HOST_MENU_CLIENT
+    if (g_widgetMenu.StatusReady() && sco::app::IsHostMenuPanel("menu.status")) {
+        sco::widgets::ImGuiRenderer renderer(false);
+        if (sco::widgets::RenderPanel("menu.status", renderer) != sco::Result::Ok)
+            ImGui::TextUnformatted("Status unavailable.");
+    } else {
+        ImGui::TextUnformatted("Status unavailable.");
+    }
+#else
     ImGui::TextWrapped("%s", status);
+#endif
     ImGui::EndChild();
     ImGui::PopStyleVar();
     ImGui::PopStyleColor();
@@ -563,7 +599,13 @@ static bool DrawMenu() {
 #ifdef SCO_WIDGETS_HOST_RENDERER
         // Copied neutral panels are rendered on the same game-thread frame. The
         // public widget dispatcher guards owner callbacks and rejects stale events.
-        for (const auto& panel : sco::widgets::Panels()) {
+        const auto panels = sco::widgets::Panels();
+        const bool groupAsop = sc_offline::menu_panels::GroupAsop(panels);
+        for (const auto& panel : panels) {
+            if (groupAsop && sc_offline::menu_panels::IsAsop(panel)) continue;
+#ifdef SCO_HOST_MENU_CLIENT
+            if (sco::app::IsHostMenuPanel(panel.id.c_str())) continue;
+#endif
             const std::string label = panel.title + "###" + panel.id;
             const ImGuiTabItemFlags flags = first ? ImGuiTabItemFlags_SetSelected : 0;
             first = false;
@@ -575,6 +617,13 @@ static bool DrawMenu() {
                     const auto result = sco::widgets::RenderPanel(panel.id.c_str(), renderer);
                     ImGui::ErrorRecoveryTryToRecoverState(&state);
                     if (result == sco::Result::Crashed) Log("[menu] widget panel %s crashed; owner disabled", panel.id.c_str());
+                    if (result == sco::Result::Ok && groupAsop && sc_offline::menu_panels::IsVehicles(panel)) {
+                        ImGui::Separator();
+                        ImGui::ErrorRecoveryStoreState(&state);
+                        const auto asopResult = sco::widgets::RenderPanel("spawn.asop", renderer);
+                        ImGui::ErrorRecoveryTryToRecoverState(&state);
+                        if (asopResult == sco::Result::Crashed) Log("[menu] ASOP panel crashed; owner disabled");
+                    }
                 });
                 ImGui::EndTabItem();
             }
@@ -606,15 +655,14 @@ static bool DrawMenu() {
 // block on each frame, so a game thread that ran its message loop rarely (the game in the
 // background behind the menu) made the menu crawl and M hard to get through.
 
-enum : LONG { Frame_Idle, Frame_Wanted, Frame_Building, Frame_Built };
-static volatile LONG g_frameState = Frame_Idle;
+static sc_offline::menu_frame::Protocol g_frame;
 static HANDLE        g_frameBuilt = nullptr;   // auto-reset: wakes the menu thread when a frame is built
 static bool          g_frameKeepOpen = true;   // DrawMenu's answer for the last frame
 static std::atomic<bool> g_typing{ false };   // the menu has focus and a text box is active
 static volatile LONG g_nudged = 0;            // a WM_NULL is on its way to the game
 constexpr DWORD kMenuWaitMs = 50;
 
-static bool GameThreadBuilding() { return g_frameState == Frame_Building; }
+static bool GameThreadBuilding() { return g_frame.Current() == sc_offline::menu_frame::State::Building; }
 
 static LONG64 Now() {
     LARGE_INTEGER t;
@@ -627,9 +675,70 @@ static double TicksToMs(LONG64 ticks) {
     return static_cast<double>(ticks) * 1000.0 / static_cast<double>(freq.QuadPart);
 }
 
+#ifdef SCO_HOST_MENU_CLIENT
+struct ProductFrame { bool keepOpen = true, built = false; };
+static std::string BackgroundPathUtf8() {
+    if (!g_bgPath[0]) return "data\\menu_background.png";
+    const int wideCount = MultiByteToWideChar(CP_ACP, 0, g_bgPath, -1, nullptr, 0);
+    if (wideCount <= 0) return "Background path unavailable.";
+    std::wstring wide(static_cast<size_t>(wideCount), L'\0');
+    if (!MultiByteToWideChar(CP_ACP, 0, g_bgPath, -1, wide.data(), wideCount))
+        return "Background path unavailable.";
+    const int bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (bytes <= 0) return "Background path unavailable.";
+    std::string converted(static_cast<size_t>(bytes), '\0');
+    if (!WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide.c_str(), -1, converted.data(), bytes, nullptr, nullptr))
+        return "Background path unavailable.";
+    converted.pop_back();
+    return converted;
+}
+static void CaptureMenu(void*, sc_offline::menu_sdk::Snapshot& out) {
+    const auto& settings = g_widgetMenu.CurrentSettings();
+    g_bgShow = settings.show; g_bgDarkness = settings.darkness;
+    g_bgPosition = static_cast<float>(settings.position);
+    out.imageAvailable = g_bgSrv != nullptr; out.width = g_bgW; out.height = g_bgH;
+    out.pathUtf8 = BackgroundPathUtf8();
+    char status[256]; Menu_GetStatus(status, sizeof(status)); out.statusUtf8 = status;
+}
+static void BuildMenuFrame(void* context) {
+    auto& request = *static_cast<ProductFrame*>(context);
+    static LONG64 lastFrame = 0;
+    const LONG64 start = Now();
+    const float dt = lastFrame ? static_cast<float>(TicksToMs(start - lastFrame) / 1000.0) : 1.0f / 60.0f;
+    lastFrame = start;
+    ImGui::GetIO().DeltaTime = dt > 0.0001f ? (dt < 0.25f ? dt : 0.25f) : 0.0001f;
+    ImGui::NewFrame();
+    request.keepOpen = DrawMenu();
+    ImGui::Render();
+}
+static void BuildMenuRequest(void* context) {
+    auto& request = *static_cast<ProductFrame*>(context);
+    if (g_widgetMenu.Available()) {
+        sc_offline::menu_sdk::FrameInput input{&request, CaptureMenu, BuildMenuFrame};
+        request.built = sco::app::HostMenuFrame(&input);
+    } else {
+        // A disabled Menu client must not suppress independent plugin panels.
+        BuildMenuFrame(&request);
+        request.built = true;
+    }
+}
+static void AbortMenuFrame(void*) { sco::app::HostMenuAbort(); }
+#endif
+
 void Menu_GameThreadFrame() {
     InterlockedExchange(&g_nudged, 0);
-    if (InterlockedCompareExchange(&g_frameState, Frame_Building, Frame_Wanted) != Frame_Wanted) return;
+#ifdef SCO_HOST_MENU_CLIENT
+    ProductFrame request;
+    (void)sc_offline::menu_frame::Run(g_frame,
+        [&] {
+            const bool built = sco::plugins::Guarded(BuildMenuRequest, &request) == 0 && request.built;
+            if (built) g_frameKeepOpen = request.keepOpen;
+            return built;
+        },
+        [] { (void)sco::plugins::Guarded(AbortMenuFrame, nullptr); },
+        [] { SetEvent(g_frameBuilt); });
+#else
+    if (!g_frame.Acquire()) return;
     // The menu thread may call the Win32 backend's NewFrame more than once per built frame (each
     // time it takes a request back), so the time step comes from the frames built here.
     static LONG64 lastFrame = 0;
@@ -640,8 +749,9 @@ void Menu_GameThreadFrame() {
     ImGui::NewFrame();
     g_frameKeepOpen = DrawMenu();
     ImGui::Render();
-    InterlockedExchange(&g_frameState, Frame_Built);
+    g_frame.Finish(true);
     SetEvent(g_frameBuilt);
+#endif
 }
 
 bool Menu_Typing() { return g_typing.load(); }
@@ -649,21 +759,51 @@ bool Menu_Typing() { return g_typing.load(); }
 // Menu thread: ask the game thread for a frame, and nudge its message loop once (the message hook
 // runs on the game's next message).
 static void RequestFrame() {
+    if (g_frame.Current() != sc_offline::menu_frame::State::Idle) return;
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
-    InterlockedExchange(&g_frameState, Frame_Wanted);
+    if (!g_frame.Request()) return;
     if (!InterlockedExchange(&g_nudged, 1)) PostMessageW(g_game, WM_NULL, 0, 0);
 }
 
 // Menu thread, while the game thread builds: answer only messages sent to the window (another
 // thread waits on those; MenuWndProc keeps them from ImGui) until the frame is built.
 static void WaitWhileBuilding() {
-    while (g_frameState == Frame_Building) {
+    while (g_frame.Current() == sc_offline::menu_frame::State::Building) {
         MsgWaitForMultipleObjects(1, &g_frameBuilt, FALSE, kMenuWaitMs, QS_SENDMESSAGE);
         MSG msg;
         PeekMessageW(&msg, nullptr, 0, 0, PM_NOREMOVE | PM_QS_SENDMESSAGE);
     }
 }
+
+#ifdef SCO_HOST_MENU_CLIENT
+static bool InitializeMenuImGui() {
+    IMGUI_CHECKVERSION();
+    ImGui::SetAllocatorFunctions(sc_offline_imgui::Alloc, sc_offline_imgui::Free);
+    if (!ImGui::CreateContext()) return false;
+    ImGui::GetIO().IniFilename = nullptr;
+    ImGui::GetIO().MouseDrawCursor = true;
+    ImGui::GetIO().ConfigErrorRecoveryEnableAssert = false;
+    ImGui::GetIO().ConfigErrorRecoveryEnableTooltip = false;
+    ImGui::StyleColorsDark(); ApplyTheme(); LoadFonts();
+    return ImGui_ImplWin32_Init(g_wnd) && ImGui_ImplDX11_Init(g_device, g_context);
+}
+static void RecoverMenuImGuiThunk(void* context) {
+    auto& recovered = *static_cast<bool*>(context);
+    ImGui_ImplDX11_Shutdown(); ImGui_ImplWin32_Shutdown(); ImGui::DestroyContext();
+    recovered = InitializeMenuImGui();
+}
+static bool RecoverMenuImGui() {
+    g_imguiUsable.store(false);
+    bool recovered = false;
+    try {
+        if (sco::plugins::Guarded(RecoverMenuImGuiThunk, &recovered) != 0) recovered = false;
+    } catch (...) { recovered = false; }
+    g_imguiUsable.store(recovered);
+    if (!recovered) Log("[menu] frame recovery failed; menu rendering unavailable");
+    return recovered;
+}
+#endif
 
 static DWORD WINAPI MenuThread(LPVOID) {
     if (ModLogSibling(g_menuSizePath, sizeof(g_menuSizePath), "menu-window.ini"))
@@ -687,6 +827,10 @@ static DWORD WINAPI MenuThread(LPVOID) {
     g_frameBuilt = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     if (!g_wnd || !g_frameBuilt || !CreateDevice()) return 0;
 
+#ifdef SCO_HOST_MENU_CLIENT
+    if (!InitializeMenuImGui()) return 0;
+    g_imguiUsable.store(true);
+#else
     IMGUI_CHECKVERSION();
     // The allocator plugins that draw with ImGui use too (menu_imgui.h).
     ImGui::SetAllocatorFunctions(sc_offline_imgui::Alloc, sc_offline_imgui::Free);
@@ -701,6 +845,7 @@ static DWORD WINAPI MenuThread(LPVOID) {
     LoadFonts();
     ImGui_ImplWin32_Init(g_wnd);
     ImGui_ImplDX11_Init(g_device, g_context);
+#endif
     const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     LoadBackground();
     if (SUCCEEDED(com)) CoUninitialize();
@@ -708,8 +853,13 @@ static DWORD WINAPI MenuThread(LPVOID) {
     bool visible = false, wasDown = false;
     for (;;) {
         // Take ImGui back from a request the game thread hasn't started; let one it has finish.
-        InterlockedCompareExchange(&g_frameState, Frame_Idle, Frame_Wanted);
+        g_frame.CancelUnstarted();
         WaitWhileBuilding();
+#ifdef SCO_HOST_MENU_CLIENT
+        if (g_frame.TakeCancelled()) {
+            if (!RecoverMenuImGui()) { visible = false; ShowMenu(false); }
+        }
+#endif
         // From here until RequestFrame the game thread doesn't touch ImGui.
         MSG msg;
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
@@ -718,14 +868,24 @@ static DWORD WINAPI MenuThread(LPVOID) {
         }
         // M is the product's own key (reserved in sco.ui): plugins can't bind it.
         const bool down = (GetAsyncKeyState('M') & 0x8000) != 0;
-        const bool typing = visible && GetForegroundWindow() == g_wnd && ImGui::GetIO().WantTextInput;
+        const bool typing = visible && GetForegroundWindow() == g_wnd
+#ifdef SCO_HOST_MENU_CLIENT
+                            && g_imguiUsable.load()
+#endif
+                            && ImGui::GetIO().WantTextInput;
         g_typing = typing;
-        if (down && !wasDown && !typing && OurProcessHasFocus()) { visible = !visible; ShowMenu(visible); }
+        if (down && !wasDown && !typing
+#ifdef SCO_HOST_MENU_CLIENT
+            && g_imguiUsable.load()
+#endif
+            && OurProcessHasFocus()) { visible = !visible; ShowMenu(visible); }
         wasDown = down;
         if (visible && !IsWindowVisible(g_wnd)) { visible = false; ClipCursor(nullptr); g_clipped = false; }
 
-        if (g_frameState == Frame_Built) {
-            InterlockedExchange(&g_frameState, Frame_Idle);
+#ifdef SCO_HOST_MENU_CLIENT
+        if (!g_imguiUsable.load()) { g_typing = false; Sleep(50); continue; }
+#endif
+        if (g_frame.TakeBuilt()) {
             if (visible) {
                 const float clear[4] = { kSoil.x, kSoil.y, kSoil.z, 1.0f };
                 g_context->OMSetRenderTargets(1, &g_rtv, nullptr);
