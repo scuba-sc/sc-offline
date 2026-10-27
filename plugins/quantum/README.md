@@ -125,3 +125,18 @@ real-provider integration proof or certify Windows, rendering or gameplay.
 **Historical content-migration evidence (PR #165):** macOS AppleClang compiled/linked the actual module with `-Wall -Wextra -Werror`; both dynamically loaded synthetic public-provider workflows passed, including 6,015 content checks, and passed again with ASan/UBSan. The existing control/movement workflow retains legacy IDs/Travel composition, no startup writes, bounded holds, capability-loss cancellation, relocation request/tick tracking, widget routes and unload/reload checks. A separate real content-provider fixture feeds ordinary synthetic packs into the actual Quantum module; it covers copied startup bytes, parsing, ambiguity/refusal, restart and persistence compatibility without game providers.
 
 For that earlier content slice, independent actual MSVC 19.44 compilation of the production DLL and both test executables passed with strict warnings. Both executables dynamically loaded that DLL and passed, including the 6,015 content checks, against the checksum-verified published RC1 headers. This is Windows compilation and synthetic module behavior, not game or renderer acceptance. The fixtures do not execute the real game-pack adapter, its release hook, Windows input, database transactions or engine effects. **Real renderer, storage import twice, native detours, NAV/action forwarding, owned drive/charge/audio/effect restoration, every in-game move and where `quantum.travel` actually puts you, and actual gameplay remain NOT VERIFIED; not run in game.**
+
+For a connected no-game preflight of this actual module against Core's quantum
+service, build the module from a checksum-verified extracted development SDK and
+build the matching Core source's `sco_quantum`, `sco_hook`, `sco_host`,
+`sco_runtime`, and `sco_core` libraries. On POSIX run:
+
+```sh
+tools/test_quantum_core_integration.sh <core-source> <core-build> <quantum-module>
+```
+
+The fixture injects a synthetic zero-hook backend and exercises absent admission,
+explicit enable and hold, offline admission loss, cooperative unload and owner
+release. It is not native-backend, crash/quarantine, renderer or gameplay evidence.
+Record the exact source, archive hash and module hash separately; a development
+archive is not an approved published candidate.

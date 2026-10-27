@@ -84,6 +84,54 @@ class GeneratorSelection(unittest.TestCase):
                     run.assert_not_called()
                     self.assertFalse(args.work.exists())
 
+    def test_build_contracts_preflight_identity_lock(self):
+        from check_inspector_sdk import SDK_VERSION, SDK_SHA256, explicit_preflight_pin
+        def args(**kw):
+            values = dict(sdk_version=SDK_VERSION, sdk_sha256=SDK_SHA256, archive_sha256=None, candidate=False)
+            values.update(kw); return SimpleNamespace(**values)
+        self.assertEqual(explicit_preflight_pin(args()), ('sco-sdk-2.4.0', SDK_SHA256))
+        digest = '1' * 64
+        self.assertEqual(explicit_preflight_pin(args(candidate=True, sdk_sha256=digest, archive_sha256=digest)), ('sco-sdk-2.4.0', digest))
+        for invalid in (args(sdk_sha256=digest), args(archive_sha256=digest),
+                        args(candidate=True, sdk_sha256=digest),
+                        args(candidate=True, sdk_sha256=digest, archive_sha256='2' * 64),
+                        args(candidate=True, archive_sha256=SDK_SHA256)):
+            with self.assertRaises(AssertionError): explicit_preflight_pin(invalid)
+
+    def test_build_contracts_preflight_rejects_mismatched_archive(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            archive = root / 'sco-sdk-2.4.0.zip'; archive.write_bytes(b'not matching')
+            sums = root / 'SHA256SUMS'; sums.write_text('0' * 64 + '  ' + archive.name + '\n')
+            for tool in ('check_build_sdk.py', 'contracts_sdk_check.py'):
+                work = root / (tool + '.work')
+                extra = ['--slice', 'economy'] if tool.startswith('contracts') else []
+                result = subprocess.run([sys.executable, str(TOOLS / tool), '--archive', str(archive),
+                    '--sums', str(sums), '--work', str(work), '--candidate',
+                    '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64, *extra],
+                    capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('SDK archive SHA256 mismatch', result.stderr)
+                self.assertFalse((work / 'sdk').exists())
+
+    def test_spawn_preflight_lock_refusals_precede_extraction(self):
+        cases = [
+            (['--sdk-sha256', '0' * 64], 'Non-default SDK identity requires --candidate'),
+            (['--archive-sha256', '0' * 64], '--archive-sha256 requires --candidate'),
+            (['--candidate', '--sdk-sha256', '0' * 64], '--candidate requires matching'),
+            (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '1' * 64], '--candidate requires matching'),
+            (['--candidate', '--archive-sha256', '124751534277b89f0516af1897919c3485923811596e159a1f683bb80b1c243b'], '--candidate must select a non-default'),
+        ]
+        for extra, message in cases:
+            with self.subTest(extra=extra), tempfile.TemporaryDirectory() as temp:
+                work = Path(temp) / 'proof'
+                result = subprocess.run([sys.executable, str(TOOLS / 'check_spawn_sdk.py'),
+                    '--archive', 'missing.zip', '--sums', 'missing-sums', '--work', str(work), *extra],
+                    capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+                self.assertFalse(work.exists())
+
     def test_inspector_defaults_keep_published_rc_identity(self):
         module = proof_module('inspector')
         args = module.parse_args(['--archive', 'sdk.zip', '--sums', 'SHA256SUMS', '--work', 'proof'])

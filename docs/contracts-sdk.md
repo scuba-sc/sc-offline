@@ -133,3 +133,13 @@ The real RC1 content provider also passes a separate synthetic-pack/module check
 Actual game loader fault guards and gameplay acceptance remain unverified.
 **Not run in game.** These checks do not establish native XML installation or
 durable exactly-once persistence.
+
+For a connected no-game preflight, build the actual contracts module against an
+extracted checksum-verified SDK and build the matching Core source's
+`sco_offline_missions`, `sco_host`, `sco_runtime` and `sco_core` libraries. On
+POSIX, `tools/test_contracts_core_integration.sh <core-source> <core-build>
+<contracts-module>` exercises Core's real missions/economy tables with a
+synthetic backend. It checks owner scoping, withdrawal, a failed uncertain
+balance adjustment and release cleanup. Mission completion does not trigger a
+payment; the fixture does not implement partial reward accounting, durable
+settlement, native adapters or game acceptance.
