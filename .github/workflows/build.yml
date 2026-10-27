@@ -69,8 +69,17 @@ jobs:
           test -f "$SDK_INCLUDE/sc_asop_selection.h"
           cmake -S plugins/spawn -B "$RUNNER_TEMP/spawn-development" -DSCO_SDK_INCLUDE_DIR="$SDK_INCLUDE" -DSCO_WORKFLOW_TESTS=ON
 
-      - name: Build development spawn and ASOP consumers
-        run: cmake --build "$RUNNER_TEMP/spawn-development" --parallel 2
+      - name: Build development spawn feature
+        run: cmake --build "$RUNNER_TEMP/spawn-development" --target sco-feature-spawn --parallel 2
+
+      - name: Build development spawn module
+        run: cmake --build "$RUNNER_TEMP/spawn-development" --target sc-offline-spawn --parallel 2
+
+      - name: Build development spawn fixture
+        run: cmake --build "$RUNNER_TEMP/spawn-development" --target spawn-module-test --parallel 2
+
+      - name: Build development ASOP fixture
+        run: cmake --build "$RUNNER_TEMP/spawn-development" --target asop-selection-workflow-test --parallel 2
 
       - name: Test development spawn consumer
         run: ctest --test-dir "$RUNNER_TEMP/spawn-development" -R '^spawn-module-workflow$' --no-tests=error --output-on-failure
