@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+#if __has_include(<scosdk/game/inventory_layout.hpp>)
 #include "model.h"
 #include "store.h"
 #include <scosdk/game/inventory_layout.hpp>
@@ -188,3 +189,5 @@ extern "C" SCO_EXPORT void sco_plugin_unload() {
     catch (...) { g=State{}; }
 }
 }
+
+#endif // SDK inventory layout is available

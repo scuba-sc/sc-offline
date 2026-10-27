@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+#if __has_include(<scosdk/game/inventory_layout.hpp>)
 #include "model.h"
 #include <array>
 #include <cstdio>
@@ -40,3 +41,5 @@ int main() {
     Check(Encode(current,fresh) && Decode(fresh,untouched) && untouched.ports.empty());
     std::printf("gear preset model: %u checks, 0 failed\n",checks);
 }
+
+#endif // SDK inventory layout is available

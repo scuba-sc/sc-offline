@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+#if __has_include(<scosdk/game/inventory_layout.hpp>)
 #include "store.h"
 #include <array>
 #include <charconv>
@@ -91,3 +92,5 @@ sco_result PresetStore::Save(const Preset& preset, uint64_t& id) noexcept {
     } catch (...) { return SCO_TOO_MANY; }
 }
 }
+
+#endif // SDK inventory layout is available

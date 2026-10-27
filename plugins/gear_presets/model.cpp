@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+#if __has_include(<scosdk/game/inventory_layout.hpp>)
 #include "model.h"
 #include <algorithm>
 #include <cstring>
@@ -102,3 +103,5 @@ bool Compare(const Preset& saved,const Preset& current,std::vector<Difference>& 
     out=std::move(result); return true;
 }
 }
+
+#endif // SDK inventory layout is available
