@@ -31,7 +31,7 @@ def main(args):
     shutil.copytree(ROOT / 'plugins/spawn', source / 'plugins/spawn')
     shutil.copy2(ROOT / 'plugins/picker.h', source / 'plugins/picker.h')
     (source / 'tools').mkdir()
-    for name in ('spawn_workflow_test.cpp', 'workflow_module.h'):
+    for name in ('spawn_workflow_test.cpp', 'asop_selection_workflow_test.cpp', 'workflow_module.h'):
         shutil.copy2(ROOT / 'tools' / name, source / 'tools' / name)
     build = work / 'plugin-build'
     configure = ['cmake', '-S', source / 'plugins/spawn', '-B', build,
@@ -45,6 +45,10 @@ def main(args):
         print(run(['ctest', '--test-dir', build, '-C', 'Release', '-R',
                    '^spawn-module-workflow$', '--output-on-failure', '-V'], work).stdout)
     workflow()
+    if (sdk / 'include' / 'sc_asop_selection.h').is_file():
+        run(['cmake', '--build', build, '--config', 'Release', '--target', 'asop-selection-workflow-test'], work)
+        print(run(['ctest', '--test-dir', build, '-C', 'Release', '-R',
+                   '^asop-selection-workflow$', '--output-on-failure', '-V'], work).stdout)
     trace = trace_windows if os.name == 'nt' else trace_posix
     trace(build, source, sdk, public, feature='spawn')
     stage = work / 'stage'

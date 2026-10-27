@@ -131,3 +131,9 @@ Windows/MSVC exports/loading, real host fault containment/cleanup, renderer widg
 several real vehicle classes, streaming/seat/power behavior and owner-run offline
 Windows acceptance are **NOT VERIFIED / not run in game**. Do not claim this
 standalone change by itself removes the legacy host spawner or closes G2/G3.
+
+### ASOP selection candidate
+
+With a development SDK that includes `sc_asop_selection.h`, the external spawn module offers an ASOP selection panel when `game.asop.selection` is provided. SC Offline groups this panel as a subsection of Vehicles when both spawn-owned panels are present; otherwise it stays a standalone panel. It reads copied host catalogue and file rows, offers per-class toggles and All/None, and preserves unresolved saved names when toggling known classes. All selects the entire host catalogue. Selecting None creates an explicit empty file on save. Refresh of a dirty draft is labelled as discarding the draft.
+
+A save is an accepted request until its receipt reports a committed file. A stale selection token, conflict, or unknown outcome retains the draft and requires explicit refresh/reconciliation. The panel uses fresh widget IDs for each revision and ignores stale events. It never accesses a filesystem path or publishes a native terminal list. On an older SDK or an unavailable service, ASOP editing is unavailable; the existing Vehicles and spawn commands remain independent. The candidate is not included in the currently pinned SDK and requires a matching candidate host and SDK for evaluation.
