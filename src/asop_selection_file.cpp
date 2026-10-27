@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
+#if defined(SCO_ASOP_SELECTION_COMPOSITION) && !__has_include(<sco/game/asop_selection.h>)
+#error "Selected development composition requires its matching Core headers"
+#endif
+#if __has_include(<sco/game/asop_selection.h>)
 // Host-side fixed document adapter. No engine or plugin pointers enter this code.
 #include "asop_selection_file.h"
 #include <sc_asop_selection.h>
@@ -250,3 +254,5 @@ S::FileResult FixedFile::Replace(void* context,const S::Document& expected,std::
     self.diagnostic_.clear();out=std::move(saved);return S::FileResult::Ok;
 }
 }
+
+#endif // matching development Core header is available

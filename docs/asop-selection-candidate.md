@@ -9,3 +9,11 @@ The Windows implementation takes a per-path advisory mutex for cooperating insta
 `tools/asop_selection_file_test.cpp` is a Windows temporary-directory test. A MinGW x64 build passed on Windows AMD64 both with production code and with `SCO_ASOP_SELECTION_TESTING` fault hooks. The latter exercises controlled edits before and after replacement, checks that conflicting versions remain recoverable, and terminates child processes before and after replacement to exercise recovery on the next read. It is not a complete I/O-failure, power-loss, filesystem, race or lifecycle matrix. The actual spawn module was also tested with Core's widgets, selection coordinator and release path using a synthetic document; the combined synthetic host-lifecycle test exercises the source composition using an in-memory document. Native terminal behavior and production acceptance remain unverified. The development option is not a release or game-acceptance claim.
 
 The retained host menu client is separately gated by `SCO_HOST_MENU_CLIENT`, OFF by default. Enabling it requires the host-menu header and widgets 1.3 renderer; configuration refuses missing prerequisites. The selection and menu options are independent and do not enable native publication.
+
+When the pinned host lacks the development host headers, its syntax check
+preprocesses the two optional implementation files out and selecting either
+composition still refuses configuration. CI separately checks their complete
+bodies against the identified development source and requires both the spawn and
+ASOP synthetic workflows against its checksum-verified extracted SDK. The
+submodule is restored to its pinned revision before the remaining host checks;
+this preflight is not an official RC2 pin or native terminal publication.

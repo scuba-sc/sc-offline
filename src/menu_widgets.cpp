@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
+#if defined(SCO_HOST_MENU_CLIENT) && !__has_include(<sco/host_menu.h>)
+#error "Selected development composition requires its matching Core headers"
+#endif
+#if __has_include(<sco/host_menu.h>)
 #include "menu_widgets.h"
 #include "version.h"
 #include <cstddef>
@@ -140,3 +144,5 @@ bool Client::PublishStatus() {
                                sizeof(nodes[0]),nullptr,nullptr)==SCO_OK;
 }
 } // namespace sc_offline::menu_sdk
+
+#endif // matching development Core header is available
