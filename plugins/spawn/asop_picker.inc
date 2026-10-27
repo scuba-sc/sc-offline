@@ -156,7 +156,8 @@ void PollAsop() {
     if(receipt.phase==SC_ASOP_SELECTION_FILE_COMMITTED){
         p.pending=0;(void)AsopRelease(t);
         if(AsopReload(false))std::snprintf(p.message,sizeof(p.message),"Selection saved to file; native application unverified");
-        else std::snprintf(p.message,sizeof(p.message),"File saved; current selection could not be refreshed");RenderAsop();
+        else std::snprintf(p.message,sizeof(p.message),"File saved; current selection could not be refreshed");
+        RenderAsop();
     } else if(receipt.phase==SC_ASOP_SELECTION_EDIT_CONFLICT || receipt.phase==SC_ASOP_SELECTION_EDIT_UNKNOWN || receipt.phase==SC_ASOP_SELECTION_EDIT_REVOKED){
         p.pending=0;p.stale=true;(void)AsopRelease(t);
         std::snprintf(p.message,sizeof(p.message),"Save conflicted or is unknown; draft retained, refresh to reconcile");RenderAsop();
