@@ -36,17 +36,21 @@ jobs:
       - name: tools/check.sh (pinned host source)
         run: tools/check.sh
 
-      - name: Verify development SDK and check candidate-only sources
+      - name: Verify development source and SDK archive
         run: |
           set -eu
-          EMBEDDED_SOURCE="$(git rev-parse HEAD:external/sco-core)"
           git -C external/sco-core fetch --depth=1 origin 26f0d9e140a1766cfd6adb6ebecc26f1aa0f3c72
           git -C external/sco-core checkout --detach 26f0d9e140a1766cfd6adb6ebecc26f1aa0f3c72
           tools/ci-dev-sdk-preflight.sh external/sco-core "$RUNNER_TEMP/sdk-development"
-          tools/check.sh
-          SDK_INCLUDE="$RUNNER_TEMP/sdk-development/extracted/sco-sdk-2.4.0/include"
-          ran=0
+
+      - name: Check candidate-only sources against development host
+        run: tools/check.sh
+
+      - name: Test development gear consumer when present
+        run: |
+          set -eu
           if [ -d plugins/gear_presets ]; then
+            SDK_INCLUDE="$RUNNER_TEMP/sdk-development/extracted/sco-sdk-2.4.0/include"
             test -f "$SDK_INCLUDE/scosdk/game/inventory_layout.hpp"
             cmake -S external/sco-core -B "$RUNNER_TEMP/core-development" -DCMAKE_BUILD_TYPE=Release -DSCO_BUILD_TESTS=OFF
             cmake --build "$RUNNER_TEMP/core-development" --parallel 2 --target sco_widgets sco_storage sco_host sco_runtime sco_core sco_sqlite
@@ -55,21 +59,32 @@ jobs:
             for t in gear-presets-model gear-presets-storage gear-presets-workflow; do
               ctest --test-dir "$RUNNER_TEMP/gear-development" -R "^$t$" --no-tests=error --output-on-failure
             done
-            ran=1
           fi
-          if [ -f tools/asop_selection_workflow_test.cpp ]; then
-            test -f "$SDK_INCLUDE/sc_asop_selection.h"
-            cmake -S plugins/spawn -B "$RUNNER_TEMP/spawn-development" -DSCO_SDK_INCLUDE_DIR="$SDK_INCLUDE" -DSCO_WORKFLOW_TESTS=ON
-            cmake --build "$RUNNER_TEMP/spawn-development" --parallel 2
-            for t in spawn-module-workflow asop-selection-workflow; do
-              ctest --test-dir "$RUNNER_TEMP/spawn-development" -R "^$t$" --no-tests=error --output-on-failure
-            done
-            ran=1
-          fi
-          test "$ran" = 1
+
+      - name: Configure development spawn and ASOP consumers
+        run: |
+          set -eu
+          SDK_INCLUDE="$RUNNER_TEMP/sdk-development/extracted/sco-sdk-2.4.0/include"
+          test -f tools/asop_selection_workflow_test.cpp
+          test -f "$SDK_INCLUDE/sc_asop_selection.h"
+          cmake -S plugins/spawn -B "$RUNNER_TEMP/spawn-development" -DSCO_SDK_INCLUDE_DIR="$SDK_INCLUDE" -DSCO_WORKFLOW_TESTS=ON
+
+      - name: Build development spawn and ASOP consumers
+        run: cmake --build "$RUNNER_TEMP/spawn-development" --parallel 2
+
+      - name: Test development spawn consumer
+        run: ctest --test-dir "$RUNNER_TEMP/spawn-development" -R '^spawn-module-workflow$' --no-tests=error --output-on-failure
+
+      - name: Test development ASOP consumer
+        run: ctest --test-dir "$RUNNER_TEMP/spawn-development" -R '^asop-selection-workflow$' --no-tests=error --output-on-failure
+
+      - name: Restore pinned host source for remaining checks
+        run: |
+          set -eu
+          EMBEDDED_SOURCE="$(git rev-parse HEAD:external/sco-core)"
           git -C external/sco-core checkout --detach "$EMBEDDED_SOURCE"
           test "$(git -C external/sco-core rev-parse HEAD)" = "$EMBEDDED_SOURCE"
-          echo "Restored pinned host source $EMBEDDED_SOURCE for remaining checks"
+          echo "Restored pinned host source $EMBEDDED_SOURCE"
 
       - name: SDK proof generator defaults and explicit overrides
         run: python3 tools/test_sdk_generators.py
