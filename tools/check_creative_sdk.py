@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Isolated creative build/install/check and one actual module workflow from SDK 2.4.0 (sdk-v2.4.0-rc.1)."""
+"""Isolated creative proof using published RC1 or an explicitly locked development SDK."""
 import argparse
 import os
 from pathlib import Path
@@ -9,7 +9,8 @@ import shutil
 import sys
 
 sys.dont_write_bytecode = True
-from check_inspector_sdk import contained, run, trace_posix, trace_windows, verify_extract
+from check_inspector_sdk import (SDK_VERSION, SDK_SHA256, contained, explicit_preflight_pin,
+                                 run, trace_posix, trace_windows, verify_extract)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -18,8 +19,11 @@ def main(args):
     work = args.work.resolve()
     if contained(work, ROOT):
         raise AssertionError('Creative proof must live outside the host checkout')
+    pin = explicit_preflight_pin(args)
     work.mkdir(parents=True, exist_ok=False)
-    sdk, public = verify_extract(args.archive.resolve(), args.sums.resolve(), work / 'sdk')
+    sdk, public = verify_extract(args.archive.resolve(), args.sums.resolve(), work / 'sdk', pin=pin)
+    if args.candidate:
+        print('Explicit unpublished development compatibility preflight; SHA-256 ' + pin[1])
     if (ROOT / 'plugins/creative/plugin.ini').read_text() != (ROOT / 'data/plugins/creative/plugin.ini').read_text():
         raise AssertionError('Creative source/distribution manifests differ')
     if not (ROOT / 'data/plugins/creative/disabled').is_file():
@@ -124,7 +128,7 @@ def main(args):
         run(['cmake', '-S', source / 'plugins/creative', '-B', build], work)
         run(['cmake', '--build', build, '--target', 'clean'], work)
         run(['cmake', '--build', build, '--target', 'sc-offline-creative', 'creative-module-test'], work)
-    print('creative SDK release proof: PASS (synthetic; release-hook stand-in; not run in game)')
+    print('creative SDK source proof: PASS (synthetic; release-hook stand-in; not run in game)')
 
 
 if __name__ == '__main__':
@@ -132,5 +136,11 @@ if __name__ == '__main__':
     parser.add_argument('--archive', type=Path, required=True)
     parser.add_argument('--sums', type=Path, required=True)
     parser.add_argument('--work', type=Path, required=True, help='New directory outside checkout')
+    parser.add_argument('--sdk-version', default=SDK_VERSION)
+    parser.add_argument('--sdk-sha256', default=SDK_SHA256)
+    parser.add_argument('--candidate', action='store_true', help='Explicit unpublished preflight archive')
+    parser.add_argument('--archive-sha256', help='Required independent locked SHA-256 with --candidate')
+    parser.add_argument('--sdk-source', help='Exact full Core source commit for candidate')
+    parser.add_argument('--sdk-profile', help='Candidate SDK profile (legacy)')
     parser.add_argument('--sanitize', action='store_true', help='Also instrument the same focused module case on POSIX')
     main(parser.parse_args())

@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Exercise real proof CLI defaults/overrides through the first CMake invocation."""
 import importlib.util
+import hashlib
+import json
+import zipfile
 import shutil
 import subprocess
 from pathlib import Path
@@ -87,11 +90,11 @@ class GeneratorSelection(unittest.TestCase):
     def test_build_contracts_preflight_identity_lock(self):
         from check_inspector_sdk import SDK_VERSION, SDK_SHA256, explicit_preflight_pin
         def args(**kw):
-            values = dict(sdk_version=SDK_VERSION, sdk_sha256=SDK_SHA256, archive_sha256=None, candidate=False)
+            values = dict(sdk_version=SDK_VERSION, sdk_sha256=SDK_SHA256, archive_sha256=None, candidate=False, sdk_source=None, sdk_profile=None)
             values.update(kw); return SimpleNamespace(**values)
         self.assertEqual(explicit_preflight_pin(args()), ('sco-sdk-2.4.0', SDK_SHA256))
         digest = '1' * 64
-        self.assertEqual(explicit_preflight_pin(args(candidate=True, sdk_sha256=digest, archive_sha256=digest)), ('sco-sdk-2.4.0', digest))
+        self.assertEqual(explicit_preflight_pin(args(candidate=True, sdk_sha256=digest, archive_sha256=digest, sdk_source='a' * 40, sdk_profile='legacy')), ('sco-sdk-2.4.0', digest, 'a' * 40, 'legacy'))
         for invalid in (args(sdk_sha256=digest), args(archive_sha256=digest),
                         args(candidate=True, sdk_sha256=digest),
                         args(candidate=True, sdk_sha256=digest, archive_sha256='2' * 64),
@@ -108,7 +111,7 @@ class GeneratorSelection(unittest.TestCase):
                 extra = ['--slice', 'economy'] if tool.startswith('contracts') else []
                 result = subprocess.run([sys.executable, str(TOOLS / tool), '--archive', str(archive),
                     '--sums', str(sums), '--work', str(work), '--candidate',
-                    '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64, *extra],
+                    '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64, '--sdk-source', 'a' * 40, '--sdk-profile', 'legacy', *extra],
                     capture_output=True, text=True)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn('SDK archive SHA256 mismatch', result.stderr)
@@ -121,6 +124,9 @@ class GeneratorSelection(unittest.TestCase):
             (['--candidate', '--sdk-sha256', '0' * 64], '--candidate requires matching'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '1' * 64], '--candidate requires matching'),
             (['--candidate', '--archive-sha256', '124751534277b89f0516af1897919c3485923811596e159a1f683bb80b1c243b'], '--candidate must select a non-default'),
+            (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64], '--candidate requires full lowercase --sdk-source'),
+            (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64, '--sdk-source', 'a' * 40], '--candidate requires --sdk-profile legacy'),
+            (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64, '--sdk-source', 'a' * 40, '--sdk-profile', 'core'], '--candidate requires --sdk-profile legacy'),
         ]
         for extra, message in cases:
             with self.subTest(extra=extra), tempfile.TemporaryDirectory() as temp:
@@ -131,6 +137,130 @@ class GeneratorSelection(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(message, result.stderr)
                 self.assertFalse(work.exists())
+
+    def test_travel_preflight_lock_refusals_precede_extraction(self):
+        cases = [
+            (['--sdk-sha256', '0' * 64], 'Non-default SDK identity requires --candidate'),
+            (['--archive-sha256', '0' * 64], '--archive-sha256 requires --candidate'),
+            (['--candidate', '--sdk-sha256', '0' * 64], '--candidate requires matching'),
+            (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '1' * 64], '--candidate requires matching'),
+            (['--candidate', '--archive-sha256', '124751534277b89f0516af1897919c3485923811596e159a1f683bb80b1c243b'], '--candidate must select a non-default'),
+            (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64], '--candidate requires full lowercase --sdk-source'),
+            (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64, '--sdk-source', 'a' * 40], '--candidate requires --sdk-profile legacy'),
+        ]
+        for feature in ('quantum', 'teleport', 'npc', 'loadout', 'creative', 'discord', 'crew', 'mining'):
+            for extra, message in cases:
+                with self.subTest(feature=feature, extra=extra), tempfile.TemporaryDirectory() as temp:
+                    work = Path(temp) / 'proof'
+                    result = subprocess.run([sys.executable, str(TOOLS / ('check_' + feature + '_sdk.py')),
+                        '--archive', 'missing.zip', '--sums', 'missing-sums', '--work', str(work), *extra],
+                        capture_output=True, text=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(message, result.stderr)
+                    self.assertFalse(work.exists())
+
+    def test_travel_default_reaches_published_rc1_verifier(self):
+        from check_inspector_sdk import SDK_ROOT, SDK_SHA256
+        import check_teleport_sdk as travel
+        for feature in ('teleport', 'quantum'):
+            with self.subTest(feature=feature), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                module = proof_module(feature)
+                argv = ['--archive', str(root / 'sdk.zip'), '--sums', str(root / 'SHA256SUMS'),
+                        '--work', str(root / 'proof')]
+                verifier = travel if feature == 'quantum' else module
+                with patch.object(verifier, 'verify_extract', side_effect=Configured([])) as extract:
+                    with self.assertRaises(Configured):
+                        if feature == 'quantum':
+                            module.main(argv, spec=module.QUANTUM)
+                        else:
+                            module.main(argv)
+                    self.assertEqual(extract.call_args.kwargs['pin'], (SDK_ROOT, SDK_SHA256))
+
+    def test_other_consumers_default_to_published_rc1_verifier(self):
+        from check_inspector_sdk import SDK_ROOT, SDK_VERSION, SDK_SHA256
+        for feature in ('npc', 'loadout', 'creative', 'discord', 'crew', 'mining'):
+            with self.subTest(feature=feature), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                module = proof_module(feature)
+                args = SimpleNamespace(archive=root / 'sdk.zip', sums=root / 'SHA256SUMS', work=root / 'proof',
+                    sdk_version=SDK_VERSION, sdk_sha256=SDK_SHA256, candidate=False, archive_sha256=None,
+                    generator='Visual Studio 18 2026', sanitizers=False, sanitize=False)
+                with patch.object(module, 'verify_extract', side_effect=Configured([])) as extract:
+                    with self.assertRaises(Configured):
+                        module.main(args)
+                    self.assertEqual(extract.call_args.kwargs['pin'], (SDK_ROOT, SDK_SHA256))
+
+    def test_travel_preflight_rejects_archive_digest_mismatch(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            archive = root / 'sco-sdk-2.4.0.zip'; archive.write_bytes(b'not matching')
+            sums = root / 'SHA256SUMS'; sums.write_text('0' * 64 + '  ' + archive.name + '\n')
+            for feature in ('quantum', 'teleport', 'npc', 'loadout', 'creative', 'discord', 'crew', 'mining'):
+                work = root / feature
+                result = subprocess.run([sys.executable, str(TOOLS / ('check_' + feature + '_sdk.py')),
+                    '--archive', str(archive), '--sums', str(sums), '--work', str(work), '--candidate',
+                    '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64, '--sdk-source', 'a' * 40, '--sdk-profile', 'legacy'], capture_output=True, text=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('SDK archive SHA256 mismatch', result.stderr)
+                self.assertFalse((work / 'sdk').exists())
+
+    def test_candidate_source_and_profile_metadata_enforced(self):
+        from check_inspector_sdk import verify_extract
+        source = 'a' * 40
+        def fixture(root, compatibility, overrides=None):
+            files = {'include/sco_api.h': b'fixture'}
+            records = {'COMPATIBILITY.json': compatibility,
+                'sdk-catalogue.json': {'source_sha': source},
+                'sdk-guides.json': {'source_sha': source},
+                'sdk-workflows.json': {'source_sha': source}}
+            records.update(overrides or {})
+            files.update({name: json.dumps(value).encode() for name, value in records.items() if value is not None})
+            sums = ''.join(hashlib.sha256(data).hexdigest() + '  ' + name + '\n' for name, data in files.items())
+            archive = root / 'sco-sdk-2.5.0.zip'
+            with zipfile.ZipFile(archive, 'w') as z:
+                for name, data in files.items(): z.writestr('sco-sdk-2.5.0/' + name, data)
+                z.writestr('sco-sdk-2.5.0/SHA256SUMS', sums)
+            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+            checksum = root / 'SHA256SUMS'; checksum.write_text(digest + '  ' + archive.name + '\n')
+            return archive, checksum, ('sco-sdk-2.5.0', digest, source, 'legacy')
+        good = {'profile': 'legacy', 'source_commits': {'core': source, 'game-sc': source}}
+        cases = [(good, {}, None), (None, {}, 'metadata missing'),
+                 ({'source_commits': good['source_commits']}, {}, 'profile mismatch'),
+                 ({'profile': 'core', 'source_commits': good['source_commits']}, {}, 'profile mismatch'),
+                 ({'profile': 'legacy', 'source_commits': {'core': 'b' * 40, 'game-sc': source}}, {}, 'source mismatch'),
+                 ({'profile': 'legacy', 'source_commits': {'core': source}}, {}, 'source mismatch'),
+                 (good, {'sdk-guides.json': {'source_sha': 'b' * 40}}, 'source mismatch'),
+                 (good, {'sdk-workflows.json': None}, 'metadata missing')]
+        for compatibility, overrides, error in cases:
+            with self.subTest(error=error, overrides=overrides), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp); archive, sums, pin = fixture(root, compatibility, overrides)
+                if error:
+                    with self.assertRaisesRegex(AssertionError, error): verify_extract(archive, sums, root / 'out', pin)
+                else:
+                    verify_extract(archive, sums, root / 'out', pin)
+        # The published/default path retains compatibility with older kits that
+        # have no candidate source/profile metadata, while still verifying inventory.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            archive, sums, pin = fixture(root, None, {'sdk-catalogue.json': None,
+                'sdk-guides.json': None, 'sdk-workflows.json': None})
+            verify_extract(archive, sums, root / 'out', pin[:2])
+
+    def test_candidate_identity_required_by_shared_entrypoints(self):
+        for tool in ('check_inspector_sdk.py', 'check_build_sdk.py', 'contracts_sdk_check.py'):
+            for extra, message in (([], '--candidate requires full lowercase --sdk-source'),
+                                   (['--sdk-source', 'a' * 40], '--candidate requires --sdk-profile legacy')):
+                with self.subTest(tool=tool, extra=extra), tempfile.TemporaryDirectory() as temp:
+                    work = Path(temp) / 'proof'
+                    result = subprocess.run([sys.executable, str(TOOLS / tool), '--archive', 'missing.zip',
+                        '--sums', 'missing-sums', '--work', str(work), '--candidate',
+                        '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64,
+                        *(['--slice', 'economy'] if tool == 'contracts_sdk_check.py' else []), *extra],
+                        capture_output=True, text=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(message, result.stderr)
+                    self.assertFalse(work.exists())
 
     def test_inspector_defaults_keep_published_rc_identity(self):
         module = proof_module('inspector')

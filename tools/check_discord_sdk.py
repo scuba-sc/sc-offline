@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""One focused Discord module/settings/lifecycle and published SDK 2.4.0 (sdk-v2.4.0-rc.1) boundary proof.
+"""Discord lifecycle and boundary proof using published RC1 or a locked development SDK.
 
 No host checkout headers, game, Discord process, network, or privacy exception.
 The checker deliberately loads disabled folders: it is not host discovery proof.
@@ -13,7 +13,8 @@ import shutil
 import sys
 
 sys.dont_write_bytecode = True
-from check_inspector_sdk import contained, run, trace_posix, trace_windows, verify_extract
+from check_inspector_sdk import (SDK_VERSION, SDK_SHA256, contained, explicit_preflight_pin,
+                                 run, trace_posix, trace_windows, verify_extract)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -37,8 +38,11 @@ def main(args):
     for cpp in feature.glob('*.cpp'):
         if re.search(forbidden, cpp.read_text()):
             raise AssertionError('Custom transport/game read restored: ' + cpp.name)
+    pin = explicit_preflight_pin(args)
     work.mkdir(parents=True, exist_ok=False)
-    sdk, public = verify_extract(args.archive.resolve(), args.sums.resolve(), work / 'sdk')
+    sdk, public = verify_extract(args.archive.resolve(), args.sums.resolve(), work / 'sdk', pin=pin)
+    if args.candidate:
+        print('Explicit unpublished development compatibility preflight; SHA-256 ' + pin[1])
     source = work / 'source'
     shutil.copytree(feature, source / 'plugins/discord')
     (source / 'tools').mkdir()
@@ -138,4 +142,10 @@ if __name__ == '__main__':
     parser.add_argument('--archive', type=Path, required=True)
     parser.add_argument('--sums', type=Path, required=True)
     parser.add_argument('--work', type=Path, required=True, help='New directory outside checkout')
+    parser.add_argument('--sdk-version', default=SDK_VERSION)
+    parser.add_argument('--sdk-sha256', default=SDK_SHA256)
+    parser.add_argument('--candidate', action='store_true', help='Explicit unpublished preflight archive')
+    parser.add_argument('--archive-sha256', help='Required independent locked SHA-256 with --candidate')
+    parser.add_argument('--sdk-source', help='Exact full Core source commit for candidate')
+    parser.add_argument('--sdk-profile', help='Candidate SDK profile (legacy)')
     main(parser.parse_args())

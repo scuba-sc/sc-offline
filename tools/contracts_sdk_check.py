@@ -157,6 +157,8 @@ if __name__ == '__main__':
     parser.add_argument('--sdk-sha256', default=SDK_SHA256)
     parser.add_argument('--candidate', action='store_true', help='Explicit unpublished preflight archive')
     parser.add_argument('--archive-sha256', help='Required locked digest with --candidate')
+    parser.add_argument('--sdk-source', help='Exact full Core source commit for candidate')
+    parser.add_argument('--sdk-profile', help='Candidate SDK profile (legacy)')
     parser.add_argument('--slice', choices=('read', 'accept', 'progress', 'script', 'economy', 'metadata'), required=True)
     parser.add_argument('--boundary', action='store_true', help='POSIX boundary negative controls')
     parser.add_argument('--sanitizers', action='store_true', help='POSIX physical-pointer red/green probe')

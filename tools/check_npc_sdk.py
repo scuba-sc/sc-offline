@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Build/check/install NPC from the checksum-verified published SDK, outside the host.
+"""Build/check/install NPC from published RC1 or an explicitly locked development SDK.
 
 Uses the inspector proof's archive and compiler-boundary checks (step 1B).
 Windows emits the release DLL; POSIX additionally runs source-mutation controls.
@@ -13,7 +13,8 @@ import shutil
 import sys
 
 sys.dont_write_bytecode = True
-from check_inspector_sdk import contained, run, trace_posix, trace_windows, verify_extract
+from check_inspector_sdk import (SDK_VERSION, SDK_SHA256, contained, explicit_preflight_pin,
+                                 run, trace_posix, trace_windows, verify_extract)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -22,8 +23,11 @@ def main(args):
     work = args.work.resolve()
     if contained(work, ROOT):
         raise AssertionError('NPC proof must live outside the host checkout')
+    pin = explicit_preflight_pin(args)
     work.mkdir(parents=True, exist_ok=False)
-    sdk, public = verify_extract(args.archive.resolve(), args.sums.resolve(), work / 'sdk')
+    sdk, public = verify_extract(args.archive.resolve(), args.sums.resolve(), work / 'sdk', pin=pin)
+    if args.candidate:
+        print('Explicit unpublished development compatibility preflight; SHA-256 ' + pin[1])
     source = work / 'source'
     (source / 'plugins').mkdir(parents=True)
     shutil.copy2(ROOT / 'plugins/CMakeLists.txt', source / 'plugins/CMakeLists.txt')
@@ -108,7 +112,7 @@ def main(args):
         else:
             raise AssertionError('Dependency trace admitted transitive private header')
         cpp.write_text(original)
-    print('NPC SDK release proof: PASS (synthetic, not run in game)')
+    print('NPC SDK source proof: PASS (synthetic, not run in game)')
 
 
 def parse_args(argv=None):
@@ -116,6 +120,12 @@ def parse_args(argv=None):
     parser.add_argument('--archive', type=Path, required=True)
     parser.add_argument('--sums', type=Path, required=True)
     parser.add_argument('--work', type=Path, required=True, help='New directory outside checkout')
+    parser.add_argument('--sdk-version', default=SDK_VERSION)
+    parser.add_argument('--sdk-sha256', default=SDK_SHA256)
+    parser.add_argument('--candidate', action='store_true', help='Explicit unpublished preflight archive')
+    parser.add_argument('--archive-sha256', help='Required independent locked SHA-256 with --candidate')
+    parser.add_argument('--sdk-source', help='Exact full Core source commit for candidate')
+    parser.add_argument('--sdk-profile', help='Candidate SDK profile (legacy)')
     parser.add_argument('--generator', default='Visual Studio 18 2026',
                         help='CMake generator for Windows (default: Visual Studio 18 2026)')
     return parser.parse_args(argv)

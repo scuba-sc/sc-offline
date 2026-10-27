@@ -158,6 +158,8 @@ def parse_args(argv=None):
     parser.add_argument('--sdk-sha256', default=SDK_SHA256)
     parser.add_argument('--candidate', action='store_true', help='Explicit unpublished preflight archive')
     parser.add_argument('--archive-sha256', help='Required locked digest with --candidate')
+    parser.add_argument('--sdk-source', help='Exact full Core source commit for candidate')
+    parser.add_argument('--sdk-profile', help='Candidate SDK profile (legacy)')
     parser.add_argument('--generator', default='Visual Studio 18 2026',
                         help='CMake generator for Windows (default: Visual Studio 18 2026)')
     return parser.parse_args(argv)

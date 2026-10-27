@@ -2,9 +2,9 @@
 
 The external `quantum` folder owns commands, input policy and the retained **Travel** panel. It uses only extracted public SDK headers. The host does not compile/start its old `src/quantum.cpp` hooks, and its global quantum cvar keeper no longer runs. Legacy source is retained inactive; there is no built-in or private-pointer fallback when plugins are off.
 
-## Approved controls and current engine blocker
+## Approved controls and engine validation
 
-G8 control is approved for R1. Core's `game.quantum` / `sc_quantum_v1` activates its capability only with an explicitly configured complete game-pack backend and installed owner cleanup. **The default production engine adapter is still absent.** Signature matches and historical offsets do not certify local-drive ownership, offline admission or reversible charging/audio/effect teardown. Consequently default production controls still refuse. This module is an implemented consumer, **not completed boost/effects/NAV gameplay parity**.
+G8 control is approved for R1. The pinned Core source contains a Windows production adapter and tries to configure it at startup; configuration requires the game thread, resolved signature rows and positive fresh offline admission. Source presence does not establish that a backend is configured or installed in a running host: the `game.quantum` service can exist with an empty backend, while its `game.quantum.control` capability requires a complete backend and installed owner cleanup. Operations remain subject to admission and ownership checks, and missing prerequisites fail closed. Signature matches and historical offsets do not certify local-drive ownership or reversible charging/audio/effect teardown. Native execution and gameplay remain unverified; this module is an implemented consumer, **not completed boost/effects/NAV gameplay parity**.
 
 | Command | Contract |
 | --- | --- |
@@ -16,7 +16,7 @@ G8 control is approved for R1. Core's `game.quantum` / `sc_quantum_v1` activates
 
 After explicit enable, the Windows game-thread tick can refresh **150 ms** hold leases every **50 ms** while Caps Lock is physically held and this process owns the foreground window. `caps_input` defaults true. `mouse_input` defaults **false**; enabling it explicitly treats the primary mouse button as hold input while focused. It **does not infer NAV mode** or intercept the game's B/engage action: leave it off for ordinary weapon firing. Native NAV/action forwarding requires an admitted game-pack adapter and remains pending. Non-Windows builds do not poll input.
 
-Charging, drive input forwarding, audio handles/effect state and restoration remain **G8 provider responsibilities**, not arbitrary plugin effect requests or raw writes. The public contract has no effect-tag, sound-ID, arbitrary action, cvar or game-pointer route. Do not copy legacy effects into the consumer to bypass the missing adapter. G7 cvar writes remain unapproved.
+Charging, drive input forwarding, audio handles/effect state and restoration remain **G8 provider responsibilities**, not arbitrary plugin effect requests or raw writes. The public contract has no effect-tag, sound-ID, arbitrary action, cvar or game-pointer route. Do not copy legacy effects into the consumer to bypass provider admission or missing prerequisites. G7 cvar writes remain unapproved.
 
 Every callback extent is checked before use, tables are reopened per operation, durations/arguments/copied observations are validated, and the plugin never steals another owner's control. Capability/admission loss stops input refresh and requests owner cancellation. Ordinary unload unsubscribes, removes its hotkey and requests cancellation/disable for its own lease; the provider's actual owner-release hook remains authoritative for quarantine/fault cleanup. Failed cleanup is not a reload-safety claim.
 
@@ -50,8 +50,9 @@ This is control-panel guidance. Existing commands, hotkeys and focused Windows
 input retain their G8 provider checks and authority; the snapshot does not replace
 native admission or enable a backend. These quantum-travel rules do not gate the
 separate `game.relocation` destination/bookmark operations. The default production
-GameRules reader and G8 adapter remain unavailable; no default, SDK pin, staging
-or native activation changes here.
+GameRules reader remains unavailable; the G8 adapter's source does not establish a
+configured or admitted live provider. No default, SDK pin, staging or native
+activation changes here.
 
 ## Existing travel and storage compatibility
 

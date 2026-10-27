@@ -31,6 +31,7 @@
 #ifdef SCO_OFFLINE_G1_HOST
 #include "offline_host.h"
 #include "admission_probe.h"
+#include "start_retry.h"
 #include <mutex>
 #include <cstdio>
 #endif
@@ -527,8 +528,11 @@ static void RunLegacyTicks(DWORD now) {
 
 static void OnMainThreadTick() {
 #ifdef SCO_OFFLINE_G1_HOST
-    // Terminal phases never restart; Start() re-inspects before provider publication.
-    if (sco::game::host::Status().phase == sco::game::host::Phase::Prepared) StartHostKit();
+    // Terminal phases never restart; each attempt re-inspects before provider publication.
+    // A persistent admission refusal must not inspect and log on every window message.
+    static sc_offline::StartRetry retry;
+    retry.Tick(sco::game::host::Status().phase == sco::game::host::Phase::Prepared,
+               GetTickCount(), [] { StartHostKit(); });
     if (!offline_host::Running()) return;
     const DWORD now = GetTickCount();
     // Re-inspect BEFORE cadence, OS callbacks or retained legacy consumers. Lost

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Isolated Loadout consumer proof from a checksum-verified published SDK archive.
+"""Isolated Loadout proof from published RC1 or an explicitly locked development SDK.
 
 Public consumer sources and authored/catalogued identifiers only. Exercises actual
 module callbacks, existing linked workflows and private-dependency controls. No game.
@@ -13,7 +13,8 @@ import shutil
 import sys
 
 sys.dont_write_bytecode = True
-from check_inspector_sdk import contained, run, trace_posix, trace_windows, verify_extract
+from check_inspector_sdk import (SDK_VERSION, SDK_SHA256, contained, explicit_preflight_pin,
+                                 run, trace_posix, trace_windows, verify_extract)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -22,8 +23,11 @@ def main(args):
     work = args.work.resolve()
     if contained(work, ROOT):
         raise AssertionError('Loadout proof must live outside the product checkout')
+    pin = explicit_preflight_pin(args)
     work.mkdir(parents=True, exist_ok=False)
-    sdk, public = verify_extract(args.archive.resolve(), args.sums.resolve(), work / 'sdk')
+    sdk, public = verify_extract(args.archive.resolve(), args.sums.resolve(), work / 'sdk', pin=pin)
+    if args.candidate:
+        print('Explicit unpublished development compatibility preflight; SHA-256 ' + pin[1])
     source = work / 'source'
     (source / 'plugins').mkdir(parents=True)
     shutil.copytree(ROOT / 'plugins/loadout', source / 'plugins/loadout')
@@ -67,19 +71,25 @@ def main(args):
     checker = checker_build / ('Release/sco-plugin-check.exe' if os.name == 'nt' else 'sco-plugin-check')
     checker_result = run([checker, folder, '--invoke', 'loadout.slots', 'primary=FixtureClass'], work, False)
     checked = checker_result.stdout
-    (work / 'published-checker.log').write_text(checked)
+    (work / 'sdk-checker.log').write_text(checked)
     print(checked)
     for token in ('loadout.slots -> unavailable', 'no XML/private equip fallback',
-                  'loadout.reload_slots -> unavailable', 'loadout.cancel -> not_found', 'unload  ok'):
+                  'loadout.reload_slots -> unavailable', 'loadout.progress -> not_found',
+                  'loadout.cancel -> not_found', 'unload  ok'):
         if token not in checked:
             raise AssertionError('Missing-service checker reply absent: ' + token)
     # RC1's generic checker only permits OK/UNAVAILABLE for argument-free
     # commands. These two existing no-job commands correctly return NOT_FOUND.
     failures = [line for line in checked.splitlines() if line.startswith('FAIL ')]
     expected = ['FAIL loadout.progress returned not_found', 'FAIL loadout.cancel returned not_found']
-    if checker_result.returncode != 1 or failures != expected or 'FAILED: 2 failure(s)' not in checked:
-        raise AssertionError('Unexpected published checker result:\n' + checked)
-    print('Published RC1 checker: two documented no-job NOT_FOUND mismatches; not a clean checker pass')
+    if args.candidate:
+        if checker_result.returncode != 0 or failures or 'OK: 0 failure(s)' not in checked:
+            raise AssertionError('Unexpected development checker result:\n' + checked)
+        print('Development SDK checker: expected no-job results accepted; clean pass')
+    else:
+        if checker_result.returncode != 1 or failures != expected or 'FAILED: 2 failure(s)' not in checked:
+            raise AssertionError('Unexpected published RC1 checker result:\n' + checked)
+        print('Published RC1 checker: two documented no-job NOT_FOUND mismatches; not a clean checker pass')
     if os.name != 'nt':
         sanitized = work / 'sanitizer-build'
         run(['cmake', '-S', source / 'plugins/loadout', '-B', sanitized,
@@ -141,7 +151,7 @@ def main(args):
         run(['cmake', '--build', build], work)
         trace_posix(build, source, sdk, public, feature='loadout')
         print(run(focused, work).stdout)
-    print('Loadout SDK source proof: PASS; published RC1 checker has two known no-job mismatches (not run in game)')
+    print('Loadout SDK source proof: PASS (synthetic; not run in game)')
 
 
 def parse_args(argv=None):
@@ -149,6 +159,12 @@ def parse_args(argv=None):
     parser.add_argument('--archive', type=Path, required=True)
     parser.add_argument('--sums', type=Path, required=True)
     parser.add_argument('--work', type=Path, required=True, help='New directory outside checkout')
+    parser.add_argument('--sdk-version', default=SDK_VERSION)
+    parser.add_argument('--sdk-sha256', default=SDK_SHA256)
+    parser.add_argument('--candidate', action='store_true', help='Explicit unpublished preflight archive')
+    parser.add_argument('--archive-sha256', help='Required independent locked SHA-256 with --candidate')
+    parser.add_argument('--sdk-source', help='Exact full Core source commit for candidate')
+    parser.add_argument('--sdk-profile', help='Candidate SDK profile (legacy)')
     parser.add_argument('--generator', default='Visual Studio 18 2026')
     return parser.parse_args(argv)
 

@@ -42,13 +42,14 @@ The expanded inspector uses that same published RC1 by default; no older unpubli
 lock is needed. The proof validates the archive and full extracted inventory before building.
 `plugins/CMakeLists.txt` also checks all inspector contract headers at configure time. An explicitly
 selected non-default version/hash requires the matching archive, rather than accepting host headers.
-For the proof CLI, non-default coordinates also require `--candidate` and an independently locked
-`--archive-sha256`; such runs are labelled unpublished candidates, never the published RC1 proof.
-The spawn, build and contracts proof CLIs also accept `--candidate`, `--sdk-version`,
-`--sdk-sha256` and `--archive-sha256` for an explicitly identified unpublished preflight.
-The two digests must agree with each other, the archive bytes and its supplied checksum
-inventory; extracted files are verified before use. Record the independently selected Core
-source revision and its relation to the archive separately. A development preflight is not
+The inspector, NPC, loadout, creative, Discord, crew, mining, spawn, build, contracts,
+teleport and quantum proof CLIs accept an explicit unpublished preflight with `--candidate`,
+`--sdk-version`, `--sdk-sha256`, `--archive-sha256`, the full Core commit in `--sdk-source`,
+and `--sdk-profile legacy`. The two digests must agree with the archive bytes and supplied
+checksum inventory. The extracted inventory, compatibility profile and component source
+commits, and catalogue, guides and workflow source identities must match before use.
+These checks bind the supplied identity to archive contents; they are not independent
+provenance or publication approval. A development preflight is not
 published-candidate approval or an installed-host capability claim. Run the matching
 connected quantum, build and contracts fixtures documented by those consumers when a
 matching host-source build is available.
