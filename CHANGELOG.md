@@ -11,6 +11,7 @@
 
 - **Inspector language setting.** Choose English or Russian for fixed Inspector panel labels and the Lua command description. The setting is independent of the launcher; structured diagnostic output remains English. Synthetic checks only; **not run in game**.
 
+- **Develop gear presets against the SDK.** A standalone, read-only consumer captures and saves complete logical layouts and compares categories with manual advice. The current production host has no logical-layout producer, and the module is not staged; the workflow is verified only with synthetic host data and is **not run in game**.
 
 - **Choose the launcher language.** Stable text keys, strict UTF-8 catalogues, checked named placeholders and an English/Russian/auto selector use the system language by default with built-in Russian and an English fallback. Existing control and command identities stay fixed. An optional `data/locales/ru.ini` can override Russian text; plugin language APIs stay separate. Checked headlessly and with synthetic files; **not run in game**.
 
