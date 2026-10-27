@@ -298,6 +298,6 @@ sco_result Load(const sco_api* api,sco_plugin* self) {
     for(const auto& c:commands) {auto r=api->register_command(self,&c);if(r!=SCO_OK){Unload();return r;}}
     auto r=api->subscribe(self,"tick",Tick,&g);if(r!=SCO_OK) Unload();else {StartPicker();StartAsop();}return r;
 }
-void Unload(){if(!g.api)return;StopAsop();StopPicker();if(HAS(g.api,sco_api,unsubscribe))g.api->unsubscribe(g.self,"tick",Tick);char b[160];if(Clear(nullptr,0,nullptr,b,sizeof(b))!=SCO_OK)g.api->log(g.self,SCO_LOG_WARN,"Cleanup refused; host owner-release is required");g={};}
+void Unload(){if(!g.api)return;StopAsop();StopPicker();if(HAS(g.api,sco_api,unsubscribe))g.api->unsubscribe(g.self,"tick",Tick);char b[160];if(Clear(nullptr,0,nullptr,b,sizeof(b))!=SCO_OK)g.api->log(g.self,SCO_LOG_WARN,"Cleanup refused; host owner-release is required");g=State{};}
 #undef HAS
 } // namespace sco::features::spawn
