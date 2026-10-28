@@ -21,4 +21,4 @@ python3 examples/sdk-mcp/check_rc2_mcp.py --sdk /absolute/path/sco-sdk-2.4.0 \
 
 The optional transcript contains full requests and replies, including generated code. The optional scaffold directory is created and populated, but not built. Review its files before using the kit's CMake check target. This check is pinned to RC2's combined kit; it is not an archive authentication step or a live-host check.
 
-The [receipt](rc2-validation.md) records real published-archive and synthetic results, including the full tutorial proof's remaining dependency-trace blocker. Windows/MSVC, game install/reload/cleanup and runtime MCP are **not verified**. Not run in game.
+The [receipt](rc2-validation.md) records real published-archive and synthetic results, including the Linux toolchain setup used for the full tutorial proof. Windows/MSVC, game install/reload/cleanup and runtime MCP are **not verified**. Not run in game.

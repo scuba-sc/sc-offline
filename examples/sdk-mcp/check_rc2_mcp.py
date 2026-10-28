@@ -41,6 +41,8 @@ def request(i, method, params=None):
 
 
 def main():
+    if not __debug__:
+        sys.exit('Run without Python optimization: this validation uses assertions')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--sdk', type=Path, required=True, help='Verified extracted combined SDK root')
     parser.add_argument('--transcript', type=Path, help='New local JSONL evidence file')
@@ -68,7 +70,8 @@ def main():
                                            'services': ['game.inventory@1.0']}),
              ('get_workflow', {'id': 'missing'}),
              ('get_workflow', {'id': IDS[0], 'path': '../../secret'}),
-             ('get_capability_status', {'symbol_or_id': 'sc_inventory_v1_2.snapshot_layout'})]
+             ('get_capability_status', {'symbol_or_id': 'sc_inventory_v1_2.snapshot_layout'}),
+             ('check_compatibility', {'tag': 'sdk-v2.4.0-rc.2'})]
     for item in index['workflows']:
         calls.append(('get_workflow', {'id': item['id']}))
         calls.extend(('get_workflow', {'id': item['id'], 'path': f['path']}) for f in item['files'])
@@ -83,6 +86,10 @@ def main():
     assert replies[0]['result']['protocolVersion'] == '2025-11-25'
     assert [t['name'] for t in replies[1]['result']['tools']] == TOOLS
     assert all(t['annotations']['readOnlyHint'] for t in replies[1]['result']['tools'])
+    schemas = {t['name']: t['inputSchema'] for t in replies[1]['result']['tools']}
+    assert schemas['get_workflow']['required'] == ['id']
+    assert schemas['generate_plugin_scaffold']['required'] == ['id', 'lang']
+    assert 'sdk_version' in schemas['check_compatibility']['properties']
     results = [r['result'] for r in replies[2:]]
     data = [r['structuredContent'] for r in results]
     assert [w['id'] for w in data[0]['workflows']] == IDS
@@ -100,7 +107,8 @@ def main():
     assert any(r['name'] == 'game.inventory.layout' and r['default'] == 'OFF'
                and r['registry_evidence_level'] == 'synthetic_only' for r in layout)
     assert data[11]['evidence_state']['gameplay_receipt']['state'] == 'unknown'
-    offset = 12
+    assert results[12]['isError'] and 'advertised pattern' in data[12]['error']
+    offset = 13
     for item in index['workflows']:
         entry = data[offset]; offset += 1
         assert entry['file']['path'] == item['entry']
@@ -133,7 +141,7 @@ def main():
             for reply in replies:
                 output.write(json.dumps({'reply': reply}) + '\n')
     print('RC2 MCP: 14 default and 6 minimal tools; six workflows and all indexed files verified')
-    print('Version match/mismatch, unsupported Lua service, stale index and session refusals: PASS')
+    print('Version match/mismatch, RC tag refusal, unsupported Lua service, stale index and session refusals: PASS')
     print('Discovery is static; host, Windows and game behavior NOT VERIFIED')
 
 
