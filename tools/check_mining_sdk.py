@@ -7,6 +7,7 @@ root is supplied. This is synthetic portable evidence, not native game acceptanc
 """
 import argparse
 import os
+import re
 from pathlib import Path
 import shutil
 import sys
@@ -51,7 +52,26 @@ def main(args):
     for name in ("plugin.ini", "import_settings.py"):
         if (folder / name).read_bytes() != (feature / name).read_bytes():
             raise AssertionError("Mining install mismatch: " + name)
-    print("mining isolated module + settings import PASS (synthetic; not run in game)")
+    # The staged plugin.ini ships the Windows entry name; on POSIX point it at the
+    # built module before checking (same accommodation the npc proof makes).
+    if os.name != "nt":
+        manifest = folder / "plugin.ini"
+        manifest.write_text(re.sub(r"(?m)^entry[ \t]*=.*$", "entry = " + modules[0].name, manifest.read_text()))
+    # Checker completeness: the staged module must pass the kit's own plugin checker,
+    # not just the isolated build/tests (audit 2026-10-28: this script previously built
+    # and staged mining without ever invoking sco-plugin-check).
+    checker_build = work / "checker-build"
+    checker_configure = ["cmake", "-S", str(sdk), "-B", str(checker_build)]
+    if os.name == "nt":
+        checker_configure += ["-G", "Visual Studio 18 2026", "-A", "x64"]
+    run(checker_configure, work)
+    run(["cmake", "--build", checker_build, "--config", "Release", "--target", "sco-plugin-check"], work)
+    checker = checker_build / ("Release/sco-plugin-check.exe" if os.name == "nt" else "sco-plugin-check")
+    checked = run([checker, folder], work).stdout
+    print(checked)
+    if "OK: 0 failure(s)" not in checked:
+        raise AssertionError("Mining staged folder failed sco-plugin-check")
+    print("mining isolated module + settings import + staged sco-plugin-check PASS (synthetic; not run in game)")
 
 
 if __name__ == "__main__":
