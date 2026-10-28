@@ -45,13 +45,13 @@ def main():
     archive, sums = args.archive.resolve(strict=True), args.sums.resolve(strict=True)
     work.mkdir(parents=True, exist_ok=False)
     source = work / 'owned-source'
-    files = ['plugins/CMakeLists.txt', 'tools/check_inspector_sdk.py',
+    files = ['plugins/CMakeLists.txt', 'plugins/picker.h', 'tools/check_inspector_sdk.py',
              'tools/check_npc_sdk.py', 'tools/inspector_test.cpp',
              'tools/npc_workflow_test.cpp', 'tools/workflow_module.h']
     for feature in ('npc', 'inspector'):
         files.extend(str(path.relative_to(ROOT)) for path in
                      sorted((ROOT / 'plugins' / feature).iterdir())
-                     if path.is_file() and path.suffix in ('.cpp', '.h', '.ini'))
+                     if path.is_file() and path.suffix in ('.cpp', '.h', '.inc', '.ini'))
     for name in files:
         destination = source / owned(name)
         destination.parent.mkdir(parents=True, exist_ok=True)
