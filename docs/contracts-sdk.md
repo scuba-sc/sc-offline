@@ -126,10 +126,14 @@ its native mission, wallet, offering and persistence behavior.
 **Pending:** production adapter, full retained mobiGlas/UI/mission-kind parity,
 15-second automatic offering, actor-death orchestration, wallet precedence/import/
 save/payout policy and reload persistence. Legacy host sources remain untouched,
-not counted as migrated. Strict MSVC 19.44 builds and all six synthetic workflow
-checks pass against the published RC1 headers, including loading the production
-DLL. The new metadata fixture fails against the prior accepted module as expected.
-The real RC1 content provider also passes a separate synthetic-pack/module check.
+not counted as migrated. Historical RC1 evidence: strict MSVC 19.44 builds and
+all six synthetic workflow checks passed against published RC1 headers, including
+loading the production DLL. The metadata fixture failed against the prior accepted
+module as expected. The RC1 content provider also passed a separate
+synthetic-pack/module check. The current [CI workflow](../.github/workflows/build.yml)
+uses published RC2 for an isolated MSVC build, the read-slice module workflow,
+dependency traces and the SDK checker. That configured RC2 scope does not extend
+the historical six-slice or content-provider results to RC2.
 Actual game loader fault guards and gameplay acceptance remain unverified.
 **Not run in game.** These checks do not establish native XML installation or
 durable exactly-once persistence.
