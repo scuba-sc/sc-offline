@@ -41,6 +41,10 @@ def explicit_preflight_pin(args):
     """Preserve published defaults; bind preflight overrides to an explicit digest."""
     pin = ('sco-sdk-' + args.sdk_version, args.sdk_sha256.lower())
     published = args.sdk_version == SDK_VERSION and pin[1] == SDK_SHA256
+    source = getattr(args, 'sdk_source', None)
+    profile = getattr(args, 'sdk_profile', None)
+    if (source or profile) and not args.candidate:
+        raise AssertionError('--sdk-source and --sdk-profile require --candidate')
     if args.archive_sha256 and not args.candidate:
         raise AssertionError('--archive-sha256 requires --candidate')
     if not published and not args.candidate:
@@ -50,11 +54,17 @@ def explicit_preflight_pin(args):
             raise AssertionError('--candidate requires matching --archive-sha256 and --sdk-sha256')
         if published:
             raise AssertionError('--candidate must select a non-default archive identity')
+        if not source or not re.fullmatch(r'[0-9a-f]{40}', source):
+            raise AssertionError('--candidate requires full lowercase --sdk-source commit')
+        if profile != 'legacy':
+            raise AssertionError('--candidate requires --sdk-profile legacy')
+        return (*pin, source, profile)
     return pin
 
 
 def verify_extract(archive, sums, destination, pin=None):
-    sdk_root, sdk_sha256 = pin or (SDK_ROOT, SDK_SHA256)
+    selected = pin or (SDK_ROOT, SDK_SHA256)
+    sdk_root, sdk_sha256 = selected[:2]
     if archive.name != sdk_root + '.zip':
         raise AssertionError(f'Expected SDK archive {sdk_root}.zip, got {archive.name}')
     rows = [line.split() for line in sums.read_text().splitlines() if line.strip()]
@@ -84,6 +94,28 @@ def verify_extract(archive, sums, destination, pin=None):
     if extracted != listed:
         raise AssertionError('Extracted SDK files not covered by its SHA256SUMS: ' +
                              ', '.join(sorted(str(p) for p in extracted ^ listed)))
+    if len(selected) == 4:
+        source, profile = selected[2:]
+        def metadata(name):
+            path = (sdk / name).resolve()
+            if path not in listed:
+                raise AssertionError('Candidate identity metadata missing from inventory: ' + name)
+            try:
+                data = json.loads(path.read_text(encoding='utf-8'))
+            except (ValueError, OSError) as error:
+                raise AssertionError('Invalid candidate identity metadata: ' + name) from error
+            if not isinstance(data, dict):
+                raise AssertionError('Invalid candidate identity metadata: ' + name)
+            return data
+        compatibility = metadata('COMPATIBILITY.json')
+        commits = compatibility.get('source_commits')
+        if compatibility.get('profile') != profile:
+            raise AssertionError('Candidate SDK profile mismatch')
+        if not isinstance(commits, dict) or commits.get('core') != source or commits.get('game-sc') != source:
+            raise AssertionError('Candidate SDK source mismatch')
+        for name in ('sdk-catalogue.json', 'sdk-guides.json', 'sdk-workflows.json'):
+            if metadata(name).get('source_sha') != source:
+                raise AssertionError('Candidate SDK source mismatch: ' + name)
     if not public:
         raise AssertionError('Empty published header inventory')
     if sdk_root == 'sco-sdk-2.4.0':
@@ -204,18 +236,7 @@ def main(args):
     work = args.work.resolve()
     if contained(work, ROOT):
         raise AssertionError("Inspector proof must live outside the host checkout")
-    sdk_root = 'sco-sdk-' + args.sdk_version
-    pin = (sdk_root, args.sdk_sha256.lower())
-    published_pin = args.sdk_version == SDK_VERSION and pin[1] == SDK_SHA256
-    if not published_pin and not args.candidate:
-        raise AssertionError('Non-default SDK identity requires --candidate and a locked --archive-sha256')
-    if args.candidate:
-        if not args.archive_sha256:
-            raise AssertionError('--candidate requires --archive-sha256 from the accepted candidate lock')
-        if args.archive_sha256.lower() != args.sdk_sha256.lower():
-            raise AssertionError('--archive-sha256 and --sdk-sha256 must identify the same locked candidate archive')
-        if published_pin:
-            raise AssertionError('--candidate must explicitly select candidate coordinates, not the published default')
+    pin = explicit_preflight_pin(args)
     work.mkdir(parents=True, exist_ok=False)
     sdk, public = verify_extract(args.archive.resolve(), args.sums.resolve(), work / 'sdk', pin=pin)
     source = work / 'source'
@@ -324,6 +345,8 @@ def parse_args(argv=None):
                         help='Label this as an explicitly selected, unpublished candidate archive')
     parser.add_argument('--archive-sha256', default=None,
                         help='Required with --candidate; independently locked archive SHA-256')
+    parser.add_argument('--sdk-source', help='Exact full Core source commit for candidate')
+    parser.add_argument('--sdk-profile', help='Candidate SDK profile (legacy)')
     return parser.parse_args(argv)
 
 

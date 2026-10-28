@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Standalone quantum module proof from checksum-verified published SDK 2.4.0 (sdk-v2.4.0-rc.1).
+"""Standalone quantum proof against published RC1 or an explicitly locked development SDK.
 
 Same machinery as check_teleport_sdk.py. The actual-module workflow drives the
 player switch, the game.relocation capability, one request and its tick tracking

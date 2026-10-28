@@ -159,5 +159,7 @@ if __name__ == '__main__':
     parser.add_argument('--sdk-sha256', default=SDK_SHA256)
     parser.add_argument('--candidate', action='store_true', help='Explicit unpublished preflight archive')
     parser.add_argument('--archive-sha256', help='Required independent locked SHA-256 with --candidate')
+    parser.add_argument('--sdk-source', help='Exact full Core source commit for candidate')
+    parser.add_argument('--sdk-profile', help='Candidate SDK profile (legacy)')
     parser.add_argument('--sanitizers', action='store_true', help='POSIX ASan/UBSan and physical partial-tail red arm')
     main(parser.parse_args())

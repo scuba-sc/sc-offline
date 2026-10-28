@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Limit startup retry noise.** While offline admission is unavailable, the host
+  retries at most every 500 ms instead of on every game message. Each attempt
+  still performs a fresh admission check. Synthetic timing checks only; **not run in game**.
+
 - **Development ASOP selection and host menu.** The spawn panel can edit a
   host-owned `asop_ships.txt` through the candidate SDK file service when the
   development composition is enabled; it is off by default. The separate host

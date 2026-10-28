@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Standalone teleport module proof from checksum-verified published SDK 2.4.0 (sdk-v2.4.0-rc.1).
+"""Standalone teleport proof against published RC1 or an explicitly locked development SDK.
 
 Reuses the inspector archive/dependency machinery, never host include paths. The
 shared travel code lives in plugins/spatial, the only sibling folder the trace admits.
@@ -16,7 +16,8 @@ import shutil
 import sys
 
 sys.dont_write_bytecode = True
-from check_inspector_sdk import contained, run, trace_posix, trace_windows, verify_extract
+from check_inspector_sdk import (SDK_VERSION, SDK_SHA256, contained, explicit_preflight_pin,
+                                 run, trace_posix, trace_windows, verify_extract)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -43,8 +44,11 @@ def prove(args, spec):
     work = args.work.resolve()
     if contained(work, ROOT):
         raise AssertionError(f'{feature} proof must live outside the host checkout')
+    pin = explicit_preflight_pin(args)
     work.mkdir(parents=True, exist_ok=False)
-    sdk, public = verify_extract(args.archive.resolve(), args.sums.resolve(), work / 'sdk')
+    sdk, public = verify_extract(args.archive.resolve(), args.sums.resolve(), work / 'sdk', pin=pin)
+    if args.candidate:
+        print('Explicit unpublished development compatibility preflight; SHA-256 ' + pin[1])
     source = work / 'source'
     (source / 'plugins').mkdir(parents=True)
     for folder in (feature, 'spatial'):
@@ -190,7 +194,8 @@ def prove(args, spec):
         build_all()
         workflow()
         trace_posix(build, source, sdk, public, feature=feature, shared=('spatial',))
-    print(f'{feature.capitalize()} SDK release proof: PASS (synthetic providers and checker with absent services, not run in game)')
+    identity = 'unpublished development compatibility preflight' if args.candidate else 'published RC1'
+    print(f'{feature.capitalize()} SDK {identity} proof: PASS (synthetic providers and checker with absent services, not run in game)')
 
 
 def main(argv=None, spec=TELEPORT):
@@ -198,6 +203,12 @@ def main(argv=None, spec=TELEPORT):
     parser.add_argument('--archive', type=Path, required=True)
     parser.add_argument('--sums', type=Path, required=True)
     parser.add_argument('--work', type=Path, required=True, help='New directory outside checkout')
+    parser.add_argument('--sdk-version', default=SDK_VERSION)
+    parser.add_argument('--sdk-sha256', default=SDK_SHA256)
+    parser.add_argument('--candidate', action='store_true', help='Explicit unpublished preflight archive')
+    parser.add_argument('--archive-sha256', help='Required independent locked SHA-256 with --candidate')
+    parser.add_argument('--sdk-source', help='Exact full Core source commit for candidate')
+    parser.add_argument('--sdk-profile', help='Candidate SDK profile (legacy)')
     prove(parser.parse_args(argv), spec)
 
 
