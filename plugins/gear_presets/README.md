@@ -15,7 +15,7 @@ ctest --test-dir build/gear-presets --output-on-failure
 
 For the host-only SQLite and widget fixtures, additionally provide `SCO_CORE_HOST_TEST_ROOT` and `SCO_CORE_HOST_BUILD_DIR` from the same source as the SDK. These fixtures link a synthetic host; they do not ship a backend. Windows/MSVC and actual target-host/game acceptance remain separate.
 
-The pinned RC1 host does not contain the layout header, so its syntax check
+The pinned RC2 host does not contain the layout header, so its syntax check
 preprocesses these development-only translation units out; the standalone CMake
 configure refuses that SDK. CI also checks all sources and runs the model,
 storage and actual-module fixtures against a separately identified, checksum-

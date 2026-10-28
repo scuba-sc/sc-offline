@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Discord lifecycle and boundary proof using published RC1 or a locked development SDK.
+"""Discord lifecycle and boundary proof using published RC2 or a locked development SDK.
 
 No host checkout headers, game, Discord process, network, or privacy exception.
 The checker deliberately loads disabled folders: it is not host discovery proof.

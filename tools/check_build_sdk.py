@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Standalone build module proof from checksum-verified published SDK 2.4.0 (sdk-v2.4.0-rc.1).
+"""Standalone build module proof from checksum-verified published SDK 2.4.0 (sdk-v2.4.0-rc.2).
 
 Reuses the inspector archive/dependency machinery, never host include paths.
 Ships build.place/undo/clear; the G5 interactive commands must keep refusing.

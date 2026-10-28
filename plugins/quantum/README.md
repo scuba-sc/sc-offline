@@ -63,7 +63,7 @@ Curated destinations use the public content route described below. Scan-generate
 ### Curated destinations from an ordinary data pack
 
 While the host is stopped, explicitly install an ordinary enabled `kind = data`
-pack with a `lists/locations.txt` file. The existing published RC1 `sco.content`
+pack with a `lists/locations.txt` file. The existing published RC2 `sco.content`
 1.0 service provides its copied startup bytes. No default pack or production
 staging is added here. The original `data/locations.txt` is untouched and is no
 longer read by this external module; it is not automatically imported or used
@@ -97,7 +97,7 @@ The optional `sco.widgets` panel retains ID `quantum.travel` and now has title *
 
 ## Build, install and focused evidence
 
-Use the published `sdk-v2.4.0-rc.1` archive (it contains `sc_quantum.h`, `sc_game_spatial.h`, `sc_relocation.h`, `sc_gamerules.h`, `sco_widgets.h` and `sco_content.h`). The release workflow stages quantum enabled through `tools/check_quantum_sdk.py`, which builds against that archive outside the checkout, runs the module workflow below, traces compiler dependencies, runs boundary negatives and a relocation red arm (POSIX), and runs the SDK's `sco-plugin-check` with no game services. That is not a game proof.
+Use the published `sdk-v2.4.0-rc.2` archive (it contains `sc_quantum.h`, `sc_game_spatial.h`, `sc_relocation.h`, `sc_gamerules.h`, `sco_widgets.h` and `sco_content.h`). The release workflow stages quantum enabled through `tools/check_quantum_sdk.py`, which builds against that archive outside the checkout, runs the module workflow below, traces compiler dependencies, runs boundary negatives and a relocation red arm (POSIX), and runs the SDK's `sco-plugin-check` with no game services. That is not a game proof.
 
 ```sh
 cmake -S plugins/quantum -B build-quantum -DSCO_SDK_INCLUDE_DIR=/path/to/extracted/include -DSCO_QUANTUM_TEST=ON -DCMAKE_BUILD_TYPE=Debug

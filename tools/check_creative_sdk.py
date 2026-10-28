@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Isolated creative proof using published RC1 or an explicitly locked development SDK."""
+"""Isolated creative proof using published RC2 or an explicitly locked development SDK."""
 import argparse
 import os
 from pathlib import Path

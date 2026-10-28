@@ -123,7 +123,7 @@ class GeneratorSelection(unittest.TestCase):
             (['--archive-sha256', '0' * 64], '--archive-sha256 requires --candidate'),
             (['--candidate', '--sdk-sha256', '0' * 64], '--candidate requires matching'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '1' * 64], '--candidate requires matching'),
-            (['--candidate', '--archive-sha256', '124751534277b89f0516af1897919c3485923811596e159a1f683bb80b1c243b'], '--candidate must select a non-default'),
+            (['--candidate', '--archive-sha256', '51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e'], '--candidate must select a non-default'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64], '--candidate requires full lowercase --sdk-source'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64, '--sdk-source', 'a' * 40], '--candidate requires --sdk-profile legacy'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64, '--sdk-source', 'a' * 40, '--sdk-profile', 'core'], '--candidate requires --sdk-profile legacy'),
@@ -144,7 +144,7 @@ class GeneratorSelection(unittest.TestCase):
             (['--archive-sha256', '0' * 64], '--archive-sha256 requires --candidate'),
             (['--candidate', '--sdk-sha256', '0' * 64], '--candidate requires matching'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '1' * 64], '--candidate requires matching'),
-            (['--candidate', '--archive-sha256', '124751534277b89f0516af1897919c3485923811596e159a1f683bb80b1c243b'], '--candidate must select a non-default'),
+            (['--candidate', '--archive-sha256', '51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e'], '--candidate must select a non-default'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64], '--candidate requires full lowercase --sdk-source'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64, '--sdk-source', 'a' * 40], '--candidate requires --sdk-profile legacy'),
         ]
@@ -266,7 +266,7 @@ class GeneratorSelection(unittest.TestCase):
         module = proof_module('inspector')
         args = module.parse_args(['--archive', 'sdk.zip', '--sums', 'SHA256SUMS', '--work', 'proof'])
         self.assertEqual(args.sdk_version, '2.4.0')
-        self.assertEqual(args.sdk_sha256, '124751534277b89f0516af1897919c3485923811596e159a1f683bb80b1c243b')
+        self.assertEqual(args.sdk_sha256, '51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e')
         self.assertFalse(args.candidate)
 
 

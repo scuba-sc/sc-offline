@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Isolated Loadout proof from published RC1 or an explicitly locked development SDK.
+"""Isolated Loadout proof from published RC2 or an explicitly locked development SDK.
 
 Public consumer sources and authored/catalogued identifiers only. Exercises actual
 module callbacks, existing linked workflows and private-dependency controls. No game.
@@ -78,18 +78,17 @@ def main(args):
                   'loadout.cancel -> not_found', 'unload  ok'):
         if token not in checked:
             raise AssertionError('Missing-service checker reply absent: ' + token)
-    # RC1's generic checker only permits OK/UNAVAILABLE for argument-free
-    # commands. These two existing no-job commands correctly return NOT_FOUND.
+    # The loadout no-job commands (progress/cancel with no retained job) correctly answer
+    # NOT_FOUND. The RC1 published checker only permitted OK/UNAVAILABLE for argument-free
+    # commands, so it scored these two as FAILs (a documented checker limitation, kept in
+    # history). The sdk-v2.4.0-rc.2 checker accepts NOT_FOUND here, so both lanes are a
+    # clean pass; a regression to refused/failed answers still fails the token checks above.
     failures = [line for line in checked.splitlines() if line.startswith('FAIL ')]
-    expected = ['FAIL loadout.progress returned not_found', 'FAIL loadout.cancel returned not_found']
-    if args.candidate:
-        if checker_result.returncode != 0 or failures or 'OK: 0 failure(s)' not in checked:
-            raise AssertionError('Unexpected development checker result:\n' + checked)
-        print('Development SDK checker: expected no-job results accepted; clean pass')
-    else:
-        if checker_result.returncode != 1 or failures != expected or 'FAILED: 2 failure(s)' not in checked:
-            raise AssertionError('Unexpected published RC1 checker result:\n' + checked)
-        print('Published RC1 checker: two documented no-job NOT_FOUND mismatches; not a clean checker pass')
+    if checker_result.returncode != 0 or failures or 'OK: 0 failure(s)' not in checked:
+        raise AssertionError(('Unexpected development checker result:\n' if args.candidate
+                              else 'Unexpected published checker result:\n') + checked)
+    print(('Development' if args.candidate else 'Published RC2') +
+          ' SDK checker: expected no-job results accepted; clean pass')
     if os.name != 'nt':
         sanitized = work / 'sanitizer-build'
         run(['cmake', '-S', source / 'plugins/loadout', '-B', sanitized,

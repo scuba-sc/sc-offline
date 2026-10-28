@@ -49,7 +49,7 @@ and `include/sco_ipc.h`.
 
 ## Build, check, install (three stages)
 
-1. Obtain the published `sdk-v2.4.0-rc.1` combined `sco-sdk-2.4.0.zip` and its release
+1. Obtain the published `sdk-v2.4.0-rc.2` combined `sco-sdk-2.4.0.zip` and its release
    `SHA256SUMS`. SDK 2.4.0 keeps plugin ABI **1.1**; this plugin is **1.1.0**.
 2. From this repository, run the focused standalone proof with a new work
    directory **outside** the checkout:

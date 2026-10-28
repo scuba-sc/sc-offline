@@ -1,7 +1,7 @@
 # Owned build module (SDK 2.4.0 consumer)
 
 Trusted native GPL-3.0-only feature, plugin ABI 1.1. This module requires public
-G4/G9 headers/services, which the pinned published sdk-v2.4.0-rc.1 ships
+G4/G9 headers/services, which the pinned published sdk-v2.4.0-rc.2 ships
 (sdk-v2.0.0 did not).
 
 ## Build and install
@@ -98,7 +98,7 @@ synthetic integration checks, **not run in game**.
 Windows/MSVC validation is recorded separately by the source review. Streamed
 prefab cleanup, collision, filtered rays, camera restore, rendering and default
 release staging remain unverified. The release workflow downloads
-sdk-v2.4.0-rc.1, which ships these headers, but does not stage this module:
+sdk-v2.4.0-rc.2, which ships these headers, but does not stage this module:
 release-folder wiring is required before shipping. This change enables no native
 backend or default and changes no SDK pin.
 

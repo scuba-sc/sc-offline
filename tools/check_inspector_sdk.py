@@ -18,11 +18,11 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
-# Published SDK 2.4.0 RC1; final signed release approval remains separate.
+# Published SDK 2.4.0 RC2; final SDK release and gameplay acceptance remain separate.
 SDK_VERSION = '2.4.0'
 SDK_ROOT = 'sco-sdk-' + SDK_VERSION
 SDK_ARCHIVE = SDK_ROOT + '.zip'
-SDK_SHA256 = '124751534277b89f0516af1897919c3485923811596e159a1f683bb80b1c243b'
+SDK_SHA256 = '51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e'
 
 
 def run(argv, cwd, success=True):
@@ -326,7 +326,10 @@ def main(args):
         else:
             raise AssertionError('Dependency trace admitted transitive private header')
         cpp.write_text(original)
-    identity = ('explicit unpublished candidate' if args.candidate else 'published RC1 proof; final approval separate')
+    identity = (
+        'explicit unpublished candidate' if args.candidate
+        else 'published RC2 proof; final release and gameplay acceptance separate'
+    )
     print(f'inspector SDK {identity} {args.sdk_version} SHA-256 {args.sdk_sha256}: PASS (synthetic, not run in game)')
 
 
@@ -338,7 +341,7 @@ def parse_args(argv=None):
     parser.add_argument('--generator', default='Visual Studio 18 2026',
                         help='CMake generator for Windows (default: Visual Studio 18 2026)')
     parser.add_argument('--sdk-version', default=SDK_VERSION,
-                        help='Exact SDK archive version (default: published 2.4.0 RC1)')
+                        help='Exact SDK archive version (default: published 2.4.0 RC2)')
     parser.add_argument('--sdk-sha256', default=SDK_SHA256,
                         help='Expected archive SHA-256 for the selected version')
     parser.add_argument('--candidate', action='store_true',

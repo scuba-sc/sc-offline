@@ -20,7 +20,7 @@ See [NPC](../npc/README.md).
 - `inspector.lua` / `lua-plugin.ini`: non-default restricted read-only alternative.
 - `inspector_test.lua`: synthetic sandbox fixture, not bundled-runtime/game proof.
 
-Build from published **`sdk-v2.4.0-rc.1`**, combined **`sco-sdk-2.4.0.zip`**, after
+Build from published **`sdk-v2.4.0-rc.2`**, combined **`sco-sdk-2.4.0.zip`**, after
 checking the release **`SHA256SUMS`**. SDK 2.4.0, frozen plugin ABI 1.1 and Star
 Citizen game pack 0.8.0 are distinct versions. Use the extracted SDK `include/`,
 never private host headers, the source dependency include tree or new ImGui inputs.
@@ -49,9 +49,10 @@ The tool cannot certify engine state or guess fields the public service lacks.
 
 ### Snapshot commands and optional panel
 
-The expanded inspector uses the same checksum-verified published SDK 2.4.0 RC1
+The expanded inspector uses the same checksum-verified published SDK 2.4.0 RC2
 as every external plugin. Its default proof no longer requires an unpublished
-candidate override. Final signed SDK approval and in-game acceptance remain separate.
+candidate override. The proof checks the RC2 archive; it does not make that tag
+the final SDK 2.4.0 release or establish in-game acceptance.
 
 | Command | Required arguments | Behavior |
 |---|---|---|

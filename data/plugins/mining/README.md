@@ -39,7 +39,7 @@ refuse. The importer never runs at startup and is not a plugin-side write servic
 ## Build and distribution
 
 Configure this folder alone against an extracted core + game SDK that publishes
-`sc_mining.h` (the pinned published sdk-v2.4.0-rc.1 does; sdk-v2.0.0 was too old):
+`sc_mining.h` (the pinned published sdk-v2.4.0-rc.2 does; sdk-v2.0.0 was too old):
 
 ```sh
 cmake -S plugins/mining -B mining-build -DSCO_SDK_INCLUDE_DIR=/path/to/sdk/include -DSCO_WORKFLOW_TESTS=ON

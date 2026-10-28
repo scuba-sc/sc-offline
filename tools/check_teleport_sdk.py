@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Standalone teleport proof against published RC1 or an explicitly locked development SDK.
+"""Standalone teleport proof against published RC2 or an explicitly locked development SDK.
 
 Reuses the inspector archive/dependency machinery, never host include paths. The
 shared travel code lives in plugins/spatial, the only sibling folder the trace admits.
@@ -194,7 +194,7 @@ def prove(args, spec):
         build_all()
         workflow()
         trace_posix(build, source, sdk, public, feature=feature, shared=('spatial',))
-    identity = 'unpublished development compatibility preflight' if args.candidate else 'published RC1'
+    identity = 'unpublished development compatibility preflight' if args.candidate else 'published RC2'
     print(f'{feature.capitalize()} SDK {identity} proof: PASS (synthetic providers and checker with absent services, not run in game)')
 
 

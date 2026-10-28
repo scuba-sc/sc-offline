@@ -2,10 +2,10 @@
 
 Current picker/copy-list installation and the one targeted module fixture:
 [Public pickers](../../docs/pickers.md). **These sources use `sco_widgets.h` and
-`sco_content.h`, which the pinned published `sdk-v2.4.0-rc.1` ships** (`sdk-v2.0.0`
+`sco_content.h`, which the pinned published `sdk-v2.4.0-rc.2` ships** (`sdk-v2.0.0`
 did not). The obtain/proof recipes below use that archive.
 
-External native consumer of **sdk-v2.4.0-rc.1** (SDK 2.4.0, plugin ABI 1.1,
+External native consumer of **sdk-v2.4.0-rc.2** (SDK 2.4.0, plugin ABI 1.1,
 Star Citizen game pack 0.8.0). GPL-3.0-only project code. Native plugins are
 trusted process code, not a security sandbox.
 
@@ -27,7 +27,7 @@ in this module. The command IDs remain available through the host's typed
 ## Obtain, build/check, install
 
 1. Obtain the published combined `sco-sdk-2.4.0.zip` and its adjacent release
-   `SHA256SUMS` from [sdk-v2.4.0-rc.1](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.1) (SDK 2.4.0 release candidate 1).
+`SHA256SUMS` from [sdk-v2.4.0-rc.2](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2) (SDK 2.4.0 release candidate 2).
    The proof verifies both the archive checksum and every extracted inventory
    entry. It never initializes the host submodule or includes host sources.
 2. From the product source, run the focused archive proof (new directory outside
