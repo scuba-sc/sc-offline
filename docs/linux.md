@@ -1,7 +1,7 @@
 # Linux (experimental)
 
 > [!WARNING]
-> **Experimental.** A historical Linux run with sc-offline 0.7.0 was reported in October 2026. The current SDK 2.4.0 RC1 host and plugins have not been run under Wine in this review. The older report does not establish current Wine support.
+> **Experimental.** A historical Linux run with sc-offline 0.7.0 was reported in October 2026. The current published SDK 2.4.0 RC2 host and plugins have not been run under Wine in this review. The older report does not establish current Wine support.
 
 `sc-offline.sh` starts `sc-offline.exe` inside your Star Citizen Wine prefix. The Windows launcher handles mod installation and removal in that prefix; its Wine path differs from Windows PC setup ([launcher.md](launcher.md)).
 
@@ -19,7 +19,7 @@
 
 The report describes spawning ships, crew, build mode, outfits/gear, a hauling contract, wallet changes and teleporting to Levski. It reports a clean quit and launcher status `Installed: no` afterward. It also reports that launching Wine directly worked and DXVK selected the discrete GPU on that setup. These are attributed observations from that older product/game tuple, not a repeated test, current hybrid-GPU acceptance or proof of every cleanup step. Its original logs were not revalidated for this documentation change.
 
-There is no current test tuple recorded here for the SDK 2.4.0 RC1 host, later game builds, other distributions/GPUs, or Lutris/Steam/Proton detection. Keep those separate from the historical LUG Helper result.
+There is no current test tuple recorded here for the published SDK 2.4.0 RC2 host, later game builds, other distributions/GPUs, or Lutris/Steam/Proton detection. Keep those separate from the historical LUG Helper result.
 
 ## Setup
 
