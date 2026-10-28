@@ -18,7 +18,7 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
-# Published SDK 2.4.0 RC2; final signed release approval remains separate.
+# Published SDK 2.4.0 RC2; final SDK release and gameplay acceptance remain separate.
 SDK_VERSION = '2.4.0'
 SDK_ROOT = 'sco-sdk-' + SDK_VERSION
 SDK_ARCHIVE = SDK_ROOT + '.zip'
@@ -326,7 +326,10 @@ def main(args):
         else:
             raise AssertionError('Dependency trace admitted transitive private header')
         cpp.write_text(original)
-    identity = ('explicit unpublished candidate' if args.candidate else 'published RC2 proof; final approval separate')
+    identity = (
+        'explicit unpublished candidate' if args.candidate
+        else 'published RC2 proof; final release and gameplay acceptance separate'
+    )
     print(f'inspector SDK {identity} {args.sdk_version} SHA-256 {args.sdk_sha256}: PASS (synthetic, not run in game)')
 
 

@@ -33,8 +33,9 @@ legacy product picker tabs are removed. Legacy `src/npc.cpp` is untouched. `src/
 
 Use published SDK 2.4.0 release candidate 2, tag **`sdk-v2.4.0-rc.2`**, combined **`sco-sdk-2.4.0.zip`**, verified against
 release **`SHA256SUMS`**: SDK 2.4.0, plugin ABI 1.1 and Star Citizen game pack 0.8.0
-are distinct versions. The tag identifies RC2; a release-page flag does not grant final signed
-approval. Nothing new in 2.4.0 has been run in game. Every external plugin uses this archive;
+are distinct versions. The tag identifies RC2 regardless of GitHub's release
+classification. The RC2 release is currently marked `prerelease=false`. Nothing
+new in 2.4.0 has been run in game. Every external plugin uses this archive;
 the embedded host independently pins exact candidate source
 `844e136ccb280ad8cb43f73bc43c9447e8f6799d` (see [SDK candidate coordinates](sdk-candidate.md)).
 
@@ -48,11 +49,11 @@ teleport and quantum proof CLIs accept an explicit unpublished preflight with `-
 and `--sdk-profile legacy`. The two digests must agree with the archive bytes and supplied
 checksum inventory. The extracted inventory, compatibility profile and component source
 commits, and catalogue, guides and workflow source identities must match before use.
-These checks bind the supplied identity to archive contents; they are not independent
-provenance or publication approval. A development preflight is not
-published-candidate approval or an installed-host capability claim. Run the matching
-connected quantum, build and contracts fixtures documented by those consumers when a
-matching host-source build is available.
+These checks bind the supplied identity to archive contents; they do not independently
+verify source rights or grant upstream release authorization. A development preflight
+does not turn an unpublished archive into a published candidate or make an installed-host
+capability claim. Run the matching connected quantum, build and contracts fixtures
+documented by those consumers when a matching host-source build is available.
 
 Windows inspector, NPC and build proof scripts accept `--generator` for a locally installed toolchain
 (for example `--generator "Visual Studio 17 2022"`). Their default remains **Visual Studio 18 2026**,
@@ -88,7 +89,7 @@ uses its tagged submodule independently.
 
 Download **`sco-sdk-2.4.0.zip`** (the combined legacy core+Star Citizen SDK) and
 **`SHA256SUMS`** from the
-[`sdk-v2.4.0-rc.2` pre-release](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2)
+[published SDK 2.4.0 RC2 release](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2)
 (SDK 2.4.0 release candidate 2; the archive is named for the SDK version, the tag carries `-rc.N`).
 Its SHA-256 is `51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e`.
 Use an empty work directory. In Developer PowerShell for Visual Studio:

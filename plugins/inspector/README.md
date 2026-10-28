@@ -51,7 +51,8 @@ The tool cannot certify engine state or guess fields the public service lacks.
 
 The expanded inspector uses the same checksum-verified published SDK 2.4.0 RC2
 as every external plugin. Its default proof no longer requires an unpublished
-candidate override. Final signed SDK approval and in-game acceptance remain separate.
+candidate override. The proof checks the RC2 archive; it does not make that tag
+the final SDK 2.4.0 release or establish in-game acceptance.
 
 | Command | Required arguments | Behavior |
 |---|---|---|

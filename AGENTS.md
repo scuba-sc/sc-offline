@@ -49,7 +49,7 @@ other repositories. Cite the relevant section or contract path in reviews. Read
   Review SDK pin changes separately from feature behavior and name the exact commit or tag
   and what changed. Maintainers control tagging and publication under the
   [release policy](docs/build.md#release-policy); passing checks or published candidate
-  assets do not supply final signed SDK or gameplay approval.
+  assets do not establish final SDK release status or gameplay acceptance.
 - **Protect public payloads and other work.** Remove secrets, account details, personal
   paths and private links from public diffs/logs while preserving required attribution and
   licence notices. Use the public author identity authorized for the contribution. Follow

@@ -11,7 +11,7 @@ Native code is trusted code: the checker is not a sandbox.
 ## Three stages: obtain, build/check, install
 
 1. Obtain `sco-sdk-2.4.0.zip` and the adjacent release `SHA256SUMS` from the
-[sdk-v2.4.0-rc.2 pre-release](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2) (SDK 2.4.0 release candidate 2).
+[published SDK 2.4.0 RC2 release](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2).
    Do not substitute a locally repackaged SDK or a source-checkout include tree.
 2. From this checkout, run the isolated proof below with a **new directory outside
    the checkout**. It verifies the release archive and every extracted inventory
