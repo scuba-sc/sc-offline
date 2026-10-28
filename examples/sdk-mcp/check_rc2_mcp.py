@@ -71,7 +71,12 @@ def main():
              ('get_workflow', {'id': 'missing'}),
              ('get_workflow', {'id': IDS[0], 'path': '../../secret'}),
              ('get_capability_status', {'symbol_or_id': 'sc_inventory_v1_2.snapshot_layout'}),
-             ('check_compatibility', {'tag': 'sdk-v2.4.0-rc.2'})]
+             # The tag argument addresses historical checkout approval records,
+             # not RC2 release-asset discovery. Its schema excludes RC suffixes.
+             ('check_compatibility', {'tag': 'sdk-v2.4.0-rc.2'}),
+             ('search_guides', {'query': 'How do I deploy a plugin on Windows?', 'limit': 3}),
+             ('get_guide_section', {'doc': 'docs/getting-started.md',
+                                    'anchor': 'start-your-first-plugin'})]
     for item in index['workflows']:
         calls.append(('get_workflow', {'id': item['id']}))
         calls.extend(('get_workflow', {'id': item['id'], 'path': f['path']}) for f in item['files'])
@@ -108,7 +113,11 @@ def main():
                and r['registry_evidence_level'] == 'synthetic_only' for r in layout)
     assert data[11]['evidence_state']['gameplay_receipt']['state'] == 'unknown'
     assert results[12]['isError'] and 'advertised pattern' in data[12]['error']
-    offset = 13
+    assert data[13]['sections'] and data[13]['guides']['source_sha'] == SOURCE
+    assert data[13]['guides']['matches_catalogue_source_sha'] is True
+    assert data[14]['section']['doc'] == 'docs/getting-started.md'
+    assert data[14]['section']['anchor'] == 'start-your-first-plugin'
+    offset = 15
     for item in index['workflows']:
         entry = data[offset]; offset += 1
         assert entry['file']['path'] == item['entry']
@@ -141,7 +150,8 @@ def main():
             for reply in replies:
                 output.write(json.dumps({'reply': reply}) + '\n')
     print('RC2 MCP: 14 default and 6 minimal tools; six workflows and all indexed files verified')
-    print('Version match/mismatch, RC tag refusal, unsupported Lua service, stale index and session refusals: PASS')
+    print('Guide discovery and version match/mismatch: PASS')
+    print('Historical approval-tag RC refusal, unsupported Lua service, stale index and session refusals: PASS')
     print('Discovery is static; host, Windows and game behavior NOT VERIFIED')
 
 
