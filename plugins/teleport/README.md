@@ -22,7 +22,7 @@ Retains owner ID/database `teleport`, key `spot`, import marker `spawn.txt.time`
 
 ## Build and install
 
-1. Extract the published `sdk-v2.4.0-rc.1` archive (it contains `sc_relocation.h` and `sc_game_spatial.h`) and verify it against the release `SHA256SUMS`.
+1. Extract the published `sdk-v2.4.0-rc.2` archive (it contains `sc_relocation.h` and `sc_game_spatial.h`) and verify it against the release `SHA256SUMS`.
 2. `cmake -S plugins/teleport -B build-teleport -DSCO_SDK_INCLUDE_DIR=/path/to/extracted/include [-DSCO_TRAVEL_TEST=ON]`, then build `sc-offline-teleport` (and `travel-model-test`).
 3. `cmake --install build-teleport --prefix /path/to/product --component teleport` gives `data/plugins/teleport/` with the native module and its enabled manifest.
 

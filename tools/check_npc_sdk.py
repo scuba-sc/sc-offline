@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Build/check/install NPC from published RC1 or an explicitly locked development SDK.
+"""Build/check/install NPC from published RC2 or an explicitly locked development SDK.
 
 Uses the inspector proof's archive and compiler-boundary checks (step 1B).
 Windows emits the release DLL; POSIX additionally runs source-mutation controls.

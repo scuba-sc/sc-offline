@@ -2,7 +2,7 @@
 
 Current picker/copy-list installation and the one targeted module fixture:
 [Public pickers](../../docs/pickers.md). **These sources use `sco_widgets.h` and
-`sco_content.h`, which the pinned published `sdk-v2.4.0-rc.1` ships** (`sdk-v2.0.0`
+`sco_content.h`, which the pinned published `sdk-v2.4.0-rc.2` ships** (`sdk-v2.0.0`
 did not). The obtain/proof recipes below use that archive.
 
 Step 1C ships NPC as an **enabled external native plugin**, following inspector
@@ -23,7 +23,7 @@ approval ([review](../discord/README.md)).
 - `plugin.ini`: `id = npc`, independent version `1.1.0`, plugin ABI `1.1`,
   native entry `npc.dll`. Commands handle optional/missing game capabilities.
 
-Build against published **`sdk-v2.4.0-rc.1`**, combined **`sco-sdk-2.4.0.zip`**, after
+Build against published **`sdk-v2.4.0-rc.2`**, combined **`sco-sdk-2.4.0.zip`**, after
 verifying release **`SHA256SUMS`**. SDK 2.4.0, plugin ABI 1.1 and Star Citizen game
 pack 0.8.0 are separate versions. Use only the extracted SDK's `include/`, not
 private host headers, the dependency's source include tree or new ImGui inputs.

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Standalone spawn module proof from checksum-verified published SDK 2.4.0 (sdk-v2.4.0-rc.1).
+"""Standalone spawn module proof from checksum-verified published SDK 2.4.0 (sdk-v2.4.0-rc.2).
 
 Reuses the inspector archive/dependency machinery, never host include paths.
 POSIX supports ASan/UBSan plus a physically partial-pointer red arm.
@@ -146,7 +146,7 @@ def main(args):
         run(['cmake', '--build', build, '--target', 'spawn-module-test'], work)
         workflow()
         trace_posix(build, source, sdk, public, feature='spawn')
-    identity = 'unpublished development compatibility preflight' if args.candidate else 'published RC1'
+    identity = 'unpublished development compatibility preflight' if args.candidate else 'published RC2'
     print('Spawn SDK proof: PASS (' + identity + '; synthetic, not run in game)')
 
 

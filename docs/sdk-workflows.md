@@ -31,14 +31,14 @@ private host registration, product version, host include trees or new ImGui inpu
 The old NPC tab is removed pending renderer-neutral widgets ([sco-core #139](https://github.com/scuba-sc/sco-core/issues/139)); Crew and ordinary spawn are also external command-first consumers; their
 legacy product picker tabs are removed. Legacy `src/npc.cpp` is untouched. `src/workflow_adapters.cpp` is removed.
 
-Use published SDK 2.4.0 release candidate 1, tag **`sdk-v2.4.0-rc.1`**, combined **`sco-sdk-2.4.0.zip`**, verified against
+Use published SDK 2.4.0 release candidate 2, tag **`sdk-v2.4.0-rc.2`**, combined **`sco-sdk-2.4.0.zip`**, verified against
 release **`SHA256SUMS`**: SDK 2.4.0, plugin ABI 1.1 and Star Citizen game pack 0.8.0
-are distinct versions. The tag identifies RC1; a release-page flag does not grant final signed
+are distinct versions. The tag identifies RC2; a release-page flag does not grant final signed
 approval. Nothing new in 2.4.0 has been run in game. Every external plugin uses this archive;
 the embedded host independently pins exact candidate source
-`48d7055ef49e1b073ec59e4ce8ded7a6006329eb` (see [SDK candidate coordinates](sdk-candidate.md)).
+`844e136ccb280ad8cb43f73bc43c9447e8f6799d` (see [SDK candidate coordinates](sdk-candidate.md)).
 
-The expanded inspector uses that same published RC1 by default; no older unpublished candidate
+The expanded inspector uses that same published RC2 by default; no older unpublished candidate
 lock is needed. The proof validates the archive and full extracted inventory before building.
 `plugins/CMakeLists.txt` also checks all inspector contract headers at configure time. An explicitly
 selected non-default version/hash requires the matching archive, rather than accepting host headers.
@@ -88,16 +88,16 @@ uses its tagged submodule independently.
 
 Download **`sco-sdk-2.4.0.zip`** (the combined legacy core+Star Citizen SDK) and
 **`SHA256SUMS`** from the
-[`sdk-v2.4.0-rc.1` pre-release](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.1)
-(SDK 2.4.0 release candidate 1; the archive is named for the SDK version, the tag carries `-rc.1`).
-Its SHA-256 is `124751534277b89f0516af1897919c3485923811596e159a1f683bb80b1c243b`.
+[`sdk-v2.4.0-rc.2` pre-release](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2)
+(SDK 2.4.0 release candidate 2; the archive is named for the SDK version, the tag carries `-rc.N`).
+Its SHA-256 is `51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e`.
 Use an empty work directory. In Developer PowerShell for Visual Studio:
 
 ```powershell
 $Work = Join-Path $PWD "inspector-dev"
 New-Item -ItemType Directory -Path $Work -ErrorAction Stop | Out-Null
 Set-Location $Work
-$Release = "https://github.com/scuba-sc/sco-core/releases/download/sdk-v2.4.0-rc.1"
+$Release = "https://github.com/scuba-sc/sco-core/releases/download/sdk-v2.4.0-rc.2"
 Invoke-WebRequest "$Release/sco-sdk-2.4.0.zip" -OutFile "sco-sdk-2.4.0.zip"
 Invoke-WebRequest "$Release/SHA256SUMS" -OutFile "SHA256SUMS"
 python -c "import hashlib,pathlib; p=pathlib.Path('sco-sdk-2.4.0.zip'); rows=[l.split() for l in pathlib.Path('SHA256SUMS').read_text().splitlines() if l.strip()]; hashes=[r[0] for r in rows if r[1].lstrip('*')==p.name]; assert len(hashes)==1 and hashlib.sha256(p.read_bytes()).hexdigest()==hashes[0], 'SDK archive checksum mismatch'"
@@ -206,7 +206,7 @@ replace that run; releases remain human decisions.
 ### Stage 1 — Obtain and verify
 
 Follow inspector Stage 1 above in a fresh `npc-dev` work directory. Download the
-same `sdk-v2.4.0-rc.1` combined `sco-sdk-2.4.0.zip` and release `SHA256SUMS`,
+same `sdk-v2.4.0-rc.2` combined `sco-sdk-2.4.0.zip` and release `SHA256SUMS`,
 verify the archive **before extraction**, and use only the extracted SDK `include/`.
 CMake 3.20+, Python 3 and C/C++20 are required; the game module requires Windows
 x64/MSVC. `plugins/npc/{npc.cpp,npc.h,external.cpp,plugin.ini}` are the copyable

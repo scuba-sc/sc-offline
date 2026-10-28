@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Crew module proof against published RC1 or an explicitly locked development SDK.
+"""Crew module proof against published RC2 or an explicitly locked development SDK.
 
 Copies only the crew consumer and fixture outside the checkout. Reuses the
 established published-archive and exact dependency proofs from inspector #123.

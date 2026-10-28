@@ -2,7 +2,7 @@
 
 Current picker/copy-list installation and the one targeted module fixture:
 [Public pickers](../../docs/pickers.md). **These sources use `sco_widgets.h` and
-`sco_content.h`, which the pinned published `sdk-v2.4.0-rc.1` ships** (`sdk-v2.0.0`
+`sco_content.h`, which the pinned published `sdk-v2.4.0-rc.2` ships** (`sdk-v2.0.0`
 did not). The obtain/proof recipes below use that archive.
 
 Trusted native code, **GPL-3.0-only**. SDK **2.4.0**, frozen plugin ABI **1.1**,
@@ -20,7 +20,7 @@ There is no private-index or filesystem fallback.
 
 ## Build, check, install (three stages)
 
-1. Obtain published `sdk-v2.4.0-rc.1` **`sco-sdk-2.4.0.zip`** and its release
+1. Obtain published `sdk-v2.4.0-rc.2` **`sco-sdk-2.4.0.zip`** and its release
    **`SHA256SUMS`**. The combined archive supplies core and game public headers.
    Do not point the plugin at `external/sco-core/include` or host `src/`.
 2. Run the isolated proof from the product checkout, with a new work directory

@@ -1,8 +1,8 @@
 # What is not verified in game
 
-## Inspector snapshot integration on SDK 2.4.0 RC1
+## Inspector snapshot integration on SDK 2.4.0 RC2
 
-The inspector snapshot, metadata and optional widget paths use the published RC1
+The inspector snapshot, metadata and optional widget paths use the published RC2
 archive by default. Public module fixtures cover manual acquisition, cached navigation,
 missing providers, bounds and unload. This integration does not certify production
 providers, renderer behavior or game state. External hostd, Windows/MSVC and in-game
@@ -18,13 +18,13 @@ Observed a second time by the maintainer, on a desktop session with the game run
 
 ## v0.7.8.3 build plugin
 
-`data/plugins/build` ships enabled from v0.7.8.3. `tools/check_build_sdk.py` builds it against the published SDK 2.4.0 release candidate 1 archive (`sdk-v2.4.0-rc.1`), checks its compiler dependencies and boundary negatives, and runs the SDK's `sco-plugin-check` with no game services: place, undo, clear and status answer, and the interactive commands (`build.toggle`/F6, `build.aim`, `build.drop`) refuse. That is a development-machine check, not a game run.
+`data/plugins/build` ships enabled from v0.7.8.3. `tools/check_build_sdk.py` builds it against the published SDK 2.4.0 release candidate 2 archive (`sdk-v2.4.0-rc.2`), checks its compiler dependencies and boundary negatives, and runs the SDK's `sco-plugin-check` with no game services: place, undo, clear and status answer, and the interactive commands (`build.toggle`/F6, `build.aim`, `build.drop`) refuse. That is a development-machine check, not a game run.
 
 **NOT VERIFIED:** the build plugin in game. Owed: `build.place` with a class and with a `.socpak` path actually grounding an object ahead of the player, `build.undo` and `build.clear` actually removing what was placed (and only that), the plugin loading from the release folder on Windows, unload removing placements, and F6 refusing cleanly. Interactive build mode and the free camera stay unavailable until a production G5 adapter exists; placements are not kept across reloads.
 
 ## 0.7.8.3: teleport and quantum travel
 
-`data/plugins/teleport` and `data/plugins/quantum` are staged enabled. `tools/check_teleport_sdk.py` and `tools/check_quantum_sdk.py` build them against the published SDK 2.4.0 release candidate 1 archive (`sdk-v2.4.0-rc.1`), run the synthetic travel-model test and the quantum actual-module workflow (player switch, `game.relocation` capability, one request, tick tracking to complete and failed), trace compiler dependencies, run boundary negatives and a relocation red arm, and run the SDK's `sco-plugin-check` with no game services, where every move answers unavailable. That is a development-machine check, not a game run.
+`data/plugins/teleport` and `data/plugins/quantum` are staged enabled. `tools/check_teleport_sdk.py` and `tools/check_quantum_sdk.py` build them against the published SDK 2.4.0 release candidate 2 archive (`sdk-v2.4.0-rc.2`), run the synthetic travel-model test and the quantum actual-module workflow (player switch, `game.relocation` capability, one request, tick tracking to complete and failed), trace compiler dependencies, run boundary negatives and a relocation red arm, and run the SDK's `sco-plugin-check` with no game services, where every move answers unavailable. That is a development-machine check, not a game run.
 
 **NOT VERIFIED:** any move in game. Owed: F7 then F8 returning to the saved spot; `quantum.travel` arriving at the destination radius plus the altitude (placed along the destination zone's own +Z axis, never checked); `quantum.bookmark`; the arrival, failure and cancellation messages; the plugin `relocation` setting and `sc-offline.ini` `relocation = off` refusing moves; both plugins loading from the release folder on Windows. Moves need this release's host (sco-core main e616ed6 or later) with offline admission, resolved engine rows, a live player and a known star system; without them they answer unavailable.
 
@@ -42,7 +42,7 @@ evidence from live firewall and connection reads (see above); it still never inf
 safety from flags or patch success.
 
 The embedded host is pinned to exact SDK 2.4.0 candidate source
-`48d7055ef49e1b073ec59e4ce8ded7a6006329eb` (`sdk-v2.4.0-rc.1`). External
+`844e136ccb280ad8cb43f73bc43c9447e8f6799d` (`sdk-v2.4.0-rc.2`). External
 plugins use that candidate's checksum-pinned `sco-sdk-2.4.0.zip`: plugin ABI
 **1.1**, Star Citizen game pack **0.8.0**. Static signature evidence targets
 **4.10.197.2878**. Actor-stats contracts are now present in the host source;
@@ -58,7 +58,7 @@ The release-pin smoke checks: offline startup was **observed once** for v0.7.8.1
 releases; owner Windows/in-game acceptance remains **NOT RUN**. No synthetic
 fixture or checker result certifies gameplay. Policy: [decisions.md](decisions.md).
 
-sco-core keeps the matching table for the `game.*` services, with the evidence level of each capability and what a run has to show: [docs/game/status.md](https://github.com/scuba-sc/sco-core/blob/48d7055ef49e1b073ec59e4ce8ded7a6006329eb/docs/game/status.md) at the pinned commit. Read it for the service side (for example `game.actors.state`, `game.entities.query_radius`, `game.entities.watch` and `game.events.vehicle_seat` are held **off** until a run decides them). This page lists the sc-offline side: what each converted feature still needs checked. The steps are the ones in the bodies of [#95](https://github.com/scuba-sc/sc-offline/pull/95), [#97](https://github.com/scuba-sc/sc-offline/pull/97) and [#98](https://github.com/scuba-sc/sc-offline/pull/98); `mod.log` lines are quoted as those PRs wrote them.
+sco-core keeps the matching table for the `game.*` services, with the evidence level of each capability and what a run has to show: [docs/game/status.md](https://github.com/scuba-sc/sco-core/blob/844e136ccb280ad8cb43f73bc43c9447e8f6799d/docs/game/status.md) at the pinned commit. Read it for the service side (for example `game.actors.state`, `game.entities.query_radius`, `game.entities.watch` and `game.events.vehicle_seat` are held **off** until a run decides them). This page lists the sc-offline side: what each converted feature still needs checked. The steps are the ones in the bodies of [#95](https://github.com/scuba-sc/sc-offline/pull/95), [#97](https://github.com/scuba-sc/sc-offline/pull/97) and [#98](https://github.com/scuba-sc/sc-offline/pull/98); `mod.log` lines are quoted as those PRs wrote them.
 
 ## Step 7B: tutorial evidence ledger
 
@@ -89,7 +89,7 @@ identity; filtered pages and manual classes are available. The supporting
 are unchanged. The host renders neutral copied panels on its game-thread frame.
 The one `picker-module-workflow` fixture dynamically loads all three actual
 macOS modules and checks UI events against synthetic public providers; it is
-not renderer/game evidence. The pinned published SDK 2.4.0 (`sdk-v2.4.0-rc.1`) ships widgets
+not renderer/game evidence. The pinned published SDK 2.4.0 (`sdk-v2.4.0-rc.2`) ships widgets
 and content (`sdk-v2.0.0` did not); Windows rendering and game acceptance remain owed.
 SQ42 ordinary ship shortcuts invoke `spawn.ship_options`; enemy-wing orchestration
 is deferred. Destination startup refuses G2/G3 without a private fallback. Owner

@@ -9,7 +9,7 @@ release packaging. `dinput8.dll` no longer links or registers either bridge.
 ## Build, install, enable (explicit opt-in)
 
 1. Obtain an identified SDK containing IPC/spatial reads and G3 full-pose conversion.
-   The pinned published `sco-sdk-2.4.0.zip` (`sdk-v2.4.0-rc.1`) contains them (`sco_ipc.h`,
+   The pinned published `sco-sdk-2.4.0.zip` (`sdk-v2.4.0-rc.2`) contains them (`sco_ipc.h`,
    `sc_game_spatial.h`); sdk-v2.0.0 lacked G3. No private host headers.
 2. Configure each independently:
 

@@ -1,18 +1,18 @@
 # SDK 2.4.0 candidate adoption
 
 SC Offline consumes the latest available published candidate as checked on
-2026-10-25: [`sdk-v2.4.0-rc.1`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.1).
+2026-10-25: [`sdk-v2.4.0-rc.2`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2).
 Its tag and source are pinned explicitly, independently of GitHub's release flag.
 
 | Coordinate | Pin |
 |---|---|
 | Product base | `f2ac58da7800fc23c458f73867f9b473b4b25608` |
 | Previous embedded host | `e616ed69d8f9f77b0f4827881c86d91e4a7d1689` (post-2.3 source) |
-| Candidate tag | `sdk-v2.4.0-rc.1` |
-| Embedded host source / candidate target | `48d7055ef49e1b073ec59e4ce8ded7a6006329eb` |
+| Candidate tag | `sdk-v2.4.0-rc.2` |
+| Embedded host source / candidate target | `844e136ccb280ad8cb43f73bc43c9447e8f6799d` |
 | SDK / plugin ABI / Star Citizen game pack | `2.4.0` / `1.1` / `0.8.0` |
 | External plugin archive | `sco-sdk-2.4.0.zip` |
-| Archive SHA-256 | `124751534277b89f0516af1897919c3485923811596e159a1f683bb80b1c243b` |
+| Archive SHA-256 | `51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e` |
 | Published host-source alternative | `sco-sdk-host-source-sc-2.4.0.zip` |
 | Host-source archive SHA-256 | `5ca76ff9dac6bbaa183c6f308d610e08d9c1b0daf6ebda6458e222277406dfc6` |
 | Static signature target | Star Citizen `4.10.197.2878`; not gameplay evidence |
@@ -33,7 +33,7 @@ offline admission and unavailable/default-off behavior remain in force.
 ## Evidence and release limits
 
 Source adoption is separate from final SDK publication approval. The candidate's
-[release scope](https://github.com/scuba-sc/sco-core/blob/48d7055ef49e1b073ec59e4ce8ded7a6006329eb/docs/releases/sdk-v2.4.0.md)
+[release scope](https://github.com/scuba-sc/sco-core/blob/844e136ccb280ad8cb43f73bc43c9447e8f6799d/docs/releases/sdk-v2.4.0.md)
 still describes an unsigned development candidate, even though its archives are
 published. It provides no final signed approval or in-game acceptance.
 

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Pin SDK 2.4.0 release candidate 2.** The host submodule, plugin archive
+  pins, verifier digests, CI downloads and SDK-coordinate docs move from
+  `sdk-v2.4.0-rc.1` (`48d7055`) to `sdk-v2.4.0-rc.2` (source `844e136`,
+  combined archive SHA-256 `51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e`).
+  RC1 evidence prose stays RC1. Candidate adoption only: final signed SDK
+  approval and in-game acceptance remain separate; nothing was run in game.
+
 - **Limit startup retry noise.** While offline admission is unavailable, the host
   retries at most every 500 ms instead of on every game message. Each attempt
   still performs a fresh admission check. Synthetic timing checks only; **not run in game**.
