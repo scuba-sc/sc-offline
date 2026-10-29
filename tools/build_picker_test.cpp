@@ -48,7 +48,9 @@ sco_result Read(sco_plugin* self,uint64_t id,void* out,uint32_t* n){
     if(!out && badRead==2){*n=static_cast<uint32_t>(bytes.size());return SCO_OK;}
     if(out && badRead==3)return SCO_UNAVAILABLE;
     if(*n<bytes.size()){*n=static_cast<uint32_t>(bytes.size());return SCO_TOO_MANY;}
-    if(out && !bytes.empty())std::memcpy(out,bytes.data(),bytes.size());*n=static_cast<uint32_t>(bytes.size())-(badRead==4&&!bytes.empty()?1u:0u);return SCO_OK;
+    if (out && !bytes.empty()) std::memcpy(out, bytes.data(), bytes.size());
+    *n = static_cast<uint32_t>(bytes.size()) - (badRead == 4 && !bytes.empty() ? 1u : 0u);
+    return SCO_OK;
 }
 sco_result SetPanel(sco_plugin* self,const char* id,const char* title,const sco_widget_node* nodes,uint32_t n,uint32_t stride,sco_widget_event_fn fn,void* ctx){
     ++panelCalls;Check(self==owner && !std::strcmp(id,"build.picker") && !std::strcmp(title,"Build"),"owned panel/title");Check(stride==sizeof(*nodes),"public v1 nodes");
