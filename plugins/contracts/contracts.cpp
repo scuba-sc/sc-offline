@@ -84,14 +84,20 @@ sco_result ReadReferences(const sco_arg* args, bool one, char* reply, uint32_t c
         return fail(SCO_TOO_MANY, "Metadata copy allocation refused; native installation UNKNOWN");
     }
 }
+// The longest path the id rule accepts is "missions/" + 100 + ".scom". That fits the SDK's field
+// with room to spare, so the capacity check below can only fire if the field ever shrinks; this
+// keeps the assumption visible instead of leaving a guard that no accepted name can reach.
+constexpr size_t kMissionPathPrefix = 9, kMissionPathSuffix = 5, kMissionIdMax = 100;
+static_assert(kMissionPathPrefix + kMissionIdMax + kMissionPathSuffix <= sizeof(sc_mission_script::relative_path),
+              "an accepted mission path must fit the SDK's relative_path field");
 bool MissionPath(const char* name, size_t capacity, size_t path_capacity, std::string_view& path) {
     const void* end = std::memchr(name, 0, capacity);
     if (!end) return false;
     path = std::string_view(name, static_cast<const char*>(end) - name);
     if (path.size() >= path_capacity) return false;
     if (!path.starts_with("missions/") || !path.ends_with(".scom")) return false;
-    auto id = path.substr(9, path.size() - 9 - 5);
-    if (id.empty() || id.size() > 100) return false;
+    auto id = path.substr(kMissionPathPrefix, path.size() - kMissionPathPrefix - kMissionPathSuffix);
+    if (id.empty() || id.size() > kMissionIdMax) return false;
     for (char c : id) if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_')) return false;
     return true;
 }
