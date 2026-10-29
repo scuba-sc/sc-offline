@@ -242,7 +242,8 @@ sco_result LoadSaved() {
         sco::sdk::StorageTransaction tx(g.store); auto r=tx.Result();
         if (r==SCO_OK) r=g.store.Put("spot",std::string_view(SpotText(old)));
         if (r==SCO_OK) r=g.store.Put("spawn.txt.time",std::string_view(time));
-        if (r==SCO_OK) r=tx.Commit(); if (r==SCO_OK) g.saved=old;
+        if (r==SCO_OK) r=tx.Commit();
+        if (r==SCO_OK) g.saved=old;
         return r;
     }
     const auto r=g.store.Get("spot",text);
@@ -387,7 +388,8 @@ sco_result InspectBookmark(const sco_arg* a,uint32_t count,void*,char* out,uint3
 #ifndef TRAVEL_TELEPORT
     if (count!=1 || !a || a[0].type!=SCO_ARG_STRING || !SafeName(a[0].v.s)) return SCO_BAD_ARG;
     const auto it=std::find_if(g.marks.begin(),g.marks.end(),[&](const auto& m){return Same(m.name,a[0].v.s);});
-    if (it==g.marks.end()) return Reply(SCO_NOT_FOUND,out,n,"No such bookmark"); spot=&it->spot;
+    if (it==g.marks.end()) return Reply(SCO_NOT_FOUND,out,n,"No such bookmark");
+    spot=&it->spot;
 #else
     (void)a; (void)count;
 #endif
@@ -456,7 +458,8 @@ void Panel() {
     std::vector<std::string> places,marks; std::vector<const char*> place_items,mark_items;
     for (size_t i=g.place_page*128;i<g.places.size() && places.size()<128;++i) places.push_back(g.places[i].system+" / "+g.places[i].name);
     for (size_t i=g.mark_page*128;i<g.marks.size() && marks.size()<128;++i) marks.push_back(g.marks[i].system+" / "+g.marks[i].name);
-    for (const auto& text:places) place_items.push_back(text.c_str()); for (const auto& text:marks) mark_items.push_back(text.c_str());
+    for (const auto& text:places) place_items.push_back(text.c_str());
+    for (const auto& text:marks) mark_items.push_back(text.c_str());
     const auto status=g.last_status.substr(0,255); add(SCO_WIDGET_LABEL,1,status.c_str());
 #ifdef TRAVEL_TELEPORT
     add(SCO_WIDGET_BUTTON,16,"Save current spot (F7, read-only capture)"); add(SCO_WIDGET_BUTTON,6,"Go to saved spot (F8, offline only)");

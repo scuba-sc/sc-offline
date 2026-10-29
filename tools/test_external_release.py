@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 """Focused 1D/2A/2B host withdrawal and published-artifact composition checks."""
+import json
 from pathlib import Path
 import unittest
 
@@ -39,7 +40,11 @@ class ExternalRelease(unittest.TestCase):
         self.assertIn('src/contracts.cpp', host)  # retained legacy engine, callers unchanged
         self.assertIn('contracts_sdk_check.py', workflow)
         self.assertIn('needs: [build, inspector-sdk, npc-sdk, contracts-sdk, external-sdk]', workflow)
-        self.assertIn('built-contracts/contracts/plugin.ini built-contracts/contracts/contracts.dll', workflow)
+        profiles = json.loads((ROOT / 'tools/release-plugin-profiles.json').read_text())
+        contracts = next(p for p in profiles['profiles']['player-offline']['plugins'] if p['id'] == 'contracts')
+        self.assertEqual((contracts['artifact_dir'], contracts['module'], contracts['disabled']),
+                         ('built-contracts/contracts', 'contracts.dll', False))
+        self.assertIn('python3 tools/stage-release-plugins.py --profile player-offline', workflow)
 
     def test_four_published_components_and_defaults(self):
         host = (ROOT / 'CMakeLists.txt').read_text()

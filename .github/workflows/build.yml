@@ -136,6 +136,7 @@ jobs:
           python3 tools/test_release_manifest.py
           python3 tools/test_npc_release.py
           python3 tools/test_external_release.py
+          python3 tools/test_release_plugin_profile.py
 
       # Byte parity alone can bless simultaneous drift: keep an independent immutable source pin.
       - name: Exact ImGui third-party ABI pin and refusal tests
@@ -539,37 +540,9 @@ jobs:
           # Ordinary public catalog pack; originals remain user-editable sources.
           mkdir -p "stage/$pkg/data/plugins/picker_catalog/lists"
           cp data/ships.txt data/npcs.txt "stage/$pkg/data/plugins/picker_catalog/lists/"
-          # Independent folders; metadata/defaults from matching components.
-          for feature in creative discord crew spawn build mining teleport quantum; do
-            mkdir -p "stage/$pkg/data/plugins/$feature"
-            cp "built-external/$feature/plugin.ini" "built-external/$feature/$feature.dll" "stage/$pkg/data/plugins/$feature/"
-            for f in plugin.ini "$feature.dll"; do test -f "stage/$pkg/data/plugins/$feature/$f"; done
-          done
-          for feature in creative discord; do
-            cp "built-external/$feature/disabled" "stage/$pkg/data/plugins/$feature/disabled"
-            test -f "stage/$pkg/data/plugins/$feature/disabled"
-          done
-          cp built-external/mining/import_settings.py "stage/$pkg/data/plugins/mining/import_settings.py"
-          test -f "stage/$pkg/data/plugins/mining/import_settings.py"
-          for feature in crew spawn build mining teleport quantum; do
-            test ! -e "built-external/$feature/disabled"
-            test ! -e "stage/$pkg/data/plugins/$feature/disabled"
-          done
-          # Inspector: published-SDK build, explicitly enabled; no built-in fallback.
-          mkdir -p "stage/$pkg/data/plugins/inspector"
-          cp built-inspector/inspector/plugin.ini built-inspector/inspector/inspector.dll "stage/$pkg/data/plugins/inspector/"
-          for f in plugin.ini inspector.dll; do test -f "stage/$pkg/data/plugins/inspector/$f"; done
-          test ! -e "stage/$pkg/data/plugins/inspector/disabled"
-          # NPC: published-SDK build, explicitly enabled; no built-in fallback.
-          mkdir -p "stage/$pkg/data/plugins/npc"
-          cp built-npc/npc/plugin.ini built-npc/npc/npc.dll "stage/$pkg/data/plugins/npc/"
-          for f in plugin.ini npc.dll; do test -f "stage/$pkg/data/plugins/npc/$f"; done
-          test ! -e "stage/$pkg/data/plugins/npc/disabled"
-          # Contracts: published-SDK build, no built-in fallback; refuses in game until providers land.
-          mkdir -p "stage/$pkg/data/plugins/contracts"
-          cp built-contracts/contracts/plugin.ini built-contracts/contracts/contracts.dll "stage/$pkg/data/plugins/contracts/"
-          for f in plugin.ini contracts.dll; do test -f "stage/$pkg/data/plugins/contracts/$f"; done
-          test ! -e "stage/$pkg/data/plugins/contracts/disabled"
+          # Only the selected player profile is packaged; staging verifies module identity
+          # and disabled-marker defaults before touching the release tree.
+          python3 tools/stage-release-plugins.py --profile player-offline --artifact-root . --destination "stage/$pkg/data/plugins"
           chmod +x "stage/$pkg/sc-offline.sh"
           python3 tools/release-manifest.py write "stage/$pkg" --tag "$TAG" --commit "$SHA" --version-h src/version.h
           (cd stage && zip -qrX "../$pkg.zip" "$pkg")

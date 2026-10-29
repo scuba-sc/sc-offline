@@ -213,13 +213,20 @@ void ScriptCase() {
     assert(Call("contracts.accept", {Int(0), Int(1)}) == SCO_OK);
     assert(Call("contracts.abandon", {Int(77)}) == SCO_OK);
     assert(Call("contracts.abandon", {Int(77)}) == SCO_OK && abandon_effects == 1);
-    assert(Call("contracts.ingest", {Int(0)}) == SCO_OK);
+    assert(Call("contracts.ingest", {Int(0)}) == SCO_OK && scripts.contains("missions/demo.scom"));
     assert(Call("contracts.ingest", {Int(0)}) == SCO_OK && ingest_effects == 1);
     script_bytes = "<!DOCTYPE mission>";
     assert(Call("contracts.ingest", {Int(0)}) == SCO_BAD_ARG && ingest_effects == 1);
     script_bytes = "sco-mission 1\nphases 2\nobjectives 1\n";
     script_name = "../missions/demo.scom";
     assert(Call("contracts.ingest", {Int(0)}) == SCO_BAD_ARG && ingest_effects == 1);
+    // The id cap is the rule that decides a long name: 100 characters is accepted and 101 is not.
+    // (The path-capacity check in the plugin cannot be reached from here, because an accepted id
+    // always fits relative_path; a static_assert in contracts.cpp holds that relationship.)
+    script_name = "missions/" + std::string(100, 'a') + ".scom";
+    assert(Call("contracts.ingest", {Int(0)}) == SCO_OK && ingest_effects == 2);
+    script_name = "missions/" + std::string(101, 'a') + ".scom";
+    assert(Call("contracts.ingest", {Int(0)}) == SCO_BAD_ARG && ingest_effects == 2);
     script_name = "missions/demo.scom";
     script_bytes.assign(SC_MISSIONS_SCRIPT_BYTES + 1, 'a');
     assert(Call("contracts.ingest", {Int(0)}) == SCO_BAD_ARG && ingest_effects == 1);

@@ -17,6 +17,7 @@
 #include "sco_settings.h"
 #include "sco_widgets.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <cmath>
 #include <cstdio>
@@ -24,6 +25,22 @@
 #include <string>
 
 namespace {
+void AppendBounded(char* destination, std::size_t capacity, const char* text) noexcept {
+    if (!destination || capacity == 0) return;
+    std::size_t used = 0;
+    while (used < capacity && destination[used]) ++used;
+    if (used == capacity) {
+        destination[capacity - 1] = '\0';
+        return;
+    }
+    if (!text) return;
+    const std::size_t available = capacity - used - 1;
+    std::size_t length = 0;
+    while (length < available && text[length]) ++length;
+    if (length) std::memcpy(destination + used, text, length);
+    destination[used + length] = '\0';
+}
+
 // The pinned SDK wrapper assumes full, non-null tables. Keep the wire contract
 // here: reopen each operation and check the complete member before reading it.
 class CreativeService {
@@ -259,7 +276,10 @@ private:
     void Refused(const char* what) noexcept {
         char why[256] = {};
         cr_.LastError(why);
-        std::snprintf(status_, sizeof(status_), "%s failed: %s", what, why[0] ? why : "see mod.log");
+        status_[0] = '\0';
+        AppendBounded(status_, sizeof(status_), what);
+        AppendBounded(status_, sizeof(status_), " failed: ");
+        AppendBounded(status_, sizeof(status_), why[0] ? why : "see mod.log");
     }
 
     void OnPanelEvent(const sco_widget_event& e) noexcept {

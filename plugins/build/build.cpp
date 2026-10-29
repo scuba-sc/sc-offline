@@ -289,7 +289,10 @@ sco_result Drop(const sco_arg*,uint32_t n,void*,char* out,uint32_t size) {
     return Reply(r,out,size,"Placement initiation only; retained while loaded, removed on unload");
 }
 sco_result Rotate(const sco_arg*,uint32_t n,void*,char* out,uint32_t size) {
-    if(n)return SCO_BAD_ARG;g.yaw=std::fmod(g.yaw+45,360);g.clocked=false;g.suppressed=false;
+    if (n) return SCO_BAD_ARG;
+    g.yaw = std::fmod(g.yaw + 45, 360);
+    g.clocked = false;
+    g.suppressed = false;
     return Reply(SCO_OK,out,size,"Preview rotation advanced 45 degrees");
 }
 sco_result Reach(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {

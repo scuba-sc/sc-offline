@@ -28,7 +28,13 @@ struct State {
 } state;
 // Opaque callback identities survive state resets; no callback dereferences ctx.
 inline uintptr_t nextCookie=0;
-inline void Message(const char* text) { std::snprintf(state.message,sizeof(state.message),"%s",text?text:"");state.dirty=true; }
+inline void Message(const char* text) {
+    const char* source = text ? text : "";
+    const size_t length = std::min(std::strlen(source), sizeof(state.message) - 1);
+    std::memcpy(state.message, source, length);
+    state.message[length] = '\0';
+    state.dirty = true;
+}
 inline bool Equal(const std::string& a,const char* b) {
     size_t i=0;for(;i<a.size() && b[i];++i) {
         auto lower=[](unsigned char c){return c>='A'&&c<='Z'?static_cast<unsigned char>(c+32):c;};
@@ -148,7 +154,8 @@ inline void Done(sco_result result,const char* text,void* ctx) {auto& c=*static_
 inline sco_result Invoke(const char* name,const sco_arg* args=nullptr,uint32_t count=0) {
     if(!PICKER_HAS(state.api,sco_api,invoke)){Message("Unavailable: public command invocation required");return SCO_UNAVAILABLE;}
     Completion c;const auto r=state.api->invoke(state.self,name,args,count,Done,&c);
-    if(!c.done)Message("Public command invocation refused without a reply");return c.done?c.result:r;
+    if (!c.done) Message("Public command invocation refused without a reply");
+    return c.done ? c.result : r;
 }
 inline void Event(const char* panel,const sco_widget_event* e,void* ctx) {
     if(!state.api || !state.self || !state.events || reinterpret_cast<uintptr_t>(ctx)!=state.cookie || !panel || std::strcmp(panel,"build.picker") || !e || e->size<sizeof(*e))return;
@@ -186,7 +193,8 @@ inline void Event(const char* panel,const sco_widget_event* e,void* ctx) {
     }catch(...){state.events=false;Message("Picker event refused; publication retry required");}
 }
 inline void Tick() {
-    if(!state.api)return;const auto now=state.observe();
+    if (!state.api) return;
+    const auto now = state.observe();
     if(now.reach!=state.shown.reach || now.active!=state.shown.active || now.retained!=state.shown.retained || now.removing!=state.shown.removing)state.dirty=true;
     Publish();
 }

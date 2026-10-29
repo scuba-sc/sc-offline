@@ -36,7 +36,7 @@ capabilities. See [host composition](host-composition.md) for refusal boundaries
 | Noclip, god mode, infinite ammo | External `creative` on `game.creative` | Ships disabled |
 | Discord presence | External `discord` refusal module | Ships disabled pending approved transport/privacy review |
 | Natural mining | External `mining` on `game.mining` | Requested setting off by default; native adapter unavailable until verified |
-| Contracts | External `contracts` consumer | Missions/economy providers remain deferred |
+| Contracts | External `contracts` consumer | Public contracts/provider source exist; production mutations remain gated on admitted-backend readiness |
 | Gear and SQ42 settings | Development `loadout` consumer | Not staged in releases; unsupported slots and writes remain refused |
 | Multiplayer | Separate [sc-mp](https://github.com/scuba-sc/sc-mp) consumer | Excluded from the standard release |
 | Quantum drive and pickers | Ordinary DataCore/content packs | `data/plugins/quantum_drive`, `data/plugins/picker_catalog` |

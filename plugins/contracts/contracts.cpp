@@ -84,13 +84,20 @@ sco_result ReadReferences(const sco_arg* args, bool one, char* reply, uint32_t c
         return fail(SCO_TOO_MANY, "Metadata copy allocation refused; native installation UNKNOWN");
     }
 }
-bool MissionPath(const char* name, size_t capacity) {
+// The longest path the id rule accepts is "missions/" + 100 + ".scom". That fits the SDK's field
+// with room to spare, so the capacity check below can only fire if the field ever shrinks; this
+// keeps the assumption visible instead of leaving a guard that no accepted name can reach.
+constexpr size_t kMissionPathPrefix = 9, kMissionPathSuffix = 5, kMissionIdMax = 100;
+static_assert(kMissionPathPrefix + kMissionIdMax + kMissionPathSuffix <= sizeof(sc_mission_script::relative_path),
+              "an accepted mission path must fit the SDK's relative_path field");
+bool MissionPath(const char* name, size_t capacity, size_t path_capacity, std::string_view& path) {
     const void* end = std::memchr(name, 0, capacity);
     if (!end) return false;
-    std::string_view path(name, static_cast<const char*>(end) - name);
+    path = std::string_view(name, static_cast<const char*>(end) - name);
+    if (path.size() >= path_capacity) return false;
     if (!path.starts_with("missions/") || !path.ends_with(".scom")) return false;
-    auto id = path.substr(9, path.size() - 9 - 5);
-    if (id.empty() || id.size() > 100) return false;
+    auto id = path.substr(kMissionPathPrefix, path.size() - kMissionPathPrefix - kMissionPathSuffix);
+    if (id.empty() || id.size() > kMissionIdMax) return false;
     for (char c : id) if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_')) return false;
     return true;
 }
@@ -211,7 +218,10 @@ sco_result Execute(const sco_arg* args, uint32_t count, void* context, char* rep
         sco_content_item item{}; item.size = sizeof(item);
         result = c->item(self, SCO_CONTENT_SCRIPT, static_cast<uint32_t>(args[0].v.i), &item);
         if (result != SCO_OK) return result;
-        if (item.kind != SCO_CONTENT_SCRIPT || !item.id || !MissionPath(item.name, sizeof(item.name))) return SCO_BAD_ARG;
+        sc_mission_script script{}; script.size = sizeof(script);
+        std::string_view path;
+        if (item.kind != SCO_CONTENT_SCRIPT || !item.id ||
+            !MissionPath(item.name, sizeof(item.name), sizeof(script.relative_path), path)) return SCO_BAD_ARG;
         uint32_t needed = 0;
         result = c->read(self, item.id, nullptr, &needed);
         if (result != SCO_TOO_MANY && result != SCO_OK) return result;
@@ -221,8 +231,8 @@ sco_result Execute(const sco_arg* args, uint32_t count, void* context, char* rep
         result = c->read(self, item.id, bytes, &written);
         if (result != SCO_OK) return result;
         if (written != needed || !Declaration(std::string_view(bytes, written))) return SCO_BAD_ARG;
-        sc_mission_script script{}; script.size = sizeof(script);
-        std::snprintf(script.relative_path, sizeof(script.relative_path), "%s", item.name);
+        std::memcpy(script.relative_path, path.data(), path.size());
+        script.relative_path[path.size()] = '\0';
         script.bytes = bytes; script.byte_count = written;
         result = m->ingest(self, &script);
         if (result == SCO_OK) std::snprintf(reply, capacity, "Declarative mission registered; session lifetime; no executable scripts");
