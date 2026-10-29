@@ -16,7 +16,7 @@
         {"id": "contracts", "artifact_dir": "built-contracts/contracts", "module": "contracts.dll", "disabled": false}
       ],
       "excluded": {
-        "gear_presets": "Development consumer: the native product has no game.inventory.layout producer, and the pinned RC2 SDK does not contain that development contract.",
+        "gear_presets": "Development consumer: the published RC2 SDK defines game.inventory.layout, but the current offline player product has no ready producer, so capture is unavailable at runtime.",
         "loadout": "Development consumer: release staging remains separate while product parity and target-host acceptance are pending.",
         "titanlink": "Optional local bridge: built separately and kept disabled pending owner Windows/offline acceptance.",
         "voxel_bridge": "Optional local bridge: built separately and kept disabled pending owner Windows/offline acceptance."

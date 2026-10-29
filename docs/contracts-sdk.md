@@ -1,9 +1,11 @@
 # Contracts SDK migration — charter 6C
 
 The separately loadable `contracts` module is a command-first SDK consumer,
-not a replacement certification of the retained legacy feature. The production
-G11/G12 engine adapter is unavailable: requests refuse, with no private fallback.
-No engine pointers, detours, account/online balances or G13 session controls.
+not a replacement certification of the retained legacy feature. The public
+service contracts and sco-core provider implementation exist, but production
+G11/G12 mutations remain gated on a positively admitted, ready backend; requests
+fail closed until then, with no private fallback. No engine pointers, detours,
+account/online balances or G13 session controls.
 
 ## Build / check / install
 
