@@ -246,13 +246,15 @@ static int VehicleSize(uintptr_t entityClass) {
 // Runs once on the game thread after the player has spawned. It learns how to read a class's
 // name from two known classes, walks the registry's class map (same layout as hooks.cpp
 // FindClassGuids), round-trips every name through the name lookup (vfn+0x20), and writes
-// data/registry-dump.txt: one "name<TAB>vehicleSize" line per class. Changes nothing in game.
+// data/registry-dump.txt: one "name<TAB>vehicleSize" line per class whose name the lookup
+// confirms. A walk that stops early writes nothing, so a partial list never looks complete.
+// Changes nothing in game.
 
 static const char* const kProbeKnown[] = {
     "DRAK_Cutlass_Black", "AEGS_Gladius", "ANVL_Arrow", "AEGS_Avenger_Titan", "MISC_Prospector", "RSI_Aurora_MR",
 };
 
-enum class NameVia { None, Field, FieldIndirect, VSlot10 };
+enum class NameVia { None, Field, FieldIndirect };
 static NameVia g_nameVia = NameVia::None;
 static size_t  g_nameOff = 0;
 
@@ -265,22 +267,19 @@ static const char* ClassNameVia(uintptr_t cls, NameVia via, size_t off) {
         switch (via) {
         case NameVia::Field:         return Rd<const char*>(cls + off);
         case NameVia::FieldIndirect: { const uintptr_t p = Rd<uintptr_t>(cls + off); return p ? Rd<const char*>(p) : nullptr; }
-        case NameVia::VSlot10:       return VCall<const char*>(cls, 0x10);
         default:                     return nullptr;
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) { return nullptr; }
 }
 
-// Find one way to read a name that works for both classes.
+// Find one way to read a name that works for both classes. Only field reads are candidates: a
+// virtual call into an unverified slot could have side effects no exception handler can undo.
 static bool CalibrateName(uintptr_t a, const char* na, uintptr_t b, const char* nb) {
     for (size_t off = 0x08; off < 0x200; off += 8)
         for (NameVia via : { NameVia::Field, NameVia::FieldIndirect })
             if (SafeStrEq(ClassNameVia(a, via, off), na) && SafeStrEq(ClassNameVia(b, via, off), nb)) {
                 g_nameVia = via; g_nameOff = off; return true;
             }
-    if (SafeStrEq(ClassNameVia(a, NameVia::VSlot10, 0), na) && SafeStrEq(ClassNameVia(b, NameVia::VSlot10, 0), nb)) {
-        g_nameVia = NameVia::VSlot10; return true;
-    }
     return false;
 }
 
@@ -299,19 +298,22 @@ static void RunRegistryProbe(uintptr_t registry) {
         if (k < 2) { const uintptr_t c = SafeLookup(registry, n); if (c) { known[k] = c; knownName[k++] = n; } }
     if (k < 2) { Log("[probe] fewer than 2 known classes resolve; stopping"); return; }
     if (!CalibrateName(known[0], knownName[0], known[1], knownName[1])) {
-        Log("[probe] no name field in the first 0x200 bytes and vtable+0x10 doesn't return it; stopping");
+        Log("[probe] no char* name field in the first 0x200 bytes of a class; stopping");
         return;
     }
     Log("[probe] class name via %s at +0x%zX (calibrated on %s, %s)",
-        g_nameVia == NameVia::Field ? "char* field" : g_nameVia == NameVia::FieldIndirect ? "indirect field" : "vtable slot",
-        g_nameVia == NameVia::VSlot10 ? size_t(0x10) : g_nameOff, knownName[0], knownName[1]);
+        g_nameVia == NameVia::Field ? "char* field" : "indirect field", g_nameOff, knownName[0], knownName[1]);
 
     char path[MAX_PATH];
     if (!ModLogSibling(path, sizeof(path), "registry-dump.txt")) { Log("[probe] no output path (SC_OFFLINE_MOD_LOG unset)"); return; }
-    FILE* f = _fsopen(path, "w", _SH_DENYWR);
-    if (!f) { Log("[probe] can't write %s", path); return; }
+    // Walk into a sibling temp file and rename it only when the walk finishes: a fault part way
+    // through then leaves the previous dump intact instead of a truncated one.
+    char tmp[MAX_PATH];
+    if (strcpy_s(tmp, path) != 0 || strcat_s(tmp, ".tmp") != 0) { Log("[probe] output path too long"); return; }
+    FILE* f = _fsopen(tmp, "w", _SH_DENYWR);
+    if (!f) { Log("[probe] can't write %s", tmp); return; }
 
-    int total = 0, named = 0, roundTrip = 0, vehicles = 0, faults = 0;
+    int total = 0, named = 0, roundTrip = 0, unconfirmed = 0, vehicles = 0, faults = 0;
     uintptr_t stack[256]; int sp = 0;
     const uintptr_t head = Rd<uintptr_t>(registry + 0x48);
     const uintptr_t root = Rd<uintptr_t>(head + 0x08);
@@ -325,20 +327,36 @@ static void RunRegistryProbe(uintptr_t registry) {
         __try { if (name) strncpy_s(copy, name, _TRUNCATE); } __except (EXCEPTION_EXECUTE_HANDLER) { copy[0] = 0; ++faults; }
         if (copy[0]) {
             ++named;
-            if (SafeLookup(registry, copy) == cls) ++roundTrip;
-            const int vs = SafeVehicleSize(cls);
-            if (vs > 0) ++vehicles;
-            if (vs < 0) ++faults;
-            fprintf(f, "%s\t%d\n", copy, vs);
+            // Only a name the registry resolves back to this class is evidence. A truncated field
+            // value or a stale pointer fails that round trip and is counted, never written, so
+            // every line in the dump names a class the game itself confirmed.
+            if (SafeLookup(registry, copy) != cls) {
+                ++unconfirmed;
+            } else {
+                ++roundTrip;
+                const int vs = SafeVehicleSize(cls);
+                if (vs > 0) ++vehicles;
+                if (vs < 0) ++faults;
+                fprintf(f, "%s\t%d\n", copy, vs);
+            }
         }
         for (size_t off : { size_t(0x00), size_t(0x10) }) {
             const uintptr_t c = Rd<uintptr_t>(n + off);
             if (c && !Rd<uint8_t>(c + 0x19) && sp < 256) stack[sp++] = c;
         }
     }
-    fclose(f);
-    Log("[probe] %d classes, %d named, %d round-trip through the name lookup, %d vehicles (size > 0), %d faults -> %s",
-        total, named, roundTrip, vehicles, faults, path);
+    const bool walked = sp == 0 && total < 500000;
+    if (fclose(f) != 0) { Log("[probe] close failed on %s", tmp); return; }
+    if (!walked) {
+        Log("[probe] stopped early after %d classes; %s left in place, %s untouched", total, tmp, path);
+        return;
+    }
+    if (!MoveFileExA(tmp, path, MOVEFILE_REPLACE_EXISTING)) {
+        Log("[probe] can't replace %s (error %lu); dump left at %s", path, GetLastError(), tmp);
+        return;
+    }
+    Log("[probe] %d classes, %d named, %d confirmed by the name lookup, %d unconfirmed, %d vehicles (size > 0), %d faults -> %s",
+        total, named, roundTrip, unconfirmed, vehicles, faults, path);
 }
 
 void ProcessRegistryProbe() {

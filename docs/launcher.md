@@ -310,4 +310,4 @@ launcher read the INI file; game acceptance remains pending.
 | `multiplayer_allow` | (empty) | Extra networks a session may use besides your LAN, for a VPN: up to 8 IPv4 ranges separated by commas, `/8` or narrower (Tailscale: `100.64.0.0/10`). Every address in them can reach a session you host, so allow only your VPN's range. A value that doesn't parse is ignored with a warning. |
 | `eac_hosts` | `on` | Add the EAC hosts line while you play. |
 | `eac_rename` | `on` | Rename `EasyAntiCheat_EOS.exe` while you play. |
-| `registry_probe` | (off) | Test only. `1` writes `data/registry-dump.txt`, every entity class the game knows, 15 s after you spawn. |
+| `registry_probe` | (off) | Test only. `1` writes `data/registry-dump.txt` 15 s after you spawn: one `name<TAB>vehicleSize` line per entity class the probe walked and the game's own name lookup resolved back to that class. It stops at the first fault and writes nothing, so a partial list never looks complete. |
