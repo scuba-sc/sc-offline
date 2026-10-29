@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "profiles": {
+    "player-offline": {
+      "plugins": [
+        {"id": "creative", "artifact_dir": "built-external/creative", "module": "creative.dll", "disabled": true},
+        {"id": "discord", "artifact_dir": "built-external/discord", "module": "discord.dll", "disabled": true},
+        {"id": "crew", "artifact_dir": "built-external/crew", "module": "crew.dll", "disabled": false},
+        {"id": "spawn", "artifact_dir": "built-external/spawn", "module": "spawn.dll", "disabled": false},
+        {"id": "build", "artifact_dir": "built-external/build", "module": "build.dll", "disabled": false},
+        {"id": "mining", "artifact_dir": "built-external/mining", "module": "mining.dll", "disabled": false, "extra_files": ["import_settings.py"]},
+        {"id": "teleport", "artifact_dir": "built-external/teleport", "module": "teleport.dll", "disabled": false},
+        {"id": "quantum", "artifact_dir": "built-external/quantum", "module": "quantum.dll", "disabled": false},
+        {"id": "inspector", "artifact_dir": "built-inspector/inspector", "module": "inspector.dll", "disabled": false},
+        {"id": "npc", "artifact_dir": "built-npc/npc", "module": "npc.dll", "disabled": false},
+        {"id": "contracts", "artifact_dir": "built-contracts/contracts", "module": "contracts.dll", "disabled": false}
+      ],
+      "excluded": {
+        "gear_presets": "Development consumer: the native product has no game.inventory.layout producer, and the pinned RC2 SDK does not contain that development contract.",
+        "loadout": "Development consumer: release staging remains separate while product parity and target-host acceptance are pending.",
+        "titanlink": "Optional local bridge: built separately and kept disabled pending owner Windows/offline acceptance.",
+        "voxel_bridge": "Optional local bridge: built separately and kept disabled pending owner Windows/offline acceptance."
+      },
+      "external_exclusions": {
+        "sc-mp": "Separately maintained co-presence plugin; it is not built or staged by the sc-offline player release."
+      }
+    }
+  }
+}

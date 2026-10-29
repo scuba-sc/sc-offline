@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 """Narrow release wiring regression for the external command-first NPC plugin."""
+import json
 from pathlib import Path
 import re
 import unittest
@@ -48,8 +49,11 @@ class NpcRelease(unittest.TestCase):
         self.assertIn('npc-sdk-posix:', workflow)
         self.assertIn('npc-sdk:', workflow)
         self.assertIn('needs: [build, inspector-sdk, npc-sdk, contracts-sdk, external-sdk]', workflow)
-        self.assertIn('built-npc/npc/plugin.ini built-npc/npc/npc.dll', workflow)
-        self.assertIn('test ! -e "stage/$pkg/data/plugins/npc/disabled"', workflow)
+        profiles = json.loads((ROOT / 'tools/release-plugin-profiles.json').read_text())
+        npc = next(p for p in profiles['profiles']['player-offline']['plugins'] if p['id'] == 'npc')
+        self.assertEqual((npc['artifact_dir'], npc['module'], npc['disabled']),
+                         ('built-npc/npc', 'npc.dll', False))
+        self.assertIn('python3 tools/stage-release-plugins.py --profile player-offline', workflow)
 
 
 if __name__ == '__main__':
