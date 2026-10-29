@@ -549,6 +549,8 @@ static void OnMainThreadTick() {
     if (now - last < 100) return;
     last = now;
     if (g_tp.ok) RunLegacyTicks(now);
+    // Opt-in test probe (registry_probe = 1); a no-op unless the launcher set the switch.
+    ProcessRegistryProbe();
 #endif
 }
 
