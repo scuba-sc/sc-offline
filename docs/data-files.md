@@ -147,6 +147,7 @@ When one of these files is present, `src/contracts.cpp` or `src/spawner.cpp` cha
 | `SC_OFFLINE_MINING` | Legacy import-only preference; ignored by the runtime. `SC_OFFLINE_MINING_DEBUG` likewise. Explicit `--environment` import is documented in [mining](../plugins/mining/README.md). |
 | `SC_OFFLINE_ASOP` | From `asop`: `off` (or `0`, `no`, `false`) leaves the ship terminals, hangars and ATC alone; unset or anything else is on |
 | `SC_OFFLINE_SHIPS_FILE` | Where the ship list is read from |
+| `SC_OFFLINE_REGISTRY_PROBE` | From `registry_probe`. `1` writes `registry-dump.txt` beside `mod.log` |
 | `SC_OFFLINE_SPAWN_FILE` | Where the F7 position is stored |
 | `SC_OFFLINE_MOD_LOG` | Where `mod.log` is written |
 | `SC_USER` | The game's `user\client\0` folder, which is how loadouts reach the game |

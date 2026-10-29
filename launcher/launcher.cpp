@@ -158,7 +158,7 @@ static int FailCode(int code, const char* fmt, ...) {
 
 // sc-offline.ini: `key = value` lines; a line starting with '#' is a comment. Unknown keys are reported, not ignored.
 struct Config {
-    wstring game, channel = L"LIVE", bootMap = L"PU_All", startShip = L"DRAK_Cutlass_Black", start;
+    wstring game, channel = L"LIVE", bootMap = L"PU_All", startShip = L"DRAK_Cutlass_Black", start, registryProbe;
     sco::launcher::locale::Language language = sco::launcher::locale::Language::Auto;
     // What the helper changes on the PC while you play, and undoes when the game closes.
     bool firewall = true, eacHosts = true, eacRename = true;
@@ -186,8 +186,7 @@ struct Config {
     bool asop = true;
     // Which ship list the terminals show with asop on: ships (ships.txt) or game (the game's own,
     // empty offline). ships when the ini doesn't say, so an older ini gets a usable terminal too.
-    wstring asopFleetList = L"ships";
-};
+    wstring asopFleetList = L"ships";};
 
 static bool ParseOnOff(const wstring& v, bool& out) {
     if (!_wcsicmp(v.c_str(), L"1") || !_wcsicmp(v.c_str(), L"on") || !_wcsicmp(v.c_str(), L"yes") || !_wcsicmp(v.c_str(), L"true")) { out = true; return true; }
@@ -303,6 +302,7 @@ static bool ReadConfig(const wstring& path, Config& c) {
             if (!_wcsicmp(v.c_str(), L"ask")) c.cleanLogs = true;
             else if (!ParseOnOff(v, c.cleanLogs)) Out("[!] sc-offline.ini line %d: clean_logs must be ask or off\n", lineNo);
         }
+        else if (!_wcsicmp(k.c_str(), L"registry_probe")) c.registryProbe = v;
         else Out("[!] sc-offline.ini line %d: unknown key '%ls'\n", lineNo, k.c_str());
     }
     return true;
@@ -4422,6 +4422,7 @@ int wmain(int argc, wchar_t** argv) {
         SetVar(L"SC_OFFLINE_ASOP", cfg.asop ? L"on" : L"off");
         SetVar(L"SC_OFFLINE_ASOP_FLEET_LIST", cfg.asopFleetList);
         SetVar(L"SC_USER", g.userDir);
+        SetVar(L"SC_OFFLINE_REGISTRY_PROBE", cfg.registryProbe);
         if (dry)
             Out("[dry-run] would set SC_OFFLINE_BOOT_MAP=%ls SC_OFFLINE_START_SHIP=%ls SC_OFFLINE_START=%ls SC_OFFLINE_PLUGINS=%ls\n"
                 "          SC_OFFLINE_RELOCATION=%ls SC_OFFLINE_ASOP=%ls; SC_OFFLINE_MOD_LOG, _SPAWN_FILE, _SHIPS_FILE under %ls; SC_USER=%ls\n",
