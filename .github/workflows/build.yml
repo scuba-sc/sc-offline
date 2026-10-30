@@ -94,6 +94,9 @@ jobs:
           test "$(git -C external/sco-core rev-parse HEAD)" = "$EMBEDDED_SOURCE"
           echo "Restored pinned host source $EMBEDDED_SOURCE"
 
+      - name: Legacy fleet stable identity (ASan and UBSan)
+        run: python3 tools/test_fleet_identity.py
+
       - name: SDK proof generator defaults and explicit overrides
         run: python3 tools/test_sdk_generators.py
 
