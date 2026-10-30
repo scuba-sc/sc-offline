@@ -94,6 +94,16 @@ int main() {
     before = calls;
     WriteFile(file, full + "extra\n");
     CHECK(StartFromEnvironment(true, true, file.c_str()) == Result::InvalidConfig && calls == before);
+
+    // A pending replacement marker refuses startup: the file may be mid-commit.
+    WriteFile(file, "Aurora\n");
+    before = calls;
+    WriteFile(dir / "asop_ships.txt.sco-1234-1.pending", "marker");
+    CHECK(StartFromEnvironment(true, true, file.c_str()) == Result::InvalidConfig && calls == before);
+    std::filesystem::remove(dir / "asop_ships.txt.sco-1234-1.pending");
+    CHECK(StartFromEnvironment(true, true, file.c_str()) == Result::Ok && calls == before + 1);
+    before = calls;
+
     std::filesystem::remove_all(dir);
     CHECK(Set(mode, "")); CHECK(Set(fleet, ""));
     std::printf("ASOP environment policy: %d failures\n", failures);

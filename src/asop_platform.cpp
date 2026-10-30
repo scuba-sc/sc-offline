@@ -28,6 +28,13 @@ bool Environment(const char* key, std::string& value) {
     return true;
 }
 // A missing file is an empty selection only while its directory resolves; any other failure is unknown and refuses startup.
+bool ReadAll(const std::filesystem::path& file, std::string& bytes) {
+    bytes.clear();
+    std::ifstream input(file, std::ios::binary);
+    char c = 0;
+    while (bytes.size() <= kMaxSelectionBytes && input.get(c)) bytes.push_back(c);
+    return input.eof();
+}
 bool ReadSelection(const char* path, std::string& bytes) {
     std::error_code ec;
     const std::filesystem::path file(path);
@@ -37,10 +44,20 @@ bool ReadSelection(const char* path, std::string& bytes) {
         return std::filesystem::is_directory(file.parent_path(), ec) && !ec;
     }
     if (ec || state.type() != std::filesystem::file_type::regular) return false;
-    std::ifstream input(file, std::ios::binary);
-    char c = 0;
-    while (bytes.size() <= kMaxSelectionBytes && input.get(c)) bytes.push_back(c);
-    return input.eof();
+    // A pending replacement marker means the file may be mid-commit; refuse startup
+    // rather than configure the host from an unverified state. Recovery belongs to
+    // the selection service's file adapter, which runs after admission.
+    std::error_code findError;
+    for (const auto& entry : std::filesystem::directory_iterator(file.parent_path(), findError)) {
+        const auto name = entry.path().filename().string();
+        if (name.rfind(file.filename().string() + ".sco-", 0) == 0 &&
+            name.size() > 8 && name.compare(name.size() - 8, 8, ".pending") == 0) return false;
+    }
+    if (findError) return false;
+    // Two matching reads: a writer mid-replacement must not configure the host.
+    std::string first;
+    if (!ReadAll(file, first) || !ReadAll(file, bytes) || first != bytes) return false;
+    return true;
 }
 }
 bool ParseShips(const std::string& bytes, std::vector<std::string>& out) {
