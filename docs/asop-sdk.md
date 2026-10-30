@@ -27,9 +27,20 @@ The shell preserves `SC_OFFLINE_ASOP` (unset/on versus off) and
 The owned-ship list is product policy: `asop_ships.txt` beside `ships.txt`, read once
 at startup and copied after a bounded (262144-byte) read. Names are case-insensitively
 unique (first spelling kept). A bad line, more than 2048 unique names, or an unreadable
-file refuses the whole list atomically, and a missing file is an empty list. On this
+file refuses the whole list atomically, and a missing file is an empty list. A file
+with a pending replacement marker, or one that does not read identically twice, also
+refuses startup; recovery belongs to the selection service's file adapter. On this
 path `ships.txt` is never the terminal list. No session persistence claim is added. Readiness bits mean individual groups installed, not gameplay proof.
 Delivery/store/retrieve/claim, lift state and pad ownership belong to the game pack.
+
+With `SCO_ASOP_SELECTION_COMPOSITION` (default ON) the selection service owns the
+saved selection document. Its fleet busy-class gate refuses a committed save that
+removes a class with a stored, retrieved, delivering or queued ship, and after a
+committed save the host rebuilds the owned-ship list mid-session through
+`asop_host::Reconfigure` with stable fleet slots, so stored and in-transit ships keep
+resolving. This mid-session rebuild is the foundation for future ship ownership flows
+(buying, selling, trading), not only the ASOP terminal refresh; whether the native
+terminal re-queries entitlements without a reopen is unverified.
 
 Start occurs after the first game-thread host-service startup with positive product
 offline/EAC evidence. Timing against real loading callers requires Windows acceptance;
