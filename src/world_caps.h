@@ -1,6 +1,6 @@
 #pragma once
 // sco-core's world capabilities (sco/game/world.h): build mode, missions, cvars and the quantum
-// boost take their addresses from these signature rows. Call after sco::ResolveAll.
+// boost take their addresses from these signature rows. Call after host Prepare.
 #include "sco/caps.h"
 #include "sco/game/world.h"
 #include "sco/signatures.h"

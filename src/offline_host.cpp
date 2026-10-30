@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "offline_host.h"
+#include "product_lifetime.h"
+#include "sco/log.h"
 #ifdef SCO_HOST_MENU_CLIENT
 #include "menu.h"
 #endif
@@ -44,10 +46,22 @@ sco::Result StopSelection(void*) { return selection::Stop(); }
 
 namespace gh = sco::game::host;
 namespace offline_host {
+namespace { ProductLifetime productLifetime; }
+bool BeginPersistentMutation() noexcept { return productLifetime.TryBeginMutation(); }
+bool CloseProductMutationGate() noexcept { return productLifetime.Close(); }
+gh::ConsumerRetirement RetireProductConsumer(void*) noexcept {
+    CloseProductMutationGate();
+    // This gate neither tracks the startup entry callback nor drains installed
+    // product detours or direct writes. Retain backing until process exit.
+    try { sco::Log("[app] product callbacks or patches may remain; close the game before restarting the host"); }
+    catch (...) {} // A diagnostic failure must never change the retained result.
+    return gh::ConsumerRetirement::Retained;
+}
 sco::Result Prepare(gh::Options options) {
     // Required game-pack hooks, never a shell WM_QUIT-only or private-loader fallback.
     options.quit = gh::QuitPolicy::Required;
     options.dataCoreHook = gh::DataCoreHook::Required;
+    options.retireConsumer = RetireProductConsumer;
 #ifdef SCO_HOST_MENU_CLIENT
     options.platform.hostMenu = MenuHostDescriptor();
 #endif

@@ -61,7 +61,7 @@ static DWORD           g_mainThread = 0;
 constexpr size_t kContractMap = 0x9F0;
 
 // Every game address here is one of sco-core's contracts.* rows (sco/game/contracts.h; the
-// reputation checks are features.h's contracts.reputation), resolved by sco::ResolveAll before
+// reputation checks are features.h's contracts.reputation), resolved by host Prepare before
 // ResolveContractsApi runs. Each part of the feature asks for its capability and stays off when it
 // isn't ready.
 namespace cg = sco::game::contracts;

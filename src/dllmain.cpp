@@ -26,6 +26,7 @@
 #include "sco/caps.h"
 #include "sco/log.h"
 #include "sco/scan.h"
+#include "sco/signature_registry.h"
 #include "sco/signatures.h"
 #include "sco/hook.h"
 #ifdef SCO_OFFLINE_G1_HOST
@@ -273,6 +274,10 @@ static void StartOffline() {
     if (!PrepareHostKit()) return; // fresh fail-closed admission BEFORE any engine mutation
 #ifdef SCO_OFFLINE_G1_HOST
     g_signaturesResolved = sco::game::host::Status().signaturesResolved;
+    if (!offline_host::BeginPersistentMutation()) {
+        Log("[app] offline startup refused: product retirement has begun; close the game");
+        return;
+    }
 #endif
     g_offline = ApplyOfflinePatches();
     if (!g_offline) return;
@@ -294,7 +299,11 @@ static void StartOffline() {
 static void LogStartup() {
     LogOfflinePatches();
     LogHooks();
-    if (g_signaturesResolved) sco::LogSignatureReport(false);
+    if (g_signaturesResolved) {
+        const auto signatures = sco::AcquireHostSignatureSnapshot();
+        if (signatures) sco::LogSignatureReport(*signatures, false);
+        else Log("[core] signature report unavailable: host registry is no longer installed");
+    }
     if (g_quitHookStatus) Log("[app] game quit hook: %s", g_quitHookStatus);
     Log("[!] teleport: G2 REFUSE; F7/F8 consumer unavailable; read services are separate");
     if (SpawnerReady()) Log("[+] ship spawner: ready (M = menu)");

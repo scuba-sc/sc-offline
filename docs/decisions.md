@@ -9,6 +9,18 @@ The implementation column is reconciled to product source
 It records source and release-recipe state, not new owner approval or gameplay
 evidence. The owner decision column remains the policy record dated 2026-10-12.
 
+## Development baseline, 2026-10-30
+
+During the current development phase, coordinated work uses the newest relevant
+reviewed source and records exact commits and checksums for each integration round.
+Development source and locally generated SDK archives are identified as such; they
+do not replace or alter published release assets. This supersedes the tagged-only
+development restriction in the historical dependency decision below. When an
+appropriate supported stable release includes the required contracts and passes
+the applicable cross-consumer checks, it can become the normal baseline; explicit
+source overrides remain available for ongoing feature development. This decision
+does not authorize publication or claim Windows or in-game acceptance.
+
 ## Approved direction and current boundary
 
 | Topic | Owner decision | Implementation boundary |

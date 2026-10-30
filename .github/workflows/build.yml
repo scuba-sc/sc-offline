@@ -31,16 +31,14 @@ jobs:
       - name: Install clang + mingw-w64 headers
         run: sudo apt-get update -qq && sudo apt-get install -y -qq clang g++-mingw-w64-x86-64-posix
 
-      # Pinned-host check remains a distinct gate. Candidate-only source files
-      # refuse old SDK builds and are additionally parsed in the next step.
+      # Parse the exact development host pinned by this branch.
       - name: tools/check.sh (pinned host source)
         run: tools/check.sh
 
       - name: Verify development source and SDK archive
         run: |
           set -eu
-          git -C external/sco-core fetch --depth=1 origin 26f0d9e140a1766cfd6adb6ebecc26f1aa0f3c72
-          git -C external/sco-core checkout --detach 26f0d9e140a1766cfd6adb6ebecc26f1aa0f3c72
+          test "$(git -C external/sco-core rev-parse HEAD)" = "$(git rev-parse HEAD:external/sco-core)"
           tools/ci-dev-sdk-preflight.sh external/sco-core "$RUNNER_TEMP/sdk-development"
 
       - name: Check candidate-only sources against development host
@@ -86,13 +84,12 @@ jobs:
       - name: Test development ASOP consumer
         run: ctest --test-dir "$RUNNER_TEMP/spawn-development" -R '^asop-selection-workflow$' --no-tests=error --output-on-failure
 
-      - name: Restore pinned host source for remaining checks
+      - name: Test product signature and retirement composition
         run: |
           set -eu
-          EMBEDDED_SOURCE="$(git rev-parse HEAD:external/sco-core)"
-          git -C external/sco-core checkout --detach "$EMBEDDED_SOURCE"
-          test "$(git -C external/sco-core rev-parse HEAD)" = "$EMBEDDED_SOURCE"
-          echo "Restored pinned host source $EMBEDDED_SOURCE"
+          cmake -S tools/offline-host -B "$RUNNER_TEMP/offline-host" -DCMAKE_BUILD_TYPE=Release -DSCO_HOST_SOURCE_DIR="$GITHUB_WORKSPACE/external/sco-core"
+          cmake --build "$RUNNER_TEMP/offline-host" --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/offline-host" --output-on-failure --no-tests=error
 
       - name: SDK proof generator defaults and explicit overrides
         run: python3 tools/test_sdk_generators.py

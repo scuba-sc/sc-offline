@@ -1,8 +1,8 @@
 # G1 host-source composition
 
-The default host builds from `external/sco-core`, pinned to exact SDK 2.4.0
-candidate source `844e136ccb280ad8cb43f73bc43c9447e8f6799d`
-(`sdk-v2.4.0-rc.2`). For local development, an extracted `host-source-sc` kit
+The default host builds from `external/sco-core`, pinned to development source
+`e2ad885aa3027ed1162793d30292ca103c2f5b28`. It is not a published release.
+For local development, an extracted `host-source-sc` kit
 can be selected with `-DSCO_HOST_SOURCE_DIR=<extracted-source-root>`.
 That override does not change the committed pin or the external plugin archive.
 Kits must provide `sco_game_host`; a missing composition target is a configure
@@ -16,6 +16,26 @@ render policy, paths/configuration, launcher consent/restoration, and remaining
 legacy engine helpers. Bootstrap runs outside DLL loader lock. The WM_QUIT path
 stops before doing queued work. Disabled/failed/crashed plugins have no host
 feature-tick fallback.
+
+## Development retirement boundary
+
+The product's legacy detours, direct code writes and slot writes are not a
+drainable hot-unload facility. The shell records a persistent mutation attempt
+before starting the offline patch sequence, even if a later write fails. Its
+mutation gate can refuse a later start, but closing it does not drain a callback,
+restore a patch or establish quiescence of the startup entry gate. The image,
+product code and backing state must remain valid for surviving uses; a signature
+snapshot is not an image or module lease.
+
+The product passes its conservative retirement callback to the core host. Core
+invokes it on stop and failure paths, including the quit detour and admission
+loss, before destructive provider teardown. The local mutation gate alone does
+not make shutdown safe. If product
+consumers cannot be proved quiescent, the host must close admission, retain their
+backing state, report an incomplete terminal stop, refuse restart and require
+process exit. Existing native hooks or byte patches can still run or affect the
+game: capability revocation is not their removal. This policy does not authorize
+an in-game run or assert Windows acceptance.
 
 ## Refusal boundaries
 
@@ -45,8 +65,11 @@ feature-tick fallback.
 cmake -S tools/offline-host -B <outside-build-root> \
   -DSCO_HOST_SOURCE_DIR="$PWD/external/sco-core"
 cmake --build <outside-build-root> --target sc_offline_host_composition
+cmake --build <outside-build-root>
+ctest --test-dir <outside-build-root> --output-on-failure
 ```
 
-This builds the actual portable product seam and its G1 dependencies, not the
-Windows DLL. Use the root Windows/MSVC build for the DLL and launcher. Real game,
+This builds the actual portable product seam and its G1 dependencies and runs
+synthetic registry, retirement and hook tests, not the Windows DLL. Use the root
+Windows/MSVC build for the DLL and launcher. Real game,
 network, launcher-restoration and renderer acceptance require separate evidence.

@@ -12,7 +12,7 @@ git clone --recurse-submodules https://github.com/scuba-sc/sc-offline.git
 
 In an existing clone, or after a pull that moves the pin, run `git submodule update --init`. Without it, CMake configure and `tools/check.sh` stop and say so.
 
-The embedded host is pinned to the published `sdk-v2.4.0-rc.2` release, exact source `844e136ccb280ad8cb43f73bc43c9447e8f6799d`: SDK 2.4.0, plugin ABI 1.1, game pack 0.8.0. External plugin jobs consume the checksum-pinned published RC2 archive separately. See [candidate coordinates and limits](sdk-candidate.md). Do not replace the submodule with moving `main` or copy plugin SDK headers over host source.
+The embedded host is pinned to development source `e2ad885aa3027ed1162793d30292ca103c2f5b28` for the owned-registry integration. It is not a published SDK release. External plugin jobs separately consume the checksum-pinned published RC2 archive; the plugin ABI remains 1.1. See [candidate coordinates and limits](sdk-candidate.md). Do not use moving `main` in place of an exact integration source or copy plugin SDK headers over host source.
 
 1. Install **Visual Studio 2026** with the **Desktop development with C++** workload. It includes CMake.
 2. In Visual Studio, use **File → Open → Folder** on the repository root. Visual Studio reads `CMakeLists.txt`; pick an x64 **Release** configuration and build. Or from a Developer PowerShell:

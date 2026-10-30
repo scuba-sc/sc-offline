@@ -10,7 +10,7 @@ struct TeleportApi {
 };
 extern TeleportApi g_tp;
 
-bool ResolveTeleportApi();   // from sco-core's teleport.* rows; call after sco::ResolveAll
+bool ResolveTeleportApi();   // from sco-core's teleport.* rows; call after host Prepare
 
 bool        GetLocalPlayer(uintptr_t& actor, uintptr_t& entity);
 const char* ZoneName(uintptr_t zone);

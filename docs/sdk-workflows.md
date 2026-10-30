@@ -43,8 +43,8 @@ release **`SHA256SUMS`**: SDK 2.4.0, plugin ABI 1.1 and Star Citizen game pack 0
 are distinct versions. The tag identifies RC2 regardless of GitHub's release
 classification. The RC2 release is currently marked `prerelease=false`. Nothing
 new in 2.4.0 has been run in game. Every external plugin uses this archive;
-the embedded host independently pins exact release source
-`844e136ccb280ad8cb43f73bc43c9447e8f6799d` (see [SDK candidate coordinates](sdk-candidate.md)).
+the embedded host independently pins development source
+`e2ad885aa3027ed1162793d30292ca103c2f5b28` (see [SDK candidate coordinates](sdk-candidate.md)).
 
 The expanded inspector uses that same published RC2 by default; no older unpublished candidate
 lock is needed. The proof validates the archive and full extracted inventory before building.
@@ -90,7 +90,7 @@ The tutorial needs CMake 3.20+, Python 3 and a C/C++20 compiler. Use Windows x64
 MSVC for the game DLL; macOS/Linux builds are development/checker artifacts only.
 Obtain sc-offline source containing this step separately and set `SOURCE` below
 to that checkout. Plugin build output lives outside the checkout; the host still
-uses its tagged submodule independently.
+uses its exact source-pinned submodule independently.
 
 ### Stage 1 — Obtain and verify the published SDK
 

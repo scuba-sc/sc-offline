@@ -1,8 +1,24 @@
 # SDK 2.4.0 candidate adoption
 
-SC Offline consumes the latest available published candidate as checked on
+## Development integration, 2026-10-30
+
+This branch builds its embedded host from sco-core development commit
+`e2ad885aa3027ed1162793d30292ca103c2f5b28`. The source includes the owned
+signature registry and conservative product retirement contract. A locally
+generated development legacy SDK archive from that commit has SHA-256
+`ff4fb3295fc6c0740f813e325c2882913be309e123deaf5fca3c9af095f2b789`;
+the preflight checks both source identity and archive bytes. This is not a
+published release or a replacement for the RC2 assets. External plugin jobs
+still use the separately verified published RC2 archive described below. The
+normal baseline can return to a supported stable release when it contains the
+required contracts and passes applicable cross-consumer checks. Windows and
+in-game acceptance remain unverified.
+
+## Historical RC2 adoption, 2026-10-28
+
+SC Offline adopted the latest available published candidate as checked on
 2026-10-28: [`sdk-v2.4.0-rc.2`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2).
-The tag and source are pinned explicitly. GitHub lists this release as published
+The tag and source were pinned explicitly. GitHub lists this release as published
 and not a draft, with `prerelease=false`; the `-rc.2` tag still identifies it as
 a release candidate. This differs from sco-core's release checklist, which says
 RC tags publish as prereleases.
@@ -20,7 +36,7 @@ RC tags publish as prereleases.
 | Host-source archive SHA-256 | `3d711463f7dff3dcd372ffb70b09951ecf21f1d0e2c5f0a899cccbb9977b8201` |
 | Static signature target | Star Citizen `4.10.197.2878`; not gameplay evidence |
 
-The product builds the embedded host from the exact candidate source submodule,
+At that adoption the product built the embedded host from the exact candidate source submodule,
 which preserves its existing source-build model. It does not silently select
 newer `main`. External consumers retain the existing published combined archive
 pin and verify both its release checksum and internal file inventory. Host source

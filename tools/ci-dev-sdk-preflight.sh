@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Unpublished RC2-development compatibility input for syntax and module checks.
-# This does not change the product gitlink or the published SDK default.
+# Unpublished development compatibility input for syntax and module checks.
+# The source is the pinned development host; published SDK defaults are separate.
 set -euo pipefail
 if [ "$#" -ne 2 ]; then echo "usage: $0 <core-source-root> <new-output-dir>" >&2; exit 2; fi
 core=$(cd "$1" && pwd)
 out=$2
-expected_source=26f0d9e140a1766cfd6adb6ebecc26f1aa0f3c72
-expected_archive=2f1b7aa1c04b2c609f510c59320c36b177de7a9f60e3b8fc570a3b57d1bf121d
+expected_source=e2ad885aa3027ed1162793d30292ca103c2f5b28
+expected_archive=ff4fb3295fc6c0740f813e325c2882913be309e123deaf5fca3c9af095f2b789
 [ "$(git -C "$core" rev-parse HEAD)" = "$expected_source" ] || { echo 'development source identity mismatch' >&2; exit 1; }
 [ -z "$(git -C "$core" status --porcelain)" ] || { echo 'development source is dirty' >&2; exit 1; }
 [ ! -e "$out" ] || { echo 'development output already exists' >&2; exit 1; }
