@@ -346,6 +346,10 @@ inline bool ParseConfiguredAllow(const std::wstring& text, std::vector<V4Range>&
                 return false;
             const uint32_t mask = ~0u << (32 - len);
             if (ip & ~mask) return false;
+            const std::string canonical = std::to_string(ip >> 24) + "." +
+                std::to_string((ip >> 16) & 255) + "." + std::to_string((ip >> 8) & 255) + "." +
+                std::to_string(ip & 255) + "/" + std::to_string(len);
+            if (s.substr(pos, comma == std::string::npos ? comma : comma - pos) != canonical) return false;
             parsed.push_back({ip, ip | ~mask});
             if (comma == std::string::npos) break;
             pos = comma + 1;

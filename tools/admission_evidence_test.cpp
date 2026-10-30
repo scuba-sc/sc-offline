@@ -838,7 +838,8 @@ CASE(configured_vpn_gap_requires_explicit_valid_scope) {
         CHECK(!Decide(Tri::Clear, Tri::Clear, GoodSnap(), kExe, Tcp({}), kPid, nullptr, bad).admitted());
     }
     CHECK(decide(L"100.64.0.0/11,100.96.0.0/11").admitted());
-    CHECK(decide(L" 100.96.0.0/11 , 100.64.0.0/10 ").admitted());
+    CHECK(!decide(L" 100.96.0.0/11 , 100.64.0.0/10 ").admitted());
+    CHECK(!decide(L"100.064.0.0/10").admitted());
     CHECK(!decide(L"100.64.0.0/32").admitted());
     CHECK(!decide(L"100.64.0.0/10,10.0.0.0/8,10.0.0.0/8,10.0.0.0/8,10.0.0.0/8,"
                   L"10.0.0.0/8,10.0.0.0/8,10.0.0.0/8,10.0.0.0/8").admitted());
@@ -865,6 +866,16 @@ CASE(configured_vpn_gap_requires_explicit_valid_scope) {
                   kPid, nullptr, L"100.64.0.0/10").admitted());
     CHECK(!Decide(Tri::Unknown, Tri::Clear, fw, kExe, Tcp({}), kPid, nullptr,
                   L"100.64.0.0/10").admitted());
+}
+
+CASE(public_gap_requires_explicit_declaration) {
+    const std::wstring publicGap =
+        L"0.0.0.0-7.255.255.255,9.0.0.0-9.255.255.255,11.0.0.0-126.255.255.255,"
+        L"128.0.0.0-169.253.255.255,169.255.0.0-172.15.255.255,"
+        L"172.32.0.0-192.167.255.255,192.169.0.0-255.255.255.255,::/0";
+    const auto fw = Snap({Rule(kDirIn, publicGap), Rule(kDirOut, publicGap)});
+    CHECK(!Decide(Tri::Clear, Tri::Clear, fw, kExe, Tcp({}), kPid).admitted());
+    CHECK(Decide(Tri::Clear, Tri::Clear, fw, kExe, Tcp({}), kPid, nullptr, L"8.0.0.0/8").admitted());
 }
 
 CASE(cache_single_flight_waiter_shares_a_refusal) {

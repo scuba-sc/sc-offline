@@ -10,9 +10,14 @@
 - **Accept configured VPN firewall gaps ([#183](https://github.com/scuba-sc/sc-offline/issues/183)).**
   Offline admission now checks the launcher's `multiplayer_allow` IPv4 ranges
   alongside LAN exceptions, so the documented Tailscale range can pass the
-  firewall coverage check. Undeclared gaps, malformed configuration and missing
-  live firewall/TCP evidence still refuse startup. TCP classification and private
-  session bind/peer policy are unchanged. Synthetic checks only; **not run in game**.
+  firewall coverage check. The launcher clears invalid INI ranges with a warning;
+  malformed INI does not itself always refuse startup. Admission independently
+  rejects malformed forwarded environment values, undeclared firewall gaps and
+  missing live firewall/TCP evidence. Canonical environment formatting is not
+  authenticated provenance: another process can supply the same text. Explicit
+  public IPv4 ranges remain accepted under the existing launcher policy; this is
+  not a new private-only restriction. TCP classification and private session
+  bind/peer policy are unchanged. Synthetic checks only; **not run in game**.
 
 - **Pin SDK 2.4.0 release candidate 2.** The host submodule, plugin archive
   pins, verifier digests, CI downloads and SDK-coordinate docs move from
