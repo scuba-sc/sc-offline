@@ -101,6 +101,7 @@ CryPak timing or gameplay.
 | --- | --- |
 | `storage\` | Your saves: `teleport.db` (the F7 / F8 position), `quantum.db` (your named Travel spots), `contracts.db` (your aUEC balance), each with SQLite's `-wal` and `-shm` files, and any plugin's own database. See [Saves](#saves) |
 | `wallet.txt` | Your aUEC balance, also in `storage\contracts.db`; you can edit it |
+| `asop_ships.txt` | The ship classes checked on the Vehicles tab. An ASOP terminal lists these. Missing or empty means none |
 | `spawn.txt` | Your F7 / F8 position from before `storage\`; read once, then left as it is |
 | `bookmarks.txt` | Your named Travel spots from before `storage\`; read once, then left as it is |
 | `locations_found.txt` | The results of the Travel scan |

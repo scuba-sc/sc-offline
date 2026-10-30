@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Rebuild the owned-ship list mid-session from the ASOP selection.** The
+  SDK-owned selection path is now the default build. A committed selection save
+  rebuilds the host's owned-ship list through the new `asop_host` Reconfigure
+  entry point with stable fleet slots, so stored and in-transit ships keep
+  resolving across rebuilds. A fleet busy-class gate refuses a save that removes
+  a class with a stored, retrieved, delivering or queued ship (reported as a
+  busy conflict, shown distinctly in the picker, whose busy toggles are
+  disabled); the "Select all classes" control is removed so the panel only ever
+  reflects a deliberate selection. Startup refuses a selection file with a
+  pending replacement marker or one that does not read identically twice. This
+  is the foundation for future ship ownership flows (buying, selling, trading),
+  not only the ASOP terminal refresh; whether the native terminal re-queries
+  entitlements without a reopen is unverified, and nothing was run in game.
+
 - **Pin SDK 2.4.0 release candidate 2.** The host submodule, plugin archive
   pins, verifier digests, CI downloads and SDK-coordinate docs move from
   `sdk-v2.4.0-rc.1` (`48d7055`) to `sdk-v2.4.0-rc.2` (source `844e136`,

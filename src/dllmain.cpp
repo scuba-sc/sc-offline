@@ -502,9 +502,10 @@ static void StartHostKit() {
         if (subscribed != sco::Result::Ok) {
             Log("[asop] shutdown subscription refused: %s; ASOP stays inactive", sco::ResultName(subscribed));
         } else {
-            char ships[MAX_PATH]{};
-            ShipsFilePath(ships, sizeof(ships));
-            const auto r = offline::asop::StartFromEnvironment(g_offline, InspectAntiCheat() == AcCheck::Clear, ships);
+            // asop_ships.txt is the owned-ship selection. ships.txt is the full game catalogue and must never reach the terminal.
+            char selection[MAX_PATH]{};
+            const char* selectionPath = DataFilePath(selection, sizeof(selection), "asop_ships.txt") ? selection : nullptr;
+            const auto r = offline::asop::StartFromEnvironment(g_offline, InspectAntiCheat() == AcCheck::Clear, selectionPath);
             Log("[asop] host composition result=%u; no product fallback", static_cast<unsigned>(r));
         }
     }

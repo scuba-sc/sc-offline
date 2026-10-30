@@ -56,8 +56,8 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # Added after CMAKE_MSVC_RUNTIME_LIBRARY above, so its libraries get the static CRT too: they link
 # into dinput8.dll, and CI's verify step checks the DLL imports no dynamic CRT.
 option(SCO_HOST_MENU_CLIENT "Use the development host menu client" OFF)
-option(SCO_ASOP_HOST_COMPOSITION "Use the G10 host-source ASOP owner (requires newer host kit)" OFF)
-option(SCO_ASOP_SELECTION_COMPOSITION "Use the ASOP selection file service (development host kit required)" OFF)
+option(SCO_ASOP_HOST_COMPOSITION "Use the sco-core host ASOP owner (default; OFF builds the legacy in-repo hooks)" ON)
+option(SCO_ASOP_SELECTION_COMPOSITION "Use the ASOP selection file service (development host kit required)" ON)
 set(SCO_HOST_SOURCE_DIR "" CACHE PATH "Extracted host-source-sc kit (local development; published pin unchanged)")
 if(SCO_HOST_SOURCE_DIR)
   set(SCO_CORE_SOURCE_DIR "${SCO_HOST_SOURCE_DIR}")

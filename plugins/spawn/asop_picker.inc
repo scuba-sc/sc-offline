@@ -4,6 +4,7 @@
 struct AsopPicker {
     sc_asop_selection_state state{};
     std::vector<std::string> catalogue,draft;
+    std::vector<uint32_t> busy; // catalogue row flags; ROW_BUSY classes cannot be removed
     uint64_t lease=0,key=0,pending=0;
     uint32_t page=0,base=0;
     bool ready=false,dirty=false,stale=false,releasing=false;
@@ -11,6 +12,12 @@ struct AsopPicker {
 } asop_picker;
 static uint32_t asop_epoch=0;
 const sc_asop_selection_v1* AsopTable() { return Open<sc_asop_selection_v1>(SC_ASOP_SELECTION_NAME); }
+#ifndef SC_ASOP_SELECTION_ROW_BUSY
+#define SC_ASOP_SELECTION_ROW_BUSY 0u // Older SDK: no busy rows reported.
+#endif
+#ifndef SC_ASOP_SELECTION_REASON_BUSY
+#define SC_ASOP_SELECTION_REASON_BUSY 255u // Never matches a provider reason.
+#endif
 bool AsopHas(const sc_asop_selection_v1* t) {
     return HAS(t,sc_asop_selection_v1,state) && HAS(t,sc_asop_selection_v1,refresh) &&
         HAS(t,sc_asop_selection_v1,rows) && HAS(t,sc_asop_selection_v1,acquire) &&
@@ -21,16 +28,17 @@ bool AsopEqual(const std::string& a,const std::string& b) {
     for(size_t i=0;i<a.size();++i){auto fold=[](char c){return c>='A'&&c<='Z'?static_cast<char>(c+'a'-'A'):c;};if(fold(a[i])!=fold(b[i]))return false;}
     return true;
 }
-bool AsopRows(const sc_asop_selection_v1* t,uint32_t kind,uint64_t revision,std::vector<std::string>& out) {
+bool AsopRows(const sc_asop_selection_v1* t,uint32_t kind,uint64_t revision,std::vector<std::string>& out,std::vector<uint32_t>* flags_out=nullptr) {
     sc_asop_selection_read query{};query.size=sizeof(query);query.kind=kind;query.session=asop_picker.state.session;query.revision=revision;
     out.clear();
+    if(flags_out)flags_out->clear();
     for(;;) {
         sc_asop_selection_row rows[SC_ASOP_SELECTION_MAX_PAGE]{};
         for(auto& row:rows)row.size=sizeof(row);
         uint32_t count=0,more=0;
         if(t->rows(g.self,&query,rows,sizeof(rows[0]),SC_ASOP_SELECTION_MAX_PAGE,&count,&more)!=SCO_OK ||
            count>SC_ASOP_SELECTION_MAX_PAGE || out.size()+count>SC_ASOP_SELECTION_MAX_CLASSES || (more && !count))return false;
-        for(uint32_t i=0;i<count;++i){if(!std::memchr(rows[i].class_name,0,sizeof(rows[i].class_name)))return false;out.emplace_back(rows[i].class_name);}
+        for(uint32_t i=0;i<count;++i){if(!std::memchr(rows[i].class_name,0,sizeof(rows[i].class_name)))return false;out.emplace_back(rows[i].class_name);if(flags_out)flags_out->push_back(rows[i].flags);}
         if(!more)return true;
         query.offset+=count;
     }
@@ -46,11 +54,13 @@ bool AsopReload(bool refresh) {
     const auto previous=asop_picker.state;asop_picker.state=state;
     if(previous.session && previous.session!=state.session){asop_picker.lease=0;asop_picker.key=0;asop_picker.pending=0;asop_picker.releasing=false;}
     std::vector<std::string> file,catalogue;
-    if(!AsopRows(t,SC_ASOP_SELECTION_ROWS_FILE,state.file_revision,file) ||
-       !AsopRows(t,SC_ASOP_SELECTION_ROWS_CATALOGUE,state.catalogue_generation,catalogue)) {
+    std::vector<uint32_t> file_flags,catalogue_flags;
+    if(!AsopRows(t,SC_ASOP_SELECTION_ROWS_FILE,state.file_revision,file,&file_flags) ||
+       !AsopRows(t,SC_ASOP_SELECTION_ROWS_CATALOGUE,state.catalogue_generation,catalogue,&catalogue_flags)) {
         asop_picker.state=previous;asop_picker.ready=false;std::snprintf(asop_picker.message,sizeof(asop_picker.message),"Selection changed while loading; refresh again");return false;
     }
     asop_picker.draft=std::move(file);asop_picker.catalogue=std::move(catalogue);
+    asop_picker.busy=std::move(catalogue_flags);
     asop_picker.ready=true;asop_picker.dirty=false;asop_picker.stale=false;asop_picker.page=0;
     std::snprintf(asop_picker.message,sizeof(asop_picker.message),"%s; saved file only, native application unverified",(state.flags&SC_ASOP_SELECTION_FILE_PRESENT)?"Selection loaded":"Selection file absent");return true;
 }
@@ -79,11 +89,10 @@ void AsopEvent(const char* panel,const sco_widget_event* event,void*) {
         p.stale=true;std::snprintf(p.message,sizeof(p.message),"Selection changed externally; draft retained, refresh to reconcile");RenderAsop();return;
     }
     if(event->kind==SCO_WIDGET_BUTTON) {
-        if(action==2){p.draft=p.catalogue;p.dirty=true;}
-        else if(action==3){p.draft.clear();p.dirty=true;}
-        else if(action==4 && p.page>0)--p.page;
-        else if(action==5 && (static_cast<size_t>(p.page)+1)*16<p.catalogue.size())++p.page;
-        else if(action==6 && p.dirty) {
+        if(action==2){p.draft.clear();p.dirty=true;}
+        else if(action==3 && p.page>0)--p.page;
+        else if(action==4 && (static_cast<size_t>(p.page)+1)*16<p.catalogue.size())++p.page;
+        else if(action==5 && p.dirty) {
             if(!p.lease && t->acquire(g.self,p.state.session,&p.lease)!=SCO_OK){std::snprintf(p.message,sizeof(p.message),"Another editor owns the lease");RenderAsop();return;}
             if(p.key==std::numeric_limits<uint64_t>::max()){(void)AsopRelease(t);std::snprintf(p.message,sizeof(p.message),"Edit key exhausted");RenderAsop();return;}
             std::vector<sc_asop_selection_class> classes(p.draft.size());
@@ -100,7 +109,11 @@ void AsopEvent(const char* panel,const sco_widget_event* event,void*) {
         if(index>=p.catalogue.size())return;
         const auto& name=p.catalogue[index];auto found=std::find_if(p.draft.begin(),p.draft.end(),[&](const std::string& x){return AsopEqual(x,name);});
         if(event->value && found==p.draft.end()){if(p.draft.size()>=SC_ASOP_SELECTION_MAX_CLASSES)return;p.draft.push_back(name);p.dirty=true;}
-        else if(!event->value && found!=p.draft.end()){p.draft.erase(found);p.dirty=true;}
+        else if(!event->value && found!=p.draft.end()){
+            if(index<p.busy.size() && (p.busy[index]&SC_ASOP_SELECTION_ROW_BUSY)){
+                std::snprintf(p.message,sizeof(p.message),"Class in use by a stored or in-transit ship; deselect after retrieving it");
+            } else {p.draft.erase(found);p.dirty=true;}
+        }
     } else return;
     RenderAsop();
 }
@@ -114,16 +127,17 @@ void RenderAsop() {
     nodes.push_back(Node(SCO_WIDGET_LABEL,p.base+7,p.message));
     nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+1,p.dirty?"Reload file (discard draft)":"Refresh selection",(p.pending || p.releasing)?SCO_WIDGET_DISABLED:0));
     const uint32_t disabled=(!p.ready || p.pending || p.stale || p.releasing)?SCO_WIDGET_DISABLED:0;
-    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+2,"Select all classes",disabled));
-    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+3,"Select none",disabled));
-    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+4,"Previous classes",disabled));
-    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+5,"Next classes",disabled));
-    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+6,"Save selection",disabled || !p.dirty?SCO_WIDGET_DISABLED:0));
+    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+2,"Select none",disabled)); // base+2 reserved: "select all" removed
+    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+3,"Previous classes",disabled));
+    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+4,"Next classes",disabled));
+    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+5,"Save selection",disabled || !p.dirty?SCO_WIDGET_DISABLED:0));
     char status[160];std::snprintf(status,sizeof(status),"Page %u; selected %zu; native publication and observation unavailable",p.page+1,p.draft.size());
     nodes.push_back(Node(SCO_WIDGET_LABEL,p.base+8,status));
     const size_t start=static_cast<size_t>(p.page)*16;
     for(size_t i=0;i<16 && start+i<p.catalogue.size();++i) {
-        const auto& name=p.catalogue[start+i];auto node=Node(SCO_WIDGET_TOGGLE,p.base+16+static_cast<uint32_t>(i),name.c_str(),disabled);
+        const auto& name=p.catalogue[start+i];
+        const bool busy=start+i<p.busy.size() && (p.busy[start+i]&SC_ASOP_SELECTION_ROW_BUSY);
+        auto node=Node(SCO_WIDGET_TOGGLE,p.base+16+static_cast<uint32_t>(i),name.c_str(),busy?SCO_WIDGET_DISABLED:disabled);
         node.value=std::any_of(p.draft.begin(),p.draft.end(),[&](const std::string& x){return AsopEqual(x,name);})?1:0;nodes.push_back(node);
     }
     (void)w->set_panel(g.self,"spawn.asop","ASOP selection",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(nodes[0]),AsopEvent,nullptr);
@@ -160,7 +174,10 @@ void PollAsop() {
         RenderAsop();
     } else if(receipt.phase==SC_ASOP_SELECTION_EDIT_CONFLICT || receipt.phase==SC_ASOP_SELECTION_EDIT_UNKNOWN || receipt.phase==SC_ASOP_SELECTION_EDIT_REVOKED){
         p.pending=0;p.stale=true;(void)AsopRelease(t);
-        std::snprintf(p.message,sizeof(p.message),"Save conflicted or is unknown; draft retained, refresh to reconcile");RenderAsop();
+        if(receipt.phase==SC_ASOP_SELECTION_EDIT_CONFLICT && receipt.reason==SC_ASOP_SELECTION_REASON_BUSY)
+            std::snprintf(p.message,sizeof(p.message),"Save refused: a selected class is in use by a stored or in-transit ship; refresh to reconcile");
+        else std::snprintf(p.message,sizeof(p.message),"Save conflicted or is unknown; draft retained, refresh to reconcile");
+        RenderAsop();
     }
 }
 void StartAsop(){asop_picker={};AsopReload(false);RenderAsop();}
