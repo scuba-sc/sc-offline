@@ -9,6 +9,7 @@
 #include "sco/game/asop.h"
 #include "sco/game/offline.h"
 #include <initializer_list>
+#include <io.h>
 #include <nmmintrin.h>
 #include <share.h>
 
@@ -290,12 +291,270 @@ struct FleetShip { char name[64]; uint64_t guid[2]; };
 // Same bound as the spawn menu (spawner.cpp kMaxMenuShips): ships.txt holds 1102 entries, and the
 // old 1024 here dropped the last 78 from the fleet manager without saying so.
 constexpr int kMaxFleetShips = 2048;
+// Distinct classes that get a session ship ID. IDs are never reused, so this bounds every class
+// that has been checked (and resolved) since the game started, not just the current selection.
+constexpr int kMaxFleetHistory = 8192;
+constexpr int kHistoryHashSize = 16384;   // power of two, over twice kMaxFleetHistory
+constexpr int kPickHashSize = 4096;       // power of two, over twice kMaxFleetShips
 
-static FleetShip* g_ships = nullptr;
-static int        g_shipCount = 0;
-static uint8_t*   g_fakeEntitlements = nullptr;
-static SRWLOCK    g_shipsLock = SRWLOCK_INIT;
-static bool       g_shipsBuilt = false;
+// Stable session ship IDs. A class gets an ID the first time it is issued and keeps it until the game
+// exits: its slot in g_history never moves, changes or is reused, even once the class is unchecked.
+// The ID is what the entitlement URN carries (kShipUrnMarker | id) and what fleet.cpp's long-lived
+// records (stored / retrieved / delivery / pad spawn) hold as `ship`, so changing the checked set can't
+// make a record switch class. All of this is under g_shipsLock.
+static FleetShip   g_history[kMaxFleetHistory];
+static uint16_t    g_historyHash[kHistoryHashSize];   // stable ID + 1; 0 = empty
+static int         g_historyCount = 0;
+static bool        g_issuedNow[kMaxFleetHistory];      // this ID is in the current entitlement array
+static int         g_issuedIds[kMaxFleetShips];        // entitlement index -> stable ID
+static int         g_shipCount = 0;                    // entries in g_issuedIds / g_fakeEntitlements
+static uint8_t*    g_fakeEntitlements = nullptr;
+static uint8_t*    g_retiredEntitlements[2] = {};
+static SRWLOCK     g_shipsLock = SRWLOCK_INIT;
+static bool        g_shipsBuilt = false;
+static volatile LONG g_asopListDirty = 0;
+
+static uint32_t NameHash(const char* s) {
+    uint32_t h = 2166136261u;
+    for (; *s; ++s) h = (h ^ static_cast<uint8_t>(tolower(static_cast<uint8_t>(*s)))) * 16777619u;
+    return h;
+}
+
+// The Vehicles tab's checks, one class name per line in data\asop_ships.txt (beside ships.txt), in
+// the order they were checked. g_asopLock guards the picks and g_asopPickHash, an open-addressing
+// index (pick + 1) so Fleet_AsopListed, which the UI calls per visible ship per frame, doesn't scan.
+// Lock order: g_shipsLock, then g_asopLock; nothing takes them the other way round.
+static char    g_asopPick[kMaxFleetShips][64];
+static int     g_asopPickCount = 0;
+static uint16_t g_asopPickHash[kPickHashSize];
+static char    g_asopPrevious[kMaxFleetShips][64];   // scratch for change detection, under g_asopLock
+static volatile LONG g_asopPicksLoaded = 0;
+static SRWLOCK g_asopLock = SRWLOCK_INIT;
+
+static int AsopPickFindUnlocked(const char* name) {
+    for (uint32_t i = NameHash(name) & (kPickHashSize - 1), probes = 0;
+         probes < kPickHashSize && g_asopPickHash[i]; ++probes, i = (i + 1) & (kPickHashSize - 1))
+        if (_stricmp(g_asopPick[g_asopPickHash[i] - 1], name) == 0) return g_asopPickHash[i] - 1;
+    return -1;
+}
+
+static void AsopPickIndexUnlocked(int pick) {
+    for (uint32_t i = NameHash(g_asopPick[pick]) & (kPickHashSize - 1), probes = 0;
+         probes < kPickHashSize; ++probes, i = (i + 1) & (kPickHashSize - 1)) {
+        if (g_asopPickHash[i]) continue;
+        g_asopPickHash[i] = static_cast<uint16_t>(pick + 1);
+        return;
+    }
+}
+
+static bool AsopPickAddUnlocked(const char* name) {
+    if (!*name || strlen(name) >= sizeof(g_asopPick[0]) || g_asopPickCount >= kMaxFleetShips || AsopPickFindUnlocked(name) >= 0)
+        return false;
+    const int index = g_asopPickCount;
+    memset(g_asopPick[index], 0, sizeof(g_asopPick[0]));
+    memcpy(g_asopPick[index], name, strlen(name));
+    ++g_asopPickCount;
+    AsopPickIndexUnlocked(index);
+    return true;
+}
+
+// Keeps the order of the others (shifts them down).
+static void AsopPickRemoveAtUnlocked(int at) {
+    if (at < g_asopPickCount - 1)
+        memmove(g_asopPick[at], g_asopPick[at + 1], sizeof(g_asopPick[0]) * (g_asopPickCount - at - 1));
+    --g_asopPickCount;
+    memset(g_asopPick[g_asopPickCount], 0, sizeof(g_asopPick[0]));
+    memset(g_asopPickHash, 0, sizeof(g_asopPickHash));
+    for (int i = 0; i < g_asopPickCount; ++i) AsopPickIndexUnlocked(i);
+}
+
+static void AsopPickClearUnlocked() {
+    memset(g_asopPick, 0, sizeof(g_asopPick[0]) * g_asopPickCount);
+    memset(g_asopPickHash, 0, sizeof(g_asopPickHash));
+    g_asopPickCount = 0;
+}
+
+static int AsopSnapshotUnlocked() {
+    memcpy(g_asopPrevious, g_asopPick, sizeof(g_asopPick[0]) * g_asopPickCount);
+    return g_asopPickCount;
+}
+
+static bool AsopChangedSinceUnlocked(int previousCount) {
+    if (previousCount != g_asopPickCount) return true;
+    for (int i = 0; i < previousCount; ++i)
+        if (strcmp(g_asopPrevious[i], g_asopPick[i]) != 0) return true;
+    return false;
+}
+
+// One name per line; a '#' starts a comment; the name is trimmed of white space on both sides.
+static char* TrimPickLine(char* line) {
+    line[strcspn(line, "\r\n#")] = 0;
+    char* name = line;
+    while (*name && isspace(static_cast<uint8_t>(*name))) ++name;
+    char* end = name + strlen(name);
+    while (end > name && isspace(static_cast<uint8_t>(end[-1]))) --end;
+    *end = 0;
+    return name;
+}
+
+// A line longer than the buffer can't be a class name, so it is skipped whole.
+static void ReadAsopPicksUnlocked(FILE* f) {
+    char line[128];
+    while (g_asopPickCount < kMaxFleetShips && fgets(line, sizeof(line), f)) {
+        if (!strchr(line, '\n') && !feof(f)) {
+            for (int c; (c = fgetc(f)) != EOF && c != '\n';) {}
+            continue;
+        }
+        AsopPickAddUnlocked(TrimPickLine(line));
+    }
+}
+
+static void LoadAsopPicksUnlocked() {
+    if (InterlockedCompareExchange(&g_asopPicksLoaded, 0, 0) != 0) return;
+    InterlockedExchange(&g_asopPicksLoaded, 1);
+    char path[MAX_PATH];
+    if (!DataFilePath(path, sizeof(path), "asop_ships.txt")) return;
+    FILE* f = _fsopen(path, "r", _SH_DENYNO);
+    if (!f) return;
+    ReadAsopPicksUnlocked(f);
+    fclose(f);
+}
+
+static void EnsureAsopPicksLoaded() {
+    if (InterlockedCompareExchange(&g_asopPicksLoaded, 0, 0) != 0) return;
+    AcquireSRWLockExclusive(&g_asopLock);
+    LoadAsopPicksUnlocked();
+    ReleaseSRWLockExclusive(&g_asopLock);
+}
+
+static void MarkAsopListDirty() { InterlockedExchange(&g_asopListDirty, 1); }
+
+// The terminal asks for its entitlement list whenever it is opened/refreshed. Re-read the file at
+// that point so edits made outside the UI (or by another process) are reflected immediately.
+static void RefreshAsopPicksFromFile() {
+    AcquireSRWLockExclusive(&g_asopLock);
+    LoadAsopPicksUnlocked();
+    const int previousCount = AsopSnapshotUnlocked();
+    AsopPickClearUnlocked();
+    char path[MAX_PATH];
+    FILE* f = DataFilePath(path, sizeof(path), "asop_ships.txt") ? _fsopen(path, "r", _SH_DENYNO) : nullptr;
+    if (f) {
+        ReadAsopPicksUnlocked(f);
+        fclose(f);
+    }
+    const bool changed = AsopChangedSinceUnlocked(previousCount);
+    InterlockedExchange(&g_asopPicksLoaded, 1);
+    ReleaseSRWLockExclusive(&g_asopLock);
+    if (changed) MarkAsopListDirty();
+}
+
+static void SaveAsopPicksUnlocked() {
+    char path[MAX_PATH];
+    if (!DataFilePath(path, sizeof(path), "asop_ships.txt")) return;
+    char directory[MAX_PATH];
+    strncpy_s(directory, path, _TRUNCATE);
+    char* slash = strrchr(directory, '\\');
+    char* forwardSlash = strrchr(directory, '/');
+    if (!slash || (forwardSlash && forwardSlash > slash)) slash = forwardSlash;
+    if (!slash) return;
+    slash[1] = '\0';
+    const DWORD attrs = GetFileAttributesA(path);
+    const DWORD attrError = attrs == INVALID_FILE_ATTRIBUTES ? GetLastError() : ERROR_SUCCESS;
+    if (attrs == INVALID_FILE_ATTRIBUTES && attrError != ERROR_FILE_NOT_FOUND && attrError != ERROR_PATH_NOT_FOUND) {
+        Log("[fleet] couldn't inspect %s before saving", path);
+        return;
+    }
+    char temp[MAX_PATH];
+    strncpy_s(temp, sizeof(temp), path, _TRUNCATE);
+    char* tempSlash = strrchr(temp, '\\');
+    char* tempForwardSlash = strrchr(temp, '/');
+    if (!tempSlash || (tempForwardSlash && tempForwardSlash > tempSlash)) tempSlash = tempForwardSlash;
+    if (!tempSlash || static_cast<size_t>(tempSlash + 1 - temp) + sizeof("asop_ships.tmp") > sizeof(temp)) {
+        Log("[fleet] couldn't construct a temporary path for %s", path);
+        return;
+    }
+    strcpy_s(tempSlash + 1, sizeof(temp) - static_cast<size_t>(tempSlash + 1 - temp), "asop_ships.tmp");
+    if (GetFileAttributesA(temp) != INVALID_FILE_ATTRIBUTES && !DeleteFileA(temp)) {
+        Log("[fleet] couldn't remove a leftover temporary file %s", temp);
+        return;
+    }
+    FILE* f = _fsopen(temp, "w", _SH_DENYNO);
+    if (!f) {
+        Log("[fleet] couldn't write %s", temp);
+        DeleteFileA(temp);
+        return;
+    }
+    bool ok = fputs("# Ships checked on the Vehicles tab. An ASOP terminal lists these and no others.\n", f) >= 0;
+    for (int i = 0; ok && i < g_asopPickCount; ++i)
+        ok = fprintf(f, "%s\n", g_asopPick[i]) >= 0;
+    if (fflush(f) != 0) ok = false;
+    if (_commit(_fileno(f)) != 0) ok = false;
+    if (fclose(f) != 0) ok = false;
+    if (!ok || !MoveFileExA(temp, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        Log("[fleet] couldn't atomically save %s", path);
+        DeleteFileA(temp);
+    }
+}
+
+bool Fleet_AsopListed(const char* name) {
+    if (!name || !*name) return false;
+    EnsureAsopPicksLoaded();
+    AcquireSRWLockShared(&g_asopLock);
+    const bool on = AsopPickFindUnlocked(name) >= 0;
+    ReleaseSRWLockShared(&g_asopLock);
+    return on;
+}
+
+int Fleet_AsopListedCount() {
+    EnsureAsopPicksLoaded();
+    AcquireSRWLockShared(&g_asopLock);
+    const int n = g_asopPickCount;
+    ReleaseSRWLockShared(&g_asopLock);
+    return n;
+}
+
+void Fleet_SetAsopListed(const char* name, bool on) {
+    if (!name || !*name) return;
+    AcquireSRWLockExclusive(&g_asopLock);
+    LoadAsopPicksUnlocked();
+    const int found = AsopPickFindUnlocked(name);
+    bool changed = false;
+    if (on && found < 0) changed = AsopPickAddUnlocked(name);
+    else if (!on && found >= 0) { AsopPickRemoveAtUnlocked(found); changed = true; }
+    if (changed) {
+        SaveAsopPicksUnlocked();
+        InterlockedExchange(&g_asopPicksLoaded, 1);
+    }
+    ReleaseSRWLockExclusive(&g_asopLock);
+    if (changed) MarkAsopListDirty();
+}
+
+void Fleet_ReplaceAsopListed(const char* const* names, int count) {
+    if (count < 0 || count > kMaxFleetShips || (count && !names)) return;
+    AcquireSRWLockExclusive(&g_asopLock);
+    LoadAsopPicksUnlocked();
+    const int previousCount = AsopSnapshotUnlocked();
+    AsopPickClearUnlocked();
+    for (int i = 0; i < count; ++i)
+        if (names[i]) AsopPickAddUnlocked(names[i]);
+    const bool changed = AsopChangedSinceUnlocked(previousCount);
+    if (changed) SaveAsopPicksUnlocked();
+    InterlockedExchange(&g_asopPicksLoaded, 1);
+    ReleaseSRWLockExclusive(&g_asopLock);
+    if (changed) MarkAsopListDirty();
+}
+
+void Fleet_ClearAsopListed() { Fleet_ReplaceAsopListed(nullptr, 0); }
+
+static int CopyAsopPicks(char (*names)[64]) {
+    EnsureAsopPicksLoaded();
+    AcquireSRWLockShared(&g_asopLock);
+    const int count = g_asopPickCount;
+    if (count) memcpy(names, g_asopPick, sizeof(g_asopPick[0]) * count);
+    ReleaseSRWLockShared(&g_asopLock);
+    return count;
+}
+
 
 using StrCtorFn          = void*(__fastcall*)(void* out, const char* s);
 using StrDtorFn          = void(__fastcall*)(void* s);
@@ -335,7 +594,11 @@ static uint64_t LocalPlayerId() {
     return info ? Rd<uint64_t>(info + 8) : 0;
 }
 
-static void FindClassGuids(uintptr_t registry, const uintptr_t* classes) {
+// A selected class the build has to find the registry GUID of: new to this session, or one whose
+// remembered GUID no longer resolves to its class.
+struct PendingShip { uintptr_t cls; uint64_t guid[2]; };
+
+static void FindClassGuids(uintptr_t registry, PendingShip* pending, int count) {
     const uintptr_t head = Rd<uintptr_t>(registry + 0x48);
     uintptr_t stack[256];
     int sp = 0;
@@ -344,8 +607,8 @@ static void FindClassGuids(uintptr_t registry, const uintptr_t* classes) {
     while (sp) {
         const uintptr_t n = stack[--sp];
         const uintptr_t cls = Rd<uintptr_t>(n + 0x30);
-        for (int i = 0; i < g_shipCount; ++i)
-            if (classes[i] == cls) { g_ships[i].guid[0] = Rd<uint64_t>(n + 0x20); g_ships[i].guid[1] = Rd<uint64_t>(n + 0x28); }
+        for (int i = 0; i < count; ++i)
+            if (pending[i].cls == cls) { pending[i].guid[0] = Rd<uint64_t>(n + 0x20); pending[i].guid[1] = Rd<uint64_t>(n + 0x28); }
         for (size_t off : { size_t(0x00), size_t(0x10) }) {
             const uintptr_t c = Rd<uintptr_t>(n + off);
             if (c && !Rd<uint8_t>(c + 0x19) && sp < 256) stack[sp++] = c;
@@ -353,84 +616,192 @@ static void FindClassGuids(uintptr_t registry, const uintptr_t* classes) {
     }
 }
 
-static int BuildFleetShips() {
-    char path[MAX_PATH];
-    if (!ShipsFilePath(path, sizeof(path)) || !g_tp.entitySystem || !*g_tp.entitySystem) return 0;
-    FILE* f = _fsopen(path, "r", _SH_DENYNO);
-    if (!f) { Log("[fleet] can't open %s", path); return 0; }
-    static FleetShip ships[kMaxFleetShips];
-    static uintptr_t classes[kMaxFleetShips];
-    g_ships = ships;
-    int missing = 0;
-    char line[128];
-    const uintptr_t registry = VCall<uintptr_t>(*g_tp.entitySystem, 0xC0);
-    while (fgets(line, sizeof(line), f)) {
-        line[strcspn(line, "\r\n#")] = 0;
-        char* name = line + strspn(line, " \t");
-        if (!*name) continue;
-        if (g_shipCount >= kMaxFleetShips) { Log("[fleet] more than %d ships in %s; the rest are left out", kMaxFleetShips, path); break; }
-        const uintptr_t cls = VCall<uintptr_t>(registry, 0x20, static_cast<const char*>(name));
-        if (!cls) { if (++missing <= 5) Log("[fleet] unknown ship class '%s' (skipped)", name); continue; }
-        strncpy_s(ships[g_shipCount].name, name, _TRUNCATE);
-        classes[g_shipCount++] = cls;
-    }
-    fclose(f);
-    FindClassGuids(registry, classes);
-
-    int kept = 0;
-    for (int i = 0; i < g_shipCount; ++i) {
-        uint64_t guid[2] = { ships[i].guid[0], ships[i].guid[1] };
-        if ((guid[0] | guid[1]) && VCall<uintptr_t>(registry, 0x18, guid) == classes[i]) ships[kept++] = ships[i];
-        else Log("[fleet] no class GUID for '%s' (skipped)", ships[i].name);
-    }
-    g_shipCount = kept;
-
-    g_fakeEntitlements = static_cast<uint8_t*>(calloc(kept ? kept : 1, kEntitlementSize));
-    for (int i = 0; g_fakeEntitlements && i < kept; ++i) {
-        uint8_t* e = g_fakeEntitlements + i * kEntitlementSize;
-        *reinterpret_cast<uint16_t*>(e + 0x00) = kUrnType;
-        e[0x08] = kUrnKindUuid;
-        *reinterpret_cast<uint64_t*>(e + 0x10) = kShipUrnMarker | static_cast<uint32_t>(i);
-        e[0x20] = kUrnIdGuid;
-        e[0x50] = 3;
-        *reinterpret_cast<uint32_t*>(e + 0x54) = 1;
-        memcpy(e + 0x58, ships[i].guid, 16);
-    }
-    if (!g_fakeEntitlements) g_shipCount = 0;
-    Log("[fleet] %d ships available in the fleet manager (%d unknown names)", g_shipCount, missing);
-    return g_shipCount;
+// Under g_shipsLock.
+static int HistoryFindUnlocked(const char* name) {
+    for (uint32_t i = NameHash(name) & (kHistoryHashSize - 1), probes = 0;
+         probes < kHistoryHashSize && g_historyHash[i]; ++probes, i = (i + 1) & (kHistoryHashSize - 1))
+        if (_stricmp(g_history[g_historyHash[i] - 1].name, name) == 0) return g_historyHash[i] - 1;
+    return -1;
 }
 
-static int EnsureFleetShips() {
-    AcquireSRWLockExclusive(&g_shipsLock);
-    if (!g_shipsBuilt) {
-        g_shipsBuilt = true;
-        __try { BuildFleetShips(); } __except (EXCEPTION_EXECUTE_HANDLER) { g_shipCount = 0; Log("[fleet] fault while building the ship list"); }
+// The next stable ID, or -1 when the session has used them all.
+static int HistoryAddUnlocked(const char* name, const uint64_t guid[2]) {
+    if (g_historyCount >= kMaxFleetHistory || strlen(name) >= sizeof(g_history[0].name)) return -1;
+    uint32_t i = NameHash(name) & (kHistoryHashSize - 1);
+    uint32_t probes = 0;
+    while (g_historyHash[i] && probes < kHistoryHashSize) { i = (i + 1) & (kHistoryHashSize - 1); ++probes; }
+    if (probes == kHistoryHashSize) return -1;
+    const int id = g_historyCount;
+    FleetShip& s = g_history[id];
+    memset(&s, 0, sizeof(s));
+    memcpy(s.name, name, strlen(name));
+    s.guid[0] = guid[0];
+    s.guid[1] = guid[1];
+    g_historyHash[i] = static_cast<uint16_t>(id + 1);
+    g_historyCount = id + 1;
+    return id;
+}
+
+static void RetireEntitlementsUnlocked() {
+    if (!g_fakeEntitlements) return;
+    free(g_retiredEntitlements[1]);
+    g_retiredEntitlements[1] = g_retiredEntitlements[0];
+    g_retiredEntitlements[0] = g_fakeEntitlements;
+    g_fakeEntitlements = nullptr;
+}
+
+// Nothing is issued: the current array is retired and no ID resolves any more (the history stays).
+static void ClearIssuedUnlocked() {
+    RetireEntitlementsUnlocked();
+    g_shipCount = 0;
+    memset(g_issuedNow, 0, sizeof(g_issuedNow));
+}
+
+// Builds the entitlement array for the checked classes, in pick order. A class already in the history
+// keeps its stable ID and costs two registry lookups; only a class new to the session (or one whose
+// GUID went stale) needs the registry-wide GUID scan. If the issued IDs came out the same as the
+// current array's, that array is kept. Under g_shipsLock, exclusive. False: the game isn't up yet.
+static bool BuildFleetShips() {
+    if (!g_tp.entitySystem || !*g_tp.entitySystem) return false;
+    static char selected[kMaxFleetShips][64];
+    static const char* slotName[kMaxFleetShips];
+    static uintptr_t slotClass[kMaxFleetShips];
+    static int slotId[kMaxFleetShips];        // the history ID, or -1 while the class is new
+    static int slotPending[kMaxFleetShips];   // index into pending, or -1
+    static PendingShip pending[kMaxFleetShips];
+    LARGE_INTEGER freq, t0, t1;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&t0);
+    const int selectedCount = CopyAsopPicks(selected);
+    const uintptr_t registry = VCall<uintptr_t>(*g_tp.entitySystem, 0xC0);
+    int slots = 0, pendingCount = 0, missing = 0, knownCount = 0;
+    for (int i = 0; i < selectedCount; ++i) {
+        const char* name = selected[i];
+        const uintptr_t cls = VCall<uintptr_t>(registry, 0x20, name);
+        if (!cls) { if (++missing <= 5) Log("[fleet] unknown ship class '%s' (skipped)", name); continue; }
+        const int id = HistoryFindUnlocked(name);
+        uint64_t guid[2] = {};
+        if (id >= 0) { guid[0] = g_history[id].guid[0]; guid[1] = g_history[id].guid[1]; }
+        const bool known = id >= 0 && (guid[0] | guid[1]) && VCall<uintptr_t>(registry, 0x18, guid) == cls;
+        slotName[slots] = name;
+        slotClass[slots] = cls;
+        slotId[slots] = id;
+        slotPending[slots] = -1;
+        if (known) ++knownCount;
+        if (!known) {
+            pending[pendingCount] = {};
+            pending[pendingCount].cls = cls;
+            slotPending[slots] = pendingCount++;
+        }
+        ++slots;
     }
-    const int n = g_shipCount;
+    if (pendingCount) FindClassGuids(registry, pending, pendingCount);
+
+    static int ids[kMaxFleetShips];
+    int count = 0, added = 0;
+    for (int s = 0; s < slots; ++s) {
+        int id = slotId[s];
+        if (slotPending[s] >= 0) {
+            const PendingShip& p = pending[slotPending[s]];
+            uint64_t guid[2] = { p.guid[0], p.guid[1] };
+            if (!(guid[0] | guid[1]) || VCall<uintptr_t>(registry, 0x18, guid) != slotClass[s]) {
+                Log("[fleet] no class GUID for '%s' (skipped)", slotName[s]);
+                continue;
+            }
+            if (id >= 0) {
+                g_history[id].guid[0] = guid[0];
+                g_history[id].guid[1] = guid[1];
+            } else if ((id = HistoryAddUnlocked(slotName[s], guid)) >= 0) {
+                ++added;
+            } else {
+                Log("[fleet] more than %d ship classes this session; '%s' is left out", kMaxFleetHistory, slotName[s]);
+                continue;
+            }
+        }
+        ids[count++] = id;
+    }
+
+    bool same = g_fakeEntitlements && count == g_shipCount && !memcmp(ids, g_issuedIds, sizeof(int) * count);
+    for (int i = 0; same && i < count; ++i)
+        same = memcmp(g_fakeEntitlements + i * kEntitlementSize + 0x58, g_history[ids[i]].guid, 16) == 0;
+    if (!same) {
+        uint8_t* fresh = static_cast<uint8_t*>(calloc(count ? count : 1, kEntitlementSize));
+        if (!fresh) {
+            ClearIssuedUnlocked();
+        } else {
+            for (int i = 0; i < count; ++i) {
+                uint8_t* e = fresh + i * kEntitlementSize;
+                *reinterpret_cast<uint16_t*>(e + 0x00) = kUrnType;
+                e[0x08] = kUrnKindUuid;
+                *reinterpret_cast<uint64_t*>(e + 0x10) = kShipUrnMarker | static_cast<uint32_t>(ids[i]);
+                e[0x20] = kUrnIdGuid;
+                e[0x50] = 3;
+                *reinterpret_cast<uint32_t*>(e + 0x54) = 1;
+                memcpy(e + 0x58, g_history[ids[i]].guid, 16);
+            }
+            RetireEntitlementsUnlocked();
+            g_fakeEntitlements = fresh;
+            memcpy(g_issuedIds, ids, sizeof(int) * count);
+            g_shipCount = count;
+            memset(g_issuedNow, 0, sizeof(g_issuedNow));
+            for (int i = 0; i < count; ++i) g_issuedNow[ids[i]] = true;
+        }
+    }
+    QueryPerformanceCounter(&t1);
+    Log("[fleet] %d selected ships available for the terminals (%d unknown names, %d new IDs, %d known, %s) in %.2f ms%s",
+        g_shipCount, missing, added, knownCount, pendingCount ? "registry scanned" : "no registry scan",
+        1000.0 * static_cast<double>(t1.QuadPart - t0.QuadPart) / static_cast<double>(freq.QuadPart),
+        same ? "; issued ships unchanged" : "");
+    return true;
+}
+
+struct EntitlementSnapshot { uint8_t* data; int count; };
+
+// The buffer and count are read under the lock; the buffer outlives the next two rebuilds.
+static EntitlementSnapshot EnsureFleetShips() {
+    RefreshAsopPicksFromFile();
+    AcquireSRWLockExclusive(&g_shipsLock);
+    const bool dirty = InterlockedExchange(&g_asopListDirty, 0) != 0;
+    if (!g_shipsBuilt || dirty) {
+        __try {
+            if (BuildFleetShips()) g_shipsBuilt = true;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            g_shipsBuilt = true;
+            ClearIssuedUnlocked();
+            Log("[fleet] fault while building the ship list");
+        }
+    }
+    const EntitlementSnapshot snapshot = { g_fakeEntitlements, g_shipCount };
     ReleaseSRWLockExclusive(&g_shipsLock);
-    return n;
+    return snapshot;
 }
 
 static void __fastcall Hook_EntitlementsResult(uintptr_t self, uintptr_t result) {
-    bool failed = false;
-    __try { failed = Rd<uint8_t>(result) != 1; } __except (EXCEPTION_EXECUTE_HANDLER) {}
-    if (failed && Fleet_UseGameList()) {
-        static volatile LONG told = 0;
-        if (!InterlockedExchange(&told, 1))
-            Log("[fleet] asop_fleet_list = game: the game's own ship list, not ships.txt (its entitlement query failed, so it lists nothing; asop_fleet_list = ships lists ships.txt)");
+    static volatile LONG modeLogged = 0;
+    const bool asopEnabled = AsopEnabled();
+    const bool useGameList = Fleet_UseGameList();
+    if (InterlockedExchange(&modeLogged, 1) == 0)
+        Log("[fleet] asop_fleet_list = %s", !asopEnabled ? "off" : useGameList ? "game" : "ships");
+    if (!asopEnabled || useGameList) {
         g_origEntitlementsResult(self, result);
         return;
     }
-    const int n = failed ? EnsureFleetShips() : 0;
-    if (!n) { g_origEntitlementsResult(self, result); return; }
+    const EntitlementSnapshot list = EnsureFleetShips();
     struct { uint8_t ok; uint8_t pad[7]; uint8_t* begin; uint8_t* end; uint8_t* cap; uint8_t spare[64]; } fake = {};
     fake.ok = 1;
-    fake.begin = g_fakeEntitlements;
-    fake.end = fake.cap = g_fakeEntitlements + n * kEntitlementSize;
+    fake.begin = list.data;
+    fake.end = fake.cap = list.count > 0 ? list.data + list.count * kEntitlementSize : list.data;
     static volatile LONG reported = 0;
-    if (InterlockedIncrement(&reported) <= 3) Log("[fleet] online ship list unavailable -> listing %d offline ships", n);
+    if (InterlockedIncrement(&reported) <= 3) Log("[fleet] replacing the game's ship list with %d Vehicles-tab selections", list.count);
     g_origEntitlementsResult(self, reinterpret_cast<uintptr_t>(&fake));
+}
+
+// A synthetic URN id qword's stable ship ID, if it is in the current entitlement array. g_shipsLock held.
+static int IssuedShipIdUnlocked(uint64_t q) {
+    if ((q & 0xFFFFFFFF00000000ull) != kShipUrnMarker) return -1;
+    const uint32_t id = static_cast<uint32_t>(q);
+    return id < static_cast<uint32_t>(g_historyCount) && id < static_cast<uint32_t>(kMaxFleetHistory) && g_issuedNow[id]
+         ? static_cast<int>(id) : -1;
 }
 
 static int SlotShipIndex(uintptr_t slot) {
@@ -438,29 +809,31 @@ static int SlotShipIndex(uintptr_t slot) {
         const uintptr_t urn = slot + kSlotUrn;
         if (Rd<uint16_t>(urn) != kUrnType || Rd<uint8_t>(urn + 0x20) != kUrnIdGuid) return -1;
         const uint64_t id = Rd<uint64_t>(urn + 0x10);
-        const int i = static_cast<int>(static_cast<uint32_t>(id));
-        return (id & 0xFFFFFFFF00000000ull) == kShipUrnMarker && i < g_shipCount ? i : -1;
+        AcquireSRWLockShared(&g_shipsLock);
+        const int ship = IssuedShipIdUnlocked(id);
+        ReleaseSRWLockShared(&g_shipsLock);
+        return ship;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return -1;
     }
 }
 
 int FleetShipIndexOfUrnId(const uint64_t id[2]) {
+    int ship = -1;
     AcquireSRWLockShared(&g_shipsLock);
-    const int count = g_shipsBuilt ? g_shipCount : 0;
-    ReleaseSRWLockShared(&g_shipsLock);
-    for (int i = 0; i < 2; ++i)
+    for (int i = 0; id && ship < 0 && i < 2; ++i)
         for (const uint64_t q : { id[i], _byteswap_uint64(id[i]) })
-            if ((q & 0xFFFFFFFF00000000ull) == kShipUrnMarker && static_cast<uint32_t>(q) < static_cast<uint32_t>(count))
-                return static_cast<int>(static_cast<uint32_t>(q));
-    return -1;
+            if ((ship = IssuedShipIdUnlocked(q)) >= 0) break;
+    ReleaseSRWLockShared(&g_shipsLock);
+    return ship;
 }
 
-const char* FleetShipClass(int index) {
+// The name of a history slot never changes once the slot exists, so the pointer stays valid.
+const char* FleetShipClass(int shipId) {
     AcquireSRWLockShared(&g_shipsLock);
-    const int count = g_shipsBuilt ? g_shipCount : 0;
+    const char* name = shipId >= 0 && shipId < g_historyCount ? g_history[shipId].name : nullptr;
     ReleaseSRWLockShared(&g_shipsLock);
-    return index >= 0 && index < count ? g_ships[index].name : nullptr;
+    return name;
 }
 
 const char* RequestShipFromAtc(uint64_t atcEntity, uint64_t player, const char* shipClass) {
@@ -489,13 +862,14 @@ const char* RequestShipFromAtc(uint64_t atcEntity, uint64_t player, const char* 
 
 static void __fastcall Hook_RetrieveVehicle(uintptr_t asop, uintptr_t slot) {
     const int i = SlotShipIndex(slot);
+    const char* cls = i >= 0 ? FleetShipClass(i) : nullptr;
     // With the ASOP Retrieve (fleet.cpp) on, the game's own retrieve runs: it reaches the ATC with
     // the stored ship, where asking the ATC directly for a class would lock the station's terminals.
-    if (i < 0 || Fleet_RetrieveActive()) { g_origRetrieveVehicle(asop, slot); return; }
+    if (!cls || Fleet_RetrieveActive()) { g_origRetrieveVehicle(asop, slot); return; }
     uint64_t atc = 0;
     __try { atc = Rd<uint64_t>(asop + kAsopAtcId); } __except (EXCEPTION_EXECUTE_HANDLER) {}
-    if (const char* err = RequestShipFromAtc(atc, LocalPlayerId(), g_ships[i].name))
-        Log("[fleet] retrieve %s failed: %s", g_ships[i].name, err);
-    else Log("[fleet] retrieve %s: asked the spaceport ATC for a hangar/pad", g_ships[i].name);
+    if (const char* err = RequestShipFromAtc(atc, LocalPlayerId(), cls))
+        Log("[fleet] retrieve %s failed: %s", cls, err);
+    else Log("[fleet] retrieve %s: asked the spaceport ATC for a hangar/pad", cls);
 }
 #endif

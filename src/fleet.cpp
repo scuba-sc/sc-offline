@@ -172,6 +172,7 @@ struct FetchEvent {
     uintptr_t provider = 0, vtable = 0;
     alignas(16) uint8_t event[0x20] = {};
 };
+// Every `ship` below is a stable session ship ID from hooks.cpp (FleetShipIndexOfUrnId), not a list position.
 struct DeliverRequest { uint64_t atc = 0; uint32_t location = 0; uint64_t urn[2] = {}; DWORD at = 0; };
 struct Delivery { int ship = -1; uint64_t atc = 0; uint32_t location = 0; uint64_t vehicle = 0; DWORD requestedAt = 0, spawnedAt = 0; };
 struct StoredShip {
