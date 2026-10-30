@@ -3,8 +3,9 @@
 `src/asop_shell.*` consumes the game-specific public host-source
 `sco::game::asop_host` interface. It is not a plugin service. The published
 SDK 2.4.0 release candidate 2 (`sdk-v2.4.0-rc.2`) carries G10 in
-`sco-sdk-host-source-sc-2.4.0.zip` (`include/sco/game/asop_host.h`; SDK 2.0.0 lacked it). This staged cutover
-remains opt-in: `SCO_ASOP_HOST_COMPOSITION` defaults to OFF.
+`sco-sdk-host-source-sc-2.4.0.zip` (`include/sco/game/asop_host.h`; SDK 2.0.0 lacked it). This is the default
+build path: `SCO_ASOP_HOST_COMPOSITION` defaults to ON. OFF builds the legacy in-repo
+hooks, which still build their fleet from the full `ships.txt` catalogue.
 
 ## Configure
 
@@ -23,9 +24,11 @@ from a failed G10 request. Do not install both hook owners.
 
 The shell preserves `SC_OFFLINE_ASOP` (unset/on versus off) and
 `SC_OFFLINE_ASOP_FLEET_LIST` (game versus ships). Invalid values refuse.
-`ShipsFilePath` remains product policy; the catalogue is read once, bounded and
-copied, with duplicate/invalid classes refused atomically. No session persistence
-claim is added. Readiness bits mean individual groups installed, not gameplay proof.
+The owned-ship list is product policy: `asop_ships.txt` beside `ships.txt`, read once
+at startup and copied after a bounded (262144-byte) read. Names are case-insensitively
+unique (first spelling kept). A bad line, more than 2048 unique names, or an unreadable
+file refuses the whole list atomically, and a missing file is an empty list. On this
+path `ships.txt` is never the terminal list. No session persistence claim is added. Readiness bits mean individual groups installed, not gameplay proof.
 Delivery/store/retrieve/claim, lift state and pad ownership belong to the game pack.
 
 Start occurs after the first game-thread host-service startup with positive product
@@ -46,4 +49,5 @@ cmake --build build-asop --target sc-offline-asop-shell
 
 No G13 broker, network policy changes, anti-cheat manipulation or game data.
 Windows/MSVC, real SEH/caller lifetime, engine startup/shutdown and all gameplay
-acceptance NOT VERIFIED. Tests NOT RUN under the owner's speed order.
+acceptance NOT VERIFIED. `asop-environment-test` (tools/asop-shell) runs the environment and selection-file
+policy on Windows MSVC; it is not engine evidence.
