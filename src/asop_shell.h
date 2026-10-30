@@ -17,6 +17,9 @@ struct Options {
 // Strict and atomic: one bad line rejects the whole file. Duplicates collapse case-insensitively, first spelling kept.
 bool ParseShips(const std::string& bytes, std::vector<std::string>& out);
 sco::game::asop_host::Result Start(const Options& options, bool offlinePrepared, bool eacAbsent);
+// Rebuild the owned-ship list from a committed selection (game thread). Refuses unless
+// the host is already configured, admitted and not stopped, and the catalog mode matches.
+sco::game::asop_host::Result Reconfigure(const std::vector<std::string>& ships);
 sco::game::asop_host::Status Status();
 sco::game::asop_host::Result StartFromEnvironment(bool offlinePrepared, bool eacAbsent, const char* selectionPath);
 // Query individual installation groups, not an all-or-nothing promise.

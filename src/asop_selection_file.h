@@ -16,4 +16,7 @@ private:
         std::string_view, sco::game::asop_selection::Document&, const sco::game::asop_selection::CommitPermit&);
     std::wstring path_, diagnostic_;
 };
+// Hand the verified committed selection to the host reconfigure trigger. One pending
+// notification; a newer commit replaces an unconsumed older one.
+bool TakeCommittedSelection(std::string& bytes);
 }

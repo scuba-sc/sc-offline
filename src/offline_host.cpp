@@ -7,6 +7,7 @@
 #ifdef SCO_ASOP_SELECTION_COMPOSITION
 #include "asop_catalogue.h"
 #include "asop_selection_file.h"
+#include "asop_shell.h"
 #include "common.h"
 #include <fstream>
 #include <string>
@@ -14,6 +15,7 @@
 namespace {
 namespace selection = sco::game::asop_selection;
 offline::asop_selection::FixedFile g_selectionFile; // retained even if Stop refuses
+bool ClassBusyThunk(void*, const char* name) { return sco::game::asop_host::FleetClassBusy(name); }
 bool ReadCatalogueFile(const char* path, std::string& out) {
     std::ifstream in(path, std::ios::binary | std::ios::ate);
     if (!in) return false;
@@ -35,9 +37,19 @@ sco::Result StartSelection(void*) {
         !offline::asop_selection::ParseCatalogue(first, options.catalogue) ||
         !g_selectionFile.Initialize()) return sco::Result::Unavailable;
     options.file = g_selectionFile.Adapter();
+    options.class_busy = ClassBusyThunk; // Runs under the selection lock; only fleet/ship locks inside.
     return selection::Start(options);
 }
-sco::Result TickSelection(void*) { return selection::Pump(); }
+// A committed selection save rebuilds the owned-ship list mid-session (stable slots).
+sco::Result TickSelection(void*) {
+    std::string committed;
+    while (offline::asop_selection::TakeCommittedSelection(committed)) {
+        std::vector<std::string> ships;
+        if (!offline::asop::ParseShips(committed, ships)) break; // Commit already verified bytes; retry next pump.
+        (void)offline::asop::Reconfigure(ships);
+    }
+    return selection::Pump();
+}
 sco::Result StopSelection(void*) { return selection::Stop(); }
 }
 #endif

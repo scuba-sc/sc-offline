@@ -11,6 +11,7 @@
 #include <atomic>
 #include <cstring>
 #include <limits>
+#include <mutex>
 
 bool DataFilePath(char*, DWORD, const char*);
 #ifdef SCO_ASOP_SELECTION_TESTING
@@ -166,6 +167,18 @@ bool Recover(const std::wstring& path,const std::wstring& marker) {
     if (!unstarted && !committed) return false;
     return Remove(stem+L".tmp") && Remove(stem+L".bak") && Remove(stem+L".candidate") && Remove(marker);
 }
+struct CommitNotice {
+    std::mutex mutex;
+    std::string bytes;
+    bool pending=false;
+};
+CommitNotice g_committed; // Written on the game thread by Replace, consumed by TickSelection.
+}
+bool TakeCommittedSelection(std::string& bytes) {
+    std::lock_guard lock(g_committed.mutex);
+    if(!g_committed.pending)return false;
+    bytes=std::move(g_committed.bytes);g_committed.bytes.clear();g_committed.pending=false;
+    return true;
 }
 bool FixedFile::Initialize() {
     path_.clear();diagnostic_.clear();char path[32768]{};
@@ -251,7 +264,9 @@ S::FileResult FixedFile::Replace(void* context,const S::Document& expected,std::
         (expected.present && (displaced_result!=S::FileResult::Ok || !Same(displaced,expected)))) return S::FileResult::Conflict;
     // Keep the marker until all other cleanup succeeds: interrupted cleanup fails closed.
     if (!Remove(backup) || !Remove(temp) || !Remove(candidate) || !Remove(marker)) return S::FileResult::OutcomeUnknown;
-    self.diagnostic_.clear();out=std::move(saved);return S::FileResult::Ok;
+    self.diagnostic_.clear();out=std::move(saved);
+    { std::lock_guard notice(g_committed.mutex); g_committed.bytes.assign(bytes); g_committed.pending=true; }
+    return S::FileResult::Ok;
 }
 }
 
