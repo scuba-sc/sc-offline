@@ -193,8 +193,16 @@ static admission::Evidence ProbeEvidence() {
     admission::ProbeFirewall(exe, fw);
     admission::TcpSnapshot tcp;
     admission::ProbeTcpTable(tcp);
+    // Launcher intent narrows acceptable firewall gaps, never replaces live proof.
+    wchar_t allow[256]{};
+    SetLastError(ERROR_SUCCESS);
+    const DWORD n = GetEnvironmentVariableW(L"SC_OFFLINE_MULTIPLAYER_ALLOW", allow, 256);
+    const DWORD error = GetLastError();
+    const bool readable = n < 256 && (n != 0 || error == ERROR_SUCCESS || error == ERROR_ENVVAR_NOT_FOUND);
+    const std::wstring configuredAllow = readable ? std::wstring(allow, n) : L"invalid";
     const admission::Evidence ev =
-        admission::Decide(antiCheat, InspectTargetProcess(), fw, exe, tcp, GetCurrentProcessId());
+        admission::Decide(antiCheat, InspectTargetProcess(), fw, exe, tcp, GetCurrentProcessId(), nullptr,
+                          configuredAllow);
     std::lock_guard<std::mutex> lock(g_probeDetailLock);
     g_probeDetail = ProbeDetail{fw.activeProfiles, fw.rulesSeen, GetTickCount64() - start, exeOk,
                                 fw.hr, tcp.error, fw.stage, tcp.stage};
