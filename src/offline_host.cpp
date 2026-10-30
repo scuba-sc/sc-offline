@@ -58,6 +58,15 @@ gh::ConsumerRetirement RetireProductConsumer(void*) noexcept {
     return gh::ConsumerRetirement::Retained;
 }
 sco::Result Prepare(gh::Options options) {
+    // Game-service startup needs a barrier that excludes native target execution
+    // for the full startup phase. The executable-entry gate has already been
+    // released by then and cannot supply that proof. Refuse before Prepare can
+    // install host detours and before the shell applies product patches.
+    if (options.platform.gameServices && !options.platform.gameReadersQuiesced) {
+        try { sco::Log("[app] offline startup refused: game services require a native reader barrier; product features remain inactive"); }
+        catch (...) {}
+        return sco::Result::Failed;
+    }
     // Required game-pack hooks, never a shell WM_QUIT-only or private-loader fallback.
     options.quit = gh::QuitPolicy::Required;
     options.dataCoreHook = gh::DataCoreHook::Required;

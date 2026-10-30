@@ -28,6 +28,8 @@ This keeps reusable infrastructure in sco-core and product behavior in sc-offlin
 
 **The migration is ongoing.** External plugins already follow this boundary; remaining host-side feature engines and exceptions are documented in the [architecture](docs/architecture.md) and [verification status](docs/status.md). This is a reference consumer in development, not a claim that every legacy path has been externalized.
 
+**Current development candidate:** offline startup is refused before product patches because the required game-service reader barrier is not yet available. See [host composition](docs/host-composition.md#current-game-service-startup-limitation).
+
 ### From SDK contract to installed plugin
 
 The development loop follows the [sco-core SDK build/check/install guide](https://github.com/scuba-sc/sco-core/blob/main/sdk/README.md) and its [SDK → MCP → plugin tutorial](https://github.com/scuba-sc/sco-core/blob/main/docs/sdk-mcp-tutorial.md):

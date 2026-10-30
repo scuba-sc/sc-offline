@@ -73,3 +73,14 @@ This builds the actual portable product seam and its G1 dependencies and runs
 synthetic registry, retirement and hook tests, not the Windows DLL. Use the root
 Windows/MSVC build for the DLL and launcher. Real game,
 network, launcher-restoration and renderer acceptance require separate evidence.
+
+## Current game-service startup limitation
+
+The current product does not establish the durable native-reader barrier required
+by the development core's game-service startup. The executable-entry gate is
+released before game-service startup and can time out, so it is not that barrier.
+The product therefore refuses offline host preparation before product patches or
+host preparation hooks, and logs the missing barrier. Game services and dependent
+offline features are unavailable with this candidate until a real startup-phase
+barrier or a coordinated, proven safe core contract is implemented. The existing
+retirement gate does not drain readers and cannot supply this proof.
