@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Keep legacy ASOP fleet identities stable.** Offline entitlement URNs and long-lived
+  fleet records use never-reused session IDs instead of list positions. Historical class
+  names stay immutable, and stale or invalid terminal IDs are refused. Synthetic checks
+  only; **not run in game**. No picker UI, SDK pin or composition-default change.
+
 - **Pin SDK 2.4.0 release candidate 2.** The host submodule, plugin archive
   pins, verifier digests, CI downloads and SDK-coordinate docs move from
   `sdk-v2.4.0-rc.1` (`48d7055`) to `sdk-v2.4.0-rc.2` (source `844e136`,

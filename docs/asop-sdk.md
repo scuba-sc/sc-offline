@@ -18,8 +18,18 @@ cmake --build build --config Debug --target dinput8
 The option refuses an older dependency. With it ON, `fleet.cpp` and `services.cpp`
 leave the DLL target; product fleet entitlement/retrieve and elevator detours are
 not compiled/installed. The game pack becomes the only ASOP/hangar/ATC owner.
-With it OFF the unchanged pinned legacy build is retained, not a runtime fallback
+With it OFF the legacy build is retained, not a runtime fallback
 from a failed G10 request. Do not install both hook owners.
+
+The legacy path now encodes a never-reused session ID in each synthetic entitlement,
+not the current row position. IDs and immutable historical class names survive reorder,
+removal and re-addition; only currently issued IDs decode from terminal URNs. The 8192
+historical-class limit refuses new classes rather than recycling an ID. This is identity
+hardening only: the legacy catalogue still builds once, and no selection editor,
+live-rebuild trigger, buffer-retirement policy or SDK cutover is introduced.
+`python3 tools/test_fleet_identity.py` compiles the actual legacy build/mapping/retrieve
+bodies under ASan/UBSan with synthetic engine reads and platform stand-ins. It does not
+exercise Windows locks/SEH, native hooks or game behavior.
 
 The shell preserves `SC_OFFLINE_ASOP` (unset/on versus off) and
 `SC_OFFLINE_ASOP_FLEET_LIST` (game versus ships). Invalid values refuse.
