@@ -32,32 +32,38 @@ void DrawVoxelTab(void* frame, void* ctx);      // voxel_bridge/voxel_ui.cpp (op
 
 // sco.ui from the host, or nullptr when it doesn't publish it.
 inline const sco_ui_v1* BuiltinUi(const sco_api* api) {
-    const sco_ui_v1* ui = nullptr;
-    if (api->size <= offsetof(sco_api, query_service) ||
-        api->query_service(SCO_UI_NAME, SCO_UI_VERSION_1_0, reinterpret_cast<const void**>(&ui)) != SCO_OK)
+    const void* table = nullptr;
+    if (!api || api->size < offsetof(sco_api, query_service) + sizeof(api->query_service) ||
+        !api->query_service || api->query_service(SCO_UI_NAME, SCO_UI_VERSION_1_0, &table) != SCO_OK)
         return nullptr;
-    return ui;
+    return static_cast<const sco_ui_v1*>(table);
 }
 
 // Logs a refused sco.ui call with the host's reason ("f6 is bound by 'x' to x.go").
 inline void LogUiRefusal(const sco_api* api, sco_plugin* self, const sco_ui_v1* ui, const char* what, sco_result r) {
     char why[160] = "";
     uint32_t n = sizeof(why);
-    if (ui) ui->last_error(self, why, &n);
+    if (ui && ui->size >= offsetof(sco_ui_v1, last_error) + sizeof(ui->last_error) && ui->last_error) {
+        if (ui->last_error(self, why, &n) != SCO_OK) why[0] = '\0';
+        why[sizeof(why) - 1] = '\0';
+    }
     char line[256];
-    snprintf(line, sizeof(line), "%s refused (%d): %s", what, static_cast<int>(r), why[0] ? why : "sco.ui isn't published");
-    api->log(self, SCO_LOG_WARN, line);
+    snprintf(line, sizeof(line), "%s refused (%d): %s", what, static_cast<int>(r), why[0] ? why : (ui ? "no reason available" : "sco.ui unavailable or incomplete"));
+    if (api && api->size >= offsetof(sco_api, log) + sizeof(api->log) && api->log)
+        api->log(self, SCO_LOG_WARN, line);
 }
 
 // Registers one of a built-in's menu tabs. A refusal is logged; the built-in loads without it.
 inline void RegisterBuiltinTab(const sco_api* api, sco_plugin* self, const char* id, const char* title, int32_t order,
                                sco_ui_draw_fn draw) {
     const sco_ui_v1* ui = BuiltinUi(api);
-    const sco_result r = ui ? ui->register_tab(self, id, title, order, draw, nullptr) : SCO_NOT_FOUND;
+    const bool can_register = ui && ui->size >= offsetof(sco_ui_v1, register_tab) + sizeof(ui->register_tab) &&
+                              ui->register_tab;
+    const sco_result r = can_register ? ui->register_tab(self, id, title, order, draw, nullptr) : SCO_NOT_FOUND;
     if (r != SCO_OK) {
         char what[96];
         snprintf(what, sizeof(what), "menu tab %s", id);
-        LogUiRefusal(api, self, ui, what, r);
+        LogUiRefusal(api, self, can_register ? ui : nullptr, what, r);
     }
 }
 
@@ -65,10 +71,12 @@ inline void RegisterBuiltinTab(const sco_api* api, sco_plugin* self, const char*
 // refusal is logged; the command still works from the menu and through invoke.
 inline void BindBuiltinHotkey(const sco_api* api, sco_plugin* self, const char* chord, const char* command) {
     const sco_ui_v1* ui = BuiltinUi(api);
-    const sco_result r = ui ? ui->bind_hotkey(self, chord, command, nullptr, 0) : SCO_NOT_FOUND;
+    const bool can_bind = ui && ui->size >= offsetof(sco_ui_v1, bind_hotkey) + sizeof(ui->bind_hotkey) &&
+                          ui->bind_hotkey;
+    const sco_result r = can_bind ? ui->bind_hotkey(self, chord, command, nullptr, 0) : SCO_NOT_FOUND;
     if (r != SCO_OK) {
         char what[96];
         snprintf(what, sizeof(what), "hotkey %s -> %s", chord, command);
-        LogUiRefusal(api, self, ui, what, r);
+        LogUiRefusal(api, self, can_bind ? ui : nullptr, what, r);
     }
 }
