@@ -44,7 +44,7 @@ are distinct versions. The tag identifies RC2 regardless of GitHub's release
 classification. The RC2 release is currently marked `prerelease=false`. Nothing
 new in 2.4.0 has been run in game. Every external plugin uses this archive;
 the embedded host independently pins unpublished development source
-`1166c9f12d7327dd50a58b1d9261e7d6cc21bef6` (see [SDK candidate coordinates](sdk-candidate.md)).
+`571fe8e2c911d7c63c372103724896feaabe58f2` (see [SDK candidate coordinates](sdk-candidate.md)).
 
 The expanded inspector uses that same published RC2 by default; no older unpublished candidate
 lock is needed. The proof validates the archive and full extracted inventory before building.

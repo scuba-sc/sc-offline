@@ -1,7 +1,7 @@
 # SDK 2.4.0 candidate adoption
 
 **Development override, 2026-10-31:** the embedded gitlink is locally updated to
-sco-core #304 `1166c9f12d7327dd50a58b1d9261e7d6cc21bef6` for coordinated
+sco-core #304 `571fe8e2c911d7c63c372103724896feaabe58f2` for coordinated
 integration. That draft is not RC2 or a release. The archive coordinates below
 remain the separate external-plugin inputs; no archive or release is implied by
 the gitlink. The historical RC2 source coordinate below describes the previous
@@ -32,12 +32,12 @@ it does not silently select newer `main`. External consumers retain the existing
 pin and verify both its release checksum and internal file inventory. Host source
 and plugin SDK archives have different roles; do not overlay their headers.
 
-Three independent coordinates are in use: the embedded development host above;
-the RC2 external archive and digest in the table; and the separate unpublished
-CI consumer-preflight source `26f0d9e140a1766cfd6adb6ebecc26f1aa0f3c72`, whose
-locally packaged archive is locked to SHA-256
-`2f1b7aa1c04b2c609f510c59320c36b177de7a9f60e3b8fc570a3b57d1bf121d`.
-That third input is neither the embedded host nor a published archive. Its
+The embedded development host and CI consumer-preflight source are both
+`571fe8e2c911d7c63c372103724896feaabe58f2`. The locally packaged legacy
+preflight archive is locked to SHA-256
+`67f4f837879867ac6d953a2953c448ce7913a9da924d6e04931a48988f23b9c1`; it is
+not a published archive. The separate external-plugin input remains the published
+RC2 archive and digest in the table. The preflight
 fixtures and the RC2 archive's own plugin checker do not execute RC2-built
 plugins on the #304 host. A mixed-pair synthetic integration test and Windows
 package validation remain required before claiming compatibility or release

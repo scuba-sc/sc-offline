@@ -39,8 +39,8 @@ jobs:
       - name: Verify development source and SDK archive
         run: |
           set -eu
-          git -C external/sco-core fetch --depth=1 origin 26f0d9e140a1766cfd6adb6ebecc26f1aa0f3c72
-          git -C external/sco-core checkout --detach 26f0d9e140a1766cfd6adb6ebecc26f1aa0f3c72
+          git -C external/sco-core fetch --depth=1 origin 571fe8e2c911d7c63c372103724896feaabe58f2
+          git -C external/sco-core checkout --detach 571fe8e2c911d7c63c372103724896feaabe58f2
           tools/ci-dev-sdk-preflight.sh external/sco-core "$RUNNER_TEMP/sdk-development"
 
       - name: Check candidate-only sources against development host

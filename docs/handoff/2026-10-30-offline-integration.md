@@ -1,19 +1,19 @@
 # sc-offline handoff — 2026-10-30 (draft)
 
-Current local work refuses native host Prepare/Start and the entry hook until a real reader/worker exclusion and drain protocol exists. The product is not playable. Core final candidate `571fe8e2c911d7c63c372103724896feaabe58f2` has been identified but is not yet in this checkout or gitlink.
+Current local work refuses native host Prepare/Start and the entry hook until a real reader/worker exclusion and drain protocol exists. The product is not playable. The development gitlink and generated CI preflight now use core #304 `571fe8e2c911d7c63c372103724896feaabe58f2`; this is not a published SDK release.
 
-Update 2026-10-31: the local development gitlink now points to unpublished core
+Earlier 2026-10-31 integration used unpublished core
 #304 `1166c9f12d7327dd50a58b1d9261e7d6cc21bef6`; the external plugin archive
-remains RC2. The older pin and Windows evidence below describe the original
-handoff, not this updated source. See `2026-10-31-native-reader-barrier.md` for
+remains RC2. That earlier pin and the Windows evidence below describe earlier source, not the current candidate. See `2026-10-31-native-reader-barrier.md` for
 the separate registry activation blocker.
 
 ASOP startup: on core `1166c9f`, failed catalogue installation can leave
 admission open while later installers run. The product now calls Stop if Start
 returns `Unavailable` or throws a C++ exception, preserving the failure and
-retaining hook backing. This is a post-return backstop, not a replacement for the
-core fix that closes admission within the failed installation path. Do not claim
-that this candidate has the core fix until the coordinated gitlink is updated.
+retaining hook backing. This is a post-return backstop. Core `571fe8e` also refuses ASOP Start before admission or installation until a real safe phase exists.
+Opting into `SCO_ASOP_HOST_COMPOSITION` excludes legacy fleet/services; a
+refused replacement does not reactivate them. Neither that option nor the core
+pin restores ASOP or product gameplay.
 
 Branch `handoff/offline-integration-20261030` = main `0f569b9` + 4 commits:
 

@@ -2,6 +2,11 @@
 
 The product currently refuses native startup pending a proven reader/worker
 exclusion and drain. The opt-in composition below is not active in this build.
+In addition, core `571fe8e2c911d7c63c372103724896feaabe58f2` itself returns
+`Unavailable` from enabled ASOP Start until a safe phase is established. With
+`SCO_ASOP_HOST_COMPOSITION=ON`, the legacy fleet/services implementation is
+excluded at build time; there is no runtime fallback when that owner refuses.
+The coordinated pin does not restore ASOP gameplay.
 
 `src/asop_shell.*` consumes the game-specific public host-source
 `sco::game::asop_host` interface. It is not a plugin service. The published
