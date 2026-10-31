@@ -54,6 +54,8 @@ Use the launcher's **Plugins** page to manage extensions. Feature availability d
 
 ## What has actually been run
 
+**Development startup is unavailable.** The native reader and worker exclusion and drain required for safe activation are not yet proven. This draft refuses native startup and installs no startup hook. It is not a playable build.
+
 Read this before relying on any feature description. Only the owner runs the game; a green build, a synthetic check or a resolved signature is never a game result.
 
 - **Observed in game (once or twice, startup only):** v0.7.8.1 offline startup on two Windows PCs: offline evidence line clear, every offline patch applied, signatures resolved, plugins loaded, the game loading into the universe. Play beyond loading in, the menu and every feature below are **not verified in game**.

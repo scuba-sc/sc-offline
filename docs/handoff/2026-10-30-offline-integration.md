@@ -1,5 +1,7 @@
 # sc-offline handoff — 2026-10-30 (draft)
 
+Current local work refuses native host Prepare/Start and the entry hook until a real reader/worker exclusion and drain protocol exists. The product is not playable. Core final candidate `571fe8e2c911d7c63c372103724896feaabe58f2` has been identified but is not yet in this checkout or gitlink.
+
 Update 2026-10-31: the local development gitlink now points to unpublished core
 #304 `1166c9f12d7327dd50a58b1d9261e7d6cc21bef6`; the external plugin archive
 remains RC2. The older pin and Windows evidence below describe the original
@@ -35,6 +37,6 @@ Canonical cross-repo runbook: sco-core branch `handoff/core-integration-20261030
 - Identity fixture uses synthetic SRW/SEH/registry seams.
 - The original handoff accepted public IPv4 exceptions; the local correction
   rejects them. Environment values still do not prove launcher provenance.
-- The separate owned-registry consumer refuses game services without a real native-reader barrier. That consumer is not present on this branch; preserve its refusal when coordinating the integration.
+- The separate owned-registry consumer is not present on this branch. The current local product preflight independently refuses native activation until a real native-reader barrier is available.
 - The original handoff embedded pin was `844e136`; the local development pin is now the #304 SHA above, not a published SDK. External plugin archive remains `sdk-v2.4.0-rc.2`.
 - Draft #117 (ASOP ship selector) remains parked; native `Reconfigure` refused in core.

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Refuse native startup pending a real safety barrier.** This development build
+  leaves host services, plugins, product patches and the startup entry hook
+  inactive until native readers and workers can be excluded and drained. A
+  diagnostic explains the refusal; gameplay is unavailable in this candidate.
+
+- **Refuse unproven native startup.** The development host does not install its startup hook, prepare or start native game services, apply product patches, or start plugins until a reviewed reader and worker exclusion and drain protocol is available. This build is not playable; not run in game.
+
 - **Keep legacy ASOP fleet identities stable.** Offline entitlement URNs and long-lived
   fleet records use never-reused session IDs instead of list positions. Historical class
   names stay immutable, and stale or invalid terminal IDs are refused. Synthetic checks

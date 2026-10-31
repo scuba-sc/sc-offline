@@ -1,5 +1,10 @@
 # G1 host-source composition
 
+**Development startup is refused:** the product does not install the entry hook,
+call native host Prepare/Start, apply product patches, or activate plugins until
+native reader/worker exclusion and drain have been established. The composition
+description below describes the intended lifecycle, not a currently running host.
+
 The default development host builds from `external/sco-core`, pinned to
 unpublished sco-core #304 source `1166c9f12d7327dd50a58b1d9261e7d6cc21bef6`.
 For local development, an extracted `host-source-sc` kit

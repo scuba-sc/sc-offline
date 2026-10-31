@@ -1,24 +1,29 @@
 # Native reader barrier: integration design and evidence gap
 
-Status: design only. No native registry owner is enabled by this document. The
+Status: design plus product refusal. No native registry owner is enabled. The
 offline #184 baseline at `00989b4443ad0de1a33ab45a9139892ff08b0546` and
 coordinated core #304 at `1166c9f12d7327dd50a58b1d9261e7d6cc21bef6` do not
 contain the separate owned-registry integration or its explicit refusal. Do not
 interpret a successful build of these sources as a registry activation proof.
 The registry consumer must keep its explicit refusal until a real barrier exists.
 
-The actual candidate does **not** refuse game-service startup merely because a
-native-reader barrier is missing. It sets `gameServices = true` and leaves
+Before the product preflight added in this local work, the #184/#304 candidate did **not** refuse game-service startup merely because a native-reader barrier was missing. It sets `gameServices = true` and leaves
 `nativeDataCoreReads = false`; core checks `preEngineQuiesced` only for that
 opt-in read mode. Positive target, anti-cheat, firewall and TCP evidence gates
 Prepare; required quit and DataCore hooks can then be installed, and the product
 applies its offline patches before later game-thread Start rechecks admission.
 Unknown evidence and required-hook failure refuse, but those checks do not prove
-reader exclusion or safe owned-registry activation. The executable-entry jump
-is installed before those checks. Its installation can fail silently; on a
-60-second timeout the entry resumes while the worker can still be modifying
-state. The existing restoration-failure path calls `TerminateProcess`. None of
+reader exclusion or safe owned-registry activation. The old executable-entry jump was installed before those checks. Its installation could fail silently; on a
+60-second timeout the entry could resume while the worker was still modifying
+state. Its restoration-failure path calls `TerminateProcess`. None of
 these behaviors establishes the owner-requested non-fail-stop reader barrier.
+
+The product now refuses before `host::Prepare`, `host::Start`, product patches,
+plugin activation, or startup-hook installation. It emits an unavailable diagnostic
+and leaves those features inactive. This is an unconditional product refusal, not
+a reader barrier or gameplay proof. The final coordinated core SHA
+`571fe8e2c911d7c63c372103724896feaabe58f2` is not yet available in this checkout;
+the gitlink still names `1166c9f12d7327dd50a58b1d9261e7d6cc21bef6`.
 
 ## Phase and lifetime requirements
 

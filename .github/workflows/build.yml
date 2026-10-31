@@ -122,10 +122,11 @@ jobs:
           c++ -std=c++20 -Wall -Wextra -Werror -I src tools/start_retry_test.cpp -o start_retry_test
           ./start_retry_test
 
-      - name: Product host refusal forwarding
+      - name: Product native activation refusal
         run: |
           c++ -std=c++20 -Wall -Wextra -Werror -I external/sco-core/include src/offline_host.cpp tools/offline-host/refusal_test.cpp -o offline_host_refusal_test
           ./offline_host_refusal_test
+          python3 tools/test_native_preflight_wiring.py
 
       - name: ASOP partial-start refusal propagation
         run: |

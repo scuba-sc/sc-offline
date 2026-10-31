@@ -1,5 +1,8 @@
 # ASOP host composition consumer
 
+The product currently refuses native startup pending a proven reader/worker
+exclusion and drain. The opt-in composition below is not active in this build.
+
 `src/asop_shell.*` consumes the game-specific public host-source
 `sco::game::asop_host` interface. It is not a plugin service. The published
 SDK 2.4.0 release candidate 2 (`sdk-v2.4.0-rc.2`) carries G10 in
