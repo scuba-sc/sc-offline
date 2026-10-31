@@ -1,5 +1,11 @@
 # sc-offline handoff — 2026-10-30 (draft)
 
+Update 2026-10-31: the local development gitlink now points to unpublished core
+#304 `1166c9f12d7327dd50a58b1d9261e7d6cc21bef6`; the external plugin archive
+remains RC2. The older pin and Windows evidence below describe the original
+handoff, not this updated source. See `2026-10-31-native-reader-barrier.md` for
+the separate registry activation blocker.
+
 Branch `handoff/offline-integration-20261030` = main `0f569b9` + 4 commits:
 
 | Commit | Change |
@@ -20,7 +26,8 @@ Canonical cross-repo runbook: sco-core branch `handoff/core-integration-20261030
 ## Not verified / limits
 - No game run, no live firewall, no native fleet/hook/SEH acceptance.
 - Identity fixture uses synthetic SRW/SEH/registry seams.
-- Explicit VPN ranges may include public IPv4; environment values do not prove launcher provenance.
-- Startup blocker unchanged: `offline_host::Prepare` still refuses game services without a real native-reader barrier. Keep that refusal.
-- Published SDK pin stays `sdk-v2.4.0-rc.2` / `844e136`. Do not repin until the owner publishes 2.4.0.
+- The original handoff accepted public IPv4 exceptions; the local correction
+  rejects them. Environment values still do not prove launcher provenance.
+- The separate owned-registry consumer refuses game services without a real native-reader barrier. That consumer is not present on this branch; preserve its refusal when coordinating the integration.
+- The original handoff embedded pin was `844e136`; the local development pin is now the #304 SHA above, not a published SDK. External plugin archive remains `sdk-v2.4.0-rc.2`.
 - Draft #117 (ASOP ship selector) remains parked; native `Reconfigure` refused in core.

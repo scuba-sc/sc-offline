@@ -1,5 +1,12 @@
 # SDK 2.4.0 candidate adoption
 
+**Development override, 2026-10-31:** the embedded gitlink is locally updated to
+sco-core #304 `1166c9f12d7327dd50a58b1d9261e7d6cc21bef6` for coordinated
+integration. That draft is not RC2 or a release. The archive coordinates below
+remain the separate external-plugin inputs; no archive or release is implied by
+the gitlink. The historical RC2 source coordinate below describes the previous
+embedded pin, not the current development host.
+
 SC Offline consumes the latest available published candidate as checked on
 2026-10-28: [`sdk-v2.4.0-rc.2`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2).
 The tag and source are pinned explicitly. GitHub lists this release as published
@@ -20,11 +27,21 @@ RC tags publish as prereleases.
 | Host-source archive SHA-256 | `3d711463f7dff3dcd372ffb70b09951ecf21f1d0e2c5f0a899cccbb9977b8201` |
 | Static signature target | Star Citizen `4.10.197.2878`; not gameplay evidence |
 
-The product builds the embedded host from the exact candidate source submodule,
-which preserves its existing source-build model. It does not silently select
-newer `main`. External consumers retain the existing published combined archive
+The product builds the embedded host from the exact development source submodule;
+it does not silently select newer `main`. External consumers retain the existing published combined archive
 pin and verify both its release checksum and internal file inventory. Host source
 and plugin SDK archives have different roles; do not overlay their headers.
+
+Three independent coordinates are in use: the embedded development host above;
+the RC2 external archive and digest in the table; and the separate unpublished
+CI consumer-preflight source `26f0d9e140a1766cfd6adb6ebecc26f1aa0f3c72`, whose
+locally packaged archive is locked to SHA-256
+`2f1b7aa1c04b2c609f510c59320c36b177de7a9f60e3b8fc570a3b57d1bf121d`.
+That third input is neither the embedded host nor a published archive. Its
+fixtures and the RC2 archive's own plugin checker do not execute RC2-built
+plugins on the #304 host. A mixed-pair synthetic integration test and Windows
+package validation remain required before claiming compatibility or release
+readiness; no automatic fallback to another SDK is authorized.
 
 No plugin feature behavior is added by this update. The release workflow stages
 11 external folders (creative, discord, crew, spawn, build, mining, teleport,
@@ -35,7 +52,7 @@ offline admission and unavailable/default-off behavior remain in force.
 
 ## Evidence and release limits
 
-This adoption pins RC2, not the final SDK 2.4.0 release, and makes no gameplay
+This development adoption is not the final SDK 2.4.0 release, and makes no gameplay
 acceptance claim. The merged sco-core [release-policy change in #284](https://github.com/scuba-sc/sco-core/pull/284)
 uses the protected GitHub `release` environment and verifies the selected
 candidate run, artifact, tag and source, profiles, checksums, build attestations,

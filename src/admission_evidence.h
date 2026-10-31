@@ -15,6 +15,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include "private_network_ranges.h"
 
 namespace admission {
 
@@ -345,7 +346,7 @@ inline bool ParseConfiguredAllow(const std::wstring& text, std::vector<V4Range>&
                 !detail::ParseSmallUInt(tok.substr(slash + 1), 32, len) || len < 8 || parsed.size() >= 8)
                 return false;
             const uint32_t mask = ~0u << (32 - len);
-            if (ip & ~mask) return false;
+            if ((ip & ~mask) || !offline_network::PrivateRange(ip, ip | ~mask)) return false;
             const std::string canonical = std::to_string(ip >> 24) + "." +
                 std::to_string((ip >> 16) & 255) + "." + std::to_string((ip >> 8) & 255) + "." +
                 std::to_string(ip & 255) + "/" + std::to_string(len);

@@ -27,6 +27,9 @@ removal and re-addition; only currently issued IDs decode from terminal URNs. Th
 historical-class limit refuses new classes rather than recycling an ID. This is identity
 hardening only: the legacy catalogue still builds once, and no selection editor,
 live-rebuild trigger, buffer-retirement policy or SDK cutover is introduced.
+The coordinated development core currently refuses native `Reconfigure` with
+`Unavailable`. Saving a selection is not evidence that a running terminal has
+changed; this consumer does not call `Reconfigure` or claim a live rebuild.
 `python3 tools/test_fleet_identity.py` compiles the actual legacy build/mapping/retrieve
 bodies under ASan/UBSan with synthetic engine reads and platform stand-ins. It does not
 exercise Windows locks/SEH, native hooks or game behavior.
@@ -56,4 +59,4 @@ cmake --build build-asop --target sc-offline-asop-shell
 
 No G13 broker, network policy changes, anti-cheat manipulation or game data.
 Windows/MSVC, real SEH/caller lifetime, engine startup/shutdown and all gameplay
-acceptance NOT VERIFIED. Tests NOT RUN under the owner's speed order.
+acceptance NOT VERIFIED. Portable tests do not establish native behavior.

@@ -5,7 +5,7 @@
 - **Keep legacy ASOP fleet identities stable.** Offline entitlement URNs and long-lived
   fleet records use never-reused session IDs instead of list positions. Historical class
   names stay immutable, and stale or invalid terminal IDs are refused. Synthetic checks
-  only; **not run in game**. No picker UI, SDK pin or composition-default change.
+  only; **not run in game**. No picker UI or composition-default change.
 
 - **Accept configured VPN firewall gaps ([#183](https://github.com/scuba-sc/sc-offline/issues/183)).**
   Offline admission now checks the launcher's `multiplayer_allow` IPv4 ranges
@@ -15,8 +15,7 @@
   rejects malformed forwarded environment values, undeclared firewall gaps and
   missing live firewall/TCP evidence. Canonical environment formatting is not
   authenticated provenance: another process can supply the same text. Explicit
-  public IPv4 ranges remain accepted under the existing launcher policy; this is
-  not a new private-only restriction. TCP classification and private session
+  public IPv4 ranges and ranges crossing private boundaries are rejected. TCP classification and private session
   bind/peer policy are unchanged. Synthetic checks only; **not run in game**.
 
 - **Pin SDK 2.4.0 release candidate 2.** The host submodule, plugin archive
