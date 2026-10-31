@@ -1,7 +1,7 @@
 # SDK 2.4.0 candidate adoption
 
 **Development override, 2026-10-31:** the embedded gitlink is locally updated to
-sco-core #304 `571fe8e2c911d7c63c372103724896feaabe58f2` for coordinated
+sco-core #304 `1b6782bc5c8b7d189cdff4c83e81957f09af35d7` for coordinated
 integration. That draft is not RC2 or a release. The archive coordinates below
 remain the separate external-plugin inputs; no archive or release is implied by
 the gitlink. The historical RC2 source coordinate below describes the previous
@@ -33,9 +33,9 @@ pin and verify both its release checksum and internal file inventory. Host sourc
 and plugin SDK archives have different roles; do not overlay their headers.
 
 The embedded development host and CI consumer-preflight source are both
-`571fe8e2c911d7c63c372103724896feaabe58f2`. The locally packaged legacy
+`1b6782bc5c8b7d189cdff4c83e81957f09af35d7`. The locally packaged legacy
 preflight archive is locked to SHA-256
-`67f4f837879867ac6d953a2953c448ce7913a9da924d6e04931a48988f23b9c1`; it is
+`bb52b8bf1cab5aea09939e68a387705149411ce6c8af48e3f3f2576fc8a83c31`; it is
 not a published archive. The separate external-plugin input remains the published
 RC2 archive and digest in the table. The preflight
 fixtures and the RC2 archive's own plugin checker do not execute RC2-built

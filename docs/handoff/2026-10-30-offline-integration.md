@@ -1,6 +1,6 @@
 # sc-offline handoff — 2026-10-30 (draft)
 
-Current local work refuses native host Prepare/Start and the entry hook until a real reader/worker exclusion and drain protocol exists. The product is not playable. The development gitlink and generated CI preflight now use core #304 `571fe8e2c911d7c63c372103724896feaabe58f2`; this is not a published SDK release.
+Current local work refuses native host Prepare/Start and the entry hook until a real reader/worker exclusion and drain protocol exists. The product is not playable. The development gitlink and generated CI preflight now use core #304 `1b6782bc5c8b7d189cdff4c83e81957f09af35d7`; this is not a published SDK release.
 
 Earlier 2026-10-31 integration used unpublished core
 #304 `1166c9f12d7327dd50a58b1d9261e7d6cc21bef6`; the external plugin archive
@@ -10,7 +10,7 @@ the separate registry activation blocker.
 ASOP startup: on core `1166c9f`, failed catalogue installation can leave
 admission open while later installers run. The product now calls Stop if Start
 returns `Unavailable` or throws a C++ exception, preserving the failure and
-retaining hook backing. This is a post-return backstop. Core `571fe8e` also refuses ASOP Start before admission or installation until a real safe phase exists.
+retaining hook backing. This is a post-return backstop. Core `1b6782b` also refuses ASOP Start before admission or installation until a real safe phase exists.
 Opting into `SCO_ASOP_HOST_COMPOSITION` excludes legacy fleet/services; a
 refused replacement does not reactivate them. Neither that option nor the core
 pin restores ASOP or product gameplay.

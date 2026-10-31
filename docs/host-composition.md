@@ -6,7 +6,7 @@ native reader/worker exclusion and drain have been established. The composition
 description below describes the intended lifecycle, not a currently running host.
 
 The default development host builds from `external/sco-core`, pinned to
-unpublished sco-core #304 source `571fe8e2c911d7c63c372103724896feaabe58f2`.
+unpublished sco-core #304 source `1b6782bc5c8b7d189cdff4c83e81957f09af35d7`.
 For local development, an extracted `host-source-sc` kit
 can be selected with `-DSCO_HOST_SOURCE_DIR=<extracted-source-root>`.
 That override does not change the committed pin or the external plugin archive.

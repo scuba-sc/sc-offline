@@ -5,8 +5,8 @@ set -euo pipefail
 if [ "$#" -ne 2 ]; then echo "usage: $0 <core-source-root> <new-output-dir>" >&2; exit 2; fi
 core=$(cd "$1" && pwd)
 out=$2
-expected_source=571fe8e2c911d7c63c372103724896feaabe58f2
-expected_archive=67f4f837879867ac6d953a2953c448ce7913a9da924d6e04931a48988f23b9c1
+expected_source=1b6782bc5c8b7d189cdff4c83e81957f09af35d7
+expected_archive=bb52b8bf1cab5aea09939e68a387705149411ce6c8af48e3f3f2576fc8a83c31
 [ "$(git -C "$core" rev-parse HEAD)" = "$expected_source" ] || { echo 'development source identity mismatch' >&2; exit 1; }
 [ -z "$(git -C "$core" status --porcelain)" ] || { echo 'development source is dirty' >&2; exit 1; }
 [ ! -e "$out" ] || { echo 'development output already exists' >&2; exit 1; }

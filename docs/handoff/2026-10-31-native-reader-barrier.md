@@ -22,7 +22,7 @@ The product now refuses before `host::Prepare`, `host::Start`, product patches,
 plugin activation, or startup-hook installation. It emits an unavailable diagnostic
 and leaves those features inactive. This is an unconditional product refusal, not
 a reader barrier or gameplay proof. The coordinated gitlink is core #304
-`571fe8e2c911d7c63c372103724896feaabe58f2`; that source also refuses native
+`1b6782bc5c8b7d189cdff4c83e81957f09af35d7`; that source also refuses native
 ASOP Start until the safe phase exists.
 
 ## Phase and lifetime requirements
