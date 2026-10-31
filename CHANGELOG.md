@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Read Windows line endings in legacy saved spots.** Bookmark imports and quick
+  saves accept CRLF and mixed line endings while retaining existing row order and
+  storage behavior. Synthetic checks only; **not run in game**.
+
 - **Refuse native startup pending a real safety barrier.** This development build
   leaves host services, plugins, product patches and the startup entry hook
   inactive until native readers and workers can be excluded and drained. A

@@ -37,10 +37,16 @@ inline std::string SpotText(const Spot& s) {
     }
     return out;
 }
+// Only remove CR when getline consumed the following LF. A final bare CR is data.
+inline bool ReadLegacyLine(std::istream& in,std::string& line) {
+    if (!std::getline(in,line)) return false;
+    if (!in.eof() && !line.empty() && line.back()=='\r') line.pop_back();
+    return true;
+}
 inline bool ParseSpot(const std::string& text,Spot& out) {
     if (text.size()>65536) return false;
     Spot next; std::istringstream in(text); std::string line;
-    while (std::getline(in,line)) {
+    while (ReadLegacyLine(in,line)) {
         if (line.starts_with("spot ") && next.z.size()<12) {
             ZoneSpot z; std::istringstream fields(line.substr(5));
             if (!(fields>>z.pos[0]>>z.pos[1]>>z.pos[2])) continue;

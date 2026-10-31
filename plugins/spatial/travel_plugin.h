@@ -128,15 +128,21 @@ std::string MarksText(const std::vector<Bookmark>& marks) {
     return text;
 }
 std::vector<Bookmark> ParseMarks(const std::string& text) {
-    std::vector<Bookmark> marks; std::istringstream in(text); std::string line,spots; Bookmark m; bool have=false;
-    auto flush=[&] { if (have && marks.size()<400 && m.name.size()<=63 && m.system.size()<=31 && ParseSpot(spots,m.spot)) marks.push_back(m); spots.clear(); };
+    std::vector<Bookmark> marks; std::istringstream in(text); std::string line,spots; Bookmark m; bool have=false,unterminated_cr=false;
+    auto flush=[&] { if (have && marks.size()<400 && m.name.size()<=63 && m.system.size()<=31 &&
+                          !(unterminated_cr && spots.size()>=65536) && ParseSpot(spots,m.spot)) marks.push_back(m);
+                     spots.clear(); unterminated_cr=false; };
     while (std::getline(in,line)) {
         if (line.starts_with("bookmark ")) {
+            if (!in.eof() && !line.empty() && line.back()=='\r') line.pop_back();
             flush(); if (marks.size()==400) break;
             m={}; have=true; const auto bar=line.find('|',9);
             if (bar!=std::string::npos) { m.system=line.substr(9,bar-9); m.name=line.substr(bar+1); }
             else m.name=line.substr(9);
-        } else if (have) spots+=line+'\n';
+        } else if (have) {
+            spots+=line; unterminated_cr=in.eof() && !line.empty() && line.back()=='\r';
+            if (!unterminated_cr) spots+='\n'; // retain the old size bound for a final unterminated line
+        }
     }
     flush(); return marks;
 }
