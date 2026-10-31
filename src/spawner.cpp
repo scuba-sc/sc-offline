@@ -3,6 +3,7 @@
 #include "teleport.h"
 #include "menu.h"
 #include "npc.h"
+#include "signature_rows.h"
 #include "sco/caps.h"
 #include "sco/game/actors.h"
 #include "sco/game/features.h"
@@ -72,13 +73,16 @@ bool ActorsCapability(const char* name, const char* tag, const char* what) {
     for (size_t i = 0; i < n && !rows; ++i)
         if (strcmp(f[i].name, name) == 0) { rows = f[i].rows; count = f[i].count; }
     if (!rows) { Log("[%s] %s disabled (no capability %s in sco-core)", tag, what, name); return false; }
-    const sco::Result r = sco::caps::SetFromSignatures(name, rows, count);
-    if (r != sco::Result::Ok) Log("[!] capability %s: %s", name, sco::ResultName(r));
-    for (size_t i = 0; i < count; ++i) {
-        const sco::SigResult* s = sco::SigLookup(rows[i]);
-        if (s && s->state == sco::SigState::Ok) continue;
-        Log("[%s] %s disabled (%s %s; see the [core] lines in mod.log)", tag, what, rows[i],
-            s ? sco::SigStateName(s->state) : "unknown");
+    const auto snapshot = sco::AcquireHostSignatureSnapshot();
+    if (!snapshot) {
+        Log("[%s] %s disabled (signature registry unavailable)", tag, what);
+        return false;
+    }
+    const sco::Result r = sco::caps::SetFromSignatures(name, rows, count, *snapshot);
+    if (r != sco::Result::Ok) { Log("[!] capability %s: %s", name, sco::ResultName(r)); return false; }
+    char why[192]{};
+    if (!offline::signature_rows::Ready(snapshot.get(), rows, count, why, sizeof(why))) {
+        Log("[%s] %s disabled (%s; see the [core] lines in mod.log)", tag, what, why);
         return false;
     }
     return true;

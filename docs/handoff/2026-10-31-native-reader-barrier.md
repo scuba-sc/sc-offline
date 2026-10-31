@@ -1,5 +1,7 @@
 # Native reader barrier: integration design and evidence gap
 
+**Registry migration draft:** the local gitlink is core #305 `a5101d406a9ddbff14e437408686ffb04266be18`; references to #304 below document the prior baseline. Product startup remains refused.
+
 Status: design plus product refusal. No native registry owner is enabled. The
 offline #184 baseline at `00989b4443ad0de1a33ab45a9139892ff08b0546` and
 coordinated core #304 at `1166c9f12d7327dd50a58b1d9261e7d6cc21bef6` do not
@@ -21,7 +23,7 @@ these behaviors establishes the owner-requested non-fail-stop reader barrier.
 The product now refuses before `host::Prepare`, `host::Start`, product patches,
 plugin activation, or startup-hook installation. It emits an unavailable diagnostic
 and leaves those features inactive. This is an unconditional product refusal, not
-a reader barrier or gameplay proof. The coordinated gitlink is core #304
+a reader barrier or gameplay proof. The prior coordinated gitlink was core #304
 `1b6782bc5c8b7d189cdff4c83e81957f09af35d7`; that source also refuses native
 ASOP Start until the safe phase exists.
 

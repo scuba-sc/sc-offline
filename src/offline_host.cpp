@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "offline_host.h"
 #include "native_activation_policy.h"
+#include <atomic>
 #ifdef SCO_HOST_MENU_CLIENT
 #include "menu.h"
 #endif
@@ -45,10 +46,12 @@ sco::Result StopSelection(void*) { return selection::Stop(); }
 
 namespace gh = sco::game::host;
 namespace offline_host {
+namespace { std::atomic<bool> retained{false}; }
+bool RestartRequired() noexcept { return retained.load(std::memory_order_acquire); }
 sco::Result Prepare(gh::Options options) {
-    // Core Prepare installs native hooks. Do not enter it without a proven
-    // reader/worker exclusion and drain protocol, even for non-game options.
-    if (!NativeActivationAvailable()) return sco::Result::Unavailable;
+    // Core Prepare owns a private registry candidate, but this product cannot
+    // yet prove the image, resolver, reader and worker lifetimes it requires.
+    if (RestartRequired() || !NativeActivationAvailable()) return sco::Result::Unavailable;
     // Required game-pack hooks, never a shell WM_QUIT-only or private-loader fallback.
     options.quit = gh::QuitPolicy::Required;
     options.dataCoreHook = gh::DataCoreHook::Required;
@@ -61,13 +64,23 @@ sco::Result Prepare(gh::Options options) {
     return gh::Prepare(options);
 }
 sco::Result Start() {
-    if (!NativeActivationAvailable()) return sco::Result::Unavailable;
+    if (RestartRequired() || !NativeActivationAvailable()) return sco::Result::Unavailable;
     return gh::Start();
 }
 sco::Result Tick(uint32_t now) {
-    if (!NativeActivationAvailable()) return sco::Result::Unavailable;
+    if (RestartRequired() || !NativeActivationAvailable()) return sco::Result::Unavailable;
     return gh::Tick(now);
 }
-sco::Result Stop() { return gh::Stop(); }
-bool Running() { return NativeActivationAvailable() && gh::Status().phase == gh::Phase::Running; }
+sco::Result Stop() {
+    if (RestartRequired()) return sco::Result::Failed;
+    try {
+        const auto result = gh::Stop();
+        if (result != sco::Result::Ok) retained.store(true, std::memory_order_release);
+        return result;
+    } catch (...) {
+        retained.store(true, std::memory_order_release);
+        return sco::Result::Failed;
+    }
+}
+bool Running() { return !RestartRequired() && NativeActivationAvailable() && gh::Status().phase == gh::Phase::Running; }
 } // namespace offline_host

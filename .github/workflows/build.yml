@@ -39,8 +39,8 @@ jobs:
       - name: Verify development source and SDK archive
         run: |
           set -eu
-          git -C external/sco-core fetch --depth=1 origin 1b6782bc5c8b7d189cdff4c83e81957f09af35d7
-          git -C external/sco-core checkout --detach 1b6782bc5c8b7d189cdff4c83e81957f09af35d7
+          git -C external/sco-core fetch --depth=1 origin a5101d406a9ddbff14e437408686ffb04266be18
+          git -C external/sco-core checkout --detach a5101d406a9ddbff14e437408686ffb04266be18
           tools/ci-dev-sdk-preflight.sh external/sco-core "$RUNNER_TEMP/sdk-development"
 
       - name: Check candidate-only sources against development host
@@ -126,7 +126,16 @@ jobs:
         run: |
           c++ -std=c++20 -Wall -Wextra -Werror -I external/sco-core/include src/offline_host.cpp tools/offline-host/refusal_test.cpp -o offline_host_refusal_test
           ./offline_host_refusal_test
+          ./offline_host_refusal_test exception
+          c++ -std=c++20 -Wall -Wextra -Werror -I src -I external/sco-core/include tools/offline-host/capability_refusal_test.cpp -o capability_refusal_test
+          ./capability_refusal_test
           python3 tools/test_native_preflight_wiring.py
+
+      - name: Owned signature snapshot diagnostics
+        run: |
+          cmake -S tools/offline-host -B "$RUNNER_TEMP/offline-owned" -DSCO_HOST_SOURCE_DIR="$GITHUB_WORKSPACE/external/sco-core"
+          cmake --build "$RUNNER_TEMP/offline-owned" --target signature_rows_test registry_refusal_test refusal_test capability_refusal_test --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/offline-owned" --no-tests=error --output-on-failure
 
       - name: ASOP partial-start refusal propagation
         run: |

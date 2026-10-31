@@ -3,18 +3,20 @@
 #include "builtins/builtin_store.h"
 #include "sco/game/teleport.h"
 #include "sco/signatures.h"
+#include "sco/signature_registry.h"
 #include <cmath>
 #include <share.h>
 
 TeleportApi g_tp;
 
 // The addresses are sco-core's teleport.* signature rows (src/game/teleport_sigs.cpp: the scan
-// and checks this file used to do, moved byte for byte), resolved by ResolveAll in StartOffline.
+// and checks this file used to do, moved byte for byte), resolved by the host before publication.
 bool ResolveTeleportApi() {
     sco::game::TeleportAddrs a;
     if (!sco::game::TeleportAddresses(a)) {
         // to_camera holds the checks; the other rows only fail when it does.
-        const sco::SigResult* r = sco::SigLookup("teleport.to_camera");
+        const auto snapshot = sco::AcquireHostSignatureSnapshot();
+        const sco::SigResult* r = snapshot ? snapshot->Lookup("teleport.to_camera") : nullptr;
         Log("[tp] TeleportToCamera not found (teleport.to_camera %s: %s); teleport disabled",
             r ? sco::SigStateName(r->state) : "unknown", r && r->why ? r->why : "see [core] below");
         return false;
