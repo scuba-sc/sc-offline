@@ -30,7 +30,8 @@ struct State {
     uint32_t last_read = 0, page = 0; int32_t outfit = -1, ship = 0, build = -1;
     int cvars[4]{-1,-1,-1,-1};
     std::string filter, equip, visor, slots; std::vector<std::string> buildables;
-    uint64_t job = 0; std::vector<Piece> job_pieces;
+    uint64_t job = 0; std::vector<Piece> job_pieces; bool job_poll_paused = false;
+    char job_status[256] = "No retained loadout job.";
     std::shared_ptr<const catalogue::Data> curated, published_curated;
     std::array<int32_t,std::size(catalogue::kSlots)> curated_picks{};
     std::array<std::vector<int32_t>,std::size(catalogue::kSlots)> published_rows;
@@ -40,6 +41,8 @@ struct State {
     char status[2048]{};
 } g;
 uintptr_t next_player_cookie = 0;
+bool job_observing = false;
+uint64_t job_revision = 0;
 const sco_plugin_info info{sizeof(sco_plugin_info),SCO_API_MAJOR,SCO_API_MINOR,"loadout","1.0.0","sc-offline"};
 const char* const cvar_names[]{"i_target_selector.targeting2_enabled","pl_lensdisplay.minimap_enabled",
     "pl_lensdisplay.greebles_enabled","g_squadron_frontend"};
@@ -260,34 +263,71 @@ sco_result Submit(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) 
     uint64_t job=0; const auto result=service->submit(g.self,&request,&job);
     if (result!=SCO_OK) return Answer(result,out,size,"Loadout submit refused; no retry or synchronous fallback.");
     if (!job) return Answer(SCO_FAILED,out,size,"Invalid zero job id; state unknown, no retry.");
-    g.job=job; g.job_pieces=std::move(pieces);
+    g.job=job; g.job_pieces=std::move(pieces); g.job_poll_paused=false; ++job_revision;
+    std::snprintf(g.job_status,sizeof(g.job_status),"Loadout job submitted; waiting for a status observation.");
     return Answer(SCO_OK,out,size,"Loadout job submitted, not confirmed equipped. Use loadout.progress; cancel releases pending work without rollback.");
+}
+// A status observation is copied only for this call; no service table survives a lookup.
+sco_result ObserveJob(std::string& message, bool& malformed, bool& obsolete, bool& async_available) {
+    malformed=false; obsolete=false; async_available=false;
+    if (!g.job) { message="No retained loadout job."; return SCO_NOT_FOUND; }
+    const auto* api=g.api; auto* owner=g.self; const auto job=g.job; const auto revision=job_revision;
+    const auto pieces=g.job_pieces;
+    struct Guard { Guard() { job_observing=true; } ~Guard() { job_observing=false; } } guard;
+    const auto* service=Open<sc_loadout_v1_2>(SC_LOADOUT_SERVICE_NAME,SC_LOADOUT_VERSION_1_2);
+    if (job_revision!=revision || g.api!=api || g.self!=owner || g.job!=job) { obsolete=true; message="Loadout job changed during inspection; status unknown."; return SCO_UNAVAILABLE; }
+    if (!service || service->size<sizeof(sc_loadout_v1_2) || !service->status) {
+        message="Loadout 1.2 status unavailable; job retained for cancellation; no equip retry."; return SCO_UNAVAILABLE;
+    }
+    sc_loadout_job_report progress{}; progress.size=sizeof(progress); progress.report.size=sizeof(progress.report);
+    const auto result=service->status(owner,job,&progress);
+    if (job_revision!=revision || g.api!=api || g.self!=owner || g.job!=job) { obsolete=true; message="Loadout job changed during inspection; status unknown."; return SCO_UNAVAILABLE; }
+    if (result!=SCO_OK) { message="Loadout status refused; no completion inferred or automatic equip retry."; return result; }
+    async_available=Cap("game.loadout.async");
+    if (job_revision!=revision || g.api!=api || g.self!=owner || g.job!=job) { obsolete=true; message="Loadout job changed during inspection; status unknown."; return SCO_UNAVAILABLE; }
+    const auto& report=progress.report;
+    if (progress.size<sizeof(progress) || report.size<sizeof(report) || report.count!=pieces.size() ||
+        progress.completed>report.count || report.applied>progress.completed || static_cast<uint32_t>(progress.state)>SC_LOADOUT_JOB_FAILED ||
+        (progress.state==SC_LOADOUT_JOB_COMPLETE && progress.completed!=report.count)) malformed=true;
+    uint32_t applied=0;
+    if (!malformed) for (uint32_t i=0;i<progress.completed;++i) {
+        if (report.slots[i].slot!=pieces[i].slot || static_cast<uint32_t>(report.slots[i].status)>SC_LOADOUT_UNAVAILABLE) { malformed=true; break; }
+        applied+=report.slots[i].status==SC_LOADOUT_APPLIED;
+    }
+    if (malformed || applied!=report.applied) {
+        malformed=true; message="Invalid loadout progress; polling paused. Inspect again or cancel; job retained."; return SCO_FAILED;
+    }
+    const char* state=progress.state==SC_LOADOUT_JOB_PENDING ? "pending" : progress.state==SC_LOADOUT_JOB_COMPLETE ? "complete" : "failed";
+    message=std::string(state)+"; completed="+std::to_string(progress.completed)+"/"+std::to_string(report.count)+
+        "; applied="+std::to_string(applied)+"/"+std::to_string(report.count)+"; no rollback/automatic equip retry; cancel to release retained job";
+    for (uint32_t i=0;i<progress.completed;++i) message+="; "+pieces[i].port+"="+Status(report.slots[i].status);
+    return SCO_OK;
+}
+void JobLabel(const std::string& message) { std::snprintf(g.job_status,sizeof(g.job_status),"%.255s",message.c_str()); }
+std::string JobDisplay(const std::string& message,bool async_available) {
+    return std::string(async_available ? "Job report (not live inventory): " : "Job report (async unavailable; not live inventory): ")+message;
+}
+sco_result JobReply(sco_result result,char* out,uint32_t size,const char* message) {
+    if (out && size) std::snprintf(out,size,"%s",message);
+    try { if (HAS(g.api,sco_api,log)) g.api->log(g.self,result==SCO_OK ? SCO_LOG_INFO : SCO_LOG_WARN,message); } catch (...) { /* logging is best effort */ }
+    return result;
 }
 sco_result Progress(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     const auto valid=Validate(args,n,0,out,size); if (valid!=SCO_OK) return valid;
-    if (!g.job) return Answer(SCO_NOT_FOUND,out,size,"No retained loadout job.");
-    const auto* service=Open<sc_loadout_v1_2>(SC_LOADOUT_SERVICE_NAME,SC_LOADOUT_VERSION_1_2);
-    if (!HAS(service,sc_loadout_v1_2,status)) return Answer(SCO_UNAVAILABLE,out,size,"Loadout 1.2 status unavailable; job retained for cancellation, no retry.");
-    sc_loadout_job_report progress{}; progress.size=sizeof(progress); progress.report.size=sizeof(progress.report);
-    const auto result=service->status(g.self,g.job,&progress);
-    if (result!=SCO_OK) return Answer(result,out,size,"Loadout status refused; no completion inferred or automatic retry.");
-    const auto& report=progress.report;
-    if (progress.size<sizeof(progress) || report.size<sizeof(report) || report.count!=g.job_pieces.size() ||
-        progress.completed>report.count || report.applied>progress.completed || static_cast<uint32_t>(progress.state)>SC_LOADOUT_JOB_FAILED ||
-        (progress.state==SC_LOADOUT_JOB_COMPLETE && progress.completed!=report.count))
-        return Answer(SCO_FAILED,out,size,"Invalid loadout progress; state unknown, retain job for cancellation.");
-    uint32_t applied=0;
-    for (uint32_t i=0;i<progress.completed;++i) {
-        if (report.slots[i].slot!=g.job_pieces[i].slot || static_cast<uint32_t>(report.slots[i].status)>SC_LOADOUT_UNAVAILABLE)
-            return Answer(SCO_FAILED,out,size,"Invalid completed slot; state unknown, retain job for cancellation.");
-        applied+=report.slots[i].status==SC_LOADOUT_APPLIED;
+    if (job_observing) return SCO_UNAVAILABLE;
+    const auto revision=job_revision;
+    try {
+        std::string message; bool malformed=false,obsolete=false,async_available=false; const auto result=ObserveJob(message,malformed,obsolete,async_available);
+        if (obsolete) { if (out && size) std::snprintf(out,size,"%s",message.c_str()); return result; }
+        // An explicit valid inspection resumes polling; refusal leaves a malformed-report pause in place.
+        if (malformed) g.job_poll_paused=true; else if (result==SCO_OK) g.job_poll_paused=false;
+        JobLabel(result==SCO_OK ? JobDisplay(message,async_available) : message); return JobReply(result,out,size,message.c_str());
+    } catch (...) {
+        if (revision!=job_revision) return SCO_UNAVAILABLE;
+        g.job_poll_paused=true;
+        std::snprintf(g.job_status,sizeof(g.job_status),"Loadout status unknown; polling paused. Inspect again or cancel.");
+        return JobReply(SCO_FAILED,out,size,g.job_status);
     }
-    if (applied!=report.applied) return Answer(SCO_FAILED,out,size,"Inconsistent completed count; no success inferred.");
-    const char* state=progress.state==SC_LOADOUT_JOB_PENDING ? "pending" : progress.state==SC_LOADOUT_JOB_COMPLETE ? "complete" : "failed";
-    std::string message=std::string(state)+"; completed="+std::to_string(progress.completed)+"/"+std::to_string(report.count)+
-        "; applied="+std::to_string(applied)+"/"+std::to_string(report.count)+"; no rollback/automatic retry; cancel to release retained job";
-    for (uint32_t i=0;i<progress.completed;++i) message+="; "+g.job_pieces[i].port+"="+Status(report.slots[i].status);
-    return Answer(result,out,size,message.c_str());
 }
 sco_result Cancel(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     const auto valid=Validate(args,n,0,out,size); if (valid!=SCO_OK) return valid;
@@ -296,7 +336,7 @@ sco_result Cancel(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) 
     if (!HAS(service,sc_loadout_v1_2,cancel)) return Answer(SCO_UNAVAILABLE,out,size,"Loadout cancellation unavailable; job retained, owner unload remains the host cleanup boundary.");
     // Cleanup remains callable after mutation capability revocation; never undo confirmed equipment.
     const auto result=service->cancel(g.self,g.job);
-    if (result==SCO_OK || result==SCO_NOT_FOUND) { g.job=0; g.job_pieces.clear(); }
+    if (result==SCO_OK || result==SCO_NOT_FOUND) { g.job=0; g.job_pieces.clear(); g.job_poll_paused=false; ++job_revision; JobLabel("No retained loadout job."); }
     return Answer(result,out,size,result==SCO_OK ? "Loadout job released; confirmed equipment remains, no rollback." : "Loadout cancellation refused/not found; no rollback or retry.");
 }
 sco_result ReadSlots() {
@@ -559,6 +599,7 @@ void Publish() {
     add(SCO_WIDGET_BUTTON,22,"Submit manual slots job (requires 1.2)",g.job ? SCO_WIDGET_DISABLED : 0u);
     add(SCO_WIDGET_BUTTON,23,"Inspect loadout job",g.job ? 0u : SCO_WIDGET_DISABLED);
     add(SCO_WIDGET_BUTTON,24,"Cancel/release loadout job",g.job ? 0u : SCO_WIDGET_DISABLED);
+    add(SCO_WIDGET_LABEL,26,g.job_status);
     add(SCO_WIDGET_LABEL,25,"Use known item classes. Unspecified slots stay unchanged; None/clear is unavailable.");
     std::array<std::vector<const char*>,std::size(weapon_slots)> curated_options;
     std::array<std::vector<std::string>,std::size(weapon_slots)> curated_labels;
@@ -630,11 +671,24 @@ void Publish() {
     (void)w->set_panel(g.self,"loadout.sq42","Squadron 42",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(sco_widget_node),Event,nullptr);
 }
 void Tick(const char*,const void* data,void*) {
-    if (!g.api || !data) return;
+    if (!g.api || !data || job_observing) return;
     uint32_t now=0; std::memcpy(&now,data,sizeof(now));
     if (g.clocked && static_cast<uint32_t>(now-g.last_read)<200) return;
     g.clocked=true; g.last_read=now;
     if (g.spoilers) ReadCvars();
+    if (g.job && !g.job_poll_paused) {
+        const auto revision=job_revision;
+        try {
+            std::string message; bool malformed=false,obsolete=false,async_available=false; const auto result=ObserveJob(message,malformed,obsolete,async_available);
+            if (obsolete) return;
+            if (malformed) g.job_poll_paused=true;
+            JobLabel(result==SCO_OK ? JobDisplay(message,async_available) : message);
+        } catch (...) {
+            if (revision!=job_revision) return;
+            g.job_poll_paused=true;
+            std::snprintf(g.job_status,sizeof(g.job_status),"Loadout status unknown; polling paused. Inspect again or cancel.");
+        }
+    }
     Publish();
 }
 sco_result Command(const char* name,sco_command_fn fn,const sco_arg_def* args,uint32_t count) {
@@ -649,7 +703,7 @@ const sco_plugin_info* Query() { return &info; }
 sco_result Load(const sco_api* api,sco_plugin* self) {
     if (g.api || !self || !HAS(api,sco_api,register_command) || !HAS(api,sco_api,query_service) || !HAS(api,sco_api,subscribe) ||
         !HAS(api,sco_api,unsubscribe) || !HAS(api,sco_api,has)) return SCO_BAD_ARG;
-    g=State{}; g.api=api; g.self=self;
+    ++job_revision; g=State{}; g.api=api; g.self=self;
     const auto items=Arg("items",SCO_ARG_STRING),outfit=Arg("outfit",SCO_ARG_STRING),spoilers=Arg("confirmed",SCO_ARG_BOOL),visor=Arg("class",SCO_ARG_STRING),filter=Arg("filter",SCO_ARG_STRING);
     const sco_arg_def spawn[]{Arg("class",SCO_ARG_STRING),Arg("height",SCO_ARG_FLOAT),Arg("seat",SCO_ARG_STRING),Arg("power",SCO_ARG_BOOL)};
     const sco_arg_def build[]{Arg("object",SCO_ARG_STRING),Arg("ahead",SCO_ARG_FLOAT)};
@@ -675,6 +729,6 @@ void Unload() {
     if (HAS(w,sco_widgets_v1,remove_panel)) { (void)w->remove_panel(g.self,"loadout.player"); (void)w->remove_panel(g.self,"loadout.sq42"); }
     if (HAS(g.api,sco_api,unsubscribe)) (void)g.api->unsubscribe(g.self,"tick",Tick);
     // Equip is player state, not entity ownership; ordinary unload does not undo equipped gear.
-    g=State{};
+    ++job_revision; g=State{};
 }
 }

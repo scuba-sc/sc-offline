@@ -183,6 +183,17 @@ submit/status/cancel members and requires **`game.loadout.async`**, independentl
 of those synchronous capabilities. No route falls back to a lower version or
 another mutation method. Table publication alone does not enable a backend.
 
+The Player panel displays the latest copied status of a retained job, refreshed
+at most once per existing 200 ms tick. It is a provider job observation, not a
+live inventory check; it also marks async capability revocation. If the service is
+unavailable or refuses, the display
+shows that instead of the previous observation. An invalid report pauses
+automatic polling; use Inspect to request another observation. A valid manual
+inspection resumes polling. No polling submits, retries, cancels or adds a timeout.
+If the widget provider rejects a panel replacement, it may continue drawing its
+previous copied panel; the plugin disables that panel's callbacks until a later
+successful publication. The latest observation cannot be shown until then.
+
 One job is retained until explicit cancellation/release, including after terminal
 status. While retained, another submit or synchronous equip refuses. Progress
 reports only completed slots: pending is not equip confirmation, and complete
