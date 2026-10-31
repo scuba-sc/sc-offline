@@ -18,7 +18,7 @@ bool Fleet_UseGameList();
 // "needs <row> (<STATE>)" in why.
 bool AsopCapabilityRows(const char* capability, char* why, size_t n);
 
-// From DllMain after sco::ResolveAll (the rows match the game's original bytes, so they are
+// After host resolution (the rows match the game's original bytes, so they are
 // resolved before any hook or the OnRequestOpen patch). Installs what each ready group needs.
 void ResolveFleetApi();
 void LogFleet();       // one [+] / [!] line per feature, for LogStartup

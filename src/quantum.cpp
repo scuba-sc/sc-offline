@@ -269,8 +269,8 @@ static void FindEffectTagSender() {
     const sco::game::features::Capability* caps = sco::game::features::Capabilities(n);
     for (size_t i = 0; i < n; ++i)
         if (strcmp(caps[i].name, "quantum.effect_tag") == 0) {
-            sco::caps::SetFromSignatures(caps[i].name, caps[i].rows, caps[i].count);
-            if (sco::caps::Has(caps[i].name)) g_sendEffectTag = reinterpret_cast<SendEffectTagFn>(sco::Sig("quantum.send_effect_tag"));
+            const auto result = sco::caps::SetFromSignatures(caps[i].name, caps[i].rows, caps[i].count);
+            if (result == sco::Result::Ok && sco::caps::Has(caps[i].name)) g_sendEffectTag = reinterpret_cast<SendEffectTagFn>(sco::Sig("quantum.send_effect_tag"));
         }
 }
 

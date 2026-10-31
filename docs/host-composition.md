@@ -6,21 +6,30 @@ native reader/worker exclusion and drain have been established. The composition
 description below describes the intended lifecycle, not a currently running host.
 
 The default development host builds from `external/sco-core`, pinned to
-unpublished sco-core #304 source `1b6782bc5c8b7d189cdff4c83e81957f09af35d7`.
+unpublished sco-core #305 source `49eb153d1d0952ebbc7baa258988e6dc6cc67320`.
 For local development, an extracted `host-source-sc` kit
 can be selected with `-DSCO_HOST_SOURCE_DIR=<extracted-source-root>`.
 That override does not change the committed pin or the external plugin archive.
 Kits must provide `sco_game_host`; a missing composition target is a configure
 error when the override is used. See [candidate coordinates](sdk-candidate.md).
 
-The game-pack composition owns original-image signature resolution, required
-synchronous quit interception, app startup, plugin tick admission/cadence, task
-cancellation, early DataCore/CryPak discovery and producer drain. The product
-retains Windows proxy forwarding, read-only OS inspection, message/window/input/
-render policy, paths/configuration, launcher consent/restoration, and remaining
-legacy engine helpers. Bootstrap runs outside DLL loader lock. The WM_QUIT path
-stops before doing queued work. Disabled/failed/crashed plugins have no host
-feature-tick fallback.
+The #305 host separates registry preparation from activation. Its strict owned
+host keeps the candidate registry private; `AcquireHostSignatureSnapshot` reads
+the separately installed convenience registry and is not an accessor for that
+candidate. The strict activation currently rejects the required native hooks,
+game services and legacy product adapters. The product cannot supply the actual
+image/resolver ownership or native reader/worker exclusion and drain needed to
+change that. A copied snapshot does not lease image memory or exclude readers.
+
+The old G1 path's quit interception, early DataCore and plugin startup are
+therefore not active. The product still contains Windows proxy forwarding,
+read-only OS inspection, message/window/input/render policy, paths/configuration,
+launcher consent/restoration and legacy engine helpers. A failed or uncertain
+Stop latches restart refusal; the process, module and backing must remain live
+until exit. The latch does not itself own or drain them. Core retains its owned
+closure on its terminal paths, but legacy consumer retention is not established.
+Core's terminal startup or stop failure also requires process exit. No callback
+is treated as drain proof.
 
 ## Refusal boundaries
 

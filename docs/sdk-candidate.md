@@ -1,7 +1,7 @@
 # SDK 2.4.0 candidate adoption
 
 **Development override, 2026-10-31:** the embedded gitlink is locally updated to
-sco-core #304 `1b6782bc5c8b7d189cdff4c83e81957f09af35d7` for coordinated
+sco-core #305 `49eb153d1d0952ebbc7baa258988e6dc6cc67320` for coordinated
 integration. That draft is not RC2 or a release. The archive coordinates below
 remain the separate external-plugin inputs; no archive or release is implied by
 the gitlink. The historical RC2 source coordinate below describes the previous
@@ -33,15 +33,20 @@ pin and verify both its release checksum and internal file inventory. Host sourc
 and plugin SDK archives have different roles; do not overlay their headers.
 
 The embedded development host and CI consumer-preflight source are both
-`1b6782bc5c8b7d189cdff4c83e81957f09af35d7`. The locally packaged legacy
+`49eb153d1d0952ebbc7baa258988e6dc6cc67320`. The locally packaged legacy
 preflight archive is locked to SHA-256
-`bb52b8bf1cab5aea09939e68a387705149411ce6c8af48e3f3f2576fc8a83c31`; it is
+`2a3f467ce7a517603056ff50d93a4991316828234ef24b587db3a4741df5d066`; it is
 not a published archive. The separate external-plugin input remains the published
 RC2 archive and digest in the table. The preflight
 fixtures and the RC2 archive's own plugin checker do not execute RC2-built
-plugins on the #304 host. A mixed-pair synthetic integration test and Windows
+plugins on the #305 host. A mixed-pair synthetic integration test and Windows
 package validation remain required before claiming compatibility or release
 readiness; no automatic fallback to another SDK is authorized.
+
+For local host-source consumer checks, the independently generated #305
+`sco-sdk-host-source-sc-2.4.0.zip` has SHA-256
+`9f697660cbc12185eb358f5187da5d9ec72d9a05738515f5aef5239c055e5104`.
+It is a development artifact, not the published RC2 host-source archive above.
 
 No plugin feature behavior is added by this update. The release workflow stages
 11 external folders (creative, discord, crew, spawn, build, mining, teleport,

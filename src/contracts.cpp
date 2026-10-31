@@ -61,7 +61,7 @@ static DWORD           g_mainThread = 0;
 constexpr size_t kContractMap = 0x9F0;
 
 // Every game address here is one of sco-core's contracts.* rows (sco/game/contracts.h; the
-// reputation checks are features.h's contracts.reputation), resolved by sco::ResolveAll before
+// reputation checks are features.h's contracts.reputation), resolved by the host before
 // ResolveContractsApi runs. Each part of the feature asks for its capability and stays off when it
 // isn't ready.
 namespace cg = sco::game::contracts;
@@ -69,8 +69,8 @@ namespace cg = sco::game::contracts;
 template <typename Cap> static bool CapReady(const Cap* caps, size_t n, const char* name) {
     for (size_t i = 0; i < n; ++i) {
         if (strcmp(caps[i].name, name) != 0) continue;
-        (void)sco::caps::SetFromSignatures(caps[i].name, caps[i].rows, caps[i].count);
-        if (sco::caps::Has(caps[i].name)) return true;
+        const auto result = sco::caps::SetFromSignatures(caps[i].name, caps[i].rows, caps[i].count);
+        if (result == sco::Result::Ok && sco::caps::Has(caps[i].name)) return true;
         Log("[contracts] %s unavailable (see the [core] lines in mod.log)", name);
         return false;
     }

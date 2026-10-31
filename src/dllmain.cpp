@@ -28,6 +28,7 @@
 #include "sco/log.h"
 #include "sco/scan.h"
 #include "sco/signatures.h"
+#include "sco/signature_registry.h"
 #include "sco/hook.h"
 #ifdef SCO_OFFLINE_G1_HOST
 #include "offline_host.h"
@@ -305,7 +306,11 @@ static void StartOffline() {
 static void LogStartup() {
     LogOfflinePatches();
     LogHooks();
-    if (g_signaturesResolved) sco::LogSignatureReport(false);
+    if (g_signaturesResolved) {
+        const auto snapshot = sco::AcquireHostSignatureSnapshot();
+        if (snapshot) sco::LogSignatureReport(*snapshot, false);
+        else Log("[app] signature snapshot unavailable; no host registry is published");
+    }
     if (g_quitHookStatus) Log("[app] game quit hook: %s", g_quitHookStatus);
     Log("[!] teleport: G2 REFUSE; F7/F8 consumer unavailable; read services are separate");
     if (SpawnerReady()) Log("[+] ship spawner: ready (M = menu)");
@@ -472,7 +477,8 @@ static void StopHostKit(const char* trigger) {
 #ifdef SCO_OFFLINE_G1_HOST
     const sco::Result result = offline_host::Stop();
     InvalidateEvidence();
-    if (result != sco::Result::Ok) Log("[app] stop (%s) refused: %s", trigger, sco::ResultName(result));
+    if (result != sco::Result::Ok)
+        Log("[app] stop (%s) incomplete: %s; keep backing live and close the game before restarting", trigger, sco::ResultName(result));
 #else
     (void)trigger;
 #endif
