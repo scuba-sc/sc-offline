@@ -134,8 +134,8 @@ jobs:
       - name: Owned signature snapshot diagnostics
         run: |
           cmake -S tools/offline-host -B "$RUNNER_TEMP/offline-owned" -DSCO_HOST_SOURCE_DIR="$GITHUB_WORKSPACE/external/sco-core"
-          cmake --build "$RUNNER_TEMP/offline-owned" --target signature_rows_test --parallel 2
-          ctest --test-dir "$RUNNER_TEMP/offline-owned" -R '^signature_rows$' --no-tests=error --output-on-failure
+          cmake --build "$RUNNER_TEMP/offline-owned" --target signature_rows_test registry_refusal_test refusal_test capability_refusal_test --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/offline-owned" --no-tests=error --output-on-failure
 
       - name: ASOP partial-start refusal propagation
         run: |
