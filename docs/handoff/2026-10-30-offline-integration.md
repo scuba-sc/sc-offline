@@ -1,6 +1,6 @@
 # sc-offline handoff — 2026-10-30 (draft)
 
-**Registry migration draft:** based on offline `772129e09e7838d56165bd3613f43ac49d373bb8`, with local development core #305 `49eb153d1d0952ebbc7baa258988e6dc6cc67320`. The historical #304 coordinates below are not this draft’s gitlink. Native startup remains refused; no published SDK or gameplay claim follows.
+**Registry migration draft:** based on offline `772129e09e7838d56165bd3613f43ac49d373bb8`, with local development core #305 `a5101d406a9ddbff14e437408686ffb04266be18`. The historical #304 coordinates below are not this draft’s gitlink. Native startup remains refused; no published SDK or gameplay claim follows.
 
 The merged #304 integration refused native host Prepare/Start and the entry hook. Its gitlink and generated CI preflight used core #304 `1b6782bc5c8b7d189cdff4c83e81957f09af35d7`; this was not a published SDK release.
 

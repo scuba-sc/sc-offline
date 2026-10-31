@@ -1,6 +1,6 @@
 # Native reader barrier: integration design and evidence gap
 
-**Registry migration draft:** the local gitlink is core #305 `49eb153d1d0952ebbc7baa258988e6dc6cc67320`; references to #304 below document the prior baseline. Product startup remains refused.
+**Registry migration draft:** the local gitlink is core #305 `a5101d406a9ddbff14e437408686ffb04266be18`; references to #304 below document the prior baseline. Product startup remains refused.
 
 Status: design plus product refusal. No native registry owner is enabled. The
 offline #184 baseline at `00989b4443ad0de1a33ab45a9139892ff08b0546` and

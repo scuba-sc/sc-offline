@@ -1,16 +1,17 @@
 # Owned-registry consumer migration — local draft
 
 Offline base `772129e09e7838d56165bd3613f43ac49d373bb8`; development core
-#305 `49eb153d1d0952ebbc7baa258988e6dc6cc67320`. The embedded source and the
+#305 `a5101d406a9ddbff14e437408686ffb04266be18`. The embedded source and the
 unpublished legacy SDK preflight are coordinated to that SHA; published RC2
 remains the separate external-plugin archive. Neither source nor artifact is a
 final SDK release.
 
-At the last remote check, #305 had advanced to
-`b2c9aa50e6888c0a317494422ede86b0ab1e9fd5`. Its additional changes refuse
-unproven native app-service startup and unowned provider publication. This draft
-and its fixtures are pinned to the requested `49eb153` candidate, not that newer
-head. Coordinate and retest the final dependency SHA before publishing.
+Core #305 advanced after the original `49eb153` preflight. This draft uses its reviewed `a5101d4` source, which also refuses unproven native service startup and unowned provider publication.
+
+The old, unregistered multiplayer consumer interprets the network API's
+idle result as ordinary state; the owned-runtime observer refusal is not yet
+distinguished there. Multiplayer is not staged or activated by this draft and
+must not be described as owned-runtime ready.
 
 Product diagnostics acquire a snapshot and keep it alive while reading results;
 missing snapshots, rows and failed capability updates refuse. A snapshot retains
