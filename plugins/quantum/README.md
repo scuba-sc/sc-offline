@@ -93,7 +93,17 @@ not content IDs or service pointers. Consumer reload reads the same host startup
 snapshot; changed disk bytes need a host restart. No query or list discovery
 authorizes relocation, quantum control or native backend activation.
 
-The optional `sco.widgets` panel retains ID `quantum.travel` and now has title **Travel**, combining paged destination/bookmark lists, altitude, bookmark save/delete/read-only inspection and observed scan with bounded G8 controls. No host/ImGui include or renderer callback is added. The panel's Travel and Go-to-bookmark buttons use the same commands. Missing widgets leaves command-only operation.
+The optional `sco.widgets` panel retains ID `quantum.travel` and now has title **Travel**, combining paged destination/bookmark lists, altitude, bookmark save/delete/read-only inspection and observed scan with bounded G8 controls. No host/ImGui include or renderer callback is added. The panel's Travel button uses the destination command. Bookmark Go, Delete and
+Inspect act on the exact selected row, including when multiple rows have the same
+name or differ only by case. Name-based commands keep their existing first
+case-insensitive match. Saving still appends and existing file/SQL formats are
+unchanged. Successful bookmark saves/deletes clear the selection; deletion of the
+last row on a page returns to the remaining page. Failed persistence keeps the
+prior in-memory rows and selection. A failed or uncertain storage operation does
+not establish what was durably written; investigate that outcome before retrying. Callbacks from older panel
+publications or loaded sessions are ignored; a failed panel replacement pauses
+old callbacks until a fresh publication succeeds. Missing widgets leaves
+command-only operation.
 
 ## Build, install and focused evidence
 
@@ -107,6 +117,12 @@ cmake --install build-quantum --prefix /path/to/product --component quantum
 ```
 
 Installed `data/plugins/quantum/` contains the native module and enabled manifest; ordinary folder disable and `plugins=off` semantics apply. Native modules are trusted code, GPL-3.0-only.
+
+The module workflow also exercises duplicate bookmark Go/Delete/Inspect, command
+compatibility, append/reload, page boundaries, stale selection/callbacks, failed
+panel publication, storage begin/write/commit failures with successful rollback and unavailable/malformed
+movement providers. These are public-service mocks and temporary legacy files;
+they do not certify production storage, renderer or gameplay behavior.
 
 The GameRules workflow drives the actual module/published panel with synthetic
 public providers, covering cache timing and clock wrap, opaque generations,
