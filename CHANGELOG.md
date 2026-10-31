@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+- **Refuse native startup pending a real safety barrier.** This development build
+  leaves host services, plugins, product patches and the startup entry hook
+  inactive until native readers and workers can be excluded and drained. A
+  diagnostic explains the refusal; gameplay is unavailable in this candidate.
+
+- **Refuse unproven native startup.** The development host does not install its startup hook, prepare or start native game services, apply product patches, or start plugins until a reviewed reader and worker exclusion and drain protocol is available. This build is not playable; not run in game.
+
+- **Keep legacy ASOP fleet identities stable.** Offline entitlement URNs and long-lived
+  fleet records use never-reused session IDs instead of list positions. Historical class
+  names stay immutable, and stale or invalid terminal IDs are refused. Synthetic checks
+  only; **not run in game**. No picker UI or composition-default change.
+
+- **Accept configured VPN firewall gaps ([#183](https://github.com/scuba-sc/sc-offline/issues/183)).**
+  Offline admission now checks the launcher's `multiplayer_allow` IPv4 ranges
+  alongside LAN exceptions, so the documented Tailscale range can pass the
+  firewall coverage check. The launcher clears invalid INI ranges with a warning;
+  malformed INI does not itself always refuse startup. Admission independently
+  rejects malformed forwarded environment values, undeclared firewall gaps and
+  missing live firewall/TCP evidence. Canonical environment formatting is not
+  authenticated provenance: another process can supply the same text. Explicit
+  public IPv4 ranges and ranges crossing private boundaries are rejected. TCP classification and private session
+  bind/peer policy are unchanged. Synthetic checks only; **not run in game**.
+
 - **Pin SDK 2.4.0 release candidate 2.** The host submodule, plugin archive
   pins, verifier digests, CI downloads and SDK-coordinate docs move from
   `sdk-v2.4.0-rc.1` (`48d7055`) to `sdk-v2.4.0-rc.2` (source `844e136`,

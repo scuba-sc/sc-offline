@@ -3,9 +3,12 @@
 import importlib.util
 import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 
 sys.dont_write_bytecode = True  # no tools/__pycache__ left in the tree
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -104,6 +107,33 @@ class ReleaseManifest(unittest.TestCase):
         self.assertEqual(rm.check(self.dir)[1], [])
         os.remove(os.path.join(folder, "contracts.dll"))
         self.assertEqual(rm.check(self.dir)[1], ["data/plugins/contracts/contracts.dll: missing"])
+
+    def test_tracked_docs_data_staging_excludes_fleet_test_fixture(self):
+        # Mirror the release job's git ls-files docs/data copy, not a full release build.
+        root = os.path.dirname(HERE)
+        tracked = subprocess.check_output(
+            ["git", "ls-files", "-z", "--", "docs", "data"], cwd=root
+        ).decode("utf-8").split("\0")[:-1]
+        self.assertTrue(tracked)
+        self.assertIn("docs/build.md", tracked)
+        for rel in tracked:
+            dest = os.path.join(self.dir, *rel.split("/"))
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.copyfile(os.path.join(root, *rel.split("/")), dest)
+        rm.write(self.dir, "v0.7.0", COMMIT, self.vh)
+        paths = {e["path"] for e in json.loads(self.manifest())["files"]}
+        self.assertTrue(set(tracked).issubset(paths))
+        self.assertNotIn("tools/test_fleet_identity.py", paths)
+        self.assertFalse(any(p.startswith("tools/") for p in paths))
+        archive = os.path.join(self.tmp.name, "release.zip")
+        with zipfile.ZipFile(archive, "w") as z:
+            for rel in sorted(paths | {rm.NAME}):
+                z.write(os.path.join(self.dir, *rel.split("/")), rel)
+        extracted = os.path.join(self.tmp.name, "roundtrip")
+        with zipfile.ZipFile(archive) as z:
+            self.assertEqual(set(z.namelist()), paths | {rm.NAME})
+            z.extractall(extracted)
+        self.assertEqual(rm.check(extracted)[1], [])
 
     def test_one_file_per_line(self):
         rm.write(self.dir, "v0.7.0", COMMIT, self.vh)

@@ -39,8 +39,8 @@ jobs:
       - name: Verify development source and SDK archive
         run: |
           set -eu
-          git -C external/sco-core fetch --depth=1 origin 26f0d9e140a1766cfd6adb6ebecc26f1aa0f3c72
-          git -C external/sco-core checkout --detach 26f0d9e140a1766cfd6adb6ebecc26f1aa0f3c72
+          git -C external/sco-core fetch --depth=1 origin 1b6782bc5c8b7d189cdff4c83e81957f09af35d7
+          git -C external/sco-core checkout --detach 1b6782bc5c8b7d189cdff4c83e81957f09af35d7
           tools/ci-dev-sdk-preflight.sh external/sco-core "$RUNNER_TEMP/sdk-development"
 
       - name: Check candidate-only sources against development host
@@ -94,6 +94,11 @@ jobs:
           test "$(git -C external/sco-core rev-parse HEAD)" = "$EMBEDDED_SOURCE"
           echo "Restored pinned host source $EMBEDDED_SOURCE"
 
+      - name: Legacy fleet stable identity (ASan and UBSan)
+        run: |
+          python3 tools/test_fleet_identity.py
+          python3 tools/test_launcher_allow.py
+
       - name: SDK proof generator defaults and explicit overrides
         run: python3 tools/test_sdk_generators.py
 
@@ -116,6 +121,17 @@ jobs:
         run: |
           c++ -std=c++20 -Wall -Wextra -Werror -I src tools/start_retry_test.cpp -o start_retry_test
           ./start_retry_test
+
+      - name: Product native activation refusal
+        run: |
+          c++ -std=c++20 -Wall -Wextra -Werror -I external/sco-core/include src/offline_host.cpp tools/offline-host/refusal_test.cpp -o offline_host_refusal_test
+          ./offline_host_refusal_test
+          python3 tools/test_native_preflight_wiring.py
+
+      - name: ASOP partial-start refusal propagation
+        run: |
+          c++ -std=c++20 -Wall -Wextra -Werror -I external/sco-core/include src/asop_shell.cpp tools/asop-shell/start_failure_test.cpp -o asop_start_failure_test
+          ./asop_start_failure_test
 
       - name: Host menu opt-in and ASOP fixture gate
         run: |

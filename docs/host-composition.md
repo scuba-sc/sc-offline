@@ -1,8 +1,13 @@
 # G1 host-source composition
 
-The default host builds from `external/sco-core`, pinned to exact SDK 2.4.0
-candidate source `844e136ccb280ad8cb43f73bc43c9447e8f6799d`
-(`sdk-v2.4.0-rc.2`). For local development, an extracted `host-source-sc` kit
+**Development startup is refused:** the product does not install the entry hook,
+call native host Prepare/Start, apply product patches, or activate plugins until
+native reader/worker exclusion and drain have been established. The composition
+description below describes the intended lifecycle, not a currently running host.
+
+The default development host builds from `external/sco-core`, pinned to
+unpublished sco-core #304 source `1b6782bc5c8b7d189cdff4c83e81957f09af35d7`.
+For local development, an extracted `host-source-sc` kit
 can be selected with `-DSCO_HOST_SOURCE_DIR=<extracted-source-root>`.
 That override does not change the committed pin or the external plugin archive.
 Kits must provide `sco_game_host`; a missing composition target is a configure

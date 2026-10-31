@@ -13,6 +13,7 @@
 #include "contracts.h"
 #include "travel.h"
 #include "version.h"
+#include "native_activation_policy.h"
 #ifdef SCO_ASOP_HOST_COMPOSITION
 #include "asop_shell.h"
 #else
@@ -77,6 +78,7 @@ extern "C" void StartupGateWait() {
 }
 
 static void InstallStartupGate() {
+    if (!offline_host::NativeActivationAvailable()) return;
     auto* base = reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr));
     wchar_t path[MAX_PATH];
     const DWORD length = GetModuleFileNameW(nullptr, path, MAX_PATH);
@@ -193,8 +195,16 @@ static admission::Evidence ProbeEvidence() {
     admission::ProbeFirewall(exe, fw);
     admission::TcpSnapshot tcp;
     admission::ProbeTcpTable(tcp);
+    // Launcher intent narrows acceptable firewall gaps, never replaces live proof.
+    wchar_t allow[256]{};
+    SetLastError(ERROR_SUCCESS);
+    const DWORD n = GetEnvironmentVariableW(L"SC_OFFLINE_MULTIPLAYER_ALLOW", allow, 256);
+    const DWORD error = GetLastError();
+    const bool readable = n < 256 && (n != 0 || error == ERROR_SUCCESS || error == ERROR_ENVVAR_NOT_FOUND);
+    const std::wstring configuredAllow = readable ? std::wstring(allow, n) : L"invalid";
     const admission::Evidence ev =
-        admission::Decide(antiCheat, InspectTargetProcess(), fw, exe, tcp, GetCurrentProcessId());
+        admission::Decide(antiCheat, InspectTargetProcess(), fw, exe, tcp, GetCurrentProcessId(), nullptr,
+                          configuredAllow);
     std::lock_guard<std::mutex> lock(g_probeDetailLock);
     g_probeDetail = ProbeDetail{fw.activeProfiles, fw.rulesSeen, GetTickCount64() - start, exeOk,
                                 fw.hr, tcp.error, fw.stage, tcp.stage};
@@ -266,6 +276,7 @@ static const char* g_quitHookStatus = nullptr;   // "[app] game quit hook: ..." 
 static bool PrepareHostKit();
 
 static void StartOffline() {
+    if (!offline_host::NativeActivationAvailable()) return;
     // sco-core's signature rows first. They match the game's original bytes (sco-sigcheck checks
     // them against StarCitizen.exe on disk), and the ASOP rows cover bytes that the offline patches
     // and hooks below change (the shard gate, the fleet manager's retrieve). The report goes out
@@ -607,6 +618,11 @@ static DWORD WINAPI ModThread(LPVOID param) {
     OpenConsole();
     Log(SCO_TITLE " (" SCO_BASED_ON ")");
     Log("Bug reports: https://github.com/scuba-sc/sc-offline/issues");
+
+    if (!offline_host::NativeActivationAvailable()) {
+        Log("[app] offline startup unavailable: native reader and worker exclusion and drain are not proven; close the game and await a validated build");
+        return 0;
+    }
 
     HMODULE game = GetModuleHandleW(kTargetModule);
     if (!game) game = GetModuleHandleW(nullptr);

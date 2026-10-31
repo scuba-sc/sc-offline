@@ -54,12 +54,14 @@ Use the launcher's **Plugins** page to manage extensions. Feature availability d
 
 ## What has actually been run
 
+**Development startup is unavailable.** The native reader and worker exclusion and drain required for safe activation are not yet proven. This draft refuses native startup and installs no startup hook. It is not a playable build.
+
 Read this before relying on any feature description. Only the owner runs the game; a green build, a synthetic check or a resolved signature is never a game result.
 
 - **Observed in game (once or twice, startup only):** v0.7.8.1 offline startup on two Windows PCs: offline evidence line clear, every offline patch applied, signatures resolved, plugins loaded, the game loading into the universe. Play beyond loading in, the menu and every feature below are **not verified in game**.
 - **Checked on a development machine only:** the external plugins build against published SDK archives and pass the SDK's plugin checker with no game services. That is a build and contract check, not gameplay.
 - **Historical Linux report:** sc-offline 0.7.0 was reported played offline with game 4.10.193 on one Bazzite/LUG Helper Wine setup. [The exact tuple and limits](docs/linux.md#historical-observation) are recorded separately; the current SDK 2.4.0 RC2 host and plugins have no Wine game run.
-- **Current pins:** the Windows host and external plugins target the latest published sco-core release, SDK 2.4.0 release candidate 2 ([`sdk-v2.4.0-rc.2`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2)). The release source and embedded host pin are `844e136ccb280ad8cb43f73bc43c9447e8f6799d`; later `sco-core/main` commits do not change the published archive bytes. External plugins use the checksum-pinned published `sco-sdk-2.4.0.zip`. Plugin ABI 1.1 is unchanged, Star Citizen game pack is 0.8.0, and static signature evidence targets game build 4.10.197.2878. The final `sdk-v2.4.0` tag is still pending; in-game acceptance remains unverified. New or default-off services keep their SDK refusal boundaries.
+- **Current pins:** the development Windows host targets unpublished sco-core #304 source `1b6782bc5c8b7d189cdff4c83e81957f09af35d7`; the external plugins target published SDK 2.4.0 release candidate 2 ([`sdk-v2.4.0-rc.2`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2)), whose source is `844e136ccb280ad8cb43f73bc43c9447e8f6799d`. External plugins use the checksum-pinned published `sco-sdk-2.4.0.zip`. Plugin ABI 1.1 is unchanged, Star Citizen game pack is 0.8.0, and static signature evidence targets game build 4.10.197.2878. The final `sdk-v2.4.0` tag is still pending; in-game acceptance remains unverified. New or default-off services keep their SDK refusal boundaries.
 
 Details and the list of owed in-game checks: [Status](docs/status.md).
 

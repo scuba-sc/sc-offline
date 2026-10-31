@@ -36,7 +36,18 @@ host::Result Start(const Options& options, bool offlinePrepared, bool eacAbsent)
     for (const auto& name : options.ships) names.push_back(name.c_str());
     config.shipClasses = names.data();
     config.shipCount = names.size();
-    return host::Start(config); // Provider copies the catalogue before returning.
+    // Unavailable can follow partial installation. Close custom admission even
+    // when the provider reported failure; Stop retains installed-hook backing.
+    // AlreadyStarted describes an earlier attempt, not this installation.
+    host::Result result;
+    try {
+        result = host::Start(config); // Provider copies the catalogue before returning.
+    } catch (...) {
+        host::Stop();
+        return host::Result::Unavailable;
+    }
+    if (result == host::Result::Unavailable) host::Stop();
+    return result;
 }
 host::Status Status() { return host::Snapshot(); }
 void Stop() { host::Stop(); } // Admission closes before app/provider teardown.

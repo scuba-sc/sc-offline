@@ -15,6 +15,7 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#include "private_network_ranges.h"
 
 namespace admission {
 
@@ -326,9 +327,42 @@ inline bool ParseRemoteAddresses(const std::wstring& text, AddrSet& out) {
     return true;
 }
 
-// True iff the blocked set `s` covers everything except private space: the IPv4 complement of the union is
-// contained in {10/8, 127/8, 169.254/16, 172.16/12, 192.168/16} AND IPv6 is covered in full.
-inline bool CoverageOk(const AddrSet& s) {
+// Only launcher-shaped declarations can exempt additional IPv4 space. Parse atomically:
+// no wildcards, ranges, IPv6, dotted masks, host bits or partial-list acceptance.
+inline bool ParseConfiguredAllow(const std::wstring& text, std::vector<V4Range>& out) {
+    if (text.size() > 255) return false;
+    std::string s;
+    if (!detail::ToAscii(text, s)) return false;
+    std::vector<V4Range> parsed;
+    if (!s.empty()) {
+        size_t pos = 0;
+        for (;;) {
+            const size_t comma = s.find(',', pos);
+            const std::string tok = detail::Trim(s.substr(pos, comma == std::string::npos ? comma : comma - pos));
+            const size_t slash = tok.find('/');
+            uint32_t ip = 0;
+            unsigned len = 0;
+            if (slash == std::string::npos || !detail::ParseV4(tok.substr(0, slash), ip) ||
+                !detail::ParseSmallUInt(tok.substr(slash + 1), 32, len) || len < 8 || parsed.size() >= 8)
+                return false;
+            const uint32_t mask = ~0u << (32 - len);
+            if ((ip & ~mask) || !offline_network::PrivateRange(ip, ip | ~mask)) return false;
+            const std::string canonical = std::to_string(ip >> 24) + "." +
+                std::to_string((ip >> 16) & 255) + "." + std::to_string((ip >> 8) & 255) + "." +
+                std::to_string(ip & 255) + "/" + std::to_string(len);
+            if (s.substr(pos, comma == std::string::npos ? comma : comma - pos) != canonical) return false;
+            parsed.push_back({ip, ip | ~mask});
+            if (comma == std::string::npos) break;
+            pos = comma + 1;
+        }
+    }
+    out = std::move(parsed);
+    return true;
+}
+
+// True iff blocked IPv4 plus explicit allowed ranges leave gaps only in
+// {10/8, 127/8, 169.254/16, 172.16/12, 192.168/16}, AND IPv6 is covered in full.
+inline bool CoverageOk(const AddrSet& s, const std::vector<V4Range>& allowed = {}) {
     static constexpr V4Range kPrivate[] = {{0x0A000000u, 0x0AFFFFFFu}, {0x7F000000u, 0x7FFFFFFFu},
                                            {0xA9FE0000u, 0xA9FEFFFFu}, {0xAC100000u, 0xAC1FFFFFu},
                                            {0xC0A80000u, 0xC0A8FFFFu}};
@@ -339,6 +373,9 @@ inline bool CoverageOk(const AddrSet& s) {
         return false;
     };
     std::vector<V4Range> v4 = s.v4;
+    // Treat only the declared exceptions as covered, then retain the original
+    // private-gap and full-IPv6 proof. Sorting handles overlapping/adjacent CIDRs.
+    v4.insert(v4.end(), allowed.begin(), allowed.end());
     std::sort(v4.begin(), v4.end(), [](const V4Range& a, const V4Range& b) { return a.first < b.first; });
     uint64_t next = 0;
     for (const V4Range& r : v4) {
@@ -392,10 +429,13 @@ inline bool RuleCounts(const FwRuleView& r, const FwSnapshot& snap, const std::w
 
 // Clear iff the firewall is on for every active profile and BOTH directions are covered for this exe.
 // Otherwise Unknown (never Present: this contract proves a block, it does not prove reachability).
-inline Tri OfficialNetwork(const FwSnapshot& snap, const std::wstring& exePath, FwDetail* detail = nullptr) {
+inline Tri OfficialNetwork(const FwSnapshot& snap, const std::wstring& exePath, FwDetail* detail = nullptr,
+                           const std::wstring& configuredAllow = {}) {
     FwDetail local;
     FwDetail& d = detail ? *detail : local;
     d = FwDetail{};
+    std::vector<V4Range> allowed;
+    if (!ParseConfiguredAllow(configuredAllow, allowed)) return Tri::Unknown;
     if (!snap.profilesOk || !snap.rulesOk || exePath.empty()) return Tri::Unknown;
     if ((snap.activeProfiles & kProfileMask) == 0 || (snap.activeProfiles & ~kProfileMask) != 0) return Tri::Unknown;
     if ((snap.enabledProfiles & snap.activeProfiles) != snap.activeProfiles) return Tri::Unknown;
@@ -411,8 +451,8 @@ inline Tri OfficialNetwork(const FwSnapshot& snap, const std::wstring& exePath, 
             ++(dir == kDirIn ? d.countingIn : d.countingOut);
         }
     }
-    d.coveredIn = CoverageOk(in);
-    d.coveredOut = CoverageOk(out);
+    d.coveredIn = CoverageOk(in, allowed);
+    d.coveredOut = CoverageOk(out, allowed);
     return d.coveredIn && d.coveredOut ? Tri::Clear : Tri::Unknown;
 }
 
@@ -463,11 +503,12 @@ struct Evidence {
 // antiCheat and targetProcess come from the shell's existing inspections; session and officialNetwork are
 // derived here. admitted() holds only when all four are positively Clear.
 inline Evidence Decide(Tri antiCheat, Tri targetProcess, const FwSnapshot& fw, const std::wstring& exePath,
-                       const TcpSnapshot& tcp, uint32_t pid, FwDetail* detail = nullptr) {
+                       const TcpSnapshot& tcp, uint32_t pid, FwDetail* detail = nullptr,
+                       const std::wstring& configuredAllow = {}) {
     Evidence e;
     e.antiCheat = antiCheat;
     e.targetProcess = targetProcess;
-    e.officialNetwork = OfficialNetwork(fw, exePath, detail);
+    e.officialNetwork = OfficialNetwork(fw, exePath, detail, configuredAllow);
     e.session = Session(tcp, e.officialNetwork, pid);
     return e;
 }
