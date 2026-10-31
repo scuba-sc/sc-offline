@@ -169,7 +169,7 @@ sco_result SaveMarks(std::vector<Bookmark> next) {
         g.marks.swap(next);
         g.selected_mark=-1; // a copied row index must never drift after a mutation
         if (g.marks.empty()) g.mark_page=0;
-        else g.mark_page=std::min(g.mark_page,static_cast<uint32_t>((g.marks.size()-1)/128));
+        else g.mark_page=(std::min)(g.mark_page,static_cast<uint32_t>((g.marks.size()-1)/128));
     }
     return r;
 }
