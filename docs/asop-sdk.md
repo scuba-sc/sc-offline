@@ -50,6 +50,15 @@ next-tick tasks. Stop closes admission and wakes untaken waiters before app tear
 Taken frames remain the provider's process-lifetime responsibility; join engine workers
 before unloading the image. Stop is not restoration/hot-reload of inherited patches.
 
+If the provider returns `Unavailable` or throws a C++ exception from Start, the
+product immediately calls Stop and reports `Unavailable`. Stop closes custom admission while retaining
+installed hooks and backing for process lifetime; it is not rollback. Core must
+also close admission as part of its own failed installation path: the product
+cannot prevent callers entering while Start is still executing. This protection
+does not establish native-reader exclusion or make a partial installation safe to
+unload. A repeated `AlreadyStarted` response is not a new installation failure
+and does not stop the existing owner.
+
 Portable compile-only target:
 
 ```sh

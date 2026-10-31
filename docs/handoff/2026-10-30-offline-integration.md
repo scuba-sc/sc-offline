@@ -6,6 +6,13 @@ remains RC2. The older pin and Windows evidence below describe the original
 handoff, not this updated source. See `2026-10-31-native-reader-barrier.md` for
 the separate registry activation blocker.
 
+ASOP startup: on core `1166c9f`, failed catalogue installation can leave
+admission open while later installers run. The product now calls Stop if Start
+returns `Unavailable` or throws a C++ exception, preserving the failure and
+retaining hook backing. This is a post-return backstop, not a replacement for the
+core fix that closes admission within the failed installation path. Do not claim
+that this candidate has the core fix until the coordinated gitlink is updated.
+
 Branch `handoff/offline-integration-20261030` = main `0f569b9` + 4 commits:
 
 | Commit | Change |

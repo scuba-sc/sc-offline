@@ -127,6 +127,11 @@ jobs:
           c++ -std=c++20 -Wall -Wextra -Werror -I external/sco-core/include src/offline_host.cpp tools/offline-host/refusal_test.cpp -o offline_host_refusal_test
           ./offline_host_refusal_test
 
+      - name: ASOP partial-start refusal propagation
+        run: |
+          c++ -std=c++20 -Wall -Wextra -Werror -I external/sco-core/include src/asop_shell.cpp tools/asop-shell/start_failure_test.cpp -o asop_start_failure_test
+          ./asop_start_failure_test
+
       - name: Host menu opt-in and ASOP fixture gate
         run: |
           test -f tools/asop_selection_workflow_test.cpp
