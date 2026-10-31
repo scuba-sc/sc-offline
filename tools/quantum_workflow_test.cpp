@@ -183,7 +183,7 @@ void BookmarkWorkflow(sco_result(*load)(const sco_api*,sco_plugin*),void(*unload
     const std::string first="bookmark A|Base\nspot 11 0 0 zone_a\n";
     const std::string second="bookmark B|base\nspot 22 0 0 zone_b\n";
     auto reload=[&]{unload();commands.clear();assert(load(&api,self)==SCO_OK);};
-    auto seed=[&](const std::string& bytes){unload();commands.clear();std::ofstream(file)<<bytes;assert(load(&api,self)==SCO_OK);};
+    auto seed=[&](const std::string& bytes){unload();commands.clear();std::ofstream(file,std::ios::binary)<<bytes;assert(load(&api,self)==SCO_OK);};
     auto done=[&]{reloc_state=SC_RELOCATION_COMPLETE;Tick(100);};
     auto go=[&](int32_t index,double x){SelectBookmark(index);const auto before=requests;Send(15);assert(requests==before+1&&last_request.pos[0]==x);done();};
     relocation_cap=true;zone_available=true;
