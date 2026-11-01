@@ -7,6 +7,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      test_core_candidate:
+        description: 'Test the separately pinned core candidate'
+        type: boolean
+        default: false
 
 # Default to read; only the release job asks for write.
 permissions:
@@ -18,6 +23,107 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  # Separate opt-in qualification: never changes the product gitlink.
+  candidate-host-package:
+    if: github.event_name == 'workflow_dispatch' && inputs.test_core_candidate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: scuba-sc/sco-core
+          ref: 4aef497723a99a6bb5e19c65f4b9ecf65d30cf19
+          path: candidate-core
+          persist-credentials: false
+      - name: Verify and package the exact candidate
+        working-directory: candidate-core
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OFFLINE_RUN_SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          test "$(gh api repos/scuba-sc/sc-offline/pulls/192 --jq '.state + ":" + .head.sha')" = "open:$OFFLINE_RUN_SHA"
+          test "$(gh api repos/scuba-sc/sco-core/pulls/315 --jq '.state + ":" + .head.sha')" = open:4aef497723a99a6bb5e19c65f4b9ecf65d30cf19
+          test "$(git rev-parse HEAD)" = 4aef497723a99a6bb5e19c65f4b9ecf65d30cf19
+          test -z "$(git status --porcelain)"
+          python3 sdk/package.py --profile core-source --out "$RUNNER_TEMP/candidate-kits"
+          python3 sdk/package.py --profile host-source-sc --out "$RUNNER_TEMP/candidate-kits"
+          echo 'b4aa9ab7f10f488910334f8e5a64668ac540d2ad2d1b18ed18e0648e84a747ff  '"$RUNNER_TEMP/candidate-kits/sco-sdk-core-source-2.4.0.zip" | sha256sum -c -
+          echo '5659640a463acafb80614f827c13767b889a8a07375412c236f10f254c788ce8  '"$RUNNER_TEMP/candidate-kits/sco-sdk-host-source-sc-2.4.0.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/candidate-kits/sco-sdk-host-source-sc-2.4.0.zip" -d "$RUNNER_TEMP/candidate-check"
+          (cd "$RUNNER_TEMP/candidate-check/sco-sdk-host-source-sc-2.4.0" && sha256sum -c SHA256SUMS >/dev/null)
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-host-source-kit
+          path: ${{ runner.temp }}/candidate-kits/sco-sdk-host-source-sc-2.4.0.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  candidate-host-consumer:
+    if: github.event_name == 'workflow_dispatch' && inputs.test_core_candidate
+    needs: candidate-host-package
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025-vs2026]
+        source: [source, kit]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: scuba-sc/sco-core
+          ref: 4aef497723a99a6bb5e19c65f4b9ecf65d30cf19
+          path: candidate-core
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: candidate-host-source-kit
+          path: ${{ runner.temp }}/candidate-kit
+      - name: Verify candidate inputs and test actual host reports
+        shell: bash
+        env:
+          INPUT_KIND: ${{ matrix.source }}
+        run: |
+          set -eu
+          test "$(git -C candidate-core rev-parse HEAD)" = 4aef497723a99a6bb5e19c65f4b9ecf65d30cf19
+          test -z "$(git -C candidate-core status --porcelain)"
+          workspace="$GITHUB_WORKSPACE"; temp="$RUNNER_TEMP"; py=python3; generator=()
+          if [ "$RUNNER_OS" = Windows ]; then
+            workspace="$(cygpath -m "$GITHUB_WORKSPACE")"; temp="$(cygpath -m "$RUNNER_TEMP")"; py=python
+            generator=(-G 'Visual Studio 18 2026' -A x64)
+          else
+            export CC=clang CXX=clang++
+          fi
+          archive="$temp/candidate-kit/sco-sdk-host-source-sc-2.4.0.zip"
+          "$py" -c 'import hashlib,sys; assert hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest()=="5659640a463acafb80614f827c13767b889a8a07375412c236f10f254c788ce8"' "$archive"
+          "$py" -m zipfile -e "$archive" "$temp/candidate-extracted"
+          kit="$temp/candidate-extracted/sco-sdk-host-source-sc-2.4.0"
+          "$py" -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["profile"]=="host-source-sc" and d["source_commits"]["core"]=="4aef497723a99a6bb5e19c65f4b9ecf65d30cf19"' "$kit/COMPATIBILITY.json"
+          source="$workspace/candidate-core"
+          if [ "$INPUT_KIND" = kit ]; then source="$kit"; fi
+          test -f "$source/tests/owned_shutdown_test_access.h"
+          cmake -S tools/offline-host -B "$temp/candidate-build" "${generator[@]}" -DCMAKE_BUILD_TYPE=Release "-DSCO_HOST_SOURCE_DIR=$source"
+          cmake --build "$temp/candidate-build" --config Release --target host_report_test --parallel 2
+          ctest --test-dir "$temp/candidate-build" -C Release --show-only=json-v1 > "$temp/candidate-tests.json"
+          "$py" -c 'import json,sys; names={t["name"] for t in json.load(open(sys.argv[1]))["tests"]}; expected={"host_report_"+x for x in ("refusal","reentry","wrong-thread","failed-start","options-copy","copy","copy-negative","retained_reap")}; assert expected <= names, expected-names' "$temp/candidate-tests.json"
+          ctest --test-dir "$temp/candidate-build" -C Release -R '^host_report_' --no-tests=error --output-on-failure
+
+  candidate-host-current:
+    if: github.event_name == 'workflow_dispatch' && inputs.test_core_candidate
+    needs: candidate-host-consumer
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Recheck candidate PR head after all four tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OFFLINE_RUN_SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          test "$(gh api repos/scuba-sc/sc-offline/pulls/192 --jq '.state + ":" + .head.sha')" = "open:$OFFLINE_RUN_SHA"
+          test "$(gh api repos/scuba-sc/sco-core/pulls/315 --jq '.state + ":" + .head.sha')" = open:4aef497723a99a6bb5e19c65f4b9ecf65d30cf19
+
   # Seconds on Linux: parse errors and MSVC C2712 risks fail here, before the Windows build.
   check:
     runs-on: ubuntu-24.04

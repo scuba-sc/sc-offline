@@ -83,6 +83,14 @@ not reach the post-app-start seam; the separate optional case does.
 
 ## Detailed report candidate
 
+The current opt-in CI candidate is core PR #315 source
+`4aef497723a99a6bb5e19c65f4b9ecf65d30cf19`; its host-source archive SHA-256 is
+`5659640a463acafb80614f827c13767b889a8a07375412c236f10f254c788ce8`.
+The separate `test_core_candidate` workflow dispatch runs the detailed fixture
+against both source and the extracted archive on Linux and Windows. It does not
+promote either the candidate or the product pin. A moved PR head refuses the run;
+the actual tested commit must still be checked when interpreting results.
+
 When `SCO_HOST_SOURCE_DIR` provides the `HostCapsule` contract and private
 source testing header, CMake additionally builds `host_report_test` against
 that source. It compiles a separate, test-instrumented copy of core's host
@@ -120,6 +128,20 @@ retains the capsule and its real backing with a nonzero session ID.
   `copy-negative` omits the lease, holds backing alive, and demonstrates that
   Stop can finish before that copy. Neither producer is a game-host callback or
   native reader; no use-after-free or success-only barrier is introduced.
+* `retained-reap` is registered only when the source provides
+  `reap_retained_until`. An actual owned worker remains blocked across the
+  game-host Stop deadline, and maintenance reports `PendingRetained`. The
+  worker's own maintenance call is refused. Its thread-local destructor then
+  blocks separately, and maintenance remains pending until that destructor is
+  released. `ReapedRetained` follows the destruction of the worker's callable
+  and TLS, and is repeatable; the owner stays closed and not ready, worker
+  admission and host restart remain refused, and the actual capsule and backing
+  stay process-retained. A fresh owner also refuses maintenance. This exercises
+  the real owned-worker join path, but the worker is synthetic and is not a
+  census of native readers or evidence of a game execution barrier.
+  When the source's observation-only `owned_shutdown_test_access.h` is present,
+  it also synchronizes an overlapping maintenance refusal and checks that
+  worker and helper handles were reaped; it does not perform those joins.
 
 Every adopted terminal result stays `ProcessRetained`; a failed stop does not
 authorize restart, destruction or unload. These tests do not establish native

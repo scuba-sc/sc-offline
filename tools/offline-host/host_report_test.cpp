@@ -2,6 +2,9 @@
 // Restricted synthetic game-host composition. No native barrier or product activation.
 #include "sco/game/host.h"
 #include "src/game/host_testing.h"
+#ifdef SCO_HAS_REAP_TEST_ACCESS
+#include "tests/owned_shutdown_test_access.h"
+#endif
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -22,16 +25,21 @@ using namespace std::chrono_literals;
 
 // Instrumented host.cpp arms this only during the actual Options assignment.
 static thread_local bool allocationFired = false;
-void* operator new(std::size_t n) {
+#if defined(_MSC_VER)
+#define HOST_REPORT_NOINLINE __declspec(noinline)
+#else
+#define HOST_REPORT_NOINLINE __attribute__((noinline))
+#endif
+HOST_REPORT_NOINLINE void* operator new(std::size_t n) {
     if (gh::testing::ConsumeOptionsAllocationFault()) { allocationFired = true; throw std::bad_alloc(); }
     if (void* p = std::malloc(n ? n : 1)) return p;
     throw std::bad_alloc();
 }
-void* operator new[](std::size_t n) { return ::operator new(n); }
-void operator delete(void* p) noexcept { std::free(p); }
-void operator delete[](void* p) noexcept { ::operator delete(p); }
-void operator delete(void* p, std::size_t) noexcept { ::operator delete(p); }
-void operator delete[](void* p, std::size_t) noexcept { ::operator delete(p); }
+HOST_REPORT_NOINLINE void* operator new[](std::size_t n) { return ::operator new(n); }
+HOST_REPORT_NOINLINE void operator delete(void* p) noexcept { std::free(p); }
+HOST_REPORT_NOINLINE void operator delete[](void* p) noexcept { ::operator delete(p); }
+HOST_REPORT_NOINLINE void operator delete(void* p, std::size_t) noexcept { ::operator delete(p); }
+HOST_REPORT_NOINLINE void operator delete[](void* p, std::size_t) noexcept { ::operator delete(p); }
 
 static std::atomic<int> images{0}, resolvers{0}, backings{0}, inspections{0};
 struct ImageBacking {
@@ -78,12 +86,38 @@ static void Retained(const gh::HostReport& r) {
     if (!session) session = r.sessionId;
     CHECK(r.sessionId == session);
 }
+#ifdef SCO_HAS_RETAINED_REAP
+using Reap = sco::OwnedShutdown::ReapResult;
+struct WorkerSignals {
+    std::promise<void> entered, releaseWork, tlsEntered, releaseTls;
+    std::promise<Reap> selfReap;
+    std::atomic<bool> callableDestroyed{false}, tlsDestroyed{false};
+};
+struct CallableMarker {
+    std::shared_ptr<WorkerSignals> signals;
+    ~CallableMarker() { signals->callableDestroyed.store(true, std::memory_order_release); }
+};
+struct TlsTail {
+    std::shared_ptr<WorkerSignals> signals;
+    ~TlsTail() {
+        signals->tlsEntered.set_value();
+        signals->releaseTls.get_future().wait();
+        signals->tlsDestroyed.store(true, std::memory_order_release);
+    }
+};
+#endif
 int main(int argc, char** argv) {
     if (argc != 2) return 2;
     const std::string mode = argv[1];
     CHECK(gh::StatusDetailed().dependencies == D::NeverExposed);
     auto b = std::make_shared<Backing>();
     auto o = Configuration(b);
+#ifdef SCO_HAS_RETAINED_REAP
+    if (mode == "retained-reap") {
+        CHECK(b->owner->reap_retained_until(std::chrono::steady_clock::now() + 1s) == Reap::Refused);
+        o.drainTimeoutMs = 10;
+    }
+#endif
     if (mode == "refusal") o.platform.gameServices = true;
     if (mode == "options-copy") o.platform.pluginRoot = std::string(8192, 'x');
     auto capsule = std::make_shared<const gh::HostCapsule>(o, b);
@@ -134,6 +168,55 @@ int main(int argc, char** argv) {
                 std::thread t([&] { other = gh::StopDetailed(); }); t.join();
                 Retained(other); CHECK(other.result == R::WrongThread && other.phase == gh::Phase::Running);
             }
+#ifdef SCO_HAS_RETAINED_REAP
+            if (mode == "retained-reap") {
+                auto signals = std::make_shared<WorkerSignals>();
+                auto entered = signals->entered.get_future();
+                auto tlsEntered = signals->tlsEntered.get_future();
+                auto selfReap = signals->selfReap.get_future();
+                auto marker = std::make_shared<CallableMarker>(signals);
+                auto* owner = retained->owner.get();
+                CHECK(owner->start_worker([signals, marker, owner](const auto&) {
+                    thread_local TlsTail tail{signals};
+                    (void)tail; (void)marker;
+                    signals->entered.set_value();
+                    signals->releaseWork.get_future().wait();
+                    signals->selfReap.set_value(owner->reap_retained_until(std::chrono::steady_clock::now() + 1s));
+                }));
+                marker.reset();
+                CHECK(entered.wait_for(2s) == std::future_status::ready);
+                const auto stopped = gh::StopDetailed(); Retained(stopped);
+                CHECK(stopped.result == R::Failed && stopped.phase == gh::Phase::Failed);
+                CHECK(owner->closed() && !owner->ready());
+#ifdef SCO_HAS_REAP_TEST_ACCESS
+                auto overlapping = std::async(std::launch::async, [&] {
+                    return owner->reap_retained_until(std::chrono::steady_clock::now() + 2s);
+                });
+                CHECK(sco::OwnedShutdownTestAccess::wait_for_join_control(*owner, std::chrono::steady_clock::now() + 2s));
+                CHECK(owner->reap_retained_until(std::chrono::steady_clock::now() + 1s) == Reap::Refused);
+                CHECK(overlapping.get() == Reap::PendingRetained);
+#endif
+                CHECK(owner->reap_retained_until(std::chrono::steady_clock::now() + 10ms) == Reap::PendingRetained);
+                CHECK(!signals->callableDestroyed.load(std::memory_order_acquire));
+                CHECK(!signals->tlsDestroyed.load(std::memory_order_acquire));
+                signals->releaseWork.set_value();
+                CHECK(selfReap.wait_for(2s) == std::future_status::ready && selfReap.get() == Reap::Refused);
+                CHECK(tlsEntered.wait_for(2s) == std::future_status::ready);
+                CHECK(owner->reap_retained_until(std::chrono::steady_clock::now() + 10ms) == Reap::PendingRetained);
+                CHECK(!signals->tlsDestroyed.load(std::memory_order_acquire));
+                signals->releaseTls.set_value();
+                CHECK(owner->reap_retained_until(std::chrono::steady_clock::now() + 2s) == Reap::ReapedRetained);
+                CHECK(signals->callableDestroyed.load(std::memory_order_acquire));
+                CHECK(signals->tlsDestroyed.load(std::memory_order_acquire));
+#ifdef SCO_HAS_REAP_TEST_ACCESS
+                CHECK(sco::OwnedShutdownTestAccess::handles_reaped(*owner));
+#endif
+                CHECK(owner->reap_retained_until(std::chrono::steady_clock::now() + 2s) == Reap::ReapedRetained);
+                CHECK(!owner->ready() && !owner->start_worker([](const auto&) {}));
+                Retained(gh::StatusDetailed());
+                CHECK(!wc.expired() && !wb.expired() && backings == 0 && images == 0 && resolvers == 0);
+            } else
+#endif
             if (mode == "copy" || mode == "copy-negative") {
                 const bool withLease = mode == "copy";
                 std::promise<void> entered, resume;
