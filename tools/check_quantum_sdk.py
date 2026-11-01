@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Standalone quantum proof against published RC2 or an explicitly locked development SDK.
+"""Standalone quantum proof against published stable SDK 2.4.0 or an explicitly locked development SDK.
 
 Same machinery as check_teleport_sdk.py. The actual-module workflow drives the
 player switch, the game.relocation capability, one request and its tick tracking
@@ -21,7 +21,7 @@ QUANTUM = {
     'checks': [
         # quantum.travel takes arguments, so it is invoked explicitly.
         (['--invoke', 'quantum.travel', 'Port', '500'],
-         ('setting relocation (bool)', 'quantum.travel -> unavailable', 'game.relocation is off',
+         ('setting relocation (bool)', 'quantum.travel -> unavailable', 'game.relocation provider is unavailable',
           'quantum.scan -> unavailable', 'quantum.status -> ok', 'game.relocation off', 'OK: 0 failure(s)')),
     ],
     'policy_red_arm': ('plugins/quantum/controls.h',

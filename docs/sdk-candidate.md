@@ -1,29 +1,42 @@
-# SDK 2.4.0 candidate adoption
+# SDK 2.4.0 release coordinates and consumer qualification
 
-**Current development input (2026-11-01):** the embedded host and candidate consumer checks pin exact sco-core source `44ffd1290e261e12684b38ac862ec0c4f08921df`. Core workflow run [41332377573](https://github.com/scuba-sc/sco-core/actions/runs/41332377573) produced release-candidate artifact `13093044361`, whose ZIP digest is `464b7ca2f05f402cfe5581b2a34033c169a977cf5493a396a36a7c63dc0c2ddc`. This is candidate evidence, not final SDK release promotion.
+The embedded host and standalone plugin consumers now target the published stable
+SDK 2.4.0 release, tag [`sdk-v2.4.0`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0).
+The annotated tag peels to Core source `6106fa3639cbcc28f78a1ded8de2707de019f4d3`.
+Candidate run [41342490537](https://github.com/scuba-sc/sco-core/actions/runs/41342490537)
+and publication run [41343086992](https://github.com/scuba-sc/sco-core/actions/runs/41343086992)
+both completed successfully at that exact source. The release manifest records
+candidate artifact `13098182566`, the source identity, the components manifest hash,
+all payload sizes and digests, and the five SDK profiles.
 
-## Exact candidate package coordinates
+## Published archive identities
 
-The candidate artifact contains the following SDK packages. They were independently extracted, checksum-verified, regenerated from exact core source `44ffd129`, and byte-compared against the downloaded artifact:
+All five ZIPs below were independently checked against the release's `SHA256SUMS`
+and `release.json`, then regenerated from a clean checkout of the exact `6106fa36`
+source and byte-compared with the published release assets.
 
-| Package | SHA-256 | Archive inventory |
-|---|---|---:|
-| Combined SDK, `sco-sdk-2.4.0.zip` | `bcd5c946ed8658214571d95bb79df594c9ea83748f63869d1963ef1fa77f51d9` | 355 files |
-| Core source, `sco-sdk-core-source-2.4.0.zip` | `807a322eab2b3d8c25e10c3582008ec3ec50b6b536bc947f2b28cf4b63095c22` | 442 files |
-| Star Citizen host source, `sco-sdk-host-source-sc-2.4.0.zip` | `799511bfa08a7bf77a46fcf8262d3cac4a5f0e6a0ef04a28f53e6e624c01e8a0` | 985 files |
+| Profile | Published archive | SHA-256 | Files |
+|---|---|---|---:|
+| Combined core + game SDK (`legacy`) | `sco-sdk-2.4.0.zip` | `0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc` | 355 |
+| Core SDK | `sco-sdk-core-2.4.0.zip` | `d2a8313ec5e3a7ae9ff95c253841b40e75454bec9799dccba5cbab9346432a7b` | 158 |
+| Core source | `sco-sdk-core-source-2.4.0.zip` | `df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51` | 443 |
+| Star Citizen game overlay | `sco-sdk-game-sc-0.8.0.zip` | `a5881e321bb456a3a17894413a07ece9ce6d3787bd6d1ad7dcc34fc288951f6b` | 203 |
+| Star Citizen host source | `sco-sdk-host-source-sc-2.4.0.zip` | `a0aaaba07e3d4eb0d8c264912cd6f2ab23f0d237a99fa07816005790a76efc4c` | 986 |
 
-Each package compatibility descriptor records the exact source commit. All archive SHA256SUMS passed. The combined SDK, core-source and host-source archives passed the core IP/provenance audits. The host-source kit contains the owned signature snapshot and detailed host report/stop interfaces used by the synthetic consumer fixtures.
+The offline host gitlink uses the exact same source commit. The standalone plugin
+builds consume the combined `legacy` archive and its release checksum inventory;
+the embedded host uses the separate host-source profile. Those profiles have
+different roles and their headers must not be overlaid. The preflight and hosted
+consumer matrix check the official package coordinates before use.
 
-This package check does not establish a native reader barrier, production ownership of game image/resolver code, Windows runtime behavior or gameplay acceptance. The offline product startup preflight remains unconditionally unavailable. External plugin production defaults remain separately pinned to the published RC2 archive below.
+The SDK release package verification does not establish native reader exclusion,
+production ownership of the game image/resolver, Windows runtime behavior, or
+gameplay acceptance. Product native startup and ASOP native activation remain
+refused pending the required reader/worker exclusion and drain proof. Static
+signature metadata targets game build 4.10.197.2878 and remains pending in-game
+verification. CI and synthetic fixtures prove only the build paths and contracts
+they exercise.
 
-## Published external-plugin default
-
-SC Offline's external plugin jobs still consume the published SDK 2.4.0 RC2 release: [`sdk-v2.4.0-rc.2`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2). Its source is `844e136ccb280ad8cb43f73bc43c9447e8f6799d`, and its combined archive `sco-sdk-2.4.0.zip` has SHA-256 `51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e`. The candidate combined archive above is a distinct file with the same versioned basename; never confuse its hash or source with the published RC2 input.
-
-The host builds from the exact committed source submodule. Plugin proof jobs use verified published archives, not source-checkout include paths. Host-source and plugin SDK profiles have different roles; do not overlay their headers. A candidate host build alone does not prove that RC2-built external plugins work with the candidate host.
-
-## Scope and remaining evidence
-
-The candidate keeps the SDK version at 2.4.0, plugin ABI at 1.1, and Star Citizen game-pack version at 0.8.0. Static signature metadata targets game build 4.10.197.2878 and remains pending in-game verification. The release candidate workflow artifact and this development pin do not create a final release or authorize native activation.
-
-Windows x64/MSVC binary checks, consumer-specific Linux/Windows fixture runs, release assembly, real launcher restoration, renderer checks and in-game smoke must each be stated separately. No game, launcher or driver settings are changed by source checks. CI and synthetic tests prove only the contracts and build paths they actually exercise.
+Earlier RC2 and pre-release candidate coordinates are historical evidence only;
+they are not current consumer pins or substitutes for the stable archive digests
+above.

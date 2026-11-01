@@ -18,11 +18,11 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
-# Published SDK 2.4.0 RC2; final SDK release and gameplay acceptance remain separate.
+# Published stable SDK 2.4.0; gameplay acceptance remains separate.
 SDK_VERSION = '2.4.0'
 SDK_ROOT = 'sco-sdk-' + SDK_VERSION
 SDK_ARCHIVE = SDK_ROOT + '.zip'
-SDK_SHA256 = '51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e'
+SDK_SHA256 = '0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc'
 
 
 def run(argv, cwd, success=True):
@@ -35,6 +35,22 @@ def run(argv, cwd, success=True):
 
 def contained(path, root):
     return path == root or root in path.parents
+
+
+def compiler_system_dependency(dependency, search_roots):
+    """Accept dependencies named under compiler roots, including distro header symlinks.
+
+    Linux distributions may place a symlink under /usr/include whose target lives
+    in a sibling UAPI directory. Project and SDK dependencies remain resolved and
+    checked against their exact allowed roots.
+    """
+    lexical = Path(os.path.abspath(dependency))
+    resolved = lexical.resolve()
+    for root in search_roots:
+        lexical_root = Path(os.path.abspath(root))
+        if contained(lexical, lexical_root) or contained(resolved, lexical_root.resolve()):
+            return True
+    return False
 
 
 def explicit_preflight_pin(args):
@@ -172,8 +188,9 @@ def trace_posix(build, source, sdk, public, feature="inspector", shared=()):
         for line in section.splitlines():
             text = line.strip().replace(' (framework directory)', '')
             if text and Path(text).is_absolute():
-                p = Path(text).resolve()
-                if not contained(p, sdk) and not contained(p, source) and not contained(p, ROOT):
+                p = Path(os.path.abspath(text))
+                resolved = p.resolve()
+                if not contained(resolved, sdk) and not contained(resolved, source) and not contained(resolved, ROOT):
                     system.append(p)
         if not system:
             raise AssertionError('Compiler toolchain include roots not discovered')
@@ -181,11 +198,18 @@ def trace_posix(build, source, sdk, public, feature="inspector", shared=()):
         if shutil.which("xcrun"):
             sysroot = Path(run(["xcrun", "--show-sdk-path"], build).stdout.strip()).resolve()
             metadata.add(sysroot / "SDKSettings.json")
-        deps = shlex.split(run(argv + ['-M'], command['directory']).stdout.replace('\\\n', ' '))[1:]
+        # Keep the compiler's spelling for system headers. Some Clang builds
+        # canonicalize -M paths through distro symlinks (for example asm/types.h)
+        # into a UAPI directory outside the compiler's listed include roots.
+        # We still resolve every path before checking SDK/project boundaries, so
+        # a project or SDK symlink cannot use this option to escape its root.
+        deps = shlex.split(run(argv + ['-M', '-fno-canonical-system-headers'],
+                               command['directory']).stdout.replace('\\\n', ' '))[1:]
         if not deps:
             raise AssertionError('Empty compiler dependency trace')
         for dep in deps:
-            p = Path(dep).resolve()
+            lexical = Path(os.path.abspath(dep))
+            p = lexical.resolve()
             if contained(p, sdk):
                 ok = p in public
             elif contained(p, ROOT):
@@ -193,7 +217,7 @@ def trace_posix(build, source, sdk, public, feature="inspector", shared=()):
             elif contained(p, source):
                 ok = own_source(p, source, feature, shared)
             else:
-                ok = p in metadata or any(contained(p, d) for d in system)
+                ok = p in metadata or compiler_system_dependency(lexical, system)
             if not ok:
                 raise AssertionError(f'Non-public {feature} dependency: ' + p.name)
     print(f'{feature}: two full compiler dependency traces clean (including system headers)')
@@ -328,7 +352,7 @@ def main(args):
         cpp.write_text(original)
     identity = (
         'explicit unpublished candidate' if args.candidate
-        else 'published RC2 proof; final release and gameplay acceptance separate'
+        else 'published stable SDK 2.4.0 proof; final release and gameplay acceptance separate'
     )
     print(f'inspector SDK {identity} {args.sdk_version} SHA-256 {args.sdk_sha256}: PASS (synthetic, not run in game)')
 
@@ -341,7 +365,7 @@ def parse_args(argv=None):
     parser.add_argument('--generator', default='Visual Studio 18 2026',
                         help='CMake generator for Windows (default: Visual Studio 18 2026)')
     parser.add_argument('--sdk-version', default=SDK_VERSION,
-                        help='Exact SDK archive version (default: published 2.4.0 RC2)')
+                        help='Exact SDK archive version (default: published stable 2.4.0)')
     parser.add_argument('--sdk-sha256', default=SDK_SHA256,
                         help='Expected archive SHA-256 for the selected version')
     parser.add_argument('--candidate', action='store_true',
