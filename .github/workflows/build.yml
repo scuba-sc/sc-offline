@@ -136,6 +136,8 @@ jobs:
           cmake -S tools/offline-host -B "$RUNNER_TEMP/offline-owned" -DSCO_HOST_SOURCE_DIR="$GITHUB_WORKSPACE/external/sco-core"
           # Build every registered fixture before running the complete CTest suite.
           cmake --build "$RUNNER_TEMP/offline-owned" --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/offline-owned" -N | grep -E 'Test +#[0-9]+: owned_capsule_host$' >/dev/null
+          ctest --test-dir "$RUNNER_TEMP/offline-owned" -N | grep -E 'Test +#[0-9]+: owned_capsule_after_app_start$' >/dev/null
           ctest --test-dir "$RUNNER_TEMP/offline-owned" --no-tests=error --output-on-failure
 
       - name: ASOP partial-start refusal propagation
@@ -413,6 +415,29 @@ jobs:
 
       - name: Build (Release)
         run: cmake --build build --config Release --parallel
+
+      - name: Test pinned host ownership fixtures (Windows)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = git rev-parse HEAD:external/sco-core
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $actual = git -C external/sco-core rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($expected -ne $actual) { throw 'Host source differs from the product gitlink' }
+          cmake -S tools/offline-host -B "$env:RUNNER_TEMP/offline-owned" -G 'Visual Studio 18 2026' -A x64 "-DSCO_HOST_SOURCE_DIR=$env:GITHUB_WORKSPACE/external/sco-core"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build "$env:RUNNER_TEMP/offline-owned" --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $testJson = ctest --test-dir "$env:RUNNER_TEMP/offline-owned" -C Release --show-only=json-v1 | Out-String
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $testList = $testJson | ConvertFrom-Json
+          $names = @($testList.tests | ForEach-Object { $_.name })
+          foreach ($required in @('owned_capsule_host', 'owned_capsule_after_app_start', 'native_activation_refusal', 'product_registry_refusal')) {
+            if ($required -notin $names) { throw "Missing required fixture: $required" }
+          }
+          ctest --test-dir "$env:RUNNER_TEMP/offline-owned" -C Release --no-tests=error --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # The properties players and the release depend on, read from the binaries themselves.
       # dumpbin and mt come from the image's VS 2026 and Windows SDK.
