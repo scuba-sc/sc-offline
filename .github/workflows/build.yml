@@ -31,7 +31,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: scuba-sc/sco-core
-          ref: e4ba511c5be0f1f901e1ca958a1fd28839e30fdc
+          ref: f76eed986135a94f7283efb29ee412979a60275a
           path: candidate-core
           persist-credentials: false
       - name: Verify and package the exact candidate
@@ -42,13 +42,13 @@ jobs:
         run: |
           set -eu
           test "$(gh api repos/scuba-sc/sc-offline/pulls/192 --jq '.state + ":" + .head.sha')" = "open:$OFFLINE_RUN_SHA"
-          test "$(gh api repos/scuba-sc/sco-core/pulls/315 --jq '.state + ":" + .head.sha')" = open:e4ba511c5be0f1f901e1ca958a1fd28839e30fdc
-          test "$(git rev-parse HEAD)" = e4ba511c5be0f1f901e1ca958a1fd28839e30fdc
+          test "$(gh api repos/scuba-sc/sco-core/pulls/315 --jq '.state + ":" + .head.sha')" = open:f76eed986135a94f7283efb29ee412979a60275a
+          test "$(git rev-parse HEAD)" = f76eed986135a94f7283efb29ee412979a60275a
           test -z "$(git status --porcelain)"
           python3 sdk/package.py --profile core-source --out "$RUNNER_TEMP/candidate-kits"
           python3 sdk/package.py --profile host-source-sc --out "$RUNNER_TEMP/candidate-kits"
-          echo 'cd81ed6beeb079da967fff9a9cab751d76111b9325b9505f13fdc11a0da3cc52  '"$RUNNER_TEMP/candidate-kits/sco-sdk-core-source-2.4.0.zip" | sha256sum -c -
-          echo '090c27a051b25df6b78a620b9d84de64325a96bbd77a852f650b3efe25e5660b  '"$RUNNER_TEMP/candidate-kits/sco-sdk-host-source-sc-2.4.0.zip" | sha256sum -c -
+          echo 'd9a329fadf6baa2409eafda3e3756c0c2f0b493534e335b5253e765bf78ede0c  '"$RUNNER_TEMP/candidate-kits/sco-sdk-core-source-2.4.0.zip" | sha256sum -c -
+          echo '9fe105779b1d5cfaf9b494da8cc620708f97b1e6ea17836dfb9cc1b676a01a6e  '"$RUNNER_TEMP/candidate-kits/sco-sdk-host-source-sc-2.4.0.zip" | sha256sum -c -
           unzip -q "$RUNNER_TEMP/candidate-kits/sco-sdk-host-source-sc-2.4.0.zip" -d "$RUNNER_TEMP/candidate-check"
           (cd "$RUNNER_TEMP/candidate-check/sco-sdk-host-source-sc-2.4.0" && sha256sum -c SHA256SUMS >/dev/null)
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -74,7 +74,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: scuba-sc/sco-core
-          ref: e4ba511c5be0f1f901e1ca958a1fd28839e30fdc
+          ref: f76eed986135a94f7283efb29ee412979a60275a
           path: candidate-core
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -87,7 +87,7 @@ jobs:
           INPUT_KIND: ${{ matrix.source }}
         run: |
           set -eu
-          test "$(git -C candidate-core rev-parse HEAD)" = e4ba511c5be0f1f901e1ca958a1fd28839e30fdc
+          test "$(git -C candidate-core rev-parse HEAD)" = f76eed986135a94f7283efb29ee412979a60275a
           test -z "$(git -C candidate-core status --porcelain)"
           workspace="$GITHUB_WORKSPACE"; temp="$RUNNER_TEMP"; py=python3; generator=()
           if [ "$RUNNER_OS" = Windows ]; then
@@ -97,10 +97,10 @@ jobs:
             export CC=clang CXX=clang++
           fi
           archive="$temp/candidate-kit/sco-sdk-host-source-sc-2.4.0.zip"
-          "$py" -c 'import hashlib,sys; assert hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest()=="090c27a051b25df6b78a620b9d84de64325a96bbd77a852f650b3efe25e5660b"' "$archive"
+          "$py" -c 'import hashlib,sys; assert hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest()=="9fe105779b1d5cfaf9b494da8cc620708f97b1e6ea17836dfb9cc1b676a01a6e"' "$archive"
           "$py" -m zipfile -e "$archive" "$temp/candidate-extracted"
           kit="$temp/candidate-extracted/sco-sdk-host-source-sc-2.4.0"
-          "$py" -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["profile"]=="host-source-sc" and d["source_commits"]["core"]=="e4ba511c5be0f1f901e1ca958a1fd28839e30fdc"' "$kit/COMPATIBILITY.json"
+          "$py" -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["profile"]=="host-source-sc" and d["source_commits"]["core"]=="f76eed986135a94f7283efb29ee412979a60275a"' "$kit/COMPATIBILITY.json"
           source="$workspace/candidate-core"
           if [ "$INPUT_KIND" = kit ]; then source="$kit"; fi
           test -f "$source/tests/owned_shutdown_test_access.h"
@@ -122,7 +122,7 @@ jobs:
         run: |
           set -eu
           test "$(gh api repos/scuba-sc/sc-offline/pulls/192 --jq '.state + ":" + .head.sha')" = "open:$OFFLINE_RUN_SHA"
-          test "$(gh api repos/scuba-sc/sco-core/pulls/315 --jq '.state + ":" + .head.sha')" = open:e4ba511c5be0f1f901e1ca958a1fd28839e30fdc
+          test "$(gh api repos/scuba-sc/sco-core/pulls/315 --jq '.state + ":" + .head.sha')" = open:f76eed986135a94f7283efb29ee412979a60275a
 
   # Seconds on Linux: parse errors and MSVC C2712 risks fail here, before the Windows build.
   check:
