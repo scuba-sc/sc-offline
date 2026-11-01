@@ -12,7 +12,7 @@ git clone --recurse-submodules https://github.com/scuba-sc/sc-offline.git
 
 In an existing clone, or after a pull that moves the pin, run `git submodule update --init`. Without it, CMake configure and `tools/check.sh` stop and say so.
 
-The development embedded host is pinned to sco-core #305 source `a5101d406a9ddbff14e437408686ffb04266be18`. This draft source is not a published release. External plugin jobs consume the checksum-pinned published RC2 archive separately. See [candidate coordinates and limits](sdk-candidate.md). Do not replace the submodule with moving `main` or copy plugin SDK headers over host source.
+The development embedded host is pinned to the coordinated RC3 candidate source `44ffd1290e261e12684b38ac862ec0c4f08921df`. CI rebuilds and verifies the candidate package from that exact source; it is not a published final release. External-plugin jobs continue to consume the checksum-pinned published RC2 archive separately. See [candidate coordinates and limits](sdk-candidate.md). Do not replace the submodule with moving `main` or copy plugin SDK headers over host source.
 
 1. Install **Visual Studio 2026** with the **Desktop development with C++** workload. It includes CMake.
 2. In Visual Studio, use **File → Open → Folder** on the repository root. Visual Studio reads `CMakeLists.txt`; pick an x64 **Release** configuration and build. Or from a Developer PowerShell:
@@ -41,6 +41,14 @@ tools/check.sh
 ```
 
 This runs in a few seconds. It parses every `src/*.cpp`, `src/builtins/*.cpp`, `src/builtins/*/*.cpp` (the bridges) and `launcher/*.cpp` file with clang against mingw-w64's Windows headers. It also screens `src/` for MSVC error C2712 (`__try` in a function that owns an object needing unwinding, such as a `std::string`). It is not a build: only MSVC's build is. Known clang-only diagnostics are listed in `tools/check-baseline.txt`, and only new ones fail the check. You need clang and mingw-w64 (`brew install llvm mingw-w64` on macOS).
+
+The focused test-process shutdown regression runs with the pinned host headers via
+`tools/test_app_stop.sh external/sco-core`. It covers an unverified legacy `void`
+shutdown, failure, exception and confirmed cleanup, plus an unsafe-guard negative
+control. `tools/test_menu_widgets_release.sh external/sco-core` builds the real
+menu harness with `NDEBUG` and verifies that a forced failure is detected. When invoking `menu_widgets_test` or `asop_host_composition_test`
+directly against a legacy host, exit 77 means the functional assertions passed but
+shutdown could not be verified; it is a skip, not a successful cleanup.
 
 ### Include and scan gates
 

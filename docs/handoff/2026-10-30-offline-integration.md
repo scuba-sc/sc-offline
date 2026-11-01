@@ -1,6 +1,6 @@
-# sc-offline handoff — 2026-10-30 (draft)
+# Historical sc-offline handoff — 2026-10-30
 
-**Registry migration draft:** based on offline `772129e09e7838d56165bd3613f43ac49d373bb8`, with local development core #305 `a5101d406a9ddbff14e437408686ffb04266be18`. The historical #304 coordinates below are not this draft’s gitlink. Native startup remains refused; no published SDK or gameplay claim follows.
+This handoff records the state at the time. Current offline RC3 source and artifact coordinates are maintained in [sdk-candidate.md](../sdk-candidate.md). The earlier registry-migration draft used offline base `772129e09e7838d56165bd3613f43ac49d373bb8` and development core #305 source `a5101d406a9ddbff14e437408686ffb04266be18`. Native startup remained refused; no published SDK or gameplay claim followed.
 
 The merged #304 integration refused native host Prepare/Start and the entry hook. Its gitlink and generated CI preflight used core #304 `1b6782bc5c8b7d189cdff4c83e81957f09af35d7`; this was not a published SDK release.
 
@@ -39,6 +39,6 @@ Canonical cross-repo runbook: sco-core branch `handoff/core-integration-20261030
 - Identity fixture uses synthetic SRW/SEH/registry seams.
 - The original handoff accepted public IPv4 exceptions; the local correction
   rejects them. Environment values still do not prove launcher provenance.
-- The old separate owned-registry consumer branch was not included in the #304 integration. This draft migrates its own consumer against #305, and the product preflight still refuses native activation until a real native-reader barrier is available.
-- The original handoff embedded pin was `844e136`; the merged #304 integration used the SHA above. The current migration draft uses #305 as noted at the top. The external plugin archive remains `sdk-v2.4.0-rc.2`.
+- At this handoff, the separate owned-registry consumer was a draft against #305 and product preflight refused native activation pending a real reader barrier.
+- The original handoff embedded pin was `844e136`; the merged #304 integration used the SHA above. At that time the external plugin archive remained `sdk-v2.4.0-rc.2`.
 - Draft #117 (ASOP ship selector) remains parked; native `Reconfigure` refused in core.

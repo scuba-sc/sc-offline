@@ -53,11 +53,14 @@ int main(int argc,char** argv){
  auto old=Get("B");Fire(old.id,SCO_WIDGET_TOGGLE,1);CHECK(Get("B").value==1);
  Fire(old.id,SCO_WIDGET_TOGGLE,0);CHECK(Get("B").value==1); // stale panel event ignored
  Press("Save selection");CHECK(writes==1 && accepted==std::vector<std::string>({"A","Unresolved","B"}));
- phase=SC_ASOP_SELECTION_FILE_COMMITTED;file=accepted;++revision;release_busy=true;Tick();CHECK(releases==0);CHECK(Get("Save selection").flags&SCO_WIDGET_DISABLED);release_busy=false;Tick();CHECK(releases==1);CHECK(Get("B").value==1);
+ CHECK(Get("Edit accepted; waiting for file commit").kind==SCO_WIDGET_LABEL);
+ phase=SC_ASOP_SELECTION_FILE_COMMITTED;file=accepted;++revision;release_busy=true;Tick();CHECK(releases==0);CHECK(Get("Save selection").flags&SCO_WIDGET_DISABLED);
+ CHECK(Get("Selection saved to file; native application unverified").kind==SCO_WIDGET_LABEL);
+ release_busy=false;Tick();CHECK(releases==1);CHECK(Get("B").value==1);
  Press("Select none");reject_replace=true;Press("Save selection");CHECK(releases==2 && writes==1);reject_replace=false;Press("Save selection");CHECK(writes==2 && accepted.empty());phase=SC_ASOP_SELECTION_EDIT_CONFLICT;Tick();CHECK(releases==3);CHECK(Get("Save selection").flags&SCO_WIDGET_DISABLED);
  CHECK(Get("Reload file (discard draft)").kind==SCO_WIDGET_BUTTON);Press("Reload file (discard draft)");
  Press("Select all classes");Press("Save selection");CHECK(writes==3 && accepted==std::vector<std::string>({"A","B"}));
- available=false;Tick();CHECK(Get("Save selection").flags&SCO_WIDGET_DISABLED);const int publications_at_loss=publications;for(int i=0;i<10;++i)Tick();CHECK(publications==publications_at_loss);
+ available=false;Tick();CHECK(Get("Save selection").flags&SCO_WIDGET_DISABLED);CHECK(Get("Save outcome unknown; waiting for selection service").kind==SCO_WIDGET_LABEL);const int publications_at_loss=publications;for(int i=0;i<10;++i)Tick();CHECK(publications==publications_at_loss);
  // A restarted provider invalidates the pending lease. Reconcile deliberately.
  available=true;Tick();CHECK(Get("Save selection").flags&SCO_WIDGET_DISABLED);available=false;Tick();
  ++session;++lease_id;available=true;Tick();CHECK(Get("Save selection").flags&SCO_WIDGET_DISABLED);

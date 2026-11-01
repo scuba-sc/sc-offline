@@ -2,7 +2,7 @@
 
 The product currently refuses native startup pending a proven reader/worker
 exclusion and drain. The opt-in composition below is not active in this build.
-In addition, core `a5101d406a9ddbff14e437408686ffb04266be18` itself returns
+In addition, the coordinated core candidate `44ffd1290e261e12684b38ac862ec0c4f08921df` itself returns
 `Unavailable` from enabled ASOP Start until a safe phase is established. With
 `SCO_ASOP_HOST_COMPOSITION=ON`, the legacy fleet/services implementation is
 excluded at build time; there is no runtime fallback when that owner refuses.

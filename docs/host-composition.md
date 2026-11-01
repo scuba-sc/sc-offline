@@ -6,14 +6,14 @@ native reader/worker exclusion and drain have been established. The composition
 description below describes the intended lifecycle, not a currently running host.
 
 The default development host builds from `external/sco-core`, pinned to
-unpublished sco-core #305 source `a5101d406a9ddbff14e437408686ffb04266be18`.
+RC3 candidate source `44ffd1290e261e12684b38ac862ec0c4f08921df`.
 For local development, an extracted `host-source-sc` kit
 can be selected with `-DSCO_HOST_SOURCE_DIR=<extracted-source-root>`.
 That override does not change the committed pin or the external plugin archive.
 Kits must provide `sco_game_host`; a missing composition target is a configure
 error when the override is used. See [candidate coordinates](sdk-candidate.md).
 
-The #305 host separates registry preparation from activation. Its strict owned
+The candidate host separates registry preparation from activation. Its strict owned
 host keeps the candidate registry private; `AcquireHostSignatureSnapshot` reads
 the separately installed convenience registry and is not an accessor for that
 candidate. The strict activation currently rejects the required native hooks,

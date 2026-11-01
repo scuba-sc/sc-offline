@@ -161,11 +161,16 @@ jobs:
       - name: tools/check.sh (pinned host source)
         run: tools/check.sh
 
-      - name: Verify development source and SDK archive
+      - name: Test harness shutdown retention (pinned host headers)
+        run: |
+          tools/test_app_stop.sh external/sco-core
+          tools/test_menu_widgets_release.sh external/sco-core
+
+      - name: Verify RC3 candidate source and SDK archive
         run: |
           set -eu
-          git -C external/sco-core fetch --depth=1 origin a5101d406a9ddbff14e437408686ffb04266be18
-          git -C external/sco-core checkout --detach a5101d406a9ddbff14e437408686ffb04266be18
+          git -C external/sco-core fetch --depth=1 origin 44ffd1290e261e12684b38ac862ec0c4f08921df
+          git -C external/sco-core checkout --detach 44ffd1290e261e12684b38ac862ec0c4f08921df
           tools/ci-dev-sdk-preflight.sh external/sco-core "$RUNNER_TEMP/sdk-development"
 
       - name: Check candidate-only sources against development host
@@ -234,6 +239,12 @@ jobs:
           set -eu
           c++ -std=c++20 -I src/builtins -I external/sco-core/include tools/builtins_result_test.cpp -o builtins_result_test
           ./builtins_result_test
+
+      - name: Built-in UI ABI boundary tests (ASan and UBSan)
+        run: |
+          set -eu
+          c++ -std=c++20 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -I src/builtins -I external/sco-core/include tools/builtin_ui_boundary_test.cpp -o builtin_ui_boundary_test
+          ./builtin_ui_boundary_test
 
       # G1 admission evidence decision core: any failed or unparseable OS reading is Unknown, never Clear.
       - name: Admission evidence tests
