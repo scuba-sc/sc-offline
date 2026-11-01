@@ -2,8 +2,9 @@
 
 Status: inventory and synthetic qualification only. Current coordinated input:
 offline #185 head `9d7165038edda5a7196e311f54943c3d0d8dde71` proposes development
-source `44ffd1290e261e12684b38ac862ec0c4f08921df`; the current production main
-gitlink remains `a5101d406a9ddbff14e437408686ffb04266be18`. The exact RC3 candidate
+source `44ffd1290e261e12684b38ac862ec0c4f08921df`; current main
+`9cd25406934d6afd1da400b4aefbf95eb46339c7` still has production gitlink
+`1b6782bc5c8b7d189cdff4c83e81957f09af35d7`. The exact RC3 candidate
 was published by core workflow run `41332377573` as artifact `13093044361`, with
 outer SHA-256
 `464b7ca2f05f402cfe5581b2a34033c169a977cf5493a396a36a7c63dc0c2ddc`. Its
