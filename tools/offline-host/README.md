@@ -66,8 +66,17 @@ core. No result authorizes native activation, teardown or restart. Product
 positive copy case the still-held read itself prevents drain completion at that
 point; the fixture does not claim a separate drain-wait observer.
 
-The pinned core offers no deterministic injection seam for an exception during
-`options = o`. This fixture does not test a partial Options copy; qualifying
-that path requires a core-owned test seam or another safe deterministic
-allocation-failure mechanism. The owner-fault Start case does not reach the
-post-app-start seam; the separate optional case does.
+On Linux, a separate fresh-process `options_copy_fault_test` replaces ordinary
+allocation operators with malloc/free-backed equivalents and arms a one-shot,
+thread-local allocation failure after constructing a long `pluginRoot` and the
+capsule. It intercepts ordinary scalar/array `new`, not aligned allocation,
+direct `malloc`, or allocations on other threads. Against the pinned source it requires the fault to fire, real Prepare
+to return Failed with a closed owner and Failed phase, no inspector calls, and
+both image and resolver reference counts to remain two after caller Options
+are cleared: one reference from the capsule and one from core's partially
+assigned Options. These checks, together with pinned member order, identify a
+partial Options assignment. If no allocation reaches the hook, CTest reports a
+skip; any fired hook with a failed oracle is a test failure. This is evidence
+for the tested Linux/GNU library and pinned source, not Windows, other standard
+libraries, or arbitrary allocation failures. The owner-fault Start case does
+not reach the post-app-start seam; the separate optional case does.
