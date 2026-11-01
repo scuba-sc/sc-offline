@@ -34,6 +34,12 @@ jobs:
           ref: 4c09ab2f73caa3d1103214adc56193d2434a8795
           path: candidate-core
           persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: scuba-sc/sc-offline
+          ref: ${{ github.sha }}
+          path: offline-source
+          persist-credentials: false
       - name: Verify and package the exact candidate
         working-directory: candidate-core
         env:
@@ -41,8 +47,12 @@ jobs:
           OFFLINE_RUN_SHA: ${{ github.sha }}
         run: |
           set -eu
+          set -o pipefail
           test "$(gh api repos/scuba-sc/sc-offline/pulls/192 --jq '.state + ":" + .head.sha')" = "open:$OFFLINE_RUN_SHA"
-          test "$(gh api repos/scuba-sc/sco-core/pulls/315 --jq '.state + ":" + .head.sha')" = open:4c09ab2f73caa3d1103214adc56193d2434a8795
+          test "$(git -C ../offline-source rev-parse HEAD)" = "$OFFLINE_RUN_SHA"
+          test -z "$(git -C ../offline-source status --porcelain)"
+          python3 ../offline-source/tools/test_core_candidate_pr_guard.py
+          gh api repos/scuba-sc/sco-core/pulls/315 | python3 ../offline-source/tools/core_candidate_pr_guard.py --expected-head 4c09ab2f73caa3d1103214adc56193d2434a8795
           test "$(git rev-parse HEAD)" = 4c09ab2f73caa3d1103214adc56193d2434a8795
           test -z "$(git status --porcelain)"
           python3 sdk/package.py --profile core-source --out "$RUNNER_TEMP/candidate-kits"
@@ -115,14 +125,23 @@ jobs:
     needs: candidate-host-consumer
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: scuba-sc/sc-offline
+          ref: ${{ github.sha }}
+          path: offline-source
+          persist-credentials: false
       - name: Recheck candidate PR head after all four tests
         env:
           GH_TOKEN: ${{ github.token }}
           OFFLINE_RUN_SHA: ${{ github.sha }}
         run: |
           set -eu
+          set -o pipefail
           test "$(gh api repos/scuba-sc/sc-offline/pulls/192 --jq '.state + ":" + .head.sha')" = "open:$OFFLINE_RUN_SHA"
-          test "$(gh api repos/scuba-sc/sco-core/pulls/315 --jq '.state + ":" + .head.sha')" = open:4c09ab2f73caa3d1103214adc56193d2434a8795
+          test "$(git -C offline-source rev-parse HEAD)" = "$OFFLINE_RUN_SHA"
+          test -z "$(git -C offline-source status --porcelain)"
+          gh api repos/scuba-sc/sco-core/pulls/315 | python3 offline-source/tools/core_candidate_pr_guard.py --expected-head 4c09ab2f73caa3d1103214adc56193d2434a8795
 
   # Seconds on Linux: parse errors and MSVC C2712 risks fail here, before the Windows build.
   check:
