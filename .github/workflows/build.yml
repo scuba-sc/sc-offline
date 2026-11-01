@@ -36,6 +36,11 @@ jobs:
       - name: tools/check.sh (pinned host source)
         run: tools/check.sh
 
+      - name: Test harness shutdown retention (pinned host headers)
+        run: |
+          tools/test_app_stop.sh external/sco-core
+          tools/test_menu_widgets_release.sh external/sco-core
+
       - name: Verify development source and SDK archive
         run: |
           set -eu
