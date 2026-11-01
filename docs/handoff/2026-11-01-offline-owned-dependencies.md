@@ -1,11 +1,21 @@
 # Offline owning dependency inventory — pre-activation design
 
-Status: inventory and synthetic qualification only. Offline #185 source
-`32432d9059c2dadfc9d938ea782e0f6c9cb89fa2` pins core
-`a5101d406a9ddbff14e437408686ffb04266be18`. Core #305 is under separate review;
-this document does not select or repin it. Product native preflight is
-unconditionally unavailable. None of the entries below establishes safe native
-activation, shutdown or game acceptance.
+Status: inventory and synthetic qualification only. Current coordinated input:
+offline #185 head `9d7165038edda5a7196e311f54943c3d0d8dde71` proposes development
+source `44ffd1290e261e12684b38ac862ec0c4f08921df`; the current production main
+gitlink remains `a5101d406a9ddbff14e437408686ffb04266be18`. The exact RC3 candidate
+was published by core workflow run `41332377573` as artifact `13093044361`, with
+outer SHA-256
+`464b7ca2f05f402cfe5581b2a34033c169a977cf5493a396a36a7c63dc0c2ddc`. Its
+host-source archive SHA-256 is
+`799511bfa08a7bf77a46fcf8262d3cac4a5f0e6a0ef04a28f53e6e624c01e8a0`; its
+core-source archive SHA-256 is
+`807a322eab2b3d8c25e10c3582008ec3ec50b6b536bc947f2b28cf4b63095c22`.
+
+Product native preflight is unconditionally unavailable. The entries below are
+an ownership inventory, not evidence of safe native activation, shutdown or game
+acceptance. Evidence tied to earlier source and package identities is historical
+and must not be attributed to this coordinated RC3 input.
 
 ## Actual product surfaces requiring ownership
 
@@ -107,7 +117,7 @@ real product closure ownership and native exclusion/drain, perform Windows/MSVC
 failure-injection and exact-build native analysis, then separately authorized
 offline game acceptance. No game or native runtime was run for this inventory.
 
-## Local synthetic evidence at the pinned source
+## Historical synthetic evidence at the earlier pinned source
 
 The standalone `tools/offline-host` fixture exercises actual restricted
 `game::host::Prepare`, `Start` and `Stop` with the owned synthetic capsule;
@@ -127,14 +137,16 @@ tested Linux/GNU environment, not deterministic Windows or arbitrary allocator
 coverage. No native barrier, mapped game code, production capsule, native hook
 installation, plugin, private session or game execution was exercised.
 
-## Later local HostReport candidate
+## Historical local HostReport candidate
 
-The standalone fixture now also tests the additive `HostCapsule` and
-`HostReport` contract when supplied a core source tree containing that
-contract; it does not change the production gitlink. The new report tests use
-the real game-host transition and a genuine synthetic backing owner, drop
-caller roots after adoption, and verify core's nonzero process-retained report
-and surviving backing. They cover fresh pre-adoption refusal, inspector
+At the earlier core candidate source `4c09ab2f73caa3d1103214adc56193d2434a8795`
+and host-source package SHA-256
+`d043bd459b6570bd49b072014e96e6844a58c7078af7c5852a0825d736f30e39`, the
+standalone fixture tested the additive `HostCapsule` and `HostReport` contract
+without changing the production gitlink. Those report tests used the real
+game-host transition and a genuine synthetic backing owner, dropped caller
+roots after adoption, and verified core's nonzero process-retained report and
+surviving backing. They cover fresh pre-adoption refusal, inspector
 reentry, wrong-thread Stop, post-app-start failure, repeated Stop/Start
 refusal, an allocation fault inside partial Options assignment, and a
 separate final-output copy with an owned read and a no-read negative control.
@@ -142,3 +154,33 @@ The candidate's instrumented copy of host.cpp is test-only. It preserves the
 private `app::detail::StartOwned` route and does not supply a native barrier.
 These results are synthetic source evidence only; the unresolved production
 ownership, native drain and game-acceptance requirements above still apply.
+
+## Coordinated RC3 candidate qualification
+
+The current opt-in candidate workflow uses core source
+`44ffd1290e261e12684b38ac862ec0c4f08921df`, whose history includes the reviewed
+core #315 head `4c09ab2f73caa3d1103214adc56193d2434a8795`. It checks that #315 is
+still open at that exact head or is positively reported merged from that exact
+head onto `main`; a closed-unmerged PR, different head or base, or incomplete
+merge receipt is rejected. This permits reproducible checks after the approved
+core PR merge without accepting an abandoned or substituted producer.
+
+Core workflow run [41332377573](https://github.com/scuba-sc/sco-core/actions/runs/41332377573)
+published artifact `13093044361` with outer SHA-256
+`464b7ca2f05f402cfe5581b2a34033c169a977cf5493a396a36a7c63dc0c2ddc`. The
+candidate's combined SDK, core-source and host-source packages were independently
+rebuilt from exact source `44ffd...` and byte-matched. The host-source package
+hash is `799511bfa08a7bf77a46fcf8262d3cac4a5f0e6a0ef04a28f53e6e624c01e8a0`;
+the core-source package hash is
+`807a322eab2b3d8c25e10c3582008ec3ec50b6b536bc947f2b28cf4b63095c22`. Their
+compatibility metadata names core and game-sc source `44ffd...`, and packaged
+checksums pass.
+
+At this updated input, the 13-case candidate-PR guard suite passes. The same
+eight `HostReport` tests pass 8/8 when compiled against the exact core source
+tree and again against the extracted host-source package. They cover refusal,
+reentry, wrong-thread stop, failed start, partial Options copy, output copy,
+the no-read negative control and retained-worker reaping. These are synthetic
+Linux tests; the workflow adds exact-source and extracted-kit Linux/Windows
+jobs. They establish neither native-reader exclusion nor product closure
+ownership, and do not enable native startup. No game or native runtime was run.
