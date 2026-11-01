@@ -1,6 +1,6 @@
 # Architecture: sc-offline on sco-core
 
-sc-offline is two things on top of [sco-core](https://github.com/scuba-sc/sco-core): the **host** that loads sco-core's kernel into Star Citizen, and the **reference consumer** of what sco-core publishes. The development host builds from unpublished sco-core #305 source `a5101d406a9ddbff14e437408686ffb04266be18`. External plugins consume the checksum-pinned published `sco-sdk-2.4.0.zip` from published RC2: SDK **2.4.0**, plugin ABI **1.1** (unchanged), Star Citizen game pack **0.8.0**. The full Windows host builds from the pinned source, independently of the plugin archive. Candidate adoption does not make RC2 the final SDK 2.4.0 release or certify gameplay. How to build and what CI checks: [build.md](build.md). What nobody has run in game yet: [status.md](status.md).
+sc-offline is two things on top of [sco-core](https://github.com/scuba-sc/sco-core): the **host** that loads sco-core's kernel into Star Citizen, and the **reference consumer** of what sco-core publishes. The development host and coordinated RC3 checks use exact sco-core source `44ffd1290e261e12684b38ac862ec0c4f08921df`. Product-plugin defaults remain on the checksum-pinned published `sco-sdk-2.4.0.zip` from RC2: SDK **2.4.0**, plugin ABI **1.1**, Star Citizen game pack **0.8.0**. The RC3 candidate source/archive is a development test input, not a final release. Neither candidate package checks nor a full Windows build certify gameplay. See [build.md](build.md) and [status.md](status.md).
 
 ## Loadout/SQ42 development boundary
 

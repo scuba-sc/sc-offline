@@ -43,8 +43,8 @@ release **`SHA256SUMS`**: SDK 2.4.0, plugin ABI 1.1 and Star Citizen game pack 0
 are distinct versions. The tag identifies RC2 regardless of GitHub's release
 classification. The RC2 release is currently marked `prerelease=false`. Nothing
 new in 2.4.0 has been run in game. Every external plugin uses this archive;
-the embedded host independently pins unpublished development source
-`a5101d406a9ddbff14e437408686ffb04266be18` (see [SDK candidate coordinates](sdk-candidate.md)).
+the embedded host independently pins the RC3 development source
+`44ffd1290e261e12684b38ac862ec0c4f08921df` (see [SDK candidate coordinates](sdk-candidate.md)).
 
 The expanded inspector uses that same published RC2 by default; no older unpublished candidate
 lock is needed. The proof validates the archive and full extracted inventory before building.

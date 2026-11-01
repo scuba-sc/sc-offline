@@ -1,6 +1,6 @@
 # Native reader barrier: integration design and evidence gap
 
-**Registry migration draft:** the local gitlink is core #305 `a5101d406a9ddbff14e437408686ffb04266be18`; references to #304 below document the prior baseline. Product startup remains refused.
+**Current consumer pin:** offline `external/sco-core` targets RC3 candidate source `44ffd1290e261e12684b38ac862ec0c4f08921df`; exact package identities are in [sdk-candidate.md](../sdk-candidate.md). References to #304 and #305 below document earlier baselines. Product startup remains unconditionally refused.
 
 Status: design plus product refusal. No native registry owner is enabled. The
 offline #184 baseline at `00989b4443ad0de1a33ab45a9139892ff08b0546` and
