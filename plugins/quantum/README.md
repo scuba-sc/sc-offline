@@ -56,9 +56,9 @@ activation changes here.
 
 ## Existing travel and storage compatibility
 
-Retains `quantum.travel(place, altitude)`, `quantum.bookmark(name)`, `quantum.save_bookmark(name)` and `quantum.scan`. `quantum.travel` and `quantum.bookmark` move you through sco-core's public **`game.relocation` 1.0**: the plugin's `relocation` setting is checked, then the capability `game.relocation` fresh, then the arguments; one request goes out (zone id, pose local to that zone, 30 s timeout), and the plugin follows the ticket each game tick and reports arrival or the failure/cancellation reason once. One move at a time; tickets are never persisted. `quantum.travel` finds the destination zone by its entity name and asks for a point at radius + altitude (100..20000 m) along that zone's own +Z axis, identity rotation; `quantum.bookmark` resolves a saved bookmark's exact/partial pose. `game.relocation` moves only within your current star system and only with sco-core's offline admission, a verified engine backend, a live player and a known system, which needs this release's host, **sco-core main e616ed6 or later**; without those conditions moves answer unavailable. The `relocation` setting (bool, default true, "Allow moving the player (offline only)") turns moves off for this plugin; `relocation = off` in `sc-offline.ini` turns them off for every plugin once the host pin has `SetRelocationEnabled`. `quantum.status`, `quantum.delete_bookmark(name)` and `quantum.inspect_bookmark(name)` remain unchanged. `quantum.scan` copies at most 256 observed zones, 64 per page, with epoch checks; it is not exhaustive system discovery. Unknown system/root/name never authorizes movement; the provider decides the star system.
+Retains `quantum.travel(place, altitude)`, `quantum.bookmark(name)`, `quantum.save_bookmark(name)` and `quantum.scan`. `quantum.travel` and `quantum.bookmark` move you through sco-core's public **`game.relocation` 1.0**: the plugin's `relocation` setting is checked, then the capability `game.relocation` fresh, then the arguments; one request goes out (zone id, pose local to that zone, 30 s timeout), and the plugin follows the ticket each game tick and reports arrival or the failure/cancellation reason once. One move at a time; tickets are never persisted. `quantum.travel` finds the destination zone by its entity name and asks for a point at radius + altitude (100..20000 m) along that zone's own +Z axis, identity rotation; `quantum.bookmark` resolves a saved bookmark's exact/partial pose. `game.relocation` requires offline admission, a verified engine backend, a live player and a known current star system. The current offline product preflight refuses native activation until a real native-reader and worker barrier is available, so moves remain unavailable. A Core version, resolved signatures or positive admission alone do not establish native activation or gameplay readiness. The `relocation` setting (bool, default true, "Allow moving the player (offline only)") turns moves off for this plugin; `relocation = off` in `sc-offline.ini` turns them off for every plugin once the host pin has `SetRelocationEnabled`. `quantum.status`, `quantum.delete_bookmark(name)` and `quantum.inspect_bookmark(name)` remain unchanged. `quantum.scan` copies at most 256 observed zones, 64 per page, with epoch checks; it is not exhaustive system discovery. Unknown system/root/name never authorizes movement; the provider decides the star system.
 
-Curated destinations use the public content route described below. Scan-generated `locations_found.txt` retains its existing `system | display name | entity name | radius` format and filesystem policy. Bookmarks remain `bookmark system|name` followed by `spot x y z zone` lines. Optional `pose x y z w` records preserve orientation; old readers ignore them and old files default to identity. `data_root` selects this persistence root (default `data`), not a curated-list source. Owner-scoped `quantum.db` keeps the exact `bookmarks(pos,system,name,spots)` schema and `bookmarks.txt.time` marker. Windows markers remain decimal FILETIME. Import/update code is unchanged; absent storage retains text fallback and failed DB transactions do not overwrite it.
+Curated destinations use the public content route described below. Scan-generated `locations_found.txt` retains its existing `system | display name | entity name | radius` format and filesystem policy. Bookmarks remain `bookmark system|name` followed by `spot x y z zone` lines. Optional `pose x y z w` records preserve orientation; old readers ignore them and old files default to identity. Legacy spot and bookmark lines accept LF, CRLF, or mixed line endings. Import still skips malformed rows and can import an empty list. `data_root` selects this persistence root (default `data`), not a curated-list source. Owner-scoped `quantum.db` keeps the exact `bookmarks(pos,system,name,spots)` schema and `bookmarks.txt.time` marker. Windows markers remain decimal FILETIME. An unchanged marker skips reimport; previously imported names are not automatically repaired. Absent storage retains text fallback and failed DB transactions do not overwrite it.
 
 ### Curated destinations from an ordinary data pack
 
@@ -93,7 +93,17 @@ not content IDs or service pointers. Consumer reload reads the same host startup
 snapshot; changed disk bytes need a host restart. No query or list discovery
 authorizes relocation, quantum control or native backend activation.
 
-The optional `sco.widgets` panel retains ID `quantum.travel` and now has title **Travel**, combining paged destination/bookmark lists, altitude, bookmark save/delete/read-only inspection and observed scan with bounded G8 controls. No host/ImGui include or renderer callback is added. The panel's Travel and Go-to-bookmark buttons use the same commands. Missing widgets leaves command-only operation.
+The optional `sco.widgets` panel retains ID `quantum.travel` and now has title **Travel**, combining paged destination/bookmark lists, altitude, bookmark save/delete/read-only inspection and observed scan with bounded G8 controls. No host/ImGui include or renderer callback is added. The panel's Travel button uses the destination command. Bookmark Go, Delete and
+Inspect act on the exact selected row, including when multiple rows have the same
+name or differ only by case. Name-based commands keep their existing first
+case-insensitive match. Saving still appends and existing file/SQL formats are
+unchanged. Successful bookmark saves/deletes clear the selection; deletion of the
+last row on a page returns to the remaining page. Failed persistence keeps the
+prior in-memory rows and selection. A failed or uncertain storage operation does
+not establish what was durably written; investigate that outcome before retrying. Callbacks from older panel
+publications or loaded sessions are ignored; a failed panel replacement pauses
+old callbacks until a fresh publication succeeds. Missing widgets leaves
+command-only operation.
 
 ## Build, install and focused evidence
 
@@ -107,6 +117,12 @@ cmake --install build-quantum --prefix /path/to/product --component quantum
 ```
 
 Installed `data/plugins/quantum/` contains the native module and enabled manifest; ordinary folder disable and `plugins=off` semantics apply. Native modules are trusted code, GPL-3.0-only.
+
+The module workflow also exercises duplicate bookmark Go/Delete/Inspect, command
+compatibility, append/reload, page boundaries, stale selection/callbacks, failed
+panel publication, storage begin/write/commit failures with successful rollback and unavailable/malformed
+movement providers. These are public-service mocks and temporary legacy files;
+they do not certify production storage, renderer or gameplay behavior.
 
 The GameRules workflow drives the actual module/published panel with synthetic
 public providers, covering cache timing and clock wrap, opaque generations,
