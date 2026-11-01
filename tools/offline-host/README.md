@@ -84,8 +84,8 @@ not reach the post-app-start seam; the separate optional case does.
 ## Detailed report candidate
 
 The current opt-in CI candidate is core PR #315 source
-`4aef497723a99a6bb5e19c65f4b9ecf65d30cf19`; its host-source archive SHA-256 is
-`5659640a463acafb80614f827c13767b889a8a07375412c236f10f254c788ce8`.
+`e4ba511c5be0f1f901e1ca958a1fd28839e30fdc`; its host-source archive SHA-256 is
+`090c27a051b25df6b78a620b9d84de64325a96bbd77a852f650b3efe25e5660b`.
 The separate `test_core_candidate` workflow dispatch runs the detailed fixture
 against both source and the extracted archive on Linux and Windows. It does not
 promote either the candidate or the product pin. A moved PR head refuses the run;
