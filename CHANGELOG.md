@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Read Windows line endings in legacy saved spots.** Bookmark imports and quick
+  saves accept CRLF and mixed line endings while retaining existing row order and
+  storage behavior. Synthetic checks only; **not run in game**.
+
 - **Delete saved gear presets.** The development consumer can delete a selected preset or an explicit ID to free storage capacity. Synthetic host tests only; **not run in game**.
 
 - **Loadout job status.** The Player panel refreshes a retained job observation at most every 200 ms, replaces old progress with unavailable or invalid status when the panel update succeeds, and pauses polling after malformed reports until a valid manual inspection. No automatic retry, release or inventory confirmation. **Not run in game.**

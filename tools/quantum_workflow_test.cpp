@@ -138,10 +138,11 @@ bool storage_enabled=false,transaction=false;
 sco_result begin_result=SCO_OK,exec_result=SCO_OK,commit_result=SCO_OK;
 unsigned rollbacks=0; size_t row_index=0;
 std::vector<StoredRow> durable_rows,working_rows;
-sco_result StorePut(sco_plugin*,const char*,const void*,uint32_t) { return SCO_OK; }
-sco_result StoreGet(sco_plugin*,const char*,void*,uint32_t* n) { *n=0;return SCO_NOT_FOUND; }
-sco_result StoreBegin(sco_plugin*) { if(begin_result!=SCO_OK)return begin_result;assert(!transaction);working_rows=durable_rows;transaction=true;return SCO_OK; }
-sco_result StoreCommit(sco_plugin*) {assert(transaction);if(commit_result!=SCO_OK)return commit_result;durable_rows=working_rows;transaction=false;return SCO_OK;}
+sco_result put_result=SCO_OK; std::string durable_marker,working_marker;
+sco_result StorePut(sco_plugin*,const char* key,const void* data,uint32_t n) { assert(transaction&&!std::strcmp(key,"bookmarks.txt.time"));if(put_result!=SCO_OK)return put_result;working_marker.assign(static_cast<const char*>(data),n);return SCO_OK; }
+sco_result StoreGet(sco_plugin*,const char* key,void* out,uint32_t* n) { assert(!std::strcmp(key,"bookmarks.txt.time"));if(durable_marker.empty())return SCO_NOT_FOUND;if(*n<durable_marker.size()){*n=static_cast<uint32_t>(durable_marker.size());return SCO_TOO_MANY;}std::memcpy(out,durable_marker.data(),durable_marker.size());*n=static_cast<uint32_t>(durable_marker.size());return SCO_OK; }
+sco_result StoreBegin(sco_plugin*) { if(begin_result!=SCO_OK)return begin_result;assert(!transaction);working_rows=durable_rows;working_marker=durable_marker;transaction=true;return SCO_OK; }
+sco_result StoreCommit(sco_plugin*) {assert(transaction);if(commit_result!=SCO_OK)return commit_result;durable_rows=working_rows;durable_marker=working_marker;transaction=false;return SCO_OK;}
 sco_result StoreRollback(sco_plugin*) {assert(transaction);transaction=false;working_rows.clear();++rollbacks;return SCO_OK;}
 sco_result StoreExec(sco_plugin*,const char* sql,const sco_sql_value* values,uint32_t n,int64_t*) {
     if(exec_result!=SCO_OK)return exec_result;
@@ -189,6 +190,29 @@ void BookmarkWorkflow(sco_result(*load)(const sco_api*,sco_plugin*),void(*unload
     relocation_cap=true;zone_available=true;
     spatial.zone_record=ZoneRecord;spatial.pose_to_zone=PoseToZone;
     player.size=sizeof(player);player.player_pose=PlayerPose;
+    const std::string crlf="bookmark A|Base\r\nspot 11 0 0 zone_a\r\nbookmark B|base\r\nspot 22 0 0 zone_b\r\n";
+    const std::string mixed="bookmark A|Base\r\nspot 11 0 0 zone_a\nbookmark B|base\nspot 22 0 0 zone_b\r\n";
+    for(const auto& bytes:{first+second,crlf,mixed}) {
+        seed(bytes);assert(bookmark_labels.size()==2&&bookmark_labels[0]=="A / Base"&&bookmark_labels[1]=="B / base");
+        go(0,11);go(1,22);SelectBookmark(1);Send(9);assert(bookmark_labels.size()==1);go(0,11);
+    }
+    // A bare CR remains data, including at EOF. Invalid poses keep their existing rejection behavior.
+    seed("bookmark A|bad\nspot 1 0 0 zone_a\npose 0 0 0 0\r\nbookmark B|tail\nspot 2 0 0 zone_b\r");
+    assert(bookmark_labels.size()==1&&bookmark_labels[0]=="B / tail");
+    SelectBookmark(0);resolved_zones.clear();const auto controlRequests=requests;Send(15);
+    assert(requests==controlRequests&&!resolved_zones.empty()&&resolved_zones.front()=="zone_b\r");
+    seed("bookmark B|tail\r\nspot 2 0 0 zone_b\r\r\n");SelectBookmark(0);resolved_zones.clear();Send(15);
+    assert(requests==controlRequests&&!resolved_zones.empty()&&resolved_zones.front()=="zone_b\r");
+    seed("bookmark A|bare\rname\nspot 1 0 0 zone_a\n");assert(bookmark_labels.size()==1&&bookmark_labels[0]=="A / bare\rname");
+    const std::string system31(31,'s'),name63(63,'n');
+    seed("bookmark "+system31+"|"+name63+"\r\nspot 11 0 0 zone_a\r\n"+
+         "bookmark "+system31+"s|oversize\r\nspot 11 0 0 zone_a\r\n"+
+         "bookmark A|"+name63+"n\r\nspot 11 0 0 zone_a\r\n"+
+         "bookmark B|last\nspot 22 0 0 zone_b");
+    assert(bookmark_labels.size()==2&&bookmark_labels[0]==system31+" / "+name63&&bookmark_labels[1]=="B / last");go(1,22);
+    const std::string validSpot="spot 11 0 0 zone_a\n";
+    seed("bookmark A|bound\n"+validSpot+"#"+std::string(65535-validSpot.size()-2,'x')+"\r");assert(bookmark_labels.size()==1);
+    seed("bookmark A|bound\n"+validSpot+"#"+std::string(65536-validSpot.size()-2,'x')+"\r");assert(bookmark_labels.empty());
     seed(first+second);assert(bookmark_labels.size()==2&&bookmark_labels[1]=="B / base");
     go(1,22); // regression: the old panel silently moved to the first same-name row
     go(0,11);
@@ -236,6 +260,24 @@ void BookmarkWorkflow(sco_result(*load)(const sco_api*,sco_plugin*),void(*unload
     // Public transactional storage: begin/write/commit failures preserve the selected row and durable order.
     storage.size=sizeof(storage);storage.put=StorePut;storage.get=StoreGet;storage.begin=StoreBegin;storage.commit=StoreCommit;storage.rollback=StoreRollback;
     storage.exec=StoreExec;storage.query=StoreQuery;storage.step=StoreStep;storage.column=StoreColumn;storage.close=StoreClose;
+    // Failed CRLF imports leave the previous rows, marker and source intact; a retry imports both duplicates.
+    durable_rows={{"Old","kept","spot 9 0 0 zone_a\n"}};durable_marker="old-marker";storage_enabled=true;
+    for(int failure=0;failure<4;++failure) {
+        begin_result=failure==0?SCO_FAILED:SCO_OK;exec_result=failure==1?SCO_FAILED:SCO_OK;
+        put_result=failure==2?SCO_FAILED:SCO_OK;commit_result=failure==3?SCO_FAILED:SCO_OK;
+        const auto previousRows=durable_rows;const auto previousMarker=durable_marker;const auto previousRollbacks=rollbacks;
+        seed(crlf);assert(durable_rows==previousRows&&durable_marker==previousMarker&&FileBytes(file)==crlf&&!transaction);
+        assert(rollbacks==previousRollbacks+(failure==0?0u:1u));
+    }
+    begin_result=exec_result=put_result=commit_result=SCO_OK;reload();
+    assert(durable_rows.size()==2&&durable_rows[0][1]=="Base"&&durable_rows[1][1]=="base"&&durable_marker!="old-marker"&&FileBytes(file)==crlf);
+    go(0,11);go(1,22);
+    durable_rows[0][2]="spot 11 0 0 zone_a\r\npose 0 0 0 1\r\n";
+    durable_rows[1][2]="spot 22 0 0 zone_b\r\npose 0 0 0 1\n";
+    const auto importedMarker=durable_marker,sqlSpot=durable_rows[0][2];reload();
+    assert(durable_marker==importedMarker&&durable_rows[0][2]==sqlSpot);go(0,11);go(1,22);
+    std::filesystem::remove(file);reload();go(0,11);go(1,22);
+    durable_marker.clear();durable_rows.clear();
     storage_enabled=true;seed(first+second);assert(durable_rows.size()==2);SelectBookmark(1);
     begin_result=SCO_UNAVAILABLE;Send(9);assert(durable_rows.size()==2&&selected_bookmark==1&&!transaction);begin_result=SCO_OK;
     auto rollbackCount=rollbacks;exec_result=SCO_FAILED;Send(9);assert(durable_rows.size()==2&&selected_bookmark==1&&rollbacks==rollbackCount+1&&!transaction);exec_result=SCO_OK;
