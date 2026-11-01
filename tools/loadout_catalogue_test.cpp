@@ -22,14 +22,14 @@ struct Panel{std::map<uint32_t,Node> nodes;sco_widget_event_fn fn=nullptr;void* 
 std::map<std::string,sco_command> commands;
 sco_widgets_v1 widgets{};sco_content_v1 content{};sc_loadout_v1_2 loadout{};
 const void* contentTable=&content;const void* loadoutTable=&loadout;
-bool applyCap=true,weaponsCap=true,asyncCap=true,contentPresent=true,endless=false;
+bool applyCap=true,weaponsCap=true,asyncCap=true,contentPresent=true,endless=false,throwLog=false;
 uint32_t version=SC_LOADOUT_VERSION_1_2,queried=0;
-sco_result panelResult=SCO_OK,applyResult=SCO_OK,cancelResult=SCO_OK;
-int badMetadata=0,badRead=0,corruptReport=0;
+sco_result panelResult=SCO_OK,applyResult=SCO_OK,cancelResult=SCO_OK,statusResult=SCO_OK;
+int badMetadata=0,badRead=0,corruptReport=0,statusMode=0;
 std::vector<sc_loadout_item> captured;
 sc_loadout_job_report progress{};
 sco_event_fn tick=nullptr;void* tickCtx=nullptr;
-void Log(sco_plugin*,sco_log_level,const char*){}
+void Log(sco_plugin*,sco_log_level,const char*){if(throwLog)throw 11;}
 int Has(const char* name){return !std::strcmp(name,"game.loadout.apply")?applyCap:!std::strcmp(name,"game.loadout.weapons")?weaponsCap:!std::strcmp(name,"game.loadout.async")&&asyncCap;}
 sco_result Register(sco_plugin* self,const sco_command* c){Check(self==owner,"command owner");commands[c->name]=*c;return SCO_OK;}
 sco_result Subscribe(sco_plugin*,const char*,sco_event_fn fn,void* ctx){tick=fn;tickCtx=ctx;return SCO_OK;}
@@ -65,7 +65,18 @@ void Capture(sco_plugin* self,const sc_loadout_request* r){Check(self==owner&&r&
 sc_loadout_report Report(){sc_loadout_report r{};r.size=sizeof(r);r.count=static_cast<uint32_t>(captured.size());r.applied=r.count;for(uint32_t i=0;i<r.count;++i)r.slots[i]={captured[i].slot,SC_LOADOUT_APPLIED};return r;}
 sco_result Apply(sco_plugin* self,const sc_loadout_request* r,sc_loadout_report* out){++applies;Capture(self,r);*out=Report();if(applyResult==SCO_FAILED){out->slots[0].status=SC_LOADOUT_ITEM_MISSING;--out->applied;}if(corruptReport)++out->count;return applyResult;}
 sco_result Submit(sco_plugin* self,const sc_loadout_request* r,uint64_t* job){++submits;Capture(self,r);*job=42;return SCO_OK;}
-sco_result Status(sco_plugin* self,uint64_t job,sc_loadout_job_report* out){++statuses;Check(self==owner&&job==42,"status owner/job");*out=progress;return SCO_OK;}
+sco_result Status(sco_plugin* self,uint64_t job,sc_loadout_job_report* out){
+    ++statuses;Check(self==owner&&job==42&&out&&out->size==sizeof(*out)&&out->report.size==sizeof(out->report),"status owner/job/output extent");
+    if(statusMode==1)throw 7;
+    if(statusMode==2){uint32_t now=0xffffffffu;tick("tick",&now,tickCtx);const auto& c=commands.at("loadout.progress");char text[256]{};Check(c.fn(nullptr,0,c.ctx,text,sizeof(text))==SCO_UNAVAILABLE,"recursive status refused");}
+    if(statusMode>=3){
+        const auto& c=commands.at("loadout.cancel");char text[256]{};Check(c.fn(nullptr,0,c.ctx,text,sizeof(text))==SCO_OK,"reentrant cancellation");
+        if(statusMode>=4){const auto& submit=commands.at("loadout.submit");sco_arg arg{};arg.type=SCO_ARG_STRING;arg.v.s="primary=Fixture";Check(submit.fn(&arg,1,submit.ctx,text,sizeof(text))==SCO_OK,"reentrant replacement with reused test id");}
+        if(statusMode==5)throw 9;
+    }
+    if(statusResult==SCO_OK)*out=progress;
+    return statusResult;
+}
 sco_result Cancel(sco_plugin* self,uint64_t job){++cancels;Check(self==owner&&job==42,"cancel owner/job");return cancelResult;}
 sco_result Query(const char* name,uint32_t requested,const void** out){
     *out=nullptr;
@@ -81,7 +92,7 @@ void Filter(const char* text){Send(1,SCO_WIDGET_TEXT_INPUT,0,text);}
 void Select(uint32_t slot,int32_t row){Send(200+slot,SCO_WIDGET_COMBO,row);}
 void Button(uint32_t id){Send(id,SCO_WIDGET_BUTTON);}
 bool Disabled(uint32_t id){return (panel.nodes.at(id).flags&SCO_WIDGET_DISABLED)!=0;}
-void Tick(){static uint32_t now=100000;now+=200;Check(tick!=nullptr,"tick callback");tick("tick",&now,tickCtx);}
+void Tick(uint32_t delta=200){static uint32_t now=100000;now+=delta;Check(tick!=nullptr,"tick callback");tick("tick",&now,tickCtx);}
 }
 int main(int argc,char** argv){
     Check(argc==2||argc==3,"module and optional source catalogue");test_module::Open(2,argv);int token=0;owner=reinterpret_cast<sco_plugin*>(&token);
@@ -105,8 +116,30 @@ int main(int argc,char** argv){
     applyCap=false;asyncCap=true;Button(221);Check(submits==1&&queried==SC_LOADOUT_VERSION_1_2&&Disabled(220)&&Disabled(221),"curated job uses existing independent async route");
     Button(220);Button(221);Check(applies==oldApplies&&submits==1,"retained job blocks new mutation");
     progress={};progress.size=sizeof(progress);progress.state=SC_LOADOUT_JOB_PENDING;progress.completed=1;progress.report=Report();progress.report.applied=1;progress.report.slots[1].status=SC_LOADOUT_UNAVAILABLE;
-    Button(23);Check(statuses==1&&panel.nodes[14].label.find("pending; completed=1/2")!=std::string::npos,"pending completed prefix only");
-    asyncCap=false;Button(24);Check(cancels==1&&!Disabled(220),"cancel remains available after capability revocation");Button(221);Check(submits==1,"async revocation prevents new submit");
+    Button(23);Check(statuses==1&&panel.nodes[26].label.find("pending; completed=1/2")!=std::string::npos,"pending completed prefix only");
+    // The live label is independently refreshed at most once per admitted 200 ms tick.
+    const auto heldAppliesAtPoll=applies,heldSubmitsAtPoll=submits,heldCancelsAtPoll=cancels;
+    Button(222);const auto unrelated=panel.nodes[14].label;
+    Tick();Check(statuses==2&&panel.nodes[26].label.find("pending; completed=1/2")!=std::string::npos&&panel.nodes[14].label==unrelated,"fresh pending observation leaves unrelated status intact");
+    progress.state=SC_LOADOUT_JOB_COMPLETE;progress.completed=2;progress.report.slots[1].status=SC_LOADOUT_ITEM_MISSING;progress.report.applied=1;
+    tick("tick",nullptr,tickCtx);Tick(0);Tick(199);Check(statuses==2&&panel.nodes[26].label.find("pending;")!=std::string::npos,"null, stale and sub-200ms ticks do not poll");
+    Tick(1);Check(statuses==3&&panel.nodes[26].label.find("complete; completed=2/2")!=std::string::npos&&panel.nodes[26].label.find("item-missing")!=std::string::npos,"terminal partial observation");
+    progress.state=SC_LOADOUT_JOB_FAILED;progress.completed=1;progress.report.slots[1].status=SC_LOADOUT_APPLIED;
+    Tick();Check(panel.nodes[26].label.find("failed; completed=1/2")!=std::string::npos,"failed observation interprets only completed prefix");
+    statusResult=SCO_UNAVAILABLE;Tick();Check(panel.nodes[26].label.find("refused")!=std::string::npos&&panel.nodes[26].label.find("failed;")==std::string::npos,"refusal replaces previous observation");statusResult=SCO_OK;Tick();Check(panel.nodes[26].label.find("failed;")!=std::string::npos,"fresh status restored before withdrawal");
+    Button(23);Check(panel.nodes[26].label.find("failed;")!=std::string::npos&&panel.nodes[14].label==unrelated,"manual status preserves unrelated message");
+    loadoutTable=nullptr;Tick();Check(panel.nodes[26].label.find("unavailable")!=std::string::npos,"provider withdrawal replaces prior observation");
+    for(const auto& node:panel.nodes)Check(node.second.label.find("failed; completed=")==std::string::npos&&node.second.label.find("applied=")==std::string::npos,"manual progress is absent from all labels after withdrawal");
+    loadoutTable=&loadout;
+    loadout.status=nullptr;Tick();Check(panel.nodes[26].label.find("unavailable")!=std::string::npos,"null status unavailable");loadout.status=Status;
+    for(uint32_t size=4;size<sizeof(loadout);++size){auto bytes=std::make_unique<unsigned char[]>(size);std::memcpy(bytes.get(),&loadout,size);std::memcpy(bytes.get(),&size,4);loadoutTable=bytes.get();const auto beforeStatus=statuses;Tick();Check(statuses==beforeStatus&&panel.nodes[26].label.find("unavailable")!=std::string::npos,"short 1.2 table never called");}loadoutTable=&loadout;
+    progress={};Tick();Check(panel.nodes[26].label.find("polling paused")!=std::string::npos,"zero report pauses polling");const auto pausedStatuses=statuses;
+    Tick();Tick();Check(statuses==pausedStatuses&&panel.nodes[26].label.find("polling paused")!=std::string::npos,"malformed report does not trigger repeated calls");
+    progress.size=sizeof(progress);progress.state=SC_LOADOUT_JOB_PENDING;progress.completed=1;progress.report=Report();progress.report.applied=1;progress.report.slots[1].status=SC_LOADOUT_UNAVAILABLE;
+    asyncCap=false;Button(23);Check(statuses==pausedStatuses+1&&panel.nodes[26].label.find("pending;")!=std::string::npos&&panel.nodes[26].label.find("async unavailable; not live inventory")!=std::string::npos,"manual valid status after revocation resumes polling with capability context");
+    Tick();Check(statuses==pausedStatuses+2&&panel.nodes[26].label.find("pending;")!=std::string::npos,"polling resumes after manual valid inspection");
+    Check(applies==heldAppliesAtPoll&&submits==heldSubmitsAtPoll&&cancels==heldCancelsAtPoll&&Disabled(220),"observations have no mutation or release side effects");
+    Select(0,1);Select(2,1);asyncCap=false;Button(24);Check(cancels==1&&!Disabled(220)&&panel.nodes[26].label.find("No retained")!=std::string::npos,"cancel remains available after capability revocation");Button(221);Check(submits==1,"async revocation prevents new submit");
     applyCap=weaponsCap=asyncCap=true;
     version=SC_LOADOUT_VERSION_1_1;Button(221);Check(submits==1,"old async version has no synchronous fallback");version=SC_LOADOUT_VERSION_1_2;
     for(uint32_t size=4;size<offsetof(sc_loadout_v1_2,cancel)+sizeof(loadout.cancel);++size){auto shortTable=std::make_unique<unsigned char[]>(size);std::memcpy(shortTable.get(),&loadout,size);std::memcpy(shortTable.get(),&size,4);loadoutTable=shortTable.get();Button(221);Check(submits==1,"curated async full member extent");}loadoutTable=&loadout;
@@ -173,7 +206,13 @@ int main(int argc,char** argv){
     reload();Select(0,1);stale=panel;oldApplies=applies;test_module::Unload();Send(stale,220,SCO_WIDGET_BUTTON);Check(applies==oldApplies,"callback after unload inert");commands.clear();Check(test_module::Load(&api,owner)==SCO_OK,"module reload");Send(stale,220,SCO_WIDGET_BUTTON);Check(applies==oldApplies&&Disabled(220),"old cookie cannot target new loaded session");
     if(argc==3){std::ifstream file(argv[2],std::ios::binary);Check(bool(file),"public seed catalogue file");files[0].bytes=std::string(std::istreambuf_iterator<char>(file),{});reload();unsigned count=0;for(uint32_t i=0;i<14;++i){count+=static_cast<unsigned>(panel.nodes[200+i].options.size()-1);Select(i,1);}Check(count==344,"all344 attributed seed choices parsed by actual module");Button(220);Check(captured.size()==14,"seed choices reach all14 public targets, no compatibility claim");}
     Select(0,1);Button(221);Check(Disabled(220),"new curated job retained");progress={};progress.size=sizeof(progress);progress.state=SC_LOADOUT_JOB_COMPLETE;progress.report=Report();progress.completed=progress.report.count;progress.report.slots[0].status=SC_LOADOUT_ITEM_MISSING;--progress.report.applied;
-    Button(23);Check(panel.nodes[14].label.find("complete;")!=std::string::npos&&panel.nodes[14].label.find("item-missing")!=std::string::npos,"complete job with partial slot refusal is not whole-batch success");
+    Button(23);Check(panel.nodes[26].label.find("complete;")!=std::string::npos&&panel.nodes[26].label.find("item-missing")!=std::string::npos,"complete job with partial slot refusal is not whole-batch success");
+    throwLog=true;Button(23);throwLog=false;Check(panel.nodes[26].label.find("complete;")!=std::string::npos,"throwing logger cannot change status result or escape callback");
+    uint32_t wrap=0xffffff80u;tick("tick",&wrap,tickCtx);const auto wrapStatuses=statuses;wrap=0x47u;tick("tick",&wrap,tickCtx);Check(statuses==wrapStatuses,"199ms across clock wrap does not poll");wrap=0x48u;tick("tick",&wrap,tickCtx);Check(statuses==wrapStatuses+1,"200ms across clock wrap polls once");
+    statusMode=2;const auto beforeRecursive=statuses;Tick();Check(statuses==beforeRecursive+1,"recursive tick and inspection cannot poll again");statusMode=1;Tick();Check(panel.nodes[26].label.find("unknown; polling paused")!=std::string::npos,"status exception clears observation and pauses");const auto afterException=statuses;Tick();Check(statuses==afterException,"exception does not repeatedly poll");statusMode=0;Button(23);Check(panel.nodes[26].label.find("complete;")!=std::string::npos,"manual inspection recovers after exception");
+    statusMode=3;Tick();statusMode=0;Tick();Check(panel.nodes[26].label.find("No retained")!=std::string::npos&&!Disabled(221),"status from a reentrantly released job is discarded");Button(221);Check(Disabled(221),"job can be retained again after release");
+    for(int mode:{4,5}){statusMode=mode;Tick();statusMode=0;Filter("");Check(Disabled(221)&&panel.nodes[26].label.find("waiting for a status")!=std::string::npos,"old response or exception cannot overwrite a same-id replacement");}
     cancelResult=SCO_UNAVAILABLE;Button(24);Check(Disabled(220),"refused cancel retains job");cancelResult=SCO_OK;const auto cancelBefore=cancels;asyncCap=false;
-    test_module::Unload();Check(cancels==cancelBefore+1,"unload cancels retained job after capability revocation");test_module::Close();std::printf("loadout curated catalogue: %u checks PASS; actual module, synthetic providers only\n",checks);
+    const auto beforeUnloadStatuses=statuses;auto savedTick=tick;auto savedTickCtx=tickCtx;
+    test_module::Unload();Check(cancels==cancelBefore+1,"unload cancels retained job after capability revocation");uint32_t afterUnload=999999;savedTick("tick",&afterUnload,savedTickCtx);Check(statuses==beforeUnloadStatuses,"late tick cannot observe after unload");test_module::Close();std::printf("loadout curated catalogue: %u checks PASS; actual module, synthetic providers only\n",checks);
 }
