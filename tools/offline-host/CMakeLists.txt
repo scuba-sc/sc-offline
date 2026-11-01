@@ -13,7 +13,22 @@ add_library(sc_offline_host_composition STATIC ../../src/offline_host.cpp)
 target_link_libraries(sc_offline_host_composition PUBLIC sco_game_host)
 include(CTest)
 if(BUILD_TESTING)
-  if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  # The shipped gitlink predates the detailed contract. Keep its legacy fixture
+  # until the SDK pin is reviewed separately; exercise reports when available.
+  file(READ "${SCO_HOST_SOURCE_DIR}/include/sco/game/host.h" host_header)
+  if(host_header MATCHES "class HostCapsule" AND EXISTS "${SCO_HOST_SOURCE_DIR}/src/game/host_testing.h")
+    # Same production route; compile a separate host.cpp with fixed test faults,
+    # as the core report fixture does. Never alter the production target.
+    add_executable(host_report_test host_report_test.cpp "${SCO_HOST_SOURCE_DIR}/src/game/host.cpp")
+    target_include_directories(host_report_test PRIVATE "${SCO_HOST_SOURCE_DIR}")
+    target_compile_definitions(host_report_test PRIVATE SCO_GAME_HOST_REPORT_TESTING=1)
+    target_link_libraries(host_report_test PRIVATE sco_game_host)
+    foreach(scenario refusal reentry wrong-thread failed-start options-copy copy copy-negative)
+      add_test(NAME host_report_${scenario} COMMAND host_report_test ${scenario})
+      set_tests_properties(host_report_${scenario} PROPERTIES TIMEOUT 20)
+    endforeach()
+  endif()
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT host_header MATCHES "class HostCapsule")
     add_executable(options_copy_fault_test options_copy_fault_test.cpp)
     target_link_libraries(options_copy_fault_test PRIVATE sco_game_host)
     add_test(NAME owned_capsule_options_copy_fault COMMAND options_copy_fault_test)

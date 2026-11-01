@@ -58,8 +58,8 @@ terminal host paths; this demonstrates a test-process policy, not a production
 process/module owner. The fixture does not provide a native execution barrier,
 prove real module mapping or worker census, exercise a successful game-host
 Stop, or classify game-host startup exposure with a detailed result. The pinned
-host has no such game-host-facing detailed result; a future contract belongs to
-core. No result authorizes native activation, teardown or restart. Product
+baseline has no such game-host-facing detailed result. The separate candidate
+contract exercise below tests the later core report interface. No result authorizes native activation, teardown or restart. Product
 `NativeActivationAvailable()` remains false. This test is not game acceptance.
 
 `wait_until_closed` observes closure, not entry into the drain wait. In the
@@ -80,3 +80,49 @@ skip; any fired hook with a failed oracle is a test failure. This is evidence
 for the tested Linux/GNU library and pinned source, not Windows, other standard
 libraries, or arbitrary allocation failures. The owner-fault Start case does
 not reach the post-app-start seam; the separate optional case does.
+
+## Detailed report candidate
+
+When `SCO_HOST_SOURCE_DIR` provides the `HostCapsule` contract and private
+source testing header, CMake additionally builds `host_report_test` against
+that source. It compiles a separate, test-instrumented copy of core's host
+implementation, following core's own report-test pattern. The production
+`sco_game_host` target is not modified. The baseline pinned source lacks the
+contract, so its legacy tests remain available; this is not a gitlink update.
+
+Each report scenario runs in a fresh process. A real backing object owns the
+synthetic image bytes, shutdown owner and a resolver backing object containing
+the data used by the synthetic output copy. The inspector, core resolver code
+and test code are linked into the executable; no external resolver state is
+exercised. It constructs an
+actual immutable `HostCapsule` before entry and verifies its descriptor and
+host-version copies. The tests clear all caller-owned references and check
+weak references and destructor counters. Fresh unsupported configuration is
+`NeverExposed` with session zero and can be destroyed; after adoption, core
+retains the capsule and its real backing with a nonzero session ID.
+
+* `reentry` checks nested detailed Start and Stop from the synthetic inspector
+  refuse and preserve the adopted report. Inspector reentry is an adversarial
+  test, not an allowed production inspector.
+* `wrong-thread` checks Stop refuses on a different thread while Running;
+  game-thread Stop then fails, closes admission, and retains dependencies.
+* `failed-start` uses the private post-app-start fault to exercise terminal
+  failure and repeated refusal. Successful starts use the game-host's existing
+  private `app::detail::StartOwned` route, not public app startup.
+* `options-copy` uses the core's fixed allocation fault armed inside the actual
+  Options assignment. A long `pluginRoot` forces an ordinary allocation in the
+  tested C++ library. The fault must fire after image/resolver owner fields are
+  copied: reference counts show the backing, capsule Options and partially
+  assigned core Options all retain the real owners. This is not proof for every
+  allocator or Windows standard library.
+* `copy` holds an `OwnedShutdown::Read` across a separate synthetic producer's
+  final output copy while actual game-host Stop closes and drains admission.
+  `copy-negative` omits the lease, holds backing alive, and demonstrates that
+  Stop can finish before that copy. Neither producer is a game-host callback or
+  native reader; no use-after-free or success-only barrier is introduced.
+
+Every adopted terminal result stays `ProcessRetained`; a failed stop does not
+authorize restart, destruction or unload. These tests do not establish native
+reader exclusion, worker census, mapped code ownership, original-quit safety,
+Windows failure behavior, or game acceptance. The detailed contract is an
+unpublished host-source candidate, separate from the production SDK pin.

@@ -126,3 +126,19 @@ while it may be referenced. This is ordinary `new`/`new[]` interception on the
 tested Linux/GNU environment, not deterministic Windows or arbitrary allocator
 coverage. No native barrier, mapped game code, production capsule, native hook
 installation, plugin, private session or game execution was exercised.
+
+## Later local HostReport candidate
+
+The standalone fixture now also tests the additive `HostCapsule` and
+`HostReport` contract when supplied a core source tree containing that
+contract; it does not change the production gitlink. The new report tests use
+the real game-host transition and a genuine synthetic backing owner, drop
+caller roots after adoption, and verify core's nonzero process-retained report
+and surviving backing. They cover fresh pre-adoption refusal, inspector
+reentry, wrong-thread Stop, post-app-start failure, repeated Stop/Start
+refusal, an allocation fault inside partial Options assignment, and a
+separate final-output copy with an owned read and a no-read negative control.
+The candidate's instrumented copy of host.cpp is test-only. It preserves the
+private `app::detail::StartOwned` route and does not supply a native barrier.
+These results are synthetic source evidence only; the unresolved production
+ownership, native drain and game-acceptance requirements above still apply.
