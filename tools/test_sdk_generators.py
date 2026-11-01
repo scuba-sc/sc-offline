@@ -35,6 +35,13 @@ def proof_module(feature):
 
 
 class GeneratorSelection(unittest.TestCase):
+    def test_posix_dependency_trace_flag_is_compiler_specific(self):
+        from check_inspector_sdk import posix_dependency_trace_flags
+        self.assertEqual(posix_dependency_trace_flags('Debian clang version 19.1.7'), [])
+        self.assertEqual(posix_dependency_trace_flags('Apple clang version 16.0.0'), [])
+        self.assertEqual(posix_dependency_trace_flags('gcc version 14.2.0'),
+                         ['-fno-canonical-system-headers'])
+
     def test_compiler_system_symlink_header_stays_in_known_search_root(self):
         from check_inspector_sdk import compiler_system_dependency
         with tempfile.TemporaryDirectory() as temp:

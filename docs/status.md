@@ -5,7 +5,7 @@
 The combined plugin archive is the published stable `sdk-v2.4.0` release, source
 `6106fa3639cbcc28f78a1ded8de2707de019f4d3`, SHA-256
 `0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc`. The
-host-source profile is separately pinned by
+host-source profile is separately identified by
 `a0aaaba07e3d4eb0d8c264912cd6f2ab23f0d237a99fa07816005790a76efc4c`. Stable
 release assets were checked against their manifest and regenerated from the exact
 source. See [all profile coordinates](sdk-candidate.md).

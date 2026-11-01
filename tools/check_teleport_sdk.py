@@ -28,7 +28,7 @@ TELEPORT = {
     # Argument-free commands run by the checker itself: OK or UNAVAILABLE only.
     'checks': [
         ([], ('setting relocation (bool)', 'teleport.save -> unavailable', 'nothing saved',
-              'teleport.go -> unavailable', 'game.relocation provider is unavailable', 'teleport.inspect -> unavailable',
+              'teleport.go -> unavailable', 'game.relocation service or request is unavailable', 'teleport.inspect -> unavailable',
               'teleport.status -> ok', 'game.relocation off', 'OK: 0 failure(s)')),
         # Capability advertised but no relocation/spatial provider: still no move.
         (['--cap', 'game.relocation'], ('teleport.go -> unavailable', 'Saved spot unavailable',

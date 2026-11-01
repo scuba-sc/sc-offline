@@ -53,6 +53,16 @@ def compiler_system_dependency(dependency, search_roots):
     return False
 
 
+def posix_dependency_trace_flags(compiler_probe):
+    """Use GCC's spelling-preservation flag only with GCC, never with Clang."""
+    compiler = compiler_probe.lower()
+    if 'clang version' in compiler:
+        return []
+    if 'gcc version' in compiler:
+        return ['-fno-canonical-system-headers']
+    return []
+
+
 def explicit_preflight_pin(args):
     """Preserve published defaults; bind preflight overrides to an explicit digest."""
     pin = ('sco-sdk-' + args.sdk_version, args.sdk_sha256.lower())
@@ -203,7 +213,7 @@ def trace_posix(build, source, sdk, public, feature="inspector", shared=()):
         # into a UAPI directory outside the compiler's listed include roots.
         # We still resolve every path before checking SDK/project boundaries, so
         # a project or SDK symlink cannot use this option to escape its root.
-        deps = shlex.split(run(argv + ['-M', '-fno-canonical-system-headers'],
+        deps = shlex.split(run(argv + ['-M'] + posix_dependency_trace_flags(probe),
                                command['directory']).stdout.replace('\\\n', ' '))[1:]
         if not deps:
             raise AssertionError('Empty compiler dependency trace')

@@ -23,11 +23,14 @@ source and byte-compared with the published release assets.
 | Star Citizen game overlay | `sco-sdk-game-sc-0.8.0.zip` | `a5881e321bb456a3a17894413a07ece9ce6d3787bd6d1ad7dcc34fc288951f6b` | 203 |
 | Star Citizen host source | `sco-sdk-host-source-sc-2.4.0.zip` | `a0aaaba07e3d4eb0d8c264912cd6f2ab23f0d237a99fa07816005790a76efc4c` | 986 |
 
-The offline host gitlink uses the exact same source commit. The standalone plugin
-builds consume the combined `legacy` archive and its release checksum inventory;
-the embedded host uses the separate host-source profile. Those profiles have
-different roles and their headers must not be overlaid. The preflight and hosted
-consumer matrix check the official package coordinates before use.
+The default offline host build consumes the exact source commit through the
+`external/sco-core` gitlink. Standalone plugin builds consume the combined
+`legacy` archive and its release checksum inventory. The separate host-source
+archive is available to explicit `SCO_HOST_SOURCE_DIR` development overrides;
+its digest is recorded here, but it is not the default embedded-host input. The
+profiles have different roles and their headers must not be overlaid. The
+preflight and hosted consumer matrix check the official package coordinates
+before use.
 
 The SDK release package verification does not establish native reader exclusion,
 production ownership of the game image/resolver, Windows runtime behavior, or

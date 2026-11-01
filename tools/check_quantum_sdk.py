@@ -21,7 +21,7 @@ QUANTUM = {
     'checks': [
         # quantum.travel takes arguments, so it is invoked explicitly.
         (['--invoke', 'quantum.travel', 'Port', '500'],
-         ('setting relocation (bool)', 'quantum.travel -> unavailable', 'game.relocation provider is unavailable',
+         ('setting relocation (bool)', 'quantum.travel -> unavailable', 'game.relocation service or request is unavailable',
           'quantum.scan -> unavailable', 'quantum.status -> ok', 'game.relocation off', 'OK: 0 failure(s)')),
     ],
     'policy_red_arm': ('plugins/quantum/controls.h',
