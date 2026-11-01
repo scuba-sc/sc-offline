@@ -36,6 +36,11 @@ jobs:
       - name: tools/check.sh (pinned host source)
         run: tools/check.sh
 
+      - name: Test harness shutdown retention (pinned host headers)
+        run: |
+          tools/test_app_stop.sh external/sco-core
+          tools/test_menu_widgets_release.sh external/sco-core
+
       - name: Verify development source and SDK archive
         run: |
           set -eu
@@ -109,6 +114,12 @@ jobs:
           set -eu
           c++ -std=c++20 -I src/builtins -I external/sco-core/include tools/builtins_result_test.cpp -o builtins_result_test
           ./builtins_result_test
+
+      - name: Built-in UI ABI boundary tests (ASan and UBSan)
+        run: |
+          set -eu
+          c++ -std=c++20 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -I src/builtins -I external/sco-core/include tools/builtin_ui_boundary_test.cpp -o builtin_ui_boundary_test
+          ./builtin_ui_boundary_test
 
       # G1 admission evidence decision core: any failed or unparseable OS reading is Unknown, never Clear.
       - name: Admission evidence tests

@@ -42,6 +42,14 @@ tools/check.sh
 
 This runs in a few seconds. It parses every `src/*.cpp`, `src/builtins/*.cpp`, `src/builtins/*/*.cpp` (the bridges) and `launcher/*.cpp` file with clang against mingw-w64's Windows headers. It also screens `src/` for MSVC error C2712 (`__try` in a function that owns an object needing unwinding, such as a `std::string`). It is not a build: only MSVC's build is. Known clang-only diagnostics are listed in `tools/check-baseline.txt`, and only new ones fail the check. You need clang and mingw-w64 (`brew install llvm mingw-w64` on macOS).
 
+The focused test-process shutdown regression runs with the pinned host headers via
+`tools/test_app_stop.sh external/sco-core`. It covers an unverified legacy `void`
+shutdown, failure, exception and confirmed cleanup, plus an unsafe-guard negative
+control. `tools/test_menu_widgets_release.sh external/sco-core` builds the real
+menu harness with `NDEBUG` and verifies that a forced failure is detected. When invoking `menu_widgets_test` or `asop_host_composition_test`
+directly against a legacy host, exit 77 means the functional assertions passed but
+shutdown could not be verified; it is a skip, not a successful cleanup.
+
 ### Include and scan gates
 
 ```bash

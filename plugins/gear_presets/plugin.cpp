@@ -21,7 +21,7 @@ struct State {
     std::string name = "Preset", status = "Capture a complete layout to save a preset.";
     std::vector<SavedPreset> items, published;
     std::vector<Difference> differences;
-    int32_t selection = -1; uintptr_t cookie = 0;
+    int32_t selection = -1; uintptr_t cookie = 0; uint64_t published_selection = 0;
 } g;
 uintptr_t next_cookie = 0;
 const sco_plugin_info info{sizeof(sco_plugin_info),SCO_API_MAJOR,SCO_API_MINOR,"gear_presets","1.0.0","sc-offline"};
@@ -54,7 +54,7 @@ sco_result DoSave() {
     Preset next=g.captured; next.name=g.name;
     PresetStore store; auto result=store.Open(g.api,g.self); if (result!=SCO_OK) { g.status="Preset storage unavailable."; return result; }
     uint64_t id=0; result=store.Save(next,id);
-    if (result!=SCO_OK) { g.status="Save failed; previous presets are unchanged."; return result; }
+    if (result!=SCO_OK) { g.status="Save failed or its outcome is unknown. Refresh before retrying."; return result; }
     g.fresh=false;
     // Presentation must not turn a committed write into a reported failure.
     try {
@@ -62,6 +62,31 @@ sco_result DoSave() {
         g.status=result==SCO_OK ? "Preset saved. Select it to compare a fresh layout." : "Preset saved, but the picker could not refresh.";
     } catch (...) { /* the committed result remains successful */ }
     return SCO_OK;
+}
+sco_result DoDelete(uint64_t id) {
+    // Prepare messages before the write so later allocation cannot change its result.
+    std::string failed="Deletion failed or its outcome is unknown. Refresh before retrying.";
+    std::string deleted="Preset deleted.";
+    std::string refresh_failed="Preset deleted, but the picker could not refresh.";
+    std::string missing="Preset not found. Refresh and select a saved preset.";
+    g.cookie=0; g.selection=-1; g.differences.clear();
+    PresetStore store; auto result=store.Open(g.api,g.self);
+    if(result!=SCO_OK) { g.status="Preset storage unavailable; deletion was not attempted."; return result; }
+    g.status.swap(failed);
+    result=store.Delete(id);
+    if(result==SCO_OK) g.status.swap(deleted);
+    else if(result==SCO_NOT_FOUND) g.status.swap(missing);
+    // A failed provider call may have applied the deletion. Refresh is best effort.
+    try {
+        if(Reload()!=SCO_OK) {
+            g.items.clear();
+            if(result==SCO_OK) g.status.swap(refresh_failed);
+        }
+    } catch (...) {
+        g.items.clear();
+        if(result==SCO_OK) g.status.swap(refresh_failed);
+    }
+    return result;
 }
 sco_result DoCompare(uint64_t id) {
     g.differences.clear(); PresetStore store; auto result=store.Open(g.api,g.self); if(result!=SCO_OK) { g.status="Preset storage unavailable."; return result; }
@@ -99,8 +124,14 @@ void Event(const char* panel, const sco_widget_event* event, void* ctx) {
             for(size_t i=0;i<g.items.size();++i) if(g.items[i].id==id) g.selection=static_cast<int32_t>(i);
         } else if (event->node_id==6 && event->kind==SCO_WIDGET_BUTTON && g.selection>=0 &&
                    static_cast<size_t>(g.selection)<g.items.size()) (void)DoCompare(g.items[static_cast<size_t>(g.selection)].id);
-        Publish();
-    } catch (...) { g.status="Preset operation failed."; }
+        else if (event->node_id==9 && event->kind==SCO_WIDGET_BUTTON && g.selection>=0 &&
+                   static_cast<size_t>(g.selection)<g.items.size() && g.published_selection!=0 &&
+                   g.items[static_cast<size_t>(g.selection)].id==g.published_selection) (void)DoDelete(g.published_selection);
+    } catch (...) {
+        try { g.status="Preset operation failed."; } catch (...) {}
+    }
+    // Presentation failure must not overwrite the operation's result or escape the callback.
+    try { Publish(); } catch (...) {}
 }
 void Publish() {
     const auto* w=Widgets(); if (!HAS(w,sco_widgets_v1,set_panel) || next_cookie==std::numeric_limits<uintptr_t>::max()) return;
@@ -118,6 +149,7 @@ void Publish() {
     add(SCO_WIDGET_BUTTON,6,"Compare current layout",g.selection>=0 ? 0u : SCO_WIDGET_DISABLED);
     add(SCO_WIDGET_LABEL,7,g.status.c_str());
     add(SCO_WIDGET_LABEL,8,"Category-level advice only; no equipment or movement commands are executed.");
+    add(SCO_WIDGET_BUTTON,9,"Delete selected preset",g.selection>=0 ? 0u : SCO_WIDGET_DISABLED);
     uint32_t id=100;
     for (const auto& d:g.differences) {
         char line[240];
@@ -128,9 +160,12 @@ void Publish() {
         else std::snprintf(line,sizeof(line),"%s: %s",d.key.c_str(),AdviceText(d.advice));
         labels.emplace_back(line); add(SCO_WIDGET_LABEL,id++,labels.back().c_str());
     }
+    auto published=g.items; // Allocate before accepting a new callback.
+    const uint64_t selected=g.selection>=0 && static_cast<size_t>(g.selection)<published.size()
+        ? published[static_cast<size_t>(g.selection)].id : 0;
     const uintptr_t cookie=++next_cookie;
     if(w->set_panel(g.self,"gear_presets.main","Gear presets",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(nodes[0]),Event,reinterpret_cast<void*>(cookie))==SCO_OK) {
-        g.cookie=cookie; g.published=g.items;
+        g.published.swap(published); g.published_selection=selected; g.cookie=cookie;
     }
 }
 sco_result Reply(sco_result result,char* reply,uint32_t size) { if(reply && size) std::snprintf(reply,size,"%s",g.status.c_str()); try { Publish(); } catch (...) {} return result; }
@@ -158,6 +193,11 @@ sco_result ListCommand(const sco_arg*,uint32_t n,void*,char* reply,uint32_t size
     }
     catch (...) { return SCO_TOO_MANY; }
 }
+sco_result DeleteCommand(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size) {
+    try { if(n!=1 || !args || args[0].type!=SCO_ARG_INT || args[0].v.i<=0) return SCO_BAD_ARG;
+        return Reply(DoDelete(static_cast<uint64_t>(args[0].v.i)),reply,size);
+    } catch (...) { return SCO_TOO_MANY; }
+}
 sco_result CompareCommand(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size) {
     try { if(n!=1 || !args || args[0].type!=SCO_ARG_INT || args[0].v.i<=0) return SCO_BAD_ARG;
         auto r=DoCompare(static_cast<uint64_t>(args[0].v.i)); return Reply(r,reply,size);
@@ -174,10 +214,11 @@ extern "C" SCO_EXPORT sco_result sco_plugin_load(const sco_api* api,sco_plugin* 
         const Command commands[]{ {"gear_presets.capture","Capture gear layout",CaptureCommand,nullptr,0},
             {"gear_presets.save","Save captured gear preset",SaveCommand,&name,1},
             {"gear_presets.list","List gear presets",ListCommand,nullptr,0},
-            {"gear_presets.compare","Compare gear preset",CompareCommand,&id,1} };
+            {"gear_presets.compare","Compare gear preset",CompareCommand,&id,1},
+            {"gear_presets.delete","Delete saved gear preset",DeleteCommand,&id,1} };
         for(const auto& c:commands) {
             sco_command command{}; command.size=sizeof(command); command.name=c.name; command.title=c.title;
-            command.help="Read-only category comparison; no equipment changes."; command.args=c.arg; command.nargs=c.count;
+            command.help=c.fn==DeleteCommand ? "Delete one saved preset by ID." : "Category comparison; no equipment changes."; command.args=c.arg; command.nargs=c.count;
             command.arg_def_size=sizeof(sco_arg_def); command.fn=c.fn;
             const auto result=api->register_command(self,&command); if(result!=SCO_OK) { g=State{}; return result; }
         }
