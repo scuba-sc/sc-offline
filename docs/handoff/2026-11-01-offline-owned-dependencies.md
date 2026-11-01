@@ -1,22 +1,27 @@
 # Offline owning dependency inventory — pre-activation design
 
-Status: inventory and synthetic qualification only. Current coordinated input:
-offline #185 head `9d7165038edda5a7196e311f54943c3d0d8dde71` proposes development
-source `44ffd1290e261e12684b38ac862ec0c4f08921df`; current main
-`9cd25406934d6afd1da400b4aefbf95eb46339c7` still has production gitlink
-`1b6782bc5c8b7d189cdff4c83e81957f09af35d7`. The exact RC3 candidate
-was published by core workflow run `41332377573` as artifact `13093044361`, with
-outer SHA-256
-`464b7ca2f05f402cfe5581b2a34033c169a977cf5493a396a36a7c63dc0c2ddc`. Its
-host-source archive SHA-256 is
-`799511bfa08a7bf77a46fcf8262d3cac4a5f0e6a0ef04a28f53e6e624c01e8a0`; its
-core-source archive SHA-256 is
-`807a322eab2b3d8c25e10c3582008ec3ec50b6b536bc947f2b28cf4b63095c22`.
+Status: ownership inventory and synthetic qualification only. At this update,
+offline main contains merge commit `a049b9e8997f3deb8427fd401c2072481bc7cd37`
+from #185 and pins stable sco-core source
+`6106fa3639cbcc28f78a1ded8de2707de019f4d3`, published as
+[`sdk-v2.4.0`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0).
+The release was built by core run `41342490537` and published by run
+`41343086992`; release manifest artifact `13098182566` names the same source.
+The combined SDK archive SHA-256 is
+`0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc`, the
+core-source archive is
+`df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51`, and the
+host-source archive is
+`a0aaaba07e3d4eb0d8c264912cd6f2ab23f0d237a99fa07816005790a76efc4c`.
+All downloadable SDK archives and SPDX files matched the published
+`SHA256SUMS`; package hashes and sizes also matched `release.json`. Earlier RC3
+candidate evidence below is historical and must not be attributed to this stable
+release.
 
 Product native preflight is unconditionally unavailable. The entries below are
 an ownership inventory, not evidence of safe native activation, shutdown or game
 acceptance. Evidence tied to earlier source and package identities is historical
-and must not be attributed to this coordinated RC3 input.
+and must not be attributed to the current stable release.
 
 ## Actual product surfaces requiring ownership
 
@@ -156,9 +161,9 @@ private `app::detail::StartOwned` route and does not supply a native barrier.
 These results are synthetic source evidence only; the unresolved production
 ownership, native drain and game-acceptance requirements above still apply.
 
-## Coordinated RC3 candidate qualification
+## Historical coordinated RC3 candidate qualification
 
-The current opt-in candidate workflow uses core source
+The earlier opt-in candidate workflow used core source
 `44ffd1290e261e12684b38ac862ec0c4f08921df`, whose history includes the reviewed
 core #315 head `4c09ab2f73caa3d1103214adc56193d2434a8795`. It checks that #315 is
 still open at that exact head or is positively reported merged from that exact
@@ -185,3 +190,24 @@ the no-read negative control and retained-worker reaping. These are synthetic
 Linux tests; the workflow adds exact-source and extracted-kit Linux/Windows
 jobs. They establish neither native-reader exclusion nor product closure
 ownership, and do not enable native startup. No game or native runtime was run.
+
+## Published stable SDK 2.4.0 qualification input
+
+The current offline pin is the source commit recorded by the published
+`sdk-v2.4.0` tag: `6106fa3639cbcc28f78a1ded8de2707de019f4d3`. The official
+release assets were downloaded from that release and independently checked
+against `SHA256SUMS`; package hashes and sizes matched `release.json`. The
+host-source package used by the Windows/Linux fixture is
+`sco-sdk-host-source-sc-2.4.0.zip`, SHA-256
+`a0aaaba07e3d4eb0d8c264912cd6f2ab23f0d237a99fa07816005790a76efc4c`; its
+compatibility descriptor records core source `6106fa...`. The combined plugin
+archive is `sco-sdk-2.4.0.zip`, SHA-256
+`0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc`.
+
+The PR-specific workflow downloads the stable release, validates all
+listed release checksums, verifies the manifest and annotated tag's peeled
+commit, and tests the detailed HostReport fixture against both the exact source
+tree and extracted official host kit on Linux and Windows. This exercises
+synthetic ownership/lifetime cases only. The product startup gate remains
+unconditionally unavailable; no native reader census, game execution, or
+gameplay acceptance is supplied by these package tests.

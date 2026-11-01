@@ -34,9 +34,10 @@ admission inspector returns synthetic evidence only.
   are still live. The budget case is not an exception during Options copy.
 * `host` exercises actual Prepare, Start, wrong-thread Stop, reentrant Stop
   from the Tick inspector, and game-thread Stop. Inspector reentry is an
-  adversarial contract violation; production inspectors must be non-reentrant. At core a5101d4, the last
-  returns Failed and retains state even after a successful owned drain; later
-  Stop and Start refuse. The fixture's root remains live for process lifetime.
+  adversarial contract violation; production inspectors must be non-reentrant.
+  At the current pinned core source `6106fa3`, the last returns Failed and
+  retains state even after a successful owned drain; later Stop and Start
+  refuse. The fixture's root remains live for process lifetime.
 * `start-fault` injects an owner fault through the inspector during the actual
   Start transition after Activate, and verifies terminal failure and retention.
 * `after-app-start` uses the pinned core's existing private synthetic
@@ -56,10 +57,10 @@ admission inspector returns synthetic evidence only.
 The root is installed before exposure and is intentionally not destroyed on
 terminal host paths; this demonstrates a test-process policy, not a production
 process/module owner. The fixture does not provide a native execution barrier,
-prove real module mapping or worker census, exercise a successful game-host
-Stop, or classify game-host startup exposure with a detailed result. The pinned
-baseline has no such game-host-facing detailed result. The separate candidate
-contract exercise below tests the later core report interface. No result authorizes native activation, teardown or restart. Product
+prove real module mapping or worker census, or exercise a successful game-host
+Stop. The published pinned source provides a detailed game-host result, and the
+report fixture below checks its synthetic ownership behavior. No result
+authorizes native activation, teardown or restart. Product
 `NativeActivationAvailable()` remains false. This test is not game acceptance.
 
 `wait_until_closed` observes closure, not entry into the drain wait. In the
@@ -81,24 +82,27 @@ for the tested Linux/GNU library and pinned source, not Windows, other standard
 libraries, or arbitrary allocation failures. The owner-fault Start case does
 not reach the post-app-start seam; the separate optional case does.
 
-## Detailed report candidate
+## Published stable host report qualification
 
-The current opt-in CI candidate is core PR #315 source
-`4c09ab2f73caa3d1103214adc56193d2434a8795`; its core-source archive SHA-256 is
-`19e80a7d1661475a86aaed80d1827cec8c5e4868d990bca27b089ff8e6d5ed07`, and its
-host-source archive SHA-256 is
-`d043bd459b6570bd49b072014e96e6844a58c7078af7c5852a0825d736f30e39`.
-The separate `test_core_candidate` workflow dispatch runs the detailed fixture
-against both source and the extracted archive on Linux and Windows. It does not
-promote either the candidate or the product pin. A moved PR head refuses the run;
-the actual tested commit must still be checked when interpreting results.
+The current product pin and published SDK source are core commit
+`6106fa3639cbcc28f78a1ded8de2707de019f4d3`, tag
+[`sdk-v2.4.0`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0).
+The host-source archive SHA-256 is
+`a0aaaba07e3d4eb0d8c264912cd6f2ab23f0d237a99fa07816005790a76efc4c`; the
+core-source archive SHA-256 is
+`df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51`. The
+workflow downloads the official release assets, checks listed files against
+`SHA256SUMS`, checks package hashes and sizes against `release.json`, verifies
+the release tag peels to the product source pin, and runs this fixture against
+both the exact source checkout and the extracted published host-source archive
+on Linux and Windows. These package checks do not change the product pin.
 
 When `SCO_HOST_SOURCE_DIR` provides the `HostCapsule` contract and private
 source testing header, CMake additionally builds `host_report_test` against
 that source. It compiles a separate, test-instrumented copy of core's host
 implementation, following core's own report-test pattern. The production
-`sco_game_host` target is not modified. The baseline pinned source lacks the
-contract, so its legacy tests remain available; this is not a gitlink update.
+`sco_game_host` target is not modified. The current stable source includes this
+contract; legacy refusal tests remain available alongside detailed report tests.
 
 Each report scenario runs in a fresh process. A real backing object owns the
 synthetic image bytes, shutdown owner and a resolver backing object containing
@@ -148,5 +152,6 @@ retains the capsule and its real backing with a nonzero session ID.
 Every adopted terminal result stays `ProcessRetained`; a failed stop does not
 authorize restart, destruction or unload. These tests do not establish native
 reader exclusion, worker census, mapped code ownership, original-quit safety,
-Windows failure behavior, or game acceptance. The detailed contract is an
-unpublished host-source candidate, separate from the production SDK pin.
+Windows failure behavior, or game acceptance. The detailed contract is part of
+the published SDK source and the current product pin; these synthetic tests do
+not establish safe native activation, shutdown, or gameplay.

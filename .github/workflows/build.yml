@@ -6,13 +6,6 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      test_core_candidate:
-        description: 'Qualify the coordinated RC3 core candidate'
-        type: boolean
-        default: false
-
 # Default to read; only the release job asks for write.
 permissions:
   contents: read
@@ -23,56 +16,94 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
-  # Separate opt-in qualification: never changes the product gitlink.
-  candidate-host-package:
-    if: github.event_name == 'workflow_dispatch' && inputs.test_core_candidate
+  # Qualify the immutable published package independently from the product gitlink.
+  stable-host-package:
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 192
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: scuba-sc/sco-core
-          ref: 44ffd1290e261e12684b38ac862ec0c4f08921df
-          path: candidate-core
+          ref: 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          path: stable-core
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: scuba-sc/sc-offline
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
           path: offline-source
           persist-credentials: false
-      - name: Verify and package the exact candidate
-        working-directory: candidate-core
+      - name: Verify the published SDK and package the host kit
+        working-directory: stable-core
         env:
           GH_TOKEN: ${{ github.token }}
-          OFFLINE_RUN_SHA: ${{ github.sha }}
+          OFFLINE_RUN_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          set -eu
-          set -o pipefail
-          test "$(gh api repos/scuba-sc/sc-offline/pulls/192 --jq '.state + ":" + .head.sha')" = "open:$OFFLINE_RUN_SHA"
+          set -euo pipefail
+          test "$(gh api repos/scuba-sc/sc-offline/pulls/192 --jq '.state + ":" + .base.ref + ":" + .head.sha')" = "open:main:$OFFLINE_RUN_SHA"
           test "$(git -C ../offline-source rev-parse HEAD)" = "$OFFLINE_RUN_SHA"
+          test "$(git -C ../offline-source rev-parse HEAD:external/sco-core)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
           test -z "$(git -C ../offline-source status --porcelain)"
-          python3 ../offline-source/tools/test_core_candidate_pr_guard.py
-          gh api repos/scuba-sc/sco-core/pulls/315 | python3 ../offline-source/tools/core_candidate_pr_guard.py --expected-head 4c09ab2f73caa3d1103214adc56193d2434a8795
-          test "$(git rev-parse HEAD)" = 44ffd1290e261e12684b38ac862ec0c4f08921df
-          git merge-base --is-ancestor 4c09ab2f73caa3d1103214adc56193d2434a8795 HEAD
-          test -z "$(git status --porcelain)"
-          python3 sdk/package.py --profile core-source --out "$RUNNER_TEMP/candidate-kits"
-          python3 sdk/package.py --profile host-source-sc --out "$RUNNER_TEMP/candidate-kits"
-          echo '807a322eab2b3d8c25e10c3582008ec3ec50b6b536bc947f2b28cf4b63095c22  '"$RUNNER_TEMP/candidate-kits/sco-sdk-core-source-2.4.0.zip" | sha256sum -c -
-          echo '799511bfa08a7bf77a46fcf8262d3cac4a5f0e6a0ef04a28f53e6e624c01e8a0  '"$RUNNER_TEMP/candidate-kits/sco-sdk-host-source-sc-2.4.0.zip" | sha256sum -c -
-          unzip -q "$RUNNER_TEMP/candidate-kits/sco-sdk-host-source-sc-2.4.0.zip" -d "$RUNNER_TEMP/candidate-check"
-          (cd "$RUNNER_TEMP/candidate-check/sco-sdk-host-source-sc-2.4.0" && sha256sum -c SHA256SUMS >/dev/null)
+          test "$(git -C ../stable-core rev-parse HEAD)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          git -C ../stable-core fetch origin refs/tags/sdk-v2.4.0:refs/tags/sdk-v2.4.0
+          test "$(git -C ../stable-core rev-parse 'refs/tags/sdk-v2.4.0^{commit}')" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          test -z "$(git -C ../stable-core status --porcelain)"
+          gh release view sdk-v2.4.0 --repo scuba-sc/sco-core --json tagName,isDraft,isPrerelease > "$RUNNER_TEMP/release-view.json"
+          python3 - "$RUNNER_TEMP/release-view.json" <<'PY'
+          import json, sys
+          release_view = json.load(open(sys.argv[1], encoding='utf-8'))
+          assert release_view['tagName'] == 'sdk-v2.4.0'
+          assert release_view['isDraft'] is False
+          assert release_view['isPrerelease'] is False
+          PY
+          mkdir -p "$RUNNER_TEMP/stable-assets"
+          gh release download sdk-v2.4.0 --repo scuba-sc/sco-core --dir "$RUNNER_TEMP/stable-assets"
+          cd "$RUNNER_TEMP/stable-assets"
+          sha256sum -c SHA256SUMS
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          root = pathlib.Path('.')
+          release = json.loads((root / 'release.json').read_text())
+          expected = {
+              'sco-sdk-2.4.0.zip': '0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc',
+              'sco-sdk-core-source-2.4.0.zip': 'df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51',
+              'sco-sdk-host-source-sc-2.4.0.zip': 'a0aaaba07e3d4eb0d8c264912cd6f2ab23f0d237a99fa07816005790a76efc4c',
+          }
+          assert release['tag'] == 'sdk-v2.4.0'
+          assert release['source']['repo'] == 'scuba-sc/sco-core'
+          assert release['source']['sha'] == '6106fa3639cbcc28f78a1ded8de2707de019f4d3'
+          assert release['builder']['run_id'] == 41342490537
+          assets = {item['name']: item for item in release['artifacts']}
+          for name, digest in expected.items():
+              item = assets[name]
+              data = (root / name).read_bytes()
+              assert item['sha256'] == digest, name
+              assert item['size'] == len(data), name
+              assert hashlib.sha256(data).hexdigest() == digest, name
+          PY
+          mkdir -p "$RUNNER_TEMP/stable-extracted"
+          unzip -q sco-sdk-host-source-sc-2.4.0.zip -d "$RUNNER_TEMP/stable-extracted"
+          kit="$RUNNER_TEMP/stable-extracted/sco-sdk-host-source-sc-2.4.0"
+          (cd "$kit" && sha256sum -c SHA256SUMS)
+          python3 - "$kit/COMPATIBILITY.json" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1], encoding='utf-8'))
+          assert data['profile'] == 'host-source-sc'
+          assert data['core_sdk_version'] == '2.4.0'
+          assert data['source_commits']['core'] == '6106fa3639cbcc28f78a1ded8de2707de019f4d3'
+          assert data['source_commits']['game-sc'] == '6106fa3639cbcc28f78a1ded8de2707de019f4d3'
+          PY
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: candidate-host-source-kit
-          path: ${{ runner.temp }}/candidate-kits/sco-sdk-host-source-sc-2.4.0.zip
+          name: stable-host-source-kit
+          path: ${{ runner.temp }}/stable-assets/sco-sdk-host-source-sc-2.4.0.zip
           if-no-files-found: error
           retention-days: 7
 
-  candidate-host-consumer:
-    if: github.event_name == 'workflow_dispatch' && inputs.test_core_candidate
-    needs: candidate-host-package
+  stable-host-consumer:
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 192
+    needs: stable-host-package
     strategy:
       fail-fast: false
       matrix:
@@ -82,27 +113,28 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: scuba-sc/sco-core
-          ref: 44ffd1290e261e12684b38ac862ec0c4f08921df
-          path: candidate-core
+          ref: 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          path: stable-core
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: candidate-host-source-kit
-          path: ${{ runner.temp }}/candidate-kit
-      - name: Verify candidate inputs and test actual host reports
+          name: stable-host-source-kit
+          path: ${{ runner.temp }}/stable-kit
+      - name: Verify stable inputs and test actual host reports
         shell: bash
         env:
           INPUT_KIND: ${{ matrix.source }}
         run: |
-          set -eu
-          test "$(git -C candidate-core rev-parse HEAD)" = 44ffd1290e261e12684b38ac862ec0c4f08921df
-          git -C candidate-core merge-base --is-ancestor 4c09ab2f73caa3d1103214adc56193d2434a8795 HEAD
-          test -z "$(git -C candidate-core status --porcelain)"
+          set -euo pipefail
+          test "$(git rev-parse HEAD:external/sco-core)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          test "$(git -C stable-core rev-parse HEAD)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          test -z "$(git -C stable-core status --porcelain)"
           workspace="$GITHUB_WORKSPACE"; temp="$RUNNER_TEMP"; py=python3; generator=()
           if [ "$RUNNER_OS" = Windows ]; then
             workspace="$(cygpath -m "$GITHUB_WORKSPACE")"; temp="$(cygpath -m "$RUNNER_TEMP")"; py=python
@@ -110,42 +142,58 @@ jobs:
           else
             export CC=clang CXX=clang++
           fi
-          archive="$temp/candidate-kit/sco-sdk-host-source-sc-2.4.0.zip"
-          "$py" -c 'import hashlib,sys; assert hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest()=="799511bfa08a7bf77a46fcf8262d3cac4a5f0e6a0ef04a28f53e6e624c01e8a0"' "$archive"
-          "$py" -m zipfile -e "$archive" "$temp/candidate-extracted"
-          kit="$temp/candidate-extracted/sco-sdk-host-source-sc-2.4.0"
-          "$py" -c 'import json,sys; d=json.load(open(sys.argv[1])); assert d["profile"]=="host-source-sc" and d["source_commits"]["core"]=="44ffd1290e261e12684b38ac862ec0c4f08921df"' "$kit/COMPATIBILITY.json"
-          source="$workspace/candidate-core"
+          archive="$temp/stable-kit/sco-sdk-host-source-sc-2.4.0.zip"
+          "$py" - "$archive" <<'PY'
+          import hashlib, sys
+          assert hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest() == 'a0aaaba07e3d4eb0d8c264912cd6f2ab23f0d237a99fa07816005790a76efc4c'
+          PY
+          "$py" -m zipfile -e "$archive" "$temp/stable-extracted"
+          kit="$temp/stable-extracted/sco-sdk-host-source-sc-2.4.0"
+          "$py" - "$kit/COMPATIBILITY.json" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1], encoding='utf-8'))
+          assert data['profile'] == 'host-source-sc'
+          assert data['source_commits']['core'] == '6106fa3639cbcc28f78a1ded8de2707de019f4d3'
+          assert data['source_commits']['game-sc'] == '6106fa3639cbcc28f78a1ded8de2707de019f4d3'
+          PY
+          source="$workspace/stable-core"
           if [ "$INPUT_KIND" = kit ]; then source="$kit"; fi
           test -f "$source/tests/owned_shutdown_test_access.h"
-          cmake -S tools/offline-host -B "$temp/candidate-build" "${generator[@]}" -DCMAKE_BUILD_TYPE=Release "-DSCO_HOST_SOURCE_DIR=$source"
-          cmake --build "$temp/candidate-build" --config Release --target host_report_test --parallel 2
-          ctest --test-dir "$temp/candidate-build" -C Release --show-only=json-v1 > "$temp/candidate-tests.json"
-          "$py" -c 'import json,sys; names={t["name"] for t in json.load(open(sys.argv[1]))["tests"]}; expected={"host_report_"+x for x in ("refusal","reentry","wrong-thread","failed-start","options-copy","copy","copy-negative","retained_reap")}; assert expected <= names, expected-names' "$temp/candidate-tests.json"
-          ctest --test-dir "$temp/candidate-build" -C Release -R '^host_report_' --no-tests=error --output-on-failure
+          (cd "$kit" && sha256sum -c SHA256SUMS)
+          cmake -S tools/offline-host -B "$temp/stable-build" "${generator[@]}" -DCMAKE_BUILD_TYPE=Release "-DSCO_HOST_SOURCE_DIR=$source"
+          cmake --build "$temp/stable-build" --config Release --target host_report_test --parallel 2
+          ctest --test-dir "$temp/stable-build" -C Release --show-only=json-v1 > "$temp/stable-tests.json"
+          "$py" - "$temp/stable-tests.json" <<'PY'
+          import json, sys
+          names = {test['name'] for test in json.load(open(sys.argv[1], encoding='utf-8'))['tests']}
+          expected = {f'host_report_{name}' for name in (
+              'refusal', 'reentry', 'wrong-thread', 'failed-start',
+              'options-copy', 'copy', 'copy-negative', 'retained_reap')}
+          assert expected <= names, expected - names
+          PY
+          ctest --test-dir "$temp/stable-build" -C Release -R '^host_report_' --no-tests=error --output-on-failure
 
-  candidate-host-current:
-    if: github.event_name == 'workflow_dispatch' && inputs.test_core_candidate
-    needs: candidate-host-consumer
+  stable-host-current:
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 192
+    needs: stable-host-consumer
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: scuba-sc/sc-offline
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
           path: offline-source
           persist-credentials: false
-      - name: Recheck candidate PR head after all four tests
+      - name: Recheck PR head and stable source after all four tests
         env:
           GH_TOKEN: ${{ github.token }}
-          OFFLINE_RUN_SHA: ${{ github.sha }}
+          OFFLINE_RUN_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          set -eu
-          set -o pipefail
-          test "$(gh api repos/scuba-sc/sc-offline/pulls/192 --jq '.state + ":" + .head.sha')" = "open:$OFFLINE_RUN_SHA"
+          set -euo pipefail
+          test "$(gh api repos/scuba-sc/sc-offline/pulls/192 --jq '.state + ":" + .base.ref + ":" + .head.sha')" = "open:main:$OFFLINE_RUN_SHA"
           test "$(git -C offline-source rev-parse HEAD)" = "$OFFLINE_RUN_SHA"
+          test "$(git -C offline-source rev-parse HEAD:external/sco-core)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
           test -z "$(git -C offline-source status --porcelain)"
-          gh api repos/scuba-sc/sco-core/pulls/315 | python3 offline-source/tools/core_candidate_pr_guard.py --expected-head 4c09ab2f73caa3d1103214adc56193d2434a8795
 
   # Seconds on Linux: parse errors and MSVC C2712 risks fail here, before the Windows build.
   check:
@@ -160,8 +208,7 @@ jobs:
       - name: Install clang + mingw-w64 headers
         run: sudo apt-get update -qq && sudo apt-get install -y -qq clang g++-mingw-w64-x86-64-posix
 
-      # Pinned-host check remains a distinct gate. Candidate-only source files
-      # refuse old SDK builds and are additionally parsed in the next step.
+      # Pinned-host parsing remains separate from the exact stable-source check below.
       - name: tools/check.sh (pinned host source)
         run: tools/check.sh
 
@@ -177,10 +224,10 @@ jobs:
           git -C external/sco-core checkout --detach 6106fa3639cbcc28f78a1ded8de2707de019f4d3
           tools/ci-dev-sdk-preflight.sh external/sco-core "$RUNNER_TEMP/sdk-development"
 
-      - name: Check candidate-only sources against development host
+      - name: Check stable-SDK consumers against pinned host source
         run: tools/check.sh
 
-      - name: Test development gear consumer
+      - name: Test gear consumer with source-built SDK 2.4.0
         run: |
           set -eu
           test -d plugins/gear_presets
@@ -194,7 +241,7 @@ jobs:
             ctest --test-dir "$RUNNER_TEMP/gear-development" -R "^$t$" --no-tests=error --output-on-failure
           done
 
-      - name: Configure development spawn and ASOP consumers
+      - name: Configure spawn and ASOP consumers with source-built SDK 2.4.0
         run: |
           set -eu
           SDK_INCLUDE="$RUNNER_TEMP/sdk-development/extracted/sco-sdk-2.4.0/include"
@@ -202,22 +249,22 @@ jobs:
           test -f "$SDK_INCLUDE/sc_asop_selection.h"
           cmake -S plugins/spawn -B "$RUNNER_TEMP/spawn-development" -DSCO_SDK_INCLUDE_DIR="$SDK_INCLUDE" -DSCO_WORKFLOW_TESTS=ON
 
-      - name: Build development spawn feature
+      - name: Build spawn feature
         run: cmake --build "$RUNNER_TEMP/spawn-development" --target sco-feature-spawn --parallel 2
 
-      - name: Build development spawn module
+      - name: Build spawn module
         run: cmake --build "$RUNNER_TEMP/spawn-development" --target sc-offline-spawn --parallel 2
 
-      - name: Build development spawn fixture
+      - name: Build spawn fixture
         run: cmake --build "$RUNNER_TEMP/spawn-development" --target spawn-module-test --parallel 2
 
-      - name: Build development ASOP fixture
+      - name: Build ASOP fixture
         run: cmake --build "$RUNNER_TEMP/spawn-development" --target asop-selection-workflow-test --parallel 2
 
-      - name: Test development spawn consumer
+      - name: Test spawn consumer
         run: ctest --test-dir "$RUNNER_TEMP/spawn-development" -R '^spawn-module-workflow$' --no-tests=error --output-on-failure
 
-      - name: Test development ASOP consumer
+      - name: Test ASOP consumer
         run: ctest --test-dir "$RUNNER_TEMP/spawn-development" -R '^asop-selection-workflow$' --no-tests=error --output-on-failure
 
       - name: Restore pinned host source for remaining checks
