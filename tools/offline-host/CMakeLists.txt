@@ -13,8 +13,8 @@ add_library(sc_offline_host_composition STATIC ../../src/offline_host.cpp)
 target_link_libraries(sc_offline_host_composition PUBLIC sco_game_host)
 include(CTest)
 if(BUILD_TESTING)
-  # The shipped gitlink predates the detailed contract. Keep its legacy fixture
-  # until the SDK pin is reviewed separately; exercise reports when available.
+  # The stable product pin includes the detailed contract. Keep feature detection
+  # for ad hoc older kits; permanent product CI requires these report tests.
   file(READ "${SCO_HOST_SOURCE_DIR}/include/sco/game/host.h" host_header)
   if(host_header MATCHES "class HostCapsule" AND EXISTS "${SCO_HOST_SOURCE_DIR}/src/game/host_testing.h")
     # Same production route; compile a separate host.cpp with fixed test faults,
@@ -27,7 +27,7 @@ if(BUILD_TESTING)
       add_test(NAME host_report_${scenario} COMMAND host_report_test ${scenario})
       set_tests_properties(host_report_${scenario} PROPERTIES TIMEOUT 20)
     endforeach()
-    # The checked-in gitlink intentionally remains on the older contract.
+    # Retained reaping exists in the stable pin; older kits may omit this case.
     file(READ "${SCO_HOST_SOURCE_DIR}/include/sco/owned_shutdown.h" shutdown_header)
     if(shutdown_header MATCHES "reap_retained_until")
       target_compile_definitions(host_report_test PRIVATE SCO_HAS_RETAINED_REAP=1)
@@ -38,6 +38,8 @@ if(BUILD_TESTING)
       set_tests_properties(host_report_retained_reap PROPERTIES TIMEOUT 20)
     endif()
   endif()
+  # Legacy-source fallback only. Stable 2.4.0 exercises the partial copy through
+  # host_report_options-copy above.
   if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT host_header MATCHES "class HostCapsule")
     add_executable(options_copy_fault_test options_copy_fault_test.cpp)
     target_link_libraries(options_copy_fault_test PRIVATE sco_game_host)

@@ -58,14 +58,18 @@ and native entry that may use them. The root must exist before exposure and be
 retainable without allocating on a failure path. Whether module pinning and
 process-exit retention are implementable by the product is unresolved.
 
-The present product path is `offline_host::Start -> game::host::Start ->
-app::detail::StartOwned`. Public `app::StartDetailed` is not a replacement for the
-game-host transition. Core and product must agree on a detailed **host** result
-that distinguishes fresh refusal, exposure/partial prepare, started, and
-retained/uncertain outcomes, with the complete closure held before the call.
-Names and fields of the forthcoming core result are not assumed here.
+The intended product route after its gate is enabled would be
+`offline_host::Start -> game::host::Start -> app::detail::StartOwned`. Today
+`NativeActivationAvailable()` returns false, so product startup refuses before
+calling that route. Stable core 2.4.0 exposes the detailed game-host
+`HostCapsule`/`HostReport` contract in `include/sco/game/host.h`; product code
+still needs to integrate its complete owning closure and preserve the structured
+result through startup and shutdown. Public `app::StartDetailed` is not a
+replacement for the game-host transition. The synthetic HostReport fixture in
+this PR directly exercises the restricted core route with test-owned inputs; it
+does not exercise product wiring or native gameplay.
 
-The product needs the eventual contract to answer, at minimum:
+Product integration and acceptance still need to answer, at minimum:
 
 - **Before entry:** what typed owning capsule or owners are accepted and when
   their code, image, resolver, callback/context and worker dependencies become
@@ -85,8 +89,8 @@ The product needs the eventual contract to answer, at minimum:
   partial Options/capsule copy, plus observable start and drain phases. A hook
   that throws before copying is not evidence about partial-copy behavior.
 
-These are requirements to reconcile with the core owner, not declarations of a
-new API or evidence that the current host already provides them.
+These are requirements for integrating with the published core contract, not
+evidence that the current host already provides them.
 
 For the app-level contract only: `RefusedBeforeExposure` covers that invocation
 and cannot erase earlier aliases; `RetainDependencies` is process-retained even
@@ -204,10 +208,10 @@ compatibility descriptor records core source `6106fa...`. The combined plugin
 archive is `sco-sdk-2.4.0.zip`, SHA-256
 `0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc`.
 
-The PR-specific workflow downloads the stable release, validates all
-listed release checksums, verifies the manifest and annotated tag's peeled
-commit, and tests the detailed HostReport fixture against both the exact source
-tree and extracted official host kit on Linux and Windows. This exercises
-synthetic ownership/lifetime cases only. The product startup gate remains
-unconditionally unavailable; no native reader census, game execution, or
-gameplay acceptance is supplied by these package tests.
+The #192 pull request and the manual `qualify_stable_sdk` dispatch download the
+stable release, validate all listed release checksums, verify the manifest and
+annotated tag's peeled commit, and test the detailed HostReport fixture against
+both the exact source tree and extracted official host kit on Linux and Windows.
+This exercises synthetic ownership/lifetime cases only. The product startup
+gate remains unconditionally unavailable; no native reader census, game
+execution, or gameplay acceptance is supplied by these package tests.

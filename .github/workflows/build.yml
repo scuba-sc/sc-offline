@@ -6,6 +6,12 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      qualify_stable_sdk:
+        description: 'Qualify the published sco-core SDK 2.4.0 release'
+        type: boolean
+        default: false
 # Default to read; only the release job asks for write.
 permissions:
   contents: read
@@ -18,7 +24,7 @@ concurrency:
 jobs:
   # Qualify the immutable published package independently from the product gitlink.
   stable-host-package:
-    if: github.event_name == 'pull_request' && github.event.pull_request.number == 192
+    if: (github.event_name == 'workflow_dispatch' && inputs.qualify_stable_sdk) || (github.event_name == 'pull_request' && github.event.pull_request.number == 192)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -31,17 +37,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: scuba-sc/sc-offline
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           path: offline-source
           persist-credentials: false
       - name: Verify the published SDK and package the host kit
         working-directory: stable-core
         env:
           GH_TOKEN: ${{ github.token }}
-          OFFLINE_RUN_SHA: ${{ github.event.pull_request.head.sha }}
+          OFFLINE_RUN_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          QUALIFICATION_EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          test "$(gh api repos/scuba-sc/sc-offline/pulls/192 --jq '.state + ":" + .base.ref + ":" + .head.sha')" = "open:main:$OFFLINE_RUN_SHA"
+          if [ "$QUALIFICATION_EVENT" = pull_request ]; then
+            test "$(gh api repos/scuba-sc/sc-offline/pulls/192 --jq '.state + ":" + .base.ref + ":" + .head.sha')" = "open:main:$OFFLINE_RUN_SHA"
+          fi
           test "$(git -C ../offline-source rev-parse HEAD)" = "$OFFLINE_RUN_SHA"
           test "$(git -C ../offline-source rev-parse HEAD:external/sco-core)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
           test -z "$(git -C ../offline-source status --porcelain)"
@@ -102,7 +111,7 @@ jobs:
           retention-days: 7
 
   stable-host-consumer:
-    if: github.event_name == 'pull_request' && github.event.pull_request.number == 192
+    if: (github.event_name == 'workflow_dispatch' && inputs.qualify_stable_sdk) || (github.event_name == 'pull_request' && github.event.pull_request.number == 192)
     needs: stable-host-package
     strategy:
       fail-fast: false
@@ -113,7 +122,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -174,23 +183,26 @@ jobs:
           ctest --test-dir "$temp/stable-build" -C Release -R '^host_report_' --no-tests=error --output-on-failure
 
   stable-host-current:
-    if: github.event_name == 'pull_request' && github.event.pull_request.number == 192
+    if: (github.event_name == 'workflow_dispatch' && inputs.qualify_stable_sdk) || (github.event_name == 'pull_request' && github.event.pull_request.number == 192)
     needs: stable-host-consumer
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: scuba-sc/sc-offline
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           path: offline-source
           persist-credentials: false
-      - name: Recheck PR head and stable source after all four tests
+      - name: Recheck qualification source and stable pin after all four tests
         env:
           GH_TOKEN: ${{ github.token }}
-          OFFLINE_RUN_SHA: ${{ github.event.pull_request.head.sha }}
+          OFFLINE_RUN_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          QUALIFICATION_EVENT: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          test "$(gh api repos/scuba-sc/sc-offline/pulls/192 --jq '.state + ":" + .base.ref + ":" + .head.sha')" = "open:main:$OFFLINE_RUN_SHA"
+          if [ "$QUALIFICATION_EVENT" = pull_request ]; then
+            test "$(gh api repos/scuba-sc/sc-offline/pulls/192 --jq '.state + ":" + .base.ref + ":" + .head.sha')" = "open:main:$OFFLINE_RUN_SHA"
+          fi
           test "$(git -C offline-source rev-parse HEAD)" = "$OFFLINE_RUN_SHA"
           test "$(git -C offline-source rev-parse HEAD:external/sco-core)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
           test -z "$(git -C offline-source status --porcelain)"
@@ -325,6 +337,9 @@ jobs:
           cmake --build "$RUNNER_TEMP/offline-owned" --parallel 2
           ctest --test-dir "$RUNNER_TEMP/offline-owned" -N | grep -E 'Test +#[0-9]+: owned_capsule_host$' >/dev/null
           ctest --test-dir "$RUNNER_TEMP/offline-owned" -N | grep -E 'Test +#[0-9]+: owned_capsule_after_app_start$' >/dev/null
+          for scenario in refusal reentry wrong-thread failed-start options-copy copy copy-negative retained_reap; do
+            ctest --test-dir "$RUNNER_TEMP/offline-owned" -N | grep -E "Test +#[0-9]+: host_report_${scenario}$" >/dev/null
+          done
           ctest --test-dir "$RUNNER_TEMP/offline-owned" --no-tests=error --output-on-failure
 
       - name: ASOP partial-start refusal propagation
@@ -620,7 +635,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $testList = $testJson | ConvertFrom-Json
           $names = @($testList.tests | ForEach-Object { $_.name })
-          foreach ($required in @('owned_capsule_host', 'owned_capsule_after_app_start', 'native_activation_refusal', 'product_registry_refusal')) {
+          foreach ($required in @('owned_capsule_host', 'owned_capsule_after_app_start', 'native_activation_refusal', 'product_registry_refusal', 'host_report_refusal', 'host_report_reentry', 'host_report_wrong-thread', 'host_report_failed-start', 'host_report_options-copy', 'host_report_copy', 'host_report_copy-negative', 'host_report_retained_reap')) {
             if ($required -notin $names) { throw "Missing required fixture: $required" }
           }
           ctest --test-dir "$env:RUNNER_TEMP/offline-owned" -C Release --no-tests=error --output-on-failure

@@ -67,20 +67,14 @@ authorizes native activation, teardown or restart. Product
 positive copy case the still-held read itself prevents drain completion at that
 point; the fixture does not claim a separate drain-wait observer.
 
-On Linux, a separate fresh-process `options_copy_fault_test` replaces ordinary
-allocation operators with malloc/free-backed equivalents and arms a one-shot,
-thread-local allocation failure after constructing a long `pluginRoot` and the
-capsule. It intercepts ordinary scalar/array `new`, not aligned allocation,
-direct `malloc`, or allocations on other threads. Against the pinned source it requires the fault to fire, real Prepare
-to return Failed with a closed owner and Failed phase, no inspector calls, and
-both image and resolver reference counts to remain two after caller Options
-are cleared: one reference from the capsule and one from core's partially
-assigned Options. These checks, together with pinned member order, identify a
-partial Options assignment. If no allocation reaches the hook, CTest reports a
-skip; any fired hook with a failed oracle is a test failure. This is evidence
-for the tested Linux/GNU library and pinned source, not Windows, other standard
-libraries, or arbitrary allocation failures. The owner-fault Start case does
-not reach the post-app-start seam; the separate optional case does.
+For older source packages without `HostCapsule`, Linux has a legacy
+`options_copy_fault_test` fallback. It replaces ordinary allocation operators
+with malloc/free-backed equivalents and arms a one-shot thread-local allocation
+failure during the old Options copy. This fallback is not registered for the
+current stable pin. Stable 2.4.0 instead runs `host_report_options-copy`, which
+injects a failure during the actual partial capsule/Options copy and verifies
+that the owning backing remains retained. It is synthetic Linux evidence, not
+Windows allocator evidence or a native reader barrier.
 
 ## Published stable host report qualification
 
@@ -91,11 +85,12 @@ The host-source archive SHA-256 is
 `a0aaaba07e3d4eb0d8c264912cd6f2ab23f0d237a99fa07816005790a76efc4c`; the
 core-source archive SHA-256 is
 `df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51`. The
-workflow downloads the official release assets, checks listed files against
-`SHA256SUMS`, checks package hashes and sizes against `release.json`, verifies
-the release tag peels to the product source pin, and runs this fixture against
-both the exact source checkout and the extracted published host-source archive
-on Linux and Windows. These package checks do not change the product pin.
+The PR-specific check and the manual `qualify_stable_sdk` dispatch download the
+official release assets, check listed files against `SHA256SUMS`, check package
+hashes and sizes against `release.json`, verify the release tag peels to the
+product source pin, and run this fixture against both the exact source checkout
+and the extracted published host-source archive on Linux and Windows. These
+package checks do not change the product pin.
 
 When `SCO_HOST_SOURCE_DIR` provides the `HostCapsule` contract and private
 source testing header, CMake additionally builds `host_report_test` against
