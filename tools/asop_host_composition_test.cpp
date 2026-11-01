@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Host lifecycle, real SDK spawn module and file coordinator over a synthetic disk.
 #include "workflow_module.h"
+#include "test_app_stop.h"
 #include <sco/app.h>
 #include <sco/widgets.h>
 #include <sco/game/asop_selection.h>
@@ -49,7 +50,7 @@ int main(int argc, char** argv) {
     CHECK(disk.writes == 0); sco::app::Tick(1);
     CHECK(disk.writes == 1 && disk.file.bytes.find("B\n") != std::string::npos && disk.file.bytes.find("Unknown\n") != std::string::npos);
     Fire("Select none", SCO_WIDGET_BUTTON); Fire("Save selection", SCO_WIDGET_BUTTON);
-    sco::app::Stop();
+    test_app::StopOrExit([] { return sco::app::Stop(); }, [&] { return stopped == sco::Result::Ok && disk.writes == 1; });
     CHECK(stopped == sco::Result::Ok && disk.writes == 1);
     test_module::Close();
     std::puts("ASOP app lifecycle + SDK spawn module + synthetic disk passed");

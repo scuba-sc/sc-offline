@@ -10,6 +10,7 @@ public:
     sco_result Save(const Preset& preset, uint64_t& id) noexcept;
     sco_result List(std::vector<SavedPreset>& out) noexcept;
     sco_result Load(uint64_t id, Preset& out) noexcept;
+    sco_result Delete(uint64_t id) noexcept;
 private:
     sco_result Read(const char* key, std::string& bytes, uint32_t limit) noexcept;
     sco_result Keys(std::vector<uint64_t>& ids) noexcept;
