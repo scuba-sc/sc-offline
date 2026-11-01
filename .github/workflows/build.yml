@@ -7,7 +7,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-
+    inputs:
+      qualify_stable_sdk:
+        description: 'Qualify the published sco-core SDK 2.4.0 release'
+        type: boolean
+        default: false
 # Default to read; only the release job asks for write.
 permissions:
   contents: read
@@ -18,6 +22,191 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  # Qualify the immutable published package independently from the product gitlink.
+  stable-host-package:
+    if: (github.event_name == 'workflow_dispatch' && inputs.qualify_stable_sdk) || (github.event_name == 'pull_request' && github.event.pull_request.number == 192)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: scuba-sc/sco-core
+          ref: 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          path: stable-core
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: scuba-sc/sc-offline
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: offline-source
+          persist-credentials: false
+      - name: Verify the published SDK and package the host kit
+        working-directory: stable-core
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OFFLINE_RUN_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          QUALIFICATION_EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$QUALIFICATION_EVENT" = pull_request ]; then
+            test "$(gh api repos/scuba-sc/sc-offline/pulls/192 --jq '.state + ":" + .base.ref + ":" + .head.sha')" = "open:main:$OFFLINE_RUN_SHA"
+          fi
+          test "$(git -C ../offline-source rev-parse HEAD)" = "$OFFLINE_RUN_SHA"
+          test "$(git -C ../offline-source rev-parse HEAD:external/sco-core)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          test -z "$(git -C ../offline-source status --porcelain)"
+          test "$(git -C ../stable-core rev-parse HEAD)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          git -C ../stable-core fetch origin refs/tags/sdk-v2.4.0:refs/tags/sdk-v2.4.0
+          test "$(git -C ../stable-core rev-parse 'refs/tags/sdk-v2.4.0^{commit}')" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          test -z "$(git -C ../stable-core status --porcelain)"
+          gh release view sdk-v2.4.0 --repo scuba-sc/sco-core --json tagName,isDraft,isPrerelease > "$RUNNER_TEMP/release-view.json"
+          python3 - "$RUNNER_TEMP/release-view.json" <<'PY'
+          import json, sys
+          release_view = json.load(open(sys.argv[1], encoding='utf-8'))
+          assert release_view['tagName'] == 'sdk-v2.4.0'
+          assert release_view['isDraft'] is False
+          assert release_view['isPrerelease'] is False
+          PY
+          mkdir -p "$RUNNER_TEMP/stable-assets"
+          gh release download sdk-v2.4.0 --repo scuba-sc/sco-core --dir "$RUNNER_TEMP/stable-assets"
+          cd "$RUNNER_TEMP/stable-assets"
+          sha256sum -c SHA256SUMS
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          root = pathlib.Path('.')
+          release = json.loads((root / 'release.json').read_text())
+          expected = {
+              'sco-sdk-2.4.0.zip': '0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc',
+              'sco-sdk-core-source-2.4.0.zip': 'df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51',
+              'sco-sdk-host-source-sc-2.4.0.zip': 'a0aaaba07e3d4eb0d8c264912cd6f2ab23f0d237a99fa07816005790a76efc4c',
+          }
+          assert release['tag'] == 'sdk-v2.4.0'
+          assert release['source']['repo'] == 'scuba-sc/sco-core'
+          assert release['source']['sha'] == '6106fa3639cbcc28f78a1ded8de2707de019f4d3'
+          assert release['builder']['run_id'] == 41342490537
+          assets = {item['name']: item for item in release['artifacts']}
+          for name, digest in expected.items():
+              item = assets[name]
+              data = (root / name).read_bytes()
+              assert item['sha256'] == digest, name
+              assert item['size'] == len(data), name
+              assert hashlib.sha256(data).hexdigest() == digest, name
+          PY
+          mkdir -p "$RUNNER_TEMP/stable-extracted"
+          unzip -q sco-sdk-host-source-sc-2.4.0.zip -d "$RUNNER_TEMP/stable-extracted"
+          kit="$RUNNER_TEMP/stable-extracted/sco-sdk-host-source-sc-2.4.0"
+          (cd "$kit" && sha256sum -c SHA256SUMS)
+          python3 - "$kit/COMPATIBILITY.json" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1], encoding='utf-8'))
+          assert data['profile'] == 'host-source-sc'
+          assert data['core_sdk_version'] == '2.4.0'
+          assert data['source_commits']['core'] == '6106fa3639cbcc28f78a1ded8de2707de019f4d3'
+          assert data['source_commits']['game-sc'] == '6106fa3639cbcc28f78a1ded8de2707de019f4d3'
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: stable-host-source-kit
+          path: ${{ runner.temp }}/stable-assets/sco-sdk-host-source-sc-2.4.0.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  stable-host-consumer:
+    if: (github.event_name == 'workflow_dispatch' && inputs.qualify_stable_sdk) || (github.event_name == 'pull_request' && github.event.pull_request.number == 192)
+    needs: stable-host-package
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025-vs2026]
+        source: [source, kit]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: scuba-sc/sco-core
+          ref: 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          path: stable-core
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: stable-host-source-kit
+          path: ${{ runner.temp }}/stable-kit
+      - name: Verify stable inputs and test actual host reports
+        shell: bash
+        env:
+          INPUT_KIND: ${{ matrix.source }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD:external/sco-core)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          test "$(git -C stable-core rev-parse HEAD)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          test -z "$(git -C stable-core status --porcelain)"
+          workspace="$GITHUB_WORKSPACE"; temp="$RUNNER_TEMP"; py=python3; generator=()
+          if [ "$RUNNER_OS" = Windows ]; then
+            workspace="$(cygpath -m "$GITHUB_WORKSPACE")"; temp="$(cygpath -m "$RUNNER_TEMP")"; py=python
+            generator=(-G 'Visual Studio 18 2026' -A x64)
+          else
+            export CC=clang CXX=clang++
+          fi
+          archive="$temp/stable-kit/sco-sdk-host-source-sc-2.4.0.zip"
+          "$py" - "$archive" <<'PY'
+          import hashlib, sys
+          assert hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest() == 'a0aaaba07e3d4eb0d8c264912cd6f2ab23f0d237a99fa07816005790a76efc4c'
+          PY
+          "$py" -m zipfile -e "$archive" "$temp/stable-extracted"
+          kit="$temp/stable-extracted/sco-sdk-host-source-sc-2.4.0"
+          "$py" - "$kit/COMPATIBILITY.json" <<'PY'
+          import json, sys
+          data = json.load(open(sys.argv[1], encoding='utf-8'))
+          assert data['profile'] == 'host-source-sc'
+          assert data['source_commits']['core'] == '6106fa3639cbcc28f78a1ded8de2707de019f4d3'
+          assert data['source_commits']['game-sc'] == '6106fa3639cbcc28f78a1ded8de2707de019f4d3'
+          PY
+          source="$workspace/stable-core"
+          if [ "$INPUT_KIND" = kit ]; then source="$kit"; fi
+          test -f "$source/tests/owned_shutdown_test_access.h"
+          (cd "$kit" && sha256sum -c SHA256SUMS)
+          cmake -S tools/offline-host -B "$temp/stable-build" "${generator[@]}" -DCMAKE_BUILD_TYPE=Release "-DSCO_HOST_SOURCE_DIR=$source"
+          cmake --build "$temp/stable-build" --config Release --target host_report_test --parallel 2
+          ctest --test-dir "$temp/stable-build" -C Release --show-only=json-v1 > "$temp/stable-tests.json"
+          "$py" - "$temp/stable-tests.json" <<'PY'
+          import json, sys
+          names = {test['name'] for test in json.load(open(sys.argv[1], encoding='utf-8'))['tests']}
+          expected = {f'host_report_{name}' for name in (
+              'refusal', 'reentry', 'wrong-thread', 'failed-start',
+              'options-copy', 'copy', 'copy-negative', 'retained_reap')}
+          assert expected <= names, expected - names
+          PY
+          ctest --test-dir "$temp/stable-build" -C Release -R '^host_report_' --no-tests=error --output-on-failure
+
+  stable-host-current:
+    if: (github.event_name == 'workflow_dispatch' && inputs.qualify_stable_sdk) || (github.event_name == 'pull_request' && github.event.pull_request.number == 192)
+    needs: stable-host-consumer
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: scuba-sc/sc-offline
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: offline-source
+          persist-credentials: false
+      - name: Recheck qualification source and stable pin after all four tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OFFLINE_RUN_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          QUALIFICATION_EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$QUALIFICATION_EVENT" = pull_request ]; then
+            test "$(gh api repos/scuba-sc/sc-offline/pulls/192 --jq '.state + ":" + .base.ref + ":" + .head.sha')" = "open:main:$OFFLINE_RUN_SHA"
+          fi
+          test "$(git -C offline-source rev-parse HEAD)" = "$OFFLINE_RUN_SHA"
+          test "$(git -C offline-source rev-parse HEAD:external/sco-core)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          test -z "$(git -C offline-source status --porcelain)"
+
   # Seconds on Linux: parse errors and MSVC C2712 risks fail here, before the Windows build.
   check:
     runs-on: ubuntu-24.04
@@ -31,8 +220,7 @@ jobs:
       - name: Install clang + mingw-w64 headers
         run: sudo apt-get update -qq && sudo apt-get install -y -qq clang g++-mingw-w64-x86-64-posix
 
-      # Pinned-host check remains a distinct gate. Candidate-only source files
-      # refuse old SDK builds and are additionally parsed in the next step.
+      # Pinned-host parsing remains separate from the exact stable-source check below.
       - name: tools/check.sh (pinned host source)
         run: tools/check.sh
 
@@ -48,10 +236,10 @@ jobs:
           git -C external/sco-core checkout --detach 6106fa3639cbcc28f78a1ded8de2707de019f4d3
           tools/ci-dev-sdk-preflight.sh external/sco-core "$RUNNER_TEMP/sdk-development"
 
-      - name: Check candidate-only sources against development host
+      - name: Check stable-SDK consumers against pinned host source
         run: tools/check.sh
 
-      - name: Test development gear consumer
+      - name: Test gear consumer with source-built SDK 2.4.0
         run: |
           set -eu
           test -d plugins/gear_presets
@@ -65,7 +253,7 @@ jobs:
             ctest --test-dir "$RUNNER_TEMP/gear-development" -R "^$t$" --no-tests=error --output-on-failure
           done
 
-      - name: Configure development spawn and ASOP consumers
+      - name: Configure spawn and ASOP consumers with source-built SDK 2.4.0
         run: |
           set -eu
           SDK_INCLUDE="$RUNNER_TEMP/sdk-development/extracted/sco-sdk-2.4.0/include"
@@ -73,22 +261,22 @@ jobs:
           test -f "$SDK_INCLUDE/sc_asop_selection.h"
           cmake -S plugins/spawn -B "$RUNNER_TEMP/spawn-development" -DSCO_SDK_INCLUDE_DIR="$SDK_INCLUDE" -DSCO_WORKFLOW_TESTS=ON
 
-      - name: Build development spawn feature
+      - name: Build spawn feature
         run: cmake --build "$RUNNER_TEMP/spawn-development" --target sco-feature-spawn --parallel 2
 
-      - name: Build development spawn module
+      - name: Build spawn module
         run: cmake --build "$RUNNER_TEMP/spawn-development" --target sc-offline-spawn --parallel 2
 
-      - name: Build development spawn fixture
+      - name: Build spawn fixture
         run: cmake --build "$RUNNER_TEMP/spawn-development" --target spawn-module-test --parallel 2
 
-      - name: Build development ASOP fixture
+      - name: Build ASOP fixture
         run: cmake --build "$RUNNER_TEMP/spawn-development" --target asop-selection-workflow-test --parallel 2
 
-      - name: Test development spawn consumer
+      - name: Test spawn consumer
         run: ctest --test-dir "$RUNNER_TEMP/spawn-development" -R '^spawn-module-workflow$' --no-tests=error --output-on-failure
 
-      - name: Test development ASOP consumer
+      - name: Test ASOP consumer
         run: ctest --test-dir "$RUNNER_TEMP/spawn-development" -R '^asop-selection-workflow$' --no-tests=error --output-on-failure
 
       - name: Restore pinned host source for remaining checks
@@ -145,7 +333,13 @@ jobs:
       - name: Owned signature snapshot diagnostics
         run: |
           cmake -S tools/offline-host -B "$RUNNER_TEMP/offline-owned" -DSCO_HOST_SOURCE_DIR="$GITHUB_WORKSPACE/external/sco-core"
-          cmake --build "$RUNNER_TEMP/offline-owned" --target signature_rows_test registry_refusal_test refusal_test capability_refusal_test --parallel 2
+          # Build every registered fixture before running the complete CTest suite.
+          cmake --build "$RUNNER_TEMP/offline-owned" --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/offline-owned" -N | grep -E 'Test +#[0-9]+: owned_capsule_host$' >/dev/null
+          ctest --test-dir "$RUNNER_TEMP/offline-owned" -N | grep -E 'Test +#[0-9]+: owned_capsule_after_app_start$' >/dev/null
+          for scenario in refusal reentry wrong-thread failed-start options-copy copy copy-negative retained_reap; do
+            ctest --test-dir "$RUNNER_TEMP/offline-owned" -N | grep -E "Test +#[0-9]+: host_report_${scenario}$" >/dev/null
+          done
           ctest --test-dir "$RUNNER_TEMP/offline-owned" --no-tests=error --output-on-failure
 
       - name: ASOP partial-start refusal propagation
@@ -423,6 +617,29 @@ jobs:
 
       - name: Build (Release)
         run: cmake --build build --config Release --parallel
+
+      - name: Test pinned host ownership fixtures (Windows)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expected = git rev-parse HEAD:external/sco-core
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $actual = git -C external/sco-core rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($expected -ne $actual) { throw 'Host source differs from the product gitlink' }
+          cmake -S tools/offline-host -B "$env:RUNNER_TEMP/offline-owned" -G 'Visual Studio 18 2026' -A x64 "-DSCO_HOST_SOURCE_DIR=$env:GITHUB_WORKSPACE/external/sco-core"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build "$env:RUNNER_TEMP/offline-owned" --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $testJson = ctest --test-dir "$env:RUNNER_TEMP/offline-owned" -C Release --show-only=json-v1 | Out-String
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $testList = $testJson | ConvertFrom-Json
+          $names = @($testList.tests | ForEach-Object { $_.name })
+          foreach ($required in @('owned_capsule_host', 'owned_capsule_after_app_start', 'native_activation_refusal', 'product_registry_refusal', 'host_report_refusal', 'host_report_reentry', 'host_report_wrong-thread', 'host_report_failed-start', 'host_report_options-copy', 'host_report_copy', 'host_report_copy-negative', 'host_report_retained_reap')) {
+            if ($required -notin $names) { throw "Missing required fixture: $required" }
+          }
+          ctest --test-dir "$env:RUNNER_TEMP/offline-owned" -C Release --no-tests=error --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # The properties players and the release depend on, read from the binaries themselves.
       # dumpbin and mt come from the image's VS 2026 and Windows SDK.
