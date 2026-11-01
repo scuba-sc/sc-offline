@@ -2,6 +2,9 @@
 // Standalone synthetic ownership exercise. No product activation or native barrier.
 #include "sco/game/host.h"
 #include "sco/scan.h"
+#ifdef SCO_CAPSULE_PRIVATE_SEAM
+#include "src/game/host_testing.h"
+#endif
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -92,6 +95,17 @@ static void Host(const std::string& mode) {
         CHECK(!weak.expired() && capsules == 0 && images == 0 && resolvers == 0);
         return;
     }
+#ifdef SCO_CAPSULE_PRIVATE_SEAM
+    if (mode == "after-app-start") {
+        gh::testing::FailAfterAppStart(true);
+        CHECK(gh::Start() == sco::Result::Failed);
+        CHECK(gh::Status().phase == gh::Phase::Failed && (*root)->shutdown->closed());
+        CHECK(gh::Start() == sco::Result::BadArg);
+        opts = gh::Options{};
+        CHECK(!weak.expired() && capsules == 0 && images == 0 && resolvers == 0);
+        return;
+    }
+#endif
     CHECK(gh::Start() == sco::Result::Ok);
     CHECK(gh::Status().phase == gh::Phase::Running);
     CHECK(!gh::Status().quitHookInstalled && !gh::Status().dataCoreActive);
@@ -152,6 +166,9 @@ int main(int argc, char** argv) {
     const std::string mode = argv[1];
     if (mode == "copy" || mode == "copy-negative") Copy(mode == "copy");
     else if (mode == "badarg" || mode == "admission" || mode == "budget" || mode == "host" || mode == "start-fault") Host(mode);
+#ifdef SCO_CAPSULE_PRIVATE_SEAM
+    else if (mode == "after-app-start") Host(mode);
+#endif
     else return 2;
     std::printf("owned capsule %s: %s\n", mode.c_str(), failures ? "FAIL" : "PASS");
     return failures ? 1 : 0;

@@ -39,6 +39,11 @@ admission inspector returns synthetic evidence only.
   Stop and Start refuse. The fixture's root remains live for process lifetime.
 * `start-fault` injects an owner fault through the inspector during the actual
   Start transition after Activate, and verifies terminal failure and retention.
+* `after-app-start` uses the pinned core's existing private synthetic
+  `host_testing.h` seam to inject failure after app startup. It checks the
+  actual host enters Failed and retains the rooted backing. CMake registers it
+  only when that source header is present and `SCO_CAPSULE_PRIVATE_SEAM` is ON;
+  it is not a public or plugin API. Set the option OFF to omit it.
 * `copy` is a separate synthetic output producer, not a host callback. It
   holds a real `OwnedShutdown::Read` across the entire vector copy, pauses
   after the first element, observes closure, and verifies a concurrent drain
@@ -64,5 +69,5 @@ point; the fixture does not claim a separate drain-wait observer.
 The pinned core offers no deterministic injection seam for an exception during
 `options = o`. This fixture does not test a partial Options copy; qualifying
 that path requires a core-owned test seam or another safe deterministic
-allocation-failure mechanism. The Start fault case also does not reach the
-private post-app-start failure seam.
+allocation-failure mechanism. The owner-fault Start case does not reach the
+post-app-start seam; the separate optional case does.
