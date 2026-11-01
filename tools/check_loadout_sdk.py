@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Isolated Loadout proof from published RC2 or an explicitly locked development SDK.
+"""Isolated Loadout proof from published stable SDK 2.4.0 or an explicitly locked development SDK.
 
 Public consumer sources and authored/catalogued identifiers only. Exercises actual
 module callbacks, existing linked workflows and private-dependency controls. No game.
@@ -79,15 +79,15 @@ def main(args):
         if token not in checked:
             raise AssertionError('Missing-service checker reply absent: ' + token)
     # The loadout no-job commands (progress/cancel with no retained job) correctly answer
-    # NOT_FOUND. The RC1 published checker only permitted OK/UNAVAILABLE for argument-free
+    # NOT_FOUND. The published checker only permits OK/UNAVAILABLE for argument-free
     # commands, so it scored these two as FAILs (a documented checker limitation, kept in
-    # history). The sdk-v2.4.0-rc.2 checker accepts NOT_FOUND here, so both lanes are a
+    # history). The sdk-v2.4.0 checker accepts NOT_FOUND here, so both lanes are a
     # clean pass; a regression to refused/failed answers still fails the token checks above.
     failures = [line for line in checked.splitlines() if line.startswith('FAIL ')]
     if checker_result.returncode != 0 or failures or 'OK: 0 failure(s)' not in checked:
         raise AssertionError(('Unexpected development checker result:\n' if args.candidate
                               else 'Unexpected published checker result:\n') + checked)
-    print(('Development' if args.candidate else 'Published RC2') +
+    print(('Development' if args.candidate else 'Published stable SDK 2.4.0') +
           ' SDK checker: expected no-job results accepted; clean pass')
     if os.name != 'nt':
         sanitized = work / 'sanitizer-build'

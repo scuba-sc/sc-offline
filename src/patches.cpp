@@ -19,16 +19,17 @@ static const Cap* FindCap(const Cap* caps, size_t n, const char* name) {
 
 bool OfflineCapReady(const char* name) {
     size_t n = 0;
+    sco::Result result = sco::Result::Unavailable;
     const off::Capability* caps = off::Capabilities(n);
     if (const off::Capability* c = FindCap(caps, n, name))
-        sco::caps::SetFromSignatures(c->name, c->rows, c->count);
+        result = sco::caps::SetFromSignatures(c->name, c->rows, c->count);
     else {
         const sco::game::features::Capability* fcaps = sco::game::features::Capabilities(n);
         const sco::game::features::Capability* f = FindCap(fcaps, n, name);
         if (!f) return false;
-        sco::caps::SetFromSignatures(f->name, f->rows, f->count);
+        result = sco::caps::SetFromSignatures(f->name, f->rows, f->count);
     }
-    return sco::caps::Has(name);
+    return result == sco::Result::Ok && sco::caps::Has(name);
 }
 
 void LogOfflinePatch(const char* name, const PatchStatus& st, const char* cap) {

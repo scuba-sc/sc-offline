@@ -41,11 +41,11 @@ jobs:
           tools/test_app_stop.sh external/sco-core
           tools/test_menu_widgets_release.sh external/sco-core
 
-      - name: Verify development source and SDK archive
+      - name: Verify the published SDK source and archive
         run: |
           set -eu
-          git -C external/sco-core fetch --depth=1 origin 1b6782bc5c8b7d189cdff4c83e81957f09af35d7
-          git -C external/sco-core checkout --detach 1b6782bc5c8b7d189cdff4c83e81957f09af35d7
+          git -C external/sco-core fetch --depth=1 origin 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          git -C external/sco-core checkout --detach 6106fa3639cbcc28f78a1ded8de2707de019f4d3
           tools/ci-dev-sdk-preflight.sh external/sco-core "$RUNNER_TEMP/sdk-development"
 
       - name: Check candidate-only sources against development host
@@ -137,7 +137,16 @@ jobs:
         run: |
           c++ -std=c++20 -Wall -Wextra -Werror -I external/sco-core/include src/offline_host.cpp tools/offline-host/refusal_test.cpp -o offline_host_refusal_test
           ./offline_host_refusal_test
+          ./offline_host_refusal_test exception
+          c++ -std=c++20 -Wall -Wextra -Werror -I src -I external/sco-core/include tools/offline-host/capability_refusal_test.cpp -o capability_refusal_test
+          ./capability_refusal_test
           python3 tools/test_native_preflight_wiring.py
+
+      - name: Owned signature snapshot diagnostics
+        run: |
+          cmake -S tools/offline-host -B "$RUNNER_TEMP/offline-owned" -DSCO_HOST_SOURCE_DIR="$GITHUB_WORKSPACE/external/sco-core"
+          cmake --build "$RUNNER_TEMP/offline-owned" --target signature_rows_test registry_refusal_test refusal_test capability_refusal_test --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/offline-owned" --no-tests=error --output-on-failure
 
       - name: ASOP partial-start refusal propagation
         run: |
@@ -222,7 +231,7 @@ jobs:
       - name: Download published SDK (combined core + game)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.4.0-rc.2 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.4.0 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$RUNNER_TEMP/sdk-assets"
       - name: Isolated inspector build, full dependency traces, negative controls and checker
         run: python3 tools/check_inspector_sdk.py --archive "$RUNNER_TEMP/sdk-assets/sco-sdk-2.4.0.zip" --sums "$RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$RUNNER_TEMP/inspector-proof"
 
@@ -235,7 +244,7 @@ jobs:
       - name: Download published SDK (combined core + game)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.4.0-rc.2 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.4.0 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
       - name: Isolated MSVC inspector, module workflow, full dependency traces and checker
         run: python tools/check_inspector_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.4.0.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/inspector-proof"
       - name: Upload enabled inspector release folder
@@ -255,7 +264,7 @@ jobs:
       - name: Download published SDK (combined core + game)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.4.0-rc.2 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.4.0 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$RUNNER_TEMP/sdk-assets"
       - name: Isolated NPC build, lifecycle module test, full dependency traces, negative controls and checker
         run: python3 tools/check_npc_sdk.py --archive "$RUNNER_TEMP/sdk-assets/sco-sdk-2.4.0.zip" --sums "$RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$RUNNER_TEMP/npc-proof"
 
@@ -268,7 +277,7 @@ jobs:
       - name: Download published SDK (combined core + game)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.4.0-rc.2 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.4.0 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
       - name: Isolated MSVC NPC, lifecycle module test, full dependency traces and checker
         run: python tools/check_npc_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.4.0.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/npc-proof"
       - name: Upload enabled NPC release folder
@@ -289,7 +298,7 @@ jobs:
       - name: Download published SDK (combined core + game)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.4.0-rc.2 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.4.0 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$RUNNER_TEMP/sdk-assets"
       - name: Validate Loadout module workflows, sanitizers and public dependency boundaries
         run: python3 tools/check_loadout_sdk.py --archive "$RUNNER_TEMP/sdk-assets/sco-sdk-2.4.0.zip" --sums "$RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$RUNNER_TEMP/loadout-proof"
 
@@ -302,7 +311,7 @@ jobs:
       - name: Download published SDK (combined core + game)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.4.0-rc.2 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.4.0 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
       - name: Validate MSVC Loadout module workflows and public dependency traces
         run: python tools/check_loadout_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.4.0.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/loadout-proof"
 
@@ -348,7 +357,7 @@ jobs:
       - name: Download published SDK (combined core + game)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.4.0-rc.2 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.4.0 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
       - name: Isolated MSVC contracts build, read-slice module workflow, full dependency traces and checker
         run: python tools/contracts_sdk_check.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.4.0.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/contracts-proof" --slice read
       - name: Upload enabled contracts release folder
@@ -362,8 +371,8 @@ jobs:
   # Proofs: check_creative_sdk.py, check_discord_sdk.py, check_crew_sdk.py, check_spawn_sdk.py, check_build_sdk.py,
   # check_teleport_sdk.py, check_quantum_sdk.py.
   # Isolated native features; checker and compiler traces use published archives only.
-  # Every external plugin consumes the one published SDK 2.4.0 (release candidate 2, tag sdk-v2.4.0-rc.2).
-  # The archive is named for the SDK version; the tag carries the -rc.N suffix.
+  # Every external plugin consumes the one published SDK 2.4.0 stable release.
+  # The archive basename and tag carry the same SDK version.
   external-sdk:
     strategy:
       fail-fast: false
@@ -373,7 +382,7 @@ jobs:
     runs-on: windows-2025-vs2026
     env:
       SDK_VERSION: '2.4.0'
-      SDK_TAG: 'sdk-v2.4.0-rc.2'
+      SDK_TAG: 'sdk-v2.4.0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

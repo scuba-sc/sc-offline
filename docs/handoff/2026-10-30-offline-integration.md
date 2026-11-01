@@ -1,6 +1,8 @@
-# sc-offline handoff — 2026-10-30 (draft)
+# Historical sc-offline handoff — 2026-10-30
 
-Current local work refuses native host Prepare/Start and the entry hook until a real reader/worker exclusion and drain protocol exists. The product is not playable. The development gitlink and generated CI preflight now use core #304 `1b6782bc5c8b7d189cdff4c83e81957f09af35d7`; this is not a published SDK release.
+This handoff records the state at the time. Current offline RC3 source and artifact coordinates are maintained in [sdk-candidate.md](../sdk-candidate.md). The earlier registry-migration draft used offline base `772129e09e7838d56165bd3613f43ac49d373bb8` and development core #305 source `a5101d406a9ddbff14e437408686ffb04266be18`. Native startup remained refused; no published SDK or gameplay claim followed.
+
+The merged #304 integration refused native host Prepare/Start and the entry hook. Its gitlink and generated CI preflight used core #304 `1b6782bc5c8b7d189cdff4c83e81957f09af35d7`; this was not a published SDK release.
 
 Earlier 2026-10-31 integration used unpublished core
 #304 `1166c9f12d7327dd50a58b1d9261e7d6cc21bef6`; the external plugin archive
@@ -37,6 +39,6 @@ Canonical cross-repo runbook: sco-core branch `handoff/core-integration-20261030
 - Identity fixture uses synthetic SRW/SEH/registry seams.
 - The original handoff accepted public IPv4 exceptions; the local correction
   rejects them. Environment values still do not prove launcher provenance.
-- The separate owned-registry consumer is not present on this branch. The current local product preflight independently refuses native activation until a real native-reader barrier is available.
-- The original handoff embedded pin was `844e136`; the local development pin is now the #304 SHA above, not a published SDK. External plugin archive remains `sdk-v2.4.0-rc.2`.
+- At this handoff, the separate owned-registry consumer was a draft against #305 and product preflight refused native activation pending a real reader barrier.
+- The original handoff embedded pin was `844e136`; the merged #304 integration used the SHA above. At that time the external plugin archive remained `sdk-v2.4.0-rc.2`.
 - Draft #117 (ASOP ship selector) remains parked; native `Reconfigure` refused in core.

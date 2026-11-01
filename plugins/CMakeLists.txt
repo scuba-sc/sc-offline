@@ -6,8 +6,8 @@ endif()
 project(sc-offline-workflows LANGUAGES CXX)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 set(SCO_SDK_INCLUDE_DIR "" CACHE PATH "Public include directory of the core + game SDK")
-set(SCO_SDK_VERSION "2.4.0" CACHE STRING "SDK archive version (published default: 2.4.0 RC2)")
-set(SCO_SDK_SHA256 "51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e"
+set(SCO_SDK_VERSION "2.4.0" CACHE STRING "SDK archive version (published default: 2.4.0)")
+set(SCO_SDK_SHA256 "0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc"
   CACHE STRING "SHA-256 of sco-sdk-<version>.zip")
 set(SCO_SDK_ARCHIVE "" CACHE FILEPATH "Exact local SDK archive used for this configure (optional)")
 option(SCO_INSPECTOR_DEPENDENCY_TRACE "Emit MSVC inspector compiler dependencies" OFF)
@@ -23,7 +23,7 @@ if(NOT SCO_SDK_SHA256 MATCHES "^[0-9a-fA-F]+$" OR NOT _sco_sdk_hash_length EQUAL
   message(FATAL_ERROR "SCO_SDK_SHA256 must be a 64-digit SHA-256")
 endif()
 if((NOT SCO_SDK_VERSION STREQUAL "2.4.0" OR
-    NOT SCO_SDK_SHA256 STREQUAL "51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e")
+    NOT SCO_SDK_SHA256 STREQUAL "0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc")
    AND NOT SCO_SDK_ARCHIVE)
   message(FATAL_ERROR "Non-default SDK identity requires an explicit SCO_SDK_ARCHIVE to verify its identity")
 endif()
@@ -130,7 +130,7 @@ if(SCO_ADDITIONAL_FEATURES)
   add_subdirectory(quantum)
   add_subdirectory(teleport)
   add_subdirectory(build)
-  # Pinned sdk-v2.4.0-rc.2 ships sc_mining.h (2.0.0 did not); host builds still opt in explicitly.
+  # Published sdk-v2.4.0 ships sc_mining.h (2.0.0 did not); host builds still opt in explicitly.
   option(SCO_MINING_FEATURE "Build external mining (requires newer game SDK)" OFF)
   if(SCO_MINING_FEATURE)
     add_subdirectory(mining)

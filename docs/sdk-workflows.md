@@ -3,15 +3,18 @@
 For distinct author-owned IDs rather than replacing release features, use the
 [copyable SDK/MCP tutorial](../examples/sdk-mcp/README.md). It supplies
 `tutorial_npc` and `tutorial_inspector` copies and keeps static discovery separate
-from optional default-off runtime MCP. The published RC2 tutorial proof now passes:
-MCP discovery/version/refusal checks, generated Linux plugin synthetic checks,
-NPC/inspector fixture cases, two full compiler dependency traces (including
-system headers), private foreign-mutation controls, and rejection of separate
-SDK/source symlink escapes. `tools/check.sh` reported zero new diagnostics across
-65 translation units using local extracted authenticated Debian Clang/MinGW.
-That Debian run needs a non-default authenticated kernel-header include root;
-the default Debian layout still refuses, and no tracer code was changed. Windows,
-actual-host loading, runtime MCP, and in-game acceptance remain **NOT RUN**.
+from optional default-off runtime MCP. Against the published stable SDK 2.4.0
+archive (`sco-sdk-2.4.0.zip`, SHA-256 `0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc`),
+`tools/check_sdk_tutorial.py` passed the copied NPC and inspector module workflows,
+two full compiler dependency traces per module, staged checker runs, and private-
+header/symbol and transitive-header negative controls. The stable Teleport,
+Quantum, Creative, Discord, Crew, Spawn, Build, Mining, NPC, Inspector, Loadout
+and Contracts read-slice SDK proofs also pass their Linux module, trace,
+refusal and boundary checks. These use synthetic or absent providers; they are
+not Windows or game acceptance. The earlier MCP discovery transcript in the
+[RC2 receipt](../examples/sdk-mcp/rc2-validation.md) is historical; runtime MCP
+and in-game acceptance remain **NOT RUN**. In this cloud image `tools/check.sh`
+stops because MinGW-w64 headers are not installed.
 
 The newer [loadout/SQ42 consumer](../plugins/loadout/README.md) uses G6 typed
 equip, G7 **read-only** cvars, public copied content and optional widgets. Their
@@ -38,15 +41,16 @@ private host registration, product version, host include trees or new ImGui inpu
 The old NPC tab is removed pending renderer-neutral widgets ([sco-core #139](https://github.com/scuba-sc/sco-core/issues/139)); Crew and ordinary spawn are also external command-first consumers; their
 legacy product picker tabs are removed. Legacy `src/npc.cpp` is untouched. `src/workflow_adapters.cpp` is removed.
 
-Use published SDK 2.4.0 release candidate 2, tag **`sdk-v2.4.0-rc.2`**, combined **`sco-sdk-2.4.0.zip`**, verified against
-release **`SHA256SUMS`**: SDK 2.4.0, plugin ABI 1.1 and Star Citizen game pack 0.8.0
-are distinct versions. The tag identifies RC2 regardless of GitHub's release
-classification. The RC2 release is currently marked `prerelease=false`. Nothing
-new in 2.4.0 has been run in game. Every external plugin uses this archive;
-the embedded host independently pins unpublished development source
-`1b6782bc5c8b7d189cdff4c83e81957f09af35d7` (see [SDK candidate coordinates](sdk-candidate.md)).
+Use the published stable SDK 2.4.0 release, tag **`sdk-v2.4.0`**, combined
+**`sco-sdk-2.4.0.zip`**, verified against release **`SHA256SUMS`**. SDK 2.4.0,
+plugin ABI 1.1 and Star Citizen game pack 0.8.0 are distinct versions. The
+published release manifest binds the archive to source
+`6106fa3639cbcc28f78a1ded8de2707de019f4d3`; its exact profile hashes are in
+[SDK coordinates](sdk-candidate.md). The embedded development host source pin
+uses that same commit, while standalone plugins use the combined archive. The
+stable release and all synthetic checks remain separate from gameplay acceptance.
 
-The expanded inspector uses that same published RC2 by default; no older unpublished candidate
+The expanded inspector uses that same published stable SDK by default; no older unpublished candidate
 lock is needed. The proof validates the archive and full extracted inventory before building.
 `plugins/CMakeLists.txt` also checks all inspector contract headers at configure time. An explicitly
 selected non-default version/hash requires the matching archive, rather than accepting host headers.
@@ -96,16 +100,15 @@ uses its tagged submodule independently.
 
 Download **`sco-sdk-2.4.0.zip`** (the combined legacy core+Star Citizen SDK) and
 **`SHA256SUMS`** from the
-[published SDK 2.4.0 RC2 release](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2)
-(SDK 2.4.0 release candidate 2; the archive is named for the SDK version, the tag carries `-rc.N`).
-Its SHA-256 is `51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e`.
+[published stable SDK 2.4.0 release](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0).
+Its SHA-256 is `0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc`.
 Use an empty work directory. In Developer PowerShell for Visual Studio:
 
 ```powershell
 $Work = Join-Path $PWD "inspector-dev"
 New-Item -ItemType Directory -Path $Work -ErrorAction Stop | Out-Null
 Set-Location $Work
-$Release = "https://github.com/scuba-sc/sco-core/releases/download/sdk-v2.4.0-rc.2"
+$Release = "https://github.com/scuba-sc/sco-core/releases/download/sdk-v2.4.0"
 Invoke-WebRequest "$Release/sco-sdk-2.4.0.zip" -OutFile "sco-sdk-2.4.0.zip"
 Invoke-WebRequest "$Release/SHA256SUMS" -OutFile "SHA256SUMS"
 python -c "import hashlib,pathlib; p=pathlib.Path('sco-sdk-2.4.0.zip'); rows=[l.split() for l in pathlib.Path('SHA256SUMS').read_text().splitlines() if l.strip()]; hashes=[r[0] for r in rows if r[1].lstrip('*')==p.name]; assert len(hashes)==1 and hashlib.sha256(p.read_bytes()).hexdigest()==hashes[0], 'SDK archive checksum mismatch'"
@@ -214,7 +217,7 @@ replace that run; releases remain human decisions.
 ### Stage 1 — Obtain and verify
 
 Follow inspector Stage 1 above in a fresh `npc-dev` work directory. Download the
-same `sdk-v2.4.0-rc.2` combined `sco-sdk-2.4.0.zip` and release `SHA256SUMS`,
+same `sdk-v2.4.0` combined `sco-sdk-2.4.0.zip` and release `SHA256SUMS`,
 verify the archive **before extraction**, and use only the extracted SDK `include/`.
 CMake 3.20+, Python 3 and C/C++20 are required; the game module requires Windows
 x64/MSVC. `plugins/npc/{npc.cpp,npc.h,external.cpp,plugin.ini}` are the copyable

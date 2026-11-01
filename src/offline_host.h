@@ -9,4 +9,6 @@ sco::Result Start();
 sco::Result Tick(uint32_t now);
 sco::Result Stop();
 bool Running();
+// A failed or uncertain stop refuses restart; backing must remain live until exit.
+bool RestartRequired() noexcept;
 } // namespace offline_host

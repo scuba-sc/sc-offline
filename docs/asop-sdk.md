@@ -2,7 +2,7 @@
 
 The product currently refuses native startup pending a proven reader/worker
 exclusion and drain. The opt-in composition below is not active in this build.
-In addition, core `1b6782bc5c8b7d189cdff4c83e81957f09af35d7` itself returns
+In addition, the coordinated core source `6106fa3639cbcc28f78a1ded8de2707de019f4d3` itself returns
 `Unavailable` from enabled ASOP Start until a safe phase is established. With
 `SCO_ASOP_HOST_COMPOSITION=ON`, the legacy fleet/services implementation is
 excluded at build time; there is no runtime fallback when that owner refuses.
@@ -10,7 +10,7 @@ The coordinated pin does not restore ASOP gameplay.
 
 `src/asop_shell.*` consumes the game-specific public host-source
 `sco::game::asop_host` interface. It is not a plugin service. The published
-SDK 2.4.0 release candidate 2 (`sdk-v2.4.0-rc.2`) carries G10 in
+The stable SDK 2.4.0 release (`sdk-v2.4.0`) carries G10 in
 `sco-sdk-host-source-sc-2.4.0.zip` (`include/sco/game/asop_host.h`; SDK 2.0.0 lacked it). This staged cutover
 remains opt-in: `SCO_ASOP_HOST_COMPOSITION` defaults to OFF.
 
