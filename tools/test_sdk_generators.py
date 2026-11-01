@@ -35,6 +35,31 @@ def proof_module(feature):
 
 
 class GeneratorSelection(unittest.TestCase):
+    def test_posix_dependency_trace_flag_is_compiler_specific(self):
+        from check_inspector_sdk import posix_dependency_trace_flags
+        self.assertEqual(posix_dependency_trace_flags('Debian clang version 19.1.7'), [])
+        self.assertEqual(posix_dependency_trace_flags('Apple clang version 16.0.0'), [])
+        self.assertEqual(posix_dependency_trace_flags('gcc version 14.2.0'),
+                         ['-fno-canonical-system-headers'])
+
+    def test_compiler_system_symlink_header_stays_in_known_search_root(self):
+        from check_inspector_sdk import compiler_system_dependency
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            system = root / 'compiler' / 'include'
+            project = root / 'checkout'
+            outside = root / 'uapi' / 'types.h'
+            system.mkdir(parents=True)
+            project.mkdir()
+            outside.parent.mkdir()
+            outside.write_text('// toolchain-owned header\n')
+            system_header = system / 'types.h'
+            system_header.symlink_to(outside)
+            project_header = project / 'types.h'
+            project_header.symlink_to(outside)
+            self.assertTrue(compiler_system_dependency(system_header, [system]))
+            self.assertFalse(compiler_system_dependency(project_header, [system]))
+
     def test_default_matches_hosted_toolchain_and_override_reaches_configure(self):
         for feature in ('inspector', 'npc', 'build', 'loadout'):
             for requested in (None, 'Visual Studio 17 2022'):
@@ -123,7 +148,7 @@ class GeneratorSelection(unittest.TestCase):
             (['--archive-sha256', '0' * 64], '--archive-sha256 requires --candidate'),
             (['--candidate', '--sdk-sha256', '0' * 64], '--candidate requires matching'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '1' * 64], '--candidate requires matching'),
-            (['--candidate', '--archive-sha256', '51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e'], '--candidate must select a non-default'),
+            (['--candidate', '--archive-sha256', '0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc'], '--candidate must select a non-default'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64], '--candidate requires full lowercase --sdk-source'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64, '--sdk-source', 'a' * 40], '--candidate requires --sdk-profile legacy'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64, '--sdk-source', 'a' * 40, '--sdk-profile', 'core'], '--candidate requires --sdk-profile legacy'),
@@ -144,7 +169,7 @@ class GeneratorSelection(unittest.TestCase):
             (['--archive-sha256', '0' * 64], '--archive-sha256 requires --candidate'),
             (['--candidate', '--sdk-sha256', '0' * 64], '--candidate requires matching'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '1' * 64], '--candidate requires matching'),
-            (['--candidate', '--archive-sha256', '51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e'], '--candidate must select a non-default'),
+            (['--candidate', '--archive-sha256', '0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc'], '--candidate must select a non-default'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64], '--candidate requires full lowercase --sdk-source'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64, '--sdk-source', 'a' * 40], '--candidate requires --sdk-profile legacy'),
         ]
@@ -159,7 +184,7 @@ class GeneratorSelection(unittest.TestCase):
                     self.assertIn(message, result.stderr)
                     self.assertFalse(work.exists())
 
-    def test_travel_default_reaches_published_rc1_verifier(self):
+    def test_travel_default_reaches_published_stable_verifier(self):
         from check_inspector_sdk import SDK_ROOT, SDK_SHA256
         import check_teleport_sdk as travel
         for feature in ('teleport', 'quantum'):
@@ -177,7 +202,7 @@ class GeneratorSelection(unittest.TestCase):
                             module.main(argv)
                     self.assertEqual(extract.call_args.kwargs['pin'], (SDK_ROOT, SDK_SHA256))
 
-    def test_other_consumers_default_to_published_rc1_verifier(self):
+    def test_other_consumers_default_to_published_stable_verifier(self):
         from check_inspector_sdk import SDK_ROOT, SDK_VERSION, SDK_SHA256
         for feature in ('npc', 'loadout', 'creative', 'discord', 'crew', 'mining'):
             with self.subTest(feature=feature), tempfile.TemporaryDirectory() as temp:
@@ -262,11 +287,11 @@ class GeneratorSelection(unittest.TestCase):
                     self.assertIn(message, result.stderr)
                     self.assertFalse(work.exists())
 
-    def test_inspector_defaults_keep_published_rc_identity(self):
+    def test_inspector_defaults_keep_published_stable_identity(self):
         module = proof_module('inspector')
         args = module.parse_args(['--archive', 'sdk.zip', '--sums', 'SHA256SUMS', '--work', 'proof'])
         self.assertEqual(args.sdk_version, '2.4.0')
-        self.assertEqual(args.sdk_sha256, '51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e')
+        self.assertEqual(args.sdk_sha256, '0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc')
         self.assertFalse(args.candidate)
 
 

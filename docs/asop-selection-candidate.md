@@ -16,4 +16,4 @@ composition still refuses configuration. CI separately checks their complete
 bodies against the identified development source and requires both the spawn and
 ASOP synthetic workflows against its checksum-verified extracted SDK. The
 submodule is restored to its pinned revision before the remaining host checks;
-this preflight is not an official RC2 pin or native terminal publication.
+this preflight does not publish an SDK package or native terminal behavior.

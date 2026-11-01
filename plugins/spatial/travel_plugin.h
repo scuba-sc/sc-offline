@@ -15,6 +15,7 @@
 #include <chrono>
 #include <cctype>
 #include <cstdlib>
+#include <limits>
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -28,12 +29,15 @@ struct State {
     std::vector<Bookmark> marks; std::vector<Destination> places;
     Spot saved; bool hotkeys=false,panel=false;
     uint32_t place_page=0,mark_page=0; int32_t selected_place=-1,selected_mark=-1;
+    uintptr_t panel_cookie=0;
     std::string bookmark_name,filter,last_status="Ready"; double altitude=1000;
 #ifndef TRAVEL_TELEPORT
     std::string curated_status="Not read";
 #endif
     uint64_t ticket=0; bool ticking=false; std::string moving; // one tracked game.relocation request; never persisted
 } g;
+// Opaque, never dereferenced; do not reuse a publication identity after reload.
+uintptr_t next_panel_cookie=0;
 #ifdef TRAVEL_TELEPORT
 constexpr const char* id="teleport";
 #else
@@ -124,15 +128,21 @@ std::string MarksText(const std::vector<Bookmark>& marks) {
     return text;
 }
 std::vector<Bookmark> ParseMarks(const std::string& text) {
-    std::vector<Bookmark> marks; std::istringstream in(text); std::string line,spots; Bookmark m; bool have=false;
-    auto flush=[&] { if (have && marks.size()<400 && m.name.size()<=63 && m.system.size()<=31 && ParseSpot(spots,m.spot)) marks.push_back(m); spots.clear(); };
+    std::vector<Bookmark> marks; std::istringstream in(text); std::string line,spots; Bookmark m; bool have=false,unterminated_cr=false;
+    auto flush=[&] { if (have && marks.size()<400 && m.name.size()<=63 && m.system.size()<=31 &&
+                          !(unterminated_cr && spots.size()>=65536) && ParseSpot(spots,m.spot)) marks.push_back(m);
+                     spots.clear(); unterminated_cr=false; };
     while (std::getline(in,line)) {
         if (line.starts_with("bookmark ")) {
+            if (!in.eof() && !line.empty() && line.back()=='\r') line.pop_back();
             flush(); if (marks.size()==400) break;
             m={}; have=true; const auto bar=line.find('|',9);
             if (bar!=std::string::npos) { m.system=line.substr(9,bar-9); m.name=line.substr(bar+1); }
             else m.name=line.substr(9);
-        } else if (have) spots+=line+'\n';
+        } else if (have) {
+            spots+=line; unterminated_cr=in.eof() && !line.empty() && line.back()=='\r';
+            if (!unterminated_cr) spots+='\n'; // retain the old size bound for a final unterminated line
+        }
     }
     flush(); return marks;
 }
@@ -157,9 +167,16 @@ sco_result LoadMarks() {
     if (r!=SCO_NOT_FOUND && r!=SCO_OK) return r;
     g.marks=std::move(next); return SCO_OK;
 }
-sco_result SaveMarks(const std::vector<Bookmark>& next) {
+// Own all allocations before persistence; publishing a committed collection must
+// not allocate or copy after the durable operation has succeeded.
+sco_result SaveMarks(std::vector<Bookmark> next) {
     const auto r=g.store ? StoreMarks(next,{}) : WriteFile(g.root/"bookmarks.txt",MarksText(next));
-    if (r==SCO_OK) g.marks=next;
+    if (r==SCO_OK) {
+        g.marks.swap(next);
+        g.selected_mark=-1; // a copied row index must never drift after a mutation
+        if (g.marks.empty()) g.mark_page=0;
+        else g.mark_page=(std::min)(g.mark_page,static_cast<uint32_t>((g.marks.size()-1)/128));
+    }
     return r;
 }
 void LoadPlaces(const std::filesystem::path& path) {
@@ -317,14 +334,24 @@ sco_result GoSaved(const sco_arg*,uint32_t,void*,char* out,uint32_t n) {
     if (found!=SCO_OK) return Reply(found,out,n,"Saved spot unavailable (none saved, unloaded/expired metadata or root-only match); not moved");
     return Move(r.pose,std::string(r.partial?"saved spot (partial, level ":"saved spot (exact, level ")+std::to_string(r.level)+")",out,n);
 }
+// Panel actions keep the selected row's identity, even when display names repeat.
+// Name-based commands retain their historical first case-insensitive match.
+size_t BookmarkIndex(const char* name) {
+    const auto it=std::find_if(g.marks.begin(),g.marks.end(),[&](const auto& m){return Same(m.name,name);});
+    return static_cast<size_t>(it-g.marks.begin());
+}
+sco_result GoBookmarkAt(size_t index,char* out,uint32_t n) {
+    std::string why; if (Ready(why)!=SCO_OK) return Reply(SCO_UNAVAILABLE,out,n,why);
+    if (index>=g.marks.size()) return Reply(SCO_NOT_FOUND,out,n,"No such bookmark");
+    const auto bookmark=g.marks[index]; Restoration r;
+    const auto found=Resolve(Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),bookmark.spot,r);
+    if (found!=SCO_OK) return Reply(found,out,n,"Bookmark pose unavailable (unloaded/expired metadata or root-only match); not moved");
+    return Move(r.pose,"bookmark '"+bookmark.name+"'",out,n);
+}
 sco_result GoBookmark(const sco_arg* a,uint32_t count,void*,char* out,uint32_t n) {
     std::string why; if (Ready(why)!=SCO_OK) return Reply(SCO_UNAVAILABLE,out,n,why);
     if (count!=1 || !a || a[0].type!=SCO_ARG_STRING || !SafeName(a[0].v.s)) return Reply(SCO_BAD_ARG,out,n,"Bookmark name must be <=63 bytes, without separators/newlines");
-    const auto it=std::find_if(g.marks.begin(),g.marks.end(),[&](const auto& m){return Same(m.name,a[0].v.s);});
-    if (it==g.marks.end()) return Reply(SCO_NOT_FOUND,out,n,"No such bookmark");
-    const std::string name=it->name; Restoration r; const auto found=Resolve(Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),it->spot,r);
-    if (found!=SCO_OK) return Reply(found,out,n,"Bookmark pose unavailable (unloaded/expired metadata or root-only match); not moved");
-    return Move(r.pose,"bookmark '"+name+"'",out,n);
+    return GoBookmarkAt(BookmarkIndex(a[0].v.s),out,n);
 }
 sco_result TravelTo(const sco_arg* a,uint32_t count,void*,char* out,uint32_t n) {
     std::string why; if (Ready(why)!=SCO_OK) return Reply(SCO_UNAVAILABLE,out,n,why);
@@ -374,40 +401,56 @@ sco_result SaveBookmark(const sco_arg* a,uint32_t count,void*,char* out,uint32_t
     Spot spot; const auto r=Capture(Open<sc_spatial_v1>(SC_SPATIAL_SERVICE_NAME),Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),spot);
     if (r!=SCO_OK) return Reply(r,out,n,"Cannot capture current full pose/complete ancestry; nothing saved");
     Bookmark m{"Unknown system",a[0].v.s,spot}; if (m.name.empty()) m.name=spot.z[0].name.substr(0,63);
-    auto next=g.marks; next.push_back(m); const auto saved=SaveMarks(next);
-    return Reply(saved,out,n,saved==SCO_OK?"Saved '"+m.name+"' (read-only capture; no relocation)":"Bookmark storage failed; prior state retained");
+    auto next=g.marks; next.push_back(m); const auto saved=SaveMarks(std::move(next));
+    return Reply(saved,out,n,saved==SCO_OK?"Saved '"+m.name+"' (read-only capture; no relocation)":"Bookmark storage failed; in-memory bookmarks retained, durable outcome unconfirmed");
+}
+sco_result DeleteBookmarkAt(size_t index,char* out,uint32_t n) {
+    if (index>=g.marks.size()) return Reply(SCO_NOT_FOUND,out,n,"No such bookmark");
+    auto next=g.marks; next.erase(next.begin()+static_cast<std::ptrdiff_t>(index));
+    const auto r=SaveMarks(std::move(next));
+    return Reply(r,out,n,r==SCO_OK?"Bookmark deleted":"Delete failed; in-memory bookmarks retained, durable outcome unconfirmed");
 }
 sco_result DeleteBookmark(const sco_arg* a,uint32_t count,void*,char* out,uint32_t n) {
     if (count!=1 || !a || a[0].type!=SCO_ARG_STRING || !SafeName(a[0].v.s)) return SCO_BAD_ARG;
-    auto next=g.marks; const auto it=std::find_if(next.begin(),next.end(),[&](const auto& m){return Same(m.name,a[0].v.s);});
-    if (it==next.end()) return Reply(SCO_NOT_FOUND,out,n,"No such bookmark");
-    next.erase(it); const auto r=SaveMarks(next); return Reply(r,out,n,r==SCO_OK?"Bookmark deleted":"Delete failed; prior state retained");
+    return DeleteBookmarkAt(BookmarkIndex(a[0].v.s),out,n);
 }
-sco_result InspectBookmark(const sco_arg* a,uint32_t count,void*,char* out,uint32_t n) {
-    const Spot* spot=&g.saved;
-#ifndef TRAVEL_TELEPORT
-    if (count!=1 || !a || a[0].type!=SCO_ARG_STRING || !SafeName(a[0].v.s)) return SCO_BAD_ARG;
-    const auto it=std::find_if(g.marks.begin(),g.marks.end(),[&](const auto& m){return Same(m.name,a[0].v.s);});
-    if (it==g.marks.end()) return Reply(SCO_NOT_FOUND,out,n,"No such bookmark");
-    spot=&it->spot;
-#else
-    (void)a; (void)count;
-#endif
-    Restoration r; const auto result=Resolve(Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),*spot,r);
+sco_result InspectSpot(const Spot& spot,char* out,uint32_t n) {
+    Restoration r; const auto result=Resolve(Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),spot,r);
     if (result!=SCO_OK) return Reply(result,out,n,"Saved pose unavailable (unloaded/expired metadata or root-only match); not moved");
     return Reply(SCO_OK,out,n,std::string(r.partial?"Partial restoration candidate":"Exact restoration candidate")+" at saved level "+std::to_string(r.level)+"; "+(r.system_known?"provider system known":"system unknown")+"; read-only, not moved");
 }
+sco_result InspectBookmarkAt(size_t index,char* out,uint32_t n) {
+    if (index>=g.marks.size()) return Reply(SCO_NOT_FOUND,out,n,"No such bookmark");
+    const auto spot=g.marks[index].spot;
+    return InspectSpot(spot,out,n);
+}
+sco_result InspectBookmark(const sco_arg* a,uint32_t count,void*,char* out,uint32_t n) {
+#ifndef TRAVEL_TELEPORT
+    if (count!=1 || !a || a[0].type!=SCO_ARG_STRING || !SafeName(a[0].v.s)) return SCO_BAD_ARG;
+    return InspectBookmarkAt(BookmarkIndex(a[0].v.s),out,n);
+#else
+    (void)a; (void)count;
+    const auto spot=g.saved;
+    return InspectSpot(spot,out,n);
+#endif
+}
 void Panel();
 void PanelEvent(const char*,const sco_widget_event* event,void* context) noexcept {
-#ifndef TRAVEL_QUANTUM_CONTROLS
-    (void)context;
-#endif
-    if (!event || event->size<sizeof(*event) || !g.api) return;
+    if (!event || event->size<sizeof(*event) || !g.api || !g.panel_cookie ||
+        reinterpret_cast<uintptr_t>(context)!=g.panel_cookie) return;
     try {
         char reply[512]{}; sco_arg name{}; name.type=SCO_ARG_STRING;
         switch (event->node_id) {
-        case 2: if (event->kind==SCO_WIDGET_LIST && event->index>=0 && event->index<128) g.selected_place=static_cast<int32_t>(g.place_page*128)+event->index; break;
-        case 3: if (event->kind==SCO_WIDGET_LIST && event->index>=0 && event->index<128) g.selected_mark=static_cast<int32_t>(g.mark_page*128)+event->index; break;
+        case 2: if (event->kind==SCO_WIDGET_LIST) {
+            g.selected_place=-1;
+            if (event->index>=0 && event->index<128 && g.place_page*128+static_cast<uint32_t>(event->index)<g.places.size())
+                g.selected_place=static_cast<int32_t>(g.place_page*128)+event->index;
+            } break;
+        case 3: if (event->kind==SCO_WIDGET_LIST) {
+            g.selected_mark=-1;
+            if (event->index>=0 && event->index<128 && g.mark_page*128+static_cast<uint32_t>(event->index)<g.marks.size())
+                g.selected_mark=static_cast<int32_t>(g.mark_page*128)+event->index;
+            } break;
         case 4: if (event->kind==SCO_WIDGET_TEXT_INPUT && SafeName(event->text)) g.bookmark_name=event->text; break;
         case 5: if (event->kind==SCO_WIDGET_SLIDER && std::isfinite(event->value) && event->value>=100 && event->value<=20000) g.altitude=event->value; break;
         case 6: if (event->kind==SCO_WIDGET_BUTTON) {
@@ -422,18 +465,18 @@ void PanelEvent(const char*,const sco_widget_event* event,void* context) noexcep
 #endif
             } break;
         case 15: if (event->kind==SCO_WIDGET_BUTTON) {
-            if (g.selected_mark>=0 && static_cast<size_t>(g.selected_mark)<g.marks.size()) { const std::string stable=g.marks[g.selected_mark].name; name.v.s=stable.c_str(); GoBookmark(&name,1,nullptr,reply,sizeof(reply)); }
+            if (g.selected_mark>=0 && static_cast<size_t>(g.selected_mark)<g.marks.size()) GoBookmarkAt(static_cast<size_t>(g.selected_mark),reply,sizeof(reply));
             else std::snprintf(reply,sizeof(reply),"Select a bookmark first");
             } break;
         case 16: if (event->kind==SCO_WIDGET_BUTTON) SaveSpot(nullptr,0,nullptr,reply,sizeof(reply)); break;
         case 7: if (event->kind==SCO_WIDGET_BUTTON) ScanCommand(nullptr,0,nullptr,reply,sizeof(reply)); break;
         case 8: if (event->kind==SCO_WIDGET_BUTTON) { name.v.s=g.bookmark_name.c_str(); SaveBookmark(&name,1,nullptr,reply,sizeof(reply)); } break;
-        case 9: if (event->kind==SCO_WIDGET_BUTTON && g.selected_mark>=0 && static_cast<size_t>(g.selected_mark)<g.marks.size()) { name.v.s=g.marks[g.selected_mark].name.c_str(); const std::string stable=name.v.s; name.v.s=stable.c_str(); DeleteBookmark(&name,1,nullptr,reply,sizeof(reply)); g.selected_mark=-1; } break;
+        case 9: if (event->kind==SCO_WIDGET_BUTTON && g.selected_mark>=0 && static_cast<size_t>(g.selected_mark)<g.marks.size()) DeleteBookmarkAt(static_cast<size_t>(g.selected_mark),reply,sizeof(reply)); break;
         case 10: if (event->kind==SCO_WIDGET_BUTTON) {
 #ifdef TRAVEL_TELEPORT
             InspectBookmark(nullptr,0,nullptr,reply,sizeof(reply));
 #else
-            if (g.selected_mark>=0 && static_cast<size_t>(g.selected_mark)<g.marks.size()) { name.v.s=g.marks[g.selected_mark].name.c_str(); InspectBookmark(&name,1,nullptr,reply,sizeof(reply)); }
+            if (g.selected_mark>=0 && static_cast<size_t>(g.selected_mark)<g.marks.size()) InspectBookmarkAt(static_cast<size_t>(g.selected_mark),reply,sizeof(reply));
 #endif
             } break;
         case 11: if (event->kind==SCO_WIDGET_BUTTON && g.place_page) { --g.place_page; g.selected_place=-1; } break;
@@ -442,7 +485,7 @@ void PanelEvent(const char*,const sco_widget_event* event,void* context) noexcep
         case 14: if (event->kind==SCO_WIDGET_BUTTON && (g.mark_page+1)*128<g.marks.size()) { ++g.mark_page; g.selected_mark=-1; } break;
         default:
 #ifdef TRAVEL_QUANTUM_CONTROLS
-            sco::features::quantum::Event(event,context);
+            sco::features::quantum::Event(event,sco::features::quantum::CallbackContext());
 #endif
             break;
         }
@@ -451,6 +494,9 @@ void PanelEvent(const char*,const sco_widget_event* event,void* context) noexcep
     } catch (...) { /* host callback never receives a C++ exception */ }
 }
 void Panel() {
+    // set_panel failure retains the old callback. Pause it until a fresh tree is
+    // accepted, so its row indices cannot address a changed collection.
+    g.panel_cookie=0;
     const auto* widgets=Open<sco_widgets_v1>(SCO_WIDGETS_NAME);
     if (!TRAVEL_FN(widgets,sco_widgets_v1,set_panel) || !TRAVEL_FN(widgets,sco_widgets_v1,remove_panel)) return;
     std::vector<sco_widget_node> nodes;
@@ -485,11 +531,11 @@ void Panel() {
 #else
     constexpr const char* title=id;
 #endif
-    void* context=nullptr;
-#ifdef TRAVEL_QUANTUM_CONTROLS
-    context=sco::features::quantum::CallbackContext();
-#endif
-    if (widgets->set_panel(g.self,(std::string(id)+".travel").c_str(),title,nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(nodes[0]),PanelEvent,context)==SCO_OK) g.panel=true;
+    if (next_panel_cookie==(std::numeric_limits<uintptr_t>::max)()) return;
+    const auto cookie=++next_panel_cookie;
+    if (widgets->set_panel(g.self,(std::string(id)+".travel").c_str(),title,nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(nodes[0]),PanelEvent,reinterpret_cast<void*>(cookie))==SCO_OK) {
+        g.panel_cookie=cookie; g.panel=true;
+    }
 }
 }
 using namespace implementation;

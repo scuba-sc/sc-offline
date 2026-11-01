@@ -5,13 +5,13 @@ call native host Prepare/Start, apply product patches, or activate plugins until
 native reader/worker exclusion and drain have been established. The composition
 description below describes the intended lifecycle, not a currently running host.
 
-The default development host builds from `external/sco-core`, pinned to
-RC3 candidate source `44ffd1290e261e12684b38ac862ec0c4f08921df`.
+The default development host builds from `external/sco-core`, pinned to the
+published stable SDK source `6106fa3639cbcc28f78a1ded8de2707de019f4d3`.
 For local development, an extracted `host-source-sc` kit
 can be selected with `-DSCO_HOST_SOURCE_DIR=<extracted-source-root>`.
 That override does not change the committed pin or the external plugin archive.
 Kits must provide `sco_game_host`; a missing composition target is a configure
-error when the override is used. See [candidate coordinates](sdk-candidate.md).
+error when the override is used. See [published SDK coordinates](sdk-candidate.md).
 
 The candidate host separates registry preparation from activation. Its strict owned
 host keeps the candidate registry private; `AcquireHostSignatureSnapshot` reads

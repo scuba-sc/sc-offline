@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Standalone teleport proof against published RC2 or an explicitly locked development SDK.
+"""Standalone teleport proof against published stable SDK 2.4.0 or an explicitly locked development SDK.
 
 Reuses the inspector archive/dependency machinery, never host include paths. The
 shared travel code lives in plugins/spatial, the only sibling folder the trace admits.
@@ -28,7 +28,7 @@ TELEPORT = {
     # Argument-free commands run by the checker itself: OK or UNAVAILABLE only.
     'checks': [
         ([], ('setting relocation (bool)', 'teleport.save -> unavailable', 'nothing saved',
-              'teleport.go -> unavailable', 'game.relocation is off', 'teleport.inspect -> unavailable',
+              'teleport.go -> unavailable', 'game.relocation service or request is unavailable', 'teleport.inspect -> unavailable',
               'teleport.status -> ok', 'game.relocation off', 'OK: 0 failure(s)')),
         # Capability advertised but no relocation/spatial provider: still no move.
         (['--cap', 'game.relocation'], ('teleport.go -> unavailable', 'Saved spot unavailable',
@@ -194,7 +194,7 @@ def prove(args, spec):
         build_all()
         workflow()
         trace_posix(build, source, sdk, public, feature=feature, shared=('spatial',))
-    identity = 'unpublished development compatibility preflight' if args.candidate else 'published RC2'
+    identity = 'unpublished development compatibility preflight' if args.candidate else 'published stable SDK 2.4.0'
     print(f'{feature.capitalize()} SDK {identity} proof: PASS (synthetic providers and checker with absent services, not run in game)')
 
 

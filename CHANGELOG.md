@@ -2,7 +2,19 @@
 
 ## Unreleased
 
+- **Adopt the stable SDK 2.4.0 package.** The coordinated development host
+  source and standalone plugin archive now use sco-core `6106fa36`; the combined
+  archive is checksum- and source-verified against `sdk-v2.4.0`. Linux tutorial,
+  Teleport and Quantum package checks pass with synthetic/provider-free evidence.
+  Native product startup remains refused; **not run in game**.
+
+- **Read Windows line endings in legacy saved spots.** Bookmark imports and quick
+  saves accept CRLF and mixed line endings while retaining existing row order and
+  storage behavior. Synthetic checks only; **not run in game**.
+
 - **Delete saved gear presets.** The development consumer can delete a selected preset or an explicit ID to free storage capacity. Synthetic host tests only; **not run in game**.
+
+- **Loadout job status.** The Player panel refreshes a retained job observation at most every 200 ms, replaces old progress with unavailable or invalid status when the panel update succeeds, and pauses polling after malformed reports until a valid manual inspection. No automatic retry, release or inventory confirmation. **Not run in game.**
 
 - **Refuse native startup pending a real safety barrier.** This development build
   leaves host services, plugins, product patches and the startup entry hook
@@ -26,13 +38,6 @@
   authenticated provenance: another process can supply the same text. Explicit
   public IPv4 ranges and ranges crossing private boundaries are rejected. TCP classification and private session
   bind/peer policy are unchanged. Synthetic checks only; **not run in game**.
-
-- **Pin SDK 2.4.0 release candidate 2.** The host submodule, plugin archive
-  pins, verifier digests, CI downloads and SDK-coordinate docs move from
-  `sdk-v2.4.0-rc.1` (`48d7055`) to `sdk-v2.4.0-rc.2` (source `844e136`,
-  combined archive SHA-256 `51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e`).
-  RC1 evidence prose stays RC1. Candidate adoption only: the final SDK 2.4.0
-  release and in-game acceptance remain separate; nothing was run in game.
 
 - **Limit startup retry noise.** While offline admission is unavailable, the host
   retries at most every 500 ms instead of on every game message. Each attempt

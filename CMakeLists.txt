@@ -198,8 +198,8 @@ endif()
 if(EXISTS "${SCO_CORE_SOURCE_DIR}/include/sc_private_session.h")
   target_compile_definitions(dinput8 PRIVATE SCO_OFFLINE_G13_HOST)
 endif()
-# sc-offline.ini relocation = on|off drives sco::game::services::SetRelocationEnabled (sco-core main e616ed6 or later). The
-# header exists in older pins without the symbol, so check the declaration itself, not the file.
+# Check the SDK declaration before compiling the optional relocation policy call. This does not
+# enable product movement: the native-startup safety preflight still refuses activation.
 file(READ "${SCO_CORE_SOURCE_DIR}/include/sco/game/services.h" SCO_GAME_SERVICES_H)
 if(SCO_GAME_SERVICES_H MATCHES "void[ \t]+SetRelocationEnabled[ \t]*\\(")
   target_compile_definitions(dinput8 PRIVATE SCO_OFFLINE_RELOCATION_SWITCH)
@@ -217,7 +217,7 @@ else()
 endif()
 
 # NPC, inspector, crew, spawn and loadout are external modules; no host feature fallback.
-# Loadout's G6/G7/content/widgets headers ship in the pinned sdk-v2.4.0-rc.2; release staging is pending.
+# Loadout's G6/G7/content/widgets headers ship in the pinned sdk-v2.4.0; release staging is pending.
 
 # Bridges are independent disabled SDK modules, never host sources or default-release inputs.
 # Configure plugins/titanlink and plugins/voxel_bridge separately (docs/bridges.md).
