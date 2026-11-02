@@ -229,7 +229,8 @@ void ScriptCase() {
     assert(Call("contracts.ingest", {Int(0)}) == SCO_BAD_ARG && ingest_effects == 2);
     script_name = "missions/demo.scom";
     script_bytes.assign(SC_MISSIONS_SCRIPT_BYTES + 1, 'a');
-    assert(Call("contracts.ingest", {Int(0)}) == SCO_BAD_ARG && ingest_effects == 1);
+    // Both prior accepted paths remain recorded; rejected oversized bytes add no effect.
+    assert(Call("contracts.ingest", {Int(0)}) == SCO_BAD_ARG && ingest_effects == 2);
     assert(Call("contracts.cancel") == SCO_OK);
     unsigned before = reads;
     assert(Call("contracts.accept", {Int(0), Int(2)}) == SCO_UNAVAILABLE && reads == before);
