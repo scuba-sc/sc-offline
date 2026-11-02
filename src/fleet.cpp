@@ -17,6 +17,7 @@
 #include "sco/caps.h"
 #include "sco/hook.h"
 #include "sco/signatures.h"
+#include "signature_rows.h"
 #include "sco/game/asop.h"
 #include <algorithm>
 #include <vector>
@@ -172,6 +173,7 @@ struct FetchEvent {
     uintptr_t provider = 0, vtable = 0;
     alignas(16) uint8_t event[0x20] = {};
 };
+// Every `ship` below is a stable session ID from hooks.cpp, never an entitlement row position.
 struct DeliverRequest { uint64_t atc = 0; uint32_t location = 0; uint64_t urn[2] = {}; DWORD at = 0; };
 struct Delivery { int ship = -1; uint64_t atc = 0; uint32_t location = 0; uint64_t vehicle = 0; DWORD requestedAt = 0, spawnedAt = 0; };
 struct StoredShip {
@@ -1429,19 +1431,12 @@ bool Fleet_UseGameList() {
 }
 
 bool AsopCapabilityRows(const char* capability, char* why, size_t n) {
+    const auto snapshot = sco::AcquireHostSignatureSnapshot();
     size_t count = 0;
     const asop::Capability* caps = asop::Capabilities(count);
     for (size_t i = 0; i < count; ++i) {
         if (strcmp(caps[i].name, capability) != 0) continue;
-        for (size_t r = 0; r < caps[i].count; ++r) {
-            const sco::SigResult* s = sco::SigLookup(caps[i].rows[r]);
-            if (!s) { snprintf(why, n, "unknown signature %s", caps[i].rows[r]); return false; }
-            if (s->state != sco::SigState::Ok) {
-                snprintf(why, n, "needs %s (%s)", caps[i].rows[r], sco::SigStateName(s->state));
-                return false;
-            }
-        }
-        return true;
+        return offline::signature_rows::Ready(snapshot.get(), caps[i].rows, caps[i].count, why, n);
     }
     snprintf(why, n, "sco-core has no capability %s (sco-core too old?)", capability);
     return false;

@@ -2,26 +2,42 @@
 
 ## Unreleased
 
-- **Rebuild the owned-ship list mid-session from the ASOP selection.** The
-  SDK-owned selection path is now the default build. A committed selection save
-  rebuilds the host's owned-ship list through the new `asop_host` Reconfigure
-  entry point with stable fleet slots, so stored and in-transit ships keep
-  resolving across rebuilds. A fleet busy-class gate refuses a save that removes
-  a class with a stored, retrieved, delivering or queued ship (reported as a
-  busy conflict, shown distinctly in the picker, whose busy toggles are
-  disabled); the "Select all classes" control is removed so the panel only ever
-  reflects a deliberate selection. Startup refuses a selection file with a
-  pending replacement marker or one that does not read identically twice. This
-  is the foundation for future ship ownership flows (buying, selling, trading),
-  not only the ASOP terminal refresh; whether the native terminal re-queries
-  entitlements without a reopen is unverified, and nothing was run in game.
+- **Adopt the stable SDK 2.4.0 package.** The coordinated development host
+  source and standalone plugin archive now use sco-core `6106fa36`; the combined
+  archive is checksum- and source-verified against `sdk-v2.4.0`. Linux tutorial,
+  Teleport and Quantum package checks pass with synthetic/provider-free evidence.
+  Native product startup remains refused; **not run in game**.
 
-- **Pin SDK 2.4.0 release candidate 2.** The host submodule, plugin archive
-  pins, verifier digests, CI downloads and SDK-coordinate docs move from
-  `sdk-v2.4.0-rc.1` (`48d7055`) to `sdk-v2.4.0-rc.2` (source `844e136`,
-  combined archive SHA-256 `51a7ce266d087bcbeac39c92f26a6f905b4473883dd7ed6f0f5ca823fa88c88e`).
-  RC1 evidence prose stays RC1. Candidate adoption only: the final SDK 2.4.0
-  release and in-game acceptance remain separate; nothing was run in game.
+- **Read Windows line endings in legacy saved spots.** Bookmark imports and quick
+  saves accept CRLF and mixed line endings while retaining existing row order and
+  storage behavior. Synthetic checks only; **not run in game**.
+
+- **Delete saved gear presets.** The development consumer can delete a selected preset or an explicit ID to free storage capacity. Synthetic host tests only; **not run in game**.
+
+- **Loadout job status.** The Player panel refreshes a retained job observation at most every 200 ms, replaces old progress with unavailable or invalid status when the panel update succeeds, and pauses polling after malformed reports until a valid manual inspection. No automatic retry, release or inventory confirmation. **Not run in game.**
+
+- **Refuse native startup pending a real safety barrier.** This development build
+  leaves host services, plugins, product patches and the startup entry hook
+  inactive until native readers and workers can be excluded and drained. A
+  diagnostic explains the refusal; gameplay is unavailable in this candidate.
+
+- **Refuse unproven native startup.** The development host does not install its startup hook, prepare or start native game services, apply product patches, or start plugins until a reviewed reader and worker exclusion and drain protocol is available. This build is not playable; not run in game.
+
+- **Keep legacy ASOP fleet identities stable.** Offline entitlement URNs and long-lived
+  fleet records use never-reused session IDs instead of list positions. Historical class
+  names stay immutable, and stale or invalid terminal IDs are refused. Synthetic checks
+  only; **not run in game**. No picker UI or composition-default change.
+
+- **Accept configured VPN firewall gaps ([#183](https://github.com/scuba-sc/sc-offline/issues/183)).**
+  Offline admission now checks the launcher's `multiplayer_allow` IPv4 ranges
+  alongside LAN exceptions, so the documented Tailscale range can pass the
+  firewall coverage check. The launcher clears invalid INI ranges with a warning;
+  malformed INI does not itself always refuse startup. Admission independently
+  rejects malformed forwarded environment values, undeclared firewall gaps and
+  missing live firewall/TCP evidence. Canonical environment formatting is not
+  authenticated provenance: another process can supply the same text. Explicit
+  public IPv4 ranges and ranges crossing private boundaries are rejected. TCP classification and private session
+  bind/peer policy are unchanged. Synthetic checks only; **not run in game**.
 
 - **Limit startup retry noise.** While offline admission is unavailable, the host
   retries at most every 500 ms instead of on every game message. Each attempt

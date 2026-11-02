@@ -37,10 +37,16 @@ inline std::string SpotText(const Spot& s) {
     }
     return out;
 }
+// Only remove CR when getline consumed the following LF. A final bare CR is data.
+inline bool ReadLegacyLine(std::istream& in,std::string& line) {
+    if (!std::getline(in,line)) return false;
+    if (!in.eof() && !line.empty() && line.back()=='\r') line.pop_back();
+    return true;
+}
 inline bool ParseSpot(const std::string& text,Spot& out) {
     if (text.size()>65536) return false;
     Spot next; std::istringstream in(text); std::string line;
-    while (std::getline(in,line)) {
+    while (ReadLegacyLine(in,line)) {
         if (line.starts_with("spot ") && next.z.size()<12) {
             ZoneSpot z; std::istringstream fields(line.substr(5));
             if (!(fields>>z.pos[0]>>z.pos[1]>>z.pos[2])) continue;
@@ -112,7 +118,7 @@ inline sco_result Scan(const sc_game_spatial_v1* sp,std::vector<sc_game_zone>& o
 }
 // game.relocation 1.0 (sc_relocation.h): one request per move, tracked by ticket across ticks.
 inline constexpr uint32_t relocation_timeout_ms=30000;
-inline constexpr const char* unavailable="Player relocation unavailable: game.relocation is off (needs a host on sco-core main e616ed6 or later, offline admission, a live player and a known star system); not moved";
+inline constexpr const char* unavailable="Player relocation unavailable: game.relocation service or request is unavailable; not moved";
 inline constexpr const char* switched_off="Moving the player is off in this plugin's settings (relocation = false); not moved";
 // Fresh capability and full member extents before every request; ticket unchanged on refusal.
 inline sco_result Relocate(const sco_api* api,const sc_relocation_v1* service,sco_plugin* self,const Pose& target,uint64_t& ticket) {

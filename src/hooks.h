@@ -11,7 +11,8 @@ bool MakeCryString(void* out, const char* s);
 void FreeCryString(void* s);
 const char* RequestShipFromAtc(uint64_t atcEntity, uint64_t player, const char* shipClass);
 
-// The fleet manager's offline ships (ships.txt, listed as entitlements). The ship behind a CSCURN's
-// 16-byte id (URN +0x10; either qword, either byte order): its index, or -1. Any thread.
+// Offline fleet ships (ships.txt). Each class receives a never-reused session ID, not a row
+// position. Decode either CSCURN qword/byte order; return -1 unless currently issued. Any thread.
 int FleetShipIndexOfUrnId(const uint64_t id[2]);
-const char* FleetShipClass(int index);   // its class name, or nullptr
+// Historical names remain immutable and valid for the process lifetime, even when unlisted.
+const char* FleetShipClass(int shipId);   // nullptr for an ID never assigned

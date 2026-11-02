@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 #include <sco/game/asop_selection.h>
+#include "asop_selection_notice.h"
 #include <string>
 
 namespace offline::asop_selection {
@@ -16,7 +17,4 @@ private:
         std::string_view, sco::game::asop_selection::Document&, const sco::game::asop_selection::CommitPermit&);
     std::wstring path_, diagnostic_;
 };
-// Hand the verified committed selection to the host reconfigure trigger. One pending
-// notification; a newer commit replaces an unconsumed older one.
-bool TakeCommittedSelection(std::string& bytes);
 }

@@ -56,9 +56,12 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # Added after CMAKE_MSVC_RUNTIME_LIBRARY above, so its libraries get the static CRT too: they link
 # into dinput8.dll, and CI's verify step checks the DLL imports no dynamic CRT.
 option(SCO_HOST_MENU_CLIENT "Use the development host menu client" OFF)
-option(SCO_ASOP_HOST_COMPOSITION "Use the sco-core host ASOP owner (default; OFF builds the legacy in-repo hooks)" ON)
-option(SCO_ASOP_SELECTION_COMPOSITION "Use the ASOP selection file service (development host kit required)" ON)
-set(SCO_HOST_SOURCE_DIR "" CACHE PATH "Extracted host-source-sc kit (local development; published pin unchanged)")
+option(SCO_ASOP_HOST_COMPOSITION "Use the G10 host-source ASOP owner (requires newer host kit)" OFF)
+option(SCO_ASOP_SELECTION_COMPOSITION "Use the ASOP selection file service (development host kit required)" OFF)
+set(SCO_HOST_SOURCE_DIR "" CACHE PATH "Extracted host-source-sc kit (local override; gitlink unchanged)")
+if(SCO_ASOP_SELECTION_COMPOSITION AND NOT SCO_ASOP_HOST_COMPOSITION)
+  message(FATAL_ERROR "ASOP selection composition requires SCO_ASOP_HOST_COMPOSITION=ON")
+endif()
 if(SCO_HOST_SOURCE_DIR)
   set(SCO_CORE_SOURCE_DIR "${SCO_HOST_SOURCE_DIR}")
 else()
@@ -138,16 +141,18 @@ add_library(dinput8 SHARED
   src/dinput8.manifest
 )
 if(SCO_ASOP_SELECTION_COMPOSITION)
+  enable_testing()
   if(NOT TARGET sco_asop_selection OR NOT EXISTS "${SCO_CORE_SOURCE_DIR}/include/sco/game/asop_selection.h")
     message(FATAL_ERROR "ASOP selection composition requires the matching development host kit")
   endif()
   target_sources(dinput8 PRIVATE src/asop_selection_file.cpp)
   target_link_libraries(dinput8 PRIVATE sco_asop_selection)
   target_compile_definitions(dinput8 PRIVATE SCO_ASOP_SELECTION_COMPOSITION)
-  add_executable(asop_offline_host_test EXCLUDE_FROM_ALL tools/asop_offline_host_test.cpp src/offline_host.cpp src/asop_selection_file.cpp)
+  add_executable(asop_offline_host_test EXCLUDE_FROM_ALL tools/asop_offline_host_test.cpp src/offline_host.cpp src/asop_selection_file.cpp src/asop_shell.cpp)
   target_include_directories(asop_offline_host_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
   target_compile_definitions(asop_offline_host_test PRIVATE SCO_ASOP_SELECTION_COMPOSITION)
-  target_link_libraries(asop_offline_host_test PRIVATE sco_app sco_asop_selection)
+  target_link_libraries(asop_offline_host_test PRIVATE sco_app sco_asop_host sco_asop_selection)
+  add_test(NAME asop_offline_host_refusal COMMAND asop_offline_host_test)
 endif()
 if(SCO_ASOP_HOST_COMPOSITION)
   target_sources(dinput8 PRIVATE src/asop_shell.cpp src/asop_platform.cpp)
@@ -198,8 +203,8 @@ endif()
 if(EXISTS "${SCO_CORE_SOURCE_DIR}/include/sc_private_session.h")
   target_compile_definitions(dinput8 PRIVATE SCO_OFFLINE_G13_HOST)
 endif()
-# sc-offline.ini relocation = on|off drives sco::game::services::SetRelocationEnabled (sco-core main e616ed6 or later). The
-# header exists in older pins without the symbol, so check the declaration itself, not the file.
+# Check the SDK declaration before compiling the optional relocation policy call. This does not
+# enable product movement: the native-startup safety preflight still refuses activation.
 file(READ "${SCO_CORE_SOURCE_DIR}/include/sco/game/services.h" SCO_GAME_SERVICES_H)
 if(SCO_GAME_SERVICES_H MATCHES "void[ \t]+SetRelocationEnabled[ \t]*\\(")
   target_compile_definitions(dinput8 PRIVATE SCO_OFFLINE_RELOCATION_SWITCH)
@@ -217,7 +222,7 @@ else()
 endif()
 
 # NPC, inspector, crew, spawn and loadout are external modules; no host feature fallback.
-# Loadout's G6/G7/content/widgets headers ship in the pinned sdk-v2.4.0-rc.2; release staging is pending.
+# Loadout's G6/G7/content/widgets headers ship in the pinned sdk-v2.4.0; release staging is pending.
 
 # Bridges are independent disabled SDK modules, never host sources or default-release inputs.
 # Configure plugins/titanlink and plugins/voxel_bridge separately (docs/bridges.md).

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Unpublished RC2-development compatibility input for syntax and module checks.
-# This does not change the product gitlink or the published SDK default.
+# Verify the exact published SDK 2.4.0 package from its committed Core source.
+# The external-plugin and embedded-host pins are independently checked.
 set -euo pipefail
 if [ "$#" -ne 2 ]; then echo "usage: $0 <core-source-root> <new-output-dir>" >&2; exit 2; fi
 core=$(cd "$1" && pwd)
 out=$2
-expected_source=26f0d9e140a1766cfd6adb6ebecc26f1aa0f3c72
-expected_archive=2f1b7aa1c04b2c609f510c59320c36b177de7a9f60e3b8fc570a3b57d1bf121d
+expected_source=6106fa3639cbcc28f78a1ded8de2707de019f4d3
+expected_archive=0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc
 [ "$(git -C "$core" rev-parse HEAD)" = "$expected_source" ] || { echo 'development source identity mismatch' >&2; exit 1; }
 [ -z "$(git -C "$core" status --porcelain)" ] || { echo 'development source is dirty' >&2; exit 1; }
 [ ! -e "$out" ] || { echo 'development output already exists' >&2; exit 1; }
@@ -15,4 +15,4 @@ python3 "$core/sdk/package.py" --profile legacy --out "$out/assets"
 printf '%s  %s\n' "$expected_archive" "$out/assets/sco-sdk-2.4.0.zip" | sha256sum -c -
 unzip -q "$out/assets/sco-sdk-2.4.0.zip" -d "$out/extracted"
 (cd "$out/extracted/sco-sdk-2.4.0" && sha256sum -c SHA256SUMS >/dev/null)
-printf 'UNPUBLISHED development preflight: source=%s archive_sha256=%s\n' "$expected_source" "$expected_archive"
+printf 'Published SDK 2.4.0 preflight: source=%s archive_sha256=%s\n' "$expected_source" "$expected_archive"

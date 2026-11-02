@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "menu_widgets.h"
+#include "test_app_stop.h"
 #include "sco/app.h"
 #include "sco/widgets.h"
-#include <cassert>
+#include <cstdlib>
 #include <cstdio>
 
+#define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "FAIL %d: %s\n", __LINE__, #x); std::fflush(stderr); std::_Exit(EXIT_FAILURE); } } while (0)
 using namespace sc_offline::menu_sdk;
 struct Fixture {
     Client* client;
@@ -25,28 +27,28 @@ static void Render(void* p) {
     auto& f=*static_cast<Fixture*>(p);++f.renders;
     if(f.send && f.client->MainReady()) {
         InputRenderer renderer;renderer.value=f.candidate;
-        assert(sco::widgets::RenderPanel("menu.main",renderer)==sco::Result::Ok);
+        CHECK(sco::widgets::RenderPanel("menu.main",renderer)==sco::Result::Ok);
     }
 }
 int main() {
     Client client;sco::app::Platform p;p.pluginsEnabled=false;p.hostMenu=client.Descriptor();
-    assert(sco::app::Start(p));
+    CHECK(sco::app::Start(p));
     Fixture f{};f.client=&client;FrameInput frame{&f,Capture,Render};
     f.snapshot.pathUtf8="data/menu_background.png";
-    assert(sco::app::HostMenuFrame(&frame));assert(client.MainReady() && client.StatusReady());
-    assert(sco::app::IsHostMenuPanel("menu.main") && sco::app::IsHostMenuPanel("menu.status"));
+    CHECK(sco::app::HostMenuFrame(&frame));CHECK(client.MainReady() && client.StatusReady());
+    CHECK(sco::app::IsHostMenuPanel("menu.main") && sco::app::IsHostMenuPanel("menu.status"));
     f.snapshot.imageAvailable=true;f.snapshot.width=100;f.snapshot.height=100;f.snapshot.statusUtf8="Ready";
     f.send=true;f.candidate=75;
-    assert(sco::app::HostMenuFrame(&frame));assert(client.CurrentSettings().darkness==75);
+    CHECK(sco::app::HostMenuFrame(&frame));CHECK(client.CurrentSettings().darkness==75);
     // A callback publishes a new generation; the second stale event must be dropped.
-    assert(client.CurrentSettings().darkness!=21);
+    CHECK(client.CurrentSettings().darkness!=21);
     f.send=false;f.snapshot.pathUtf8=std::string(255*260,'x');
-    assert(sco::app::HostMenuFrame(&frame));assert(!client.MainReady() && client.StatusReady());
-    assert(client.CurrentSettings().darkness==75);
+    CHECK(sco::app::HostMenuFrame(&frame));CHECK(!client.MainReady() && client.StatusReady());
+    CHECK(client.CurrentSettings().darkness==75);
     f.snapshot.pathUtf8="restored.png";f.snapshot.statusUtf8=std::string(255*260,'x');
-    assert(sco::app::HostMenuFrame(&frame));assert(client.MainReady() && !client.StatusReady());
+    CHECK(sco::app::HostMenuFrame(&frame));CHECK(client.MainReady() && !client.StatusReady());
     f.snapshot.statusUtf8="Recovered";
-    assert(sco::app::HostMenuFrame(&frame));assert(client.MainReady() && client.StatusReady());
-    sco::app::Stop();
+    CHECK(sco::app::HostMenuFrame(&frame));CHECK(client.MainReady() && client.StatusReady());
+    test_app::StopOrExit([] { return sco::app::Stop(); });
     std::puts("menu widgets: publication, stale-event and independent recovery passed");
 }

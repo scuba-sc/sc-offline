@@ -10,7 +10,7 @@ account/online balances or G13 session controls.
 ## Build / check / install
 
 1. Obtain a checksum-verified SDK archive containing `sc_missions.h` (the pinned
-   published `sco-sdk-2.4.0.zip` from `sdk-v2.4.0-rc.2` contains it; 2.0.0 did not).
+   published stable `sco-sdk-2.4.0.zip` from `sdk-v2.4.0` contains it; 2.0.0 did not).
 2. Run `python3 tools/contracts_sdk_check.py --archive <local-or-published.zip>
    --sums <adjacent-SHA256SUMS> --work <new-outside-root> --slice <read|accept|progress|script|economy|metadata>`.
    This verifies hashes, extracts into an isolated root, builds/loads the actual
@@ -22,6 +22,12 @@ account/online balances or G13 session controls.
    and `SCO_WORKFLOW_TESTS=ON`; build `contracts-module-test`; run only the named slice.
 3. Install component `contracts` into a separate staging root. Do not enable a
    second `contracts` ID while the legacy built-in is still registered.
+
+The published stable SDK 2.4.0 read-slice proof passed locally against the
+official combined archive and its release checksum inventory. It builds and
+loads the module, checks its public dependencies, stages it and confirms
+provider-absent refusal. This was a Linux synthetic check; the other slices,
+Windows/MSVC and gameplay are not established by it.
 
 `contracts.accept <offer-index> <key>` reads the current copied offer and submits
 its broker/generation unchanged. Replays retain the explicit nonzero key; the

@@ -297,6 +297,29 @@ static uint8_t*   g_fakeEntitlements = nullptr;
 static SRWLOCK    g_shipsLock = SRWLOCK_INIT;
 static bool       g_shipsBuilt = false;
 
+// History slots never move or get reused. Fleet records retain these IDs, not row positions.
+constexpr int kMaxFleetHistory = 8192;
+static FleetShip g_shipHistory[kMaxFleetHistory];
+static int g_shipHistoryCount = 0;
+static bool g_shipIssued[kMaxFleetHistory] = {};
+
+static int RememberFleetShip(const FleetShip& ship) {
+    for (int id = 0; id < g_shipHistoryCount; ++id)
+        if (_stricmp(g_shipHistory[id].name, ship.name) == 0) return id;
+    if (g_shipHistoryCount == kMaxFleetHistory) return -1;
+    const int id = g_shipHistoryCount++;
+    g_shipHistory[id] = ship;
+    return id;
+}
+
+// Called with g_shipsLock held. Historical names remain valid even when not issued.
+static int IssuedFleetShip(uint64_t q) {
+    if ((q & 0xFFFFFFFF00000000ull) != kShipUrnMarker) return -1;
+    const uint32_t id = static_cast<uint32_t>(q);
+    return id < static_cast<uint32_t>(g_shipHistoryCount) && g_shipIssued[id]
+        ? static_cast<int>(id) : -1;
+}
+
 using StrCtorFn          = void*(__fastcall*)(void* out, const char* s);
 using StrDtorFn          = void(__fastcall*)(void* s);
 using GetATCCompFn       = uint64_t*(__fastcall*)(uint64_t* out, uint64_t entityId);
@@ -378,10 +401,18 @@ static int BuildFleetShips() {
     FindClassGuids(registry, classes);
 
     int kept = 0;
+    int ids[kMaxFleetShips];
+    memset(g_shipIssued, 0, sizeof(g_shipIssued));
     for (int i = 0; i < g_shipCount; ++i) {
         uint64_t guid[2] = { ships[i].guid[0], ships[i].guid[1] };
-        if ((guid[0] | guid[1]) && VCall<uintptr_t>(registry, 0x18, guid) == classes[i]) ships[kept++] = ships[i];
-        else Log("[fleet] no class GUID for '%s' (skipped)", ships[i].name);
+        if (!(guid[0] | guid[1]) || VCall<uintptr_t>(registry, 0x18, guid) != classes[i]) {
+            Log("[fleet] no class GUID for '%s' (skipped)", ships[i].name);
+            continue;
+        }
+        const int id = RememberFleetShip(ships[i]);
+        if (id < 0) { Log("[fleet] session ship history full; '%s' skipped", ships[i].name); continue; }
+        ids[kept] = id;
+        ships[kept++] = ships[i];
     }
     g_shipCount = kept;
 
@@ -390,7 +421,8 @@ static int BuildFleetShips() {
         uint8_t* e = g_fakeEntitlements + i * kEntitlementSize;
         *reinterpret_cast<uint16_t*>(e + 0x00) = kUrnType;
         e[0x08] = kUrnKindUuid;
-        *reinterpret_cast<uint64_t*>(e + 0x10) = kShipUrnMarker | static_cast<uint32_t>(i);
+        *reinterpret_cast<uint64_t*>(e + 0x10) = kShipUrnMarker | static_cast<uint32_t>(ids[i]);
+        g_shipIssued[ids[i]] = true;
         e[0x20] = kUrnIdGuid;
         e[0x50] = 3;
         *reinterpret_cast<uint32_t*>(e + 0x54) = 1;
@@ -438,29 +470,39 @@ static int SlotShipIndex(uintptr_t slot) {
         const uintptr_t urn = slot + kSlotUrn;
         if (Rd<uint16_t>(urn) != kUrnType || Rd<uint8_t>(urn + 0x20) != kUrnIdGuid) return -1;
         const uint64_t id = Rd<uint64_t>(urn + 0x10);
-        const int i = static_cast<int>(static_cast<uint32_t>(id));
-        return (id & 0xFFFFFFFF00000000ull) == kShipUrnMarker && i < g_shipCount ? i : -1;
+        AcquireSRWLockShared(&g_shipsLock);
+        const int ship = IssuedFleetShip(id);
+        ReleaseSRWLockShared(&g_shipsLock);
+        return ship;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return -1;
     }
 }
 
 int FleetShipIndexOfUrnId(const uint64_t id[2]) {
+    if (!id) return -1;
+    uint64_t snapshot[2];
+    // Engine memory may fault; finish all input reads before taking the ships lock.
+    __try {
+        snapshot[0] = Rd<uint64_t>(reinterpret_cast<uintptr_t>(id));
+        snapshot[1] = Rd<uint64_t>(reinterpret_cast<uintptr_t>(id) + sizeof(uint64_t));
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+    int ship = -1;
     AcquireSRWLockShared(&g_shipsLock);
-    const int count = g_shipsBuilt ? g_shipCount : 0;
+    for (int i = 0; ship < 0 && i < 2; ++i)
+        for (const uint64_t q : { snapshot[i], _byteswap_uint64(snapshot[i]) })
+            if ((ship = IssuedFleetShip(q)) >= 0) break;
     ReleaseSRWLockShared(&g_shipsLock);
-    for (int i = 0; i < 2; ++i)
-        for (const uint64_t q : { id[i], _byteswap_uint64(id[i]) })
-            if ((q & 0xFFFFFFFF00000000ull) == kShipUrnMarker && static_cast<uint32_t>(q) < static_cast<uint32_t>(count))
-                return static_cast<int>(static_cast<uint32_t>(q));
-    return -1;
+    return ship;
 }
 
-const char* FleetShipClass(int index) {
+const char* FleetShipClass(int shipId) {
     AcquireSRWLockShared(&g_shipsLock);
-    const int count = g_shipsBuilt ? g_shipCount : 0;
+    const char* name = shipId >= 0 && shipId < g_shipHistoryCount ? g_shipHistory[shipId].name : nullptr;
     ReleaseSRWLockShared(&g_shipsLock);
-    return index >= 0 && index < count ? g_ships[index].name : nullptr;
+    return name;
 }
 
 const char* RequestShipFromAtc(uint64_t atcEntity, uint64_t player, const char* shipClass) {
@@ -489,13 +531,14 @@ const char* RequestShipFromAtc(uint64_t atcEntity, uint64_t player, const char* 
 
 static void __fastcall Hook_RetrieveVehicle(uintptr_t asop, uintptr_t slot) {
     const int i = SlotShipIndex(slot);
+    const char* cls = i >= 0 ? FleetShipClass(i) : nullptr;
     // With the ASOP Retrieve (fleet.cpp) on, the game's own retrieve runs: it reaches the ATC with
     // the stored ship, where asking the ATC directly for a class would lock the station's terminals.
-    if (i < 0 || Fleet_RetrieveActive()) { g_origRetrieveVehicle(asop, slot); return; }
+    if (!cls || Fleet_RetrieveActive()) { g_origRetrieveVehicle(asop, slot); return; }
     uint64_t atc = 0;
     __try { atc = Rd<uint64_t>(asop + kAsopAtcId); } __except (EXCEPTION_EXECUTE_HANDLER) {}
-    if (const char* err = RequestShipFromAtc(atc, LocalPlayerId(), g_ships[i].name))
-        Log("[fleet] retrieve %s failed: %s", g_ships[i].name, err);
-    else Log("[fleet] retrieve %s: asked the spaceport ATC for a hangar/pad", g_ships[i].name);
+    if (const char* err = RequestShipFromAtc(atc, LocalPlayerId(), cls))
+        Log("[fleet] retrieve %s failed: %s", cls, err);
+    else Log("[fleet] retrieve %s: asked the spaceport ATC for a hangar/pad", cls);
 }
 #endif

@@ -12,7 +12,7 @@ git clone --recurse-submodules https://github.com/scuba-sc/sc-offline.git
 
 In an existing clone, or after a pull that moves the pin, run `git submodule update --init`. Without it, CMake configure and `tools/check.sh` stop and say so.
 
-The embedded host is pinned to the published `sdk-v2.4.0-rc.2` release, exact source `844e136ccb280ad8cb43f73bc43c9447e8f6799d`: SDK 2.4.0, plugin ABI 1.1, game pack 0.8.0. External plugin jobs consume the checksum-pinned published RC2 archive separately. See [candidate coordinates and limits](sdk-candidate.md). Do not replace the submodule with moving `main` or copy plugin SDK headers over host source.
+The embedded host is pinned to the published SDK 2.4.0 source `6106fa3639cbcc28f78a1ded8de2707de019f4d3`. CI rebuilds the combined package from that exact source and compares it with the checksum-pinned stable release archive. Standalone external-plugin jobs consume the same published stable archive through their separate SDK-only build. See [release coordinates and limits](sdk-candidate.md). Do not replace the submodule with moving `main` or copy plugin SDK headers over host source.
 
 1. Install **Visual Studio 2026** with the **Desktop development with C++** workload. It includes CMake.
 2. In Visual Studio, use **File → Open → Folder** on the repository root. Visual Studio reads `CMakeLists.txt`; pick an x64 **Release** configuration and build. Or from a Developer PowerShell:
@@ -41,6 +41,14 @@ tools/check.sh
 ```
 
 This runs in a few seconds. It parses every `src/*.cpp`, `src/builtins/*.cpp`, `src/builtins/*/*.cpp` (the bridges) and `launcher/*.cpp` file with clang against mingw-w64's Windows headers. It also screens `src/` for MSVC error C2712 (`__try` in a function that owns an object needing unwinding, such as a `std::string`). It is not a build: only MSVC's build is. Known clang-only diagnostics are listed in `tools/check-baseline.txt`, and only new ones fail the check. You need clang and mingw-w64 (`brew install llvm mingw-w64` on macOS).
+
+The focused test-process shutdown regression runs with the pinned host headers via
+`tools/test_app_stop.sh external/sco-core`. It covers an unverified legacy `void`
+shutdown, failure, exception and confirmed cleanup, plus an unsafe-guard negative
+control. `tools/test_menu_widgets_release.sh external/sco-core` builds the real
+menu harness with `NDEBUG` and verifies that a forced failure is detected. When invoking `menu_widgets_test` or `asop_host_composition_test`
+directly against a legacy host, exit 77 means the functional assertions passed but
+shutdown could not be verified; it is a skip, not a successful cleanup.
 
 ### Include and scan gates
 
@@ -72,9 +80,25 @@ Builds the launcher with `-DSCO_UPDATE_TEST` and runs 14 update scenarios (good 
 3. `sdk-headers` runs `tools/sdk-headers.py` (above). Its own job for the same reason.
 4. `build` (needs `check`) configures and builds Release x64 with CMake and MSVC on Windows, then checks the binaries with `dumpbin` and `mt`: `dinput8.dll` exports `DirectInput8Create` forwarded to System32's `dinput8.dll`, both files are x64, neither imports the dynamic C runtime, `sc-offline.exe`'s manifest asks for `asInvoker` (the launcher asks for administrator rights itself when it needs them), and the DLL contains neither bridge. It uploads `dinput8-release` (the DLL and launcher) and `test-plugins` (never part of a release).
 5. Optional bridges configure independently and are excluded from the host and standard release; the retired host bridge options deliberately fail configuration.
-6. `npc-sdk-posix` / `npc-sdk` and `inspector-sdk-posix` / `inspector-sdk` download and verify published `sco-sdk-2.4.0.zip` (SDK 2.4.0 release candidate 2, tag `sdk-v2.4.0-rc.2`), compile outside the host checkout, check exact compiler dependencies and run each named module workflow and published checker. POSIX also exercises private-header/symbol and transitive-header negative controls; Windows uploads enabled `npc-plugin` and `inspector-plugin` folders. These isolated jobs do not initialize the host submodule. See the [worked tutorial](sdk-workflows.md).
-7. `external-sdk` builds/checks/stages creative, discord, crew, spawn, build, mining, teleport and quantum independently on Windows using the same published RC2 archive. `contracts-sdk` supplies the command-first contracts folder; its providers remain deferred.
+6. `npc-sdk-posix` / `npc-sdk` and `inspector-sdk-posix` / `inspector-sdk` download and verify the published stable `sco-sdk-2.4.0.zip` (`sdk-v2.4.0`), compile outside the host checkout, check exact compiler dependencies and run each named module workflow and published checker. POSIX also exercises private-header/symbol and transitive-header negative controls; Windows uploads enabled `npc-plugin` and `inspector-plugin` folders. These isolated jobs do not initialize the host submodule. See the [worked tutorial](sdk-workflows.md).
+7. `external-sdk` builds/checks/stages creative, discord, crew, spawn, build, mining, teleport and quantum independently on Windows using the same published stable archive. `contracts-sdk` supplies the command-first contracts folder; its providers remain deferred.
 8. `release` needs `build`, `npc-sdk`, `inspector-sdk`, `contracts-sdk` and every `external-sdk` matrix job. It runs on tags only and assembles the launcher, host DLL, configuration, tracked data/docs, the 11 matching external feature folders, notices and `manifest.json`. Creative/Discord retain their disabled markers; the other nine folders ship enabled. Loadout, multiplayer, bridges and test plugins are not staged. No release is created by opening a candidate-update PR.
+
+### Stable-ID test fixture provenance and packaging
+
+`tools/test_fleet_identity.py` is a project-authored GPL-3.0-only test fixture, not
+third-party code. Its `Synthetic_A`, `Synthetic_B`, and `Synthetic_C` names and
+numeric class stand-ins are artificial test inputs, not a game catalogue or captured
+player data. It extracts the legacy fleet mapping/build and retrieve bodies from the
+local `src/hooks.cpp` and compiles them with synthetic registry/engine reads and
+platform stand-ins. Its temporary ships file is generated by the test. It is not a
+game execution, production registry evidence, or gameplay acceptance.
+
+The tag release stages tracked `docs/` and `data/`, selected root files and built
+artifacts; it does not stage this `tools/` fixture or its generated files. The
+release manifest describes the staged payload, not all source/test inputs. The
+manifest regression test checks the tracked docs/data staging and a local ZIP
+round trip; that is not a complete CI release build or release approval.
 
 ### `manifest.json`
 

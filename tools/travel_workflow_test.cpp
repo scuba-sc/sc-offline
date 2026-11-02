@@ -60,6 +60,23 @@ int main() {
     assert(std::fabs(s.z[1].pos[1]-1)<1e-9 && std::fabs(s.z[2].rot[2]-1)<1e-9);
     const auto text=SpotText(s); Spot again;
     assert(ParseSpot(text,again) && again.z.size()==3 && std::fabs(again.z[2].rot[2]-1)<1e-9);
+    // ParseSpot also reads quick-save files and SQL values directly.
+    for (const auto* input:{"spot 1 2 3 zone1\npose 0 0 0 1\n", "spot 1 2 3 zone1\r\npose 0 0 0 1\r\n", "spot 1 2 3 zone1\r\npose 0 0 0 1\n"}) {
+        Spot parsed; assert(ParseSpot(input,parsed) && parsed.z.size()==1 && parsed.z[0].name=="zone1");
+    }
+    Spot controls;
+    assert(ParseSpot("spot 1 2 3 zone\rname\n",controls) && controls.z[0].name=="zone\rname");
+    assert(ParseSpot("spot 1 2 3 zone1\r\r\n",controls) && controls.z[0].name=="zone1\r");
+    assert(ParseSpot("spot 1 2 3 zone1\r",controls) && controls.z[0].name=="zone1\r");
+    assert(ParseSpot("spot 1 2 3 zone1",controls) && controls.z[0].name=="zone1");
+    assert(ParseSpot("spot 1 2 3 "+std::string(95,'z')+"\r\n",controls) && controls.z[0].name.size()==95);
+    const auto bounded=SpotText(controls);
+    assert(!ParseSpot("spot 1 2 3 "+std::string(96,'z')+"\r\n",controls) && SpotText(controls)==bounded);
+    assert(!ParseSpot(std::string(65537,'x'),controls) && SpotText(controls)==bounded);
+    std::string manySpots;for(int i=0;i<13;++i)manySpots+="spot 1 2 3 zone1\r\n";
+    assert(ParseSpot(manySpots,controls) && controls.z.size()==12);
+    const auto unchanged=SpotText(controls);
+    assert(!ParseSpot("spot 1 2 3 zone1\r\npose 0 0 0 0\r\n",controls) && SpotText(controls)==unchanged);
     Spot legacy; assert(ParseSpot("spot 1 2 3 vanished\nspot 4 5 6 zone2\nspot 7 8 9 zone3\n",legacy));
     Restoration r; assert(Resolve(&sp,legacy,r)==SCO_OK && r.level==1 && r.partial && r.pose.zone==2);
     assert(!r.system_known); // names/root never certify system identity or authorize relocation

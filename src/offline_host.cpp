@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "offline_host.h"
+#include "native_activation_policy.h"
+#include <atomic>
 #ifdef SCO_HOST_MENU_CLIENT
 #include "menu.h"
 #endif
@@ -10,6 +12,7 @@
 #include "asop_shell.h"
 #include "common.h"
 #include <fstream>
+#include <memory>
 #include <string>
 #include <vector>
 namespace {
@@ -40,13 +43,38 @@ sco::Result StartSelection(void*) {
     options.class_busy = ClassBusyThunk; // Runs under the selection lock; only fleet/ship locks inside.
     return selection::Start(options);
 }
-// A committed selection save rebuilds the owned-ship list mid-session (stable slots).
+// Keep a committed file notice pending until the host confirms that its runtime
+// selection was applied. Current Core main deliberately refuses Reconfigure.
 sco::Result TickSelection(void*) {
-    std::string committed;
-    while (offline::asop_selection::TakeCommittedSelection(committed)) {
+    static bool apply_deferred_reported=false;
+    for (;;) {
+        bool parse_failed=false,apply_threw=false;
+        sco::Result reconfigure_result=sco::Result::Unavailable;
         std::vector<std::string> ships;
-        if (!offline::asop::ParseShips(committed, ships)) break; // Commit already verified bytes; retry next pump.
-        (void)offline::asop::Reconfigure(ships);
+        const auto applied=offline::asop_selection::g_committedSelection.ApplyNext([&](const std::string& committed) {
+            try {
+                if (!offline::asop::ParseShips(committed, ships)) { parse_failed=true; return false; }
+            } catch (...) { parse_failed=true; return false; }
+            try { reconfigure_result=offline::asop::Reconfigure(ships); }
+            catch (...) { apply_threw=true; return false; }
+            return reconfigure_result==sco::Result::Ok;
+        });
+        if (applied==offline::asop_selection::NoticeApplyResult::None) {
+            apply_deferred_reported=false;
+            break;
+        }
+        if (applied==offline::asop_selection::NoticeApplyResult::Deferred) {
+            if (parse_failed) {
+                if (!apply_deferred_reported) Log("[asop-selection] saved selection could not be parsed; runtime apply remains pending");
+            } else if (apply_threw) {
+                if (!apply_deferred_reported) Log("[asop-selection] selection file saved; runtime apply threw and remains pending");
+            } else if (!apply_deferred_reported) {
+                Log("[asop-selection] selection file saved; runtime apply is pending (Reconfigure result %u)",static_cast<unsigned>(reconfigure_result));
+            }
+            apply_deferred_reported=true;
+            break;
+        }
+        apply_deferred_reported=false;
     }
     return selection::Pump();
 }
@@ -56,7 +84,12 @@ sco::Result StopSelection(void*) { return selection::Stop(); }
 
 namespace gh = sco::game::host;
 namespace offline_host {
+namespace { std::atomic<bool> retained{false}; }
+bool RestartRequired() noexcept { return retained.load(std::memory_order_acquire); }
 sco::Result Prepare(gh::Options options) {
+    // Core Prepare owns a private registry candidate, but this product cannot
+    // yet prove the image, resolver, reader and worker lifetimes it requires.
+    if (RestartRequired() || !NativeActivationAvailable()) return sco::Result::Unavailable;
     // Required game-pack hooks, never a shell WM_QUIT-only or private-loader fallback.
     options.quit = gh::QuitPolicy::Required;
     options.dataCoreHook = gh::DataCoreHook::Required;
@@ -68,8 +101,24 @@ sco::Result Prepare(gh::Options options) {
 #endif
     return gh::Prepare(options);
 }
-sco::Result Start() { return gh::Start(); }
-sco::Result Tick(uint32_t now) { return gh::Tick(now); }
-sco::Result Stop() { return gh::Stop(); }
-bool Running() { return gh::Status().phase == gh::Phase::Running; }
+sco::Result Start() {
+    if (RestartRequired() || !NativeActivationAvailable()) return sco::Result::Unavailable;
+    return gh::Start();
+}
+sco::Result Tick(uint32_t now) {
+    if (RestartRequired() || !NativeActivationAvailable()) return sco::Result::Unavailable;
+    return gh::Tick(now);
+}
+sco::Result Stop() {
+    if (RestartRequired()) return sco::Result::Failed;
+    try {
+        const auto result = gh::Stop();
+        if (result != sco::Result::Ok) retained.store(true, std::memory_order_release);
+        return result;
+    } catch (...) {
+        retained.store(true, std::memory_order_release);
+        return sco::Result::Failed;
+    }
+}
+bool Running() { return !RestartRequired() && NativeActivationAvailable() && gh::Status().phase == gh::Phase::Running; }
 } // namespace offline_host

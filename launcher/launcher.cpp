@@ -54,6 +54,7 @@
 #include "localization_win32.h"
 #include "locale_ru_builtin.h"
 #include "../src/version.h"
+#include "../src/private_network_ranges.h"
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "../src/third_party/imgui/imgui.h"
 #include "../src/third_party/imgui/imgui_impl_win32.h"
@@ -194,32 +195,51 @@ static bool ParseOnOff(const wstring& v, bool& out) {
     return false;
 }
 
-// multiplayer_allow: up to 8 IPv4 ranges "a.b.c.d/n" (n 8 to 32, no host bits set), separated by
-// commas. Fills the ranges and the same list rewritten from the numbers; false for anything else.
+// multiplayer_allow: up to 8 private IPv4 ranges "a.b.c.d/n" (n 8 to 32, no host bits set), separated by
+// commas. Fills the ranges and the same list rewritten from the numbers; failure leaves both empty.
 struct Ipv4Range { uint32_t first, last; };
 static bool ParseAllowList(const wstring& v, std::vector<Ipv4Range>& out, wstring& text) {
     out.clear();
     text.clear();
+    std::vector<Ipv4Range> parsed;
+    wstring canonical;
     for (size_t pos = 0; pos < v.size();) {
         size_t comma = v.find(L',', pos);
         if (comma == wstring::npos) comma = v.size();
         const wstring item = Trim(v.substr(pos, comma - pos));
         pos = comma + 1;
         unsigned a = 0, b = 0, c = 0, d = 0, n = 0;
-        wchar_t extra = 0;
-        if (item.empty() || !iswdigit(item[0]) ||
-            swscanf_s(item.c_str(), L"%u.%u.%u.%u/%u%c", &a, &b, &c, &d, &n, &extra, 1u) != 5)
-            return false;
-        if (a > 255 || b > 255 || c > 255 || d > 255 || n < 8 || n > 32 || out.size() >= 8) return false;
+        size_t cursor = 0;
+        const auto number = [&](unsigned& value, size_t maxDigits) {
+            const size_t start = cursor;
+            value = 0;
+            while (cursor < item.size() && item[cursor] >= L'0' && item[cursor] <= L'9') {
+                if (cursor - start == maxDigits) return false;
+                value = value * 10 + static_cast<unsigned>(item[cursor++] - L'0');
+            }
+            return cursor != start;
+        };
+        const auto separator = [&](wchar_t expected) {
+            if (cursor == item.size() || item[cursor] != expected) return false;
+            ++cursor;
+            return true;
+        };
+        if (!number(a, 3) || !separator(L'.') || !number(b, 3) || !separator(L'.') ||
+            !number(c, 3) || !separator(L'.') || !number(d, 3) || !separator(L'/') ||
+            !number(n, 2) || cursor != item.size()) return false;
+        if (a > 255 || b > 255 || c > 255 || d > 255 || n < 8 || n > 32 || parsed.size() >= 8) return false;
         const uint32_t ip = (a << 24) | (b << 16) | (c << 8) | d;
         const uint32_t mask = n == 32 ? 0xFFFFFFFFu : ~(0xFFFFFFFFu >> n);
-        if (ip & ~mask) return false;
-        out.push_back({ ip, ip | ~mask });
+        if ((ip & ~mask) || !offline_network::PrivateRange(ip, ip | ~mask)) return false;
+        parsed.push_back({ ip, ip | ~mask });
         wchar_t one[24];
         swprintf_s(one, L"%u.%u.%u.%u/%u", a, b, c, d, n);
-        if (!text.empty()) text += L',';
-        text += one;
+        if (comma < v.size() && pos == v.size()) return false;
+        if (!canonical.empty()) canonical += L',';
+        canonical += one;
     }
+    out = std::move(parsed);
+    text = std::move(canonical);
     return true;
 }
 
@@ -277,7 +297,7 @@ static bool ReadConfig(const wstring& path, Config& c) {
             std::vector<Ipv4Range> ranges;
             if (!ParseAllowList(v, ranges, c.multiplayerAllow)) {
                 c.multiplayerAllow.clear();
-                Out("[!] sc-offline.ini line %d: multiplayer_allow must be up to 8 IPv4 ranges like 100.64.0.0/10 (/8 or narrower); ignored\n", lineNo);
+                Out("[!] sc-offline.ini line %d: multiplayer_allow must be up to 8 private IPv4 ranges like 100.64.0.0/10; ignored\n", lineNo);
             }
         }
         else if (!_wcsicmp(k.c_str(), L"asop")) {

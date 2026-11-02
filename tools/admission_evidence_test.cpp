@@ -814,6 +814,95 @@ CASE(cache_single_flight_overlapping_callers_share_one_probe) {
     CHECK(probes.load() == 1);
 }
 
+// Firewall snapshot equivalent to the launcher leaving only Tailscale plus LAN open.
+CASE(configured_vpn_gap_requires_explicit_valid_scope) {
+    const std::wstring vpn =
+        L"0.0.0.0-9.255.255.255,11.0.0.0-100.63.255.255,100.128.0.0-126.255.255.255,"
+        L"128.0.0.0-169.253.255.255,169.255.0.0-172.15.255.255,"
+        L"172.32.0.0-192.167.255.255,192.169.0.0-255.255.255.255,::/0";
+    auto fw = Snap({Rule(kDirIn, vpn), Rule(kDirOut, vpn)});
+    auto decide = [&](const std::wstring& allow) {
+        return Decide(Tri::Clear, Tri::Clear, fw, kExe, Tcp({}), kPid, nullptr, allow);
+    };
+    CHECK(decide(L"100.64.0.0/10").admitted());
+    CHECK(!decide(L"").admitted());
+    CHECK(!decide(L"100.64.0.0/11").admitted());
+    CHECK(!decide(L"100.0.0.0/10").admitted());
+    for (const auto* bad : {L"*", L"::/0", L"0.0.0.0/0", L"100.64.0.1/10",
+                            L"100.64.0.0/33", L"100.64.0.0/7", L"100.64.0.0",
+                            L"100.64.0.0/255.192.0.0", L"100.64.0.0/10,",
+                            L",100.64.0.0/10", L"100.64.0.0/10,,10.0.0.0/8",
+                            L"100.64.0.0/10,bad", L"100.64.0.0-100.127.255.255",
+                            L"256.0.0.0/8", L"１００.64.0.0/10"}) {
+        CHECK(!decide(bad).admitted());
+        CHECK(!Decide(Tri::Clear, Tri::Clear, GoodSnap(), kExe, Tcp({}), kPid, nullptr, bad).admitted());
+    }
+    CHECK(decide(L"100.64.0.0/11,100.96.0.0/11").admitted());
+    CHECK(!decide(L" 100.96.0.0/11 , 100.64.0.0/10 ").admitted());
+    CHECK(!decide(L"100.064.0.0/10").admitted());
+    CHECK(!decide(L"100.64.0.0/32").admitted());
+    CHECK(!decide(L"100.64.0.0/10,10.0.0.0/8,10.0.0.0/8,10.0.0.0/8,10.0.0.0/8,"
+                  L"10.0.0.0/8,10.0.0.0/8,10.0.0.0/8,10.0.0.0/8").admitted());
+    CHECK(!decide(std::wstring(256, L' ')).admitted());
+    // Exact endpoints: one uncovered address on either side must still refuse.
+    for (const auto* wider : {L"11.0.0.0-100.63.255.254", L"100.128.0.1-126.255.255.255"}) {
+        auto gap = vpn;
+        const std::wstring original = wider[0] == L'1' && wider[1] == L'1'
+            ? L"11.0.0.0-100.63.255.255" : L"100.128.0.0-126.255.255.255";
+        gap.replace(gap.find(original), original.size(), wider);
+        fw = Snap({Rule(kDirIn, gap), Rule(kDirOut, gap)});
+        CHECK(!decide(L"100.64.0.0/10").admitted());
+    }
+    fw = Snap({Rule(kDirIn, vpn)});
+    CHECK(!decide(L"100.64.0.0/10").admitted());
+    fw = Snap({Rule(kDirIn, vpn), Rule(kDirOut, vpn)});
+    fw.rules[0].remoteAddrs += L",malformed";
+    CHECK(!decide(L"100.64.0.0/10").admitted());
+    fw = Snap({Rule(kDirIn, vpn.substr(0, vpn.find(L",::/0"))), Rule(kDirOut, vpn)});
+    CHECK(!decide(L"100.64.0.0/10").admitted());
+    // VPN coverage is not permission to ignore live non-private TCP evidence.
+    fw = Snap({Rule(kDirIn, vpn), Rule(kDirOut, vpn)});
+    CHECK(!Decide(Tri::Clear, Tri::Clear, fw, kExe, Tcp({Row(kPid, 5, 0x64400001u)}),
+                  kPid, nullptr, L"100.64.0.0/10").admitted());
+    CHECK(!Decide(Tri::Unknown, Tri::Clear, fw, kExe, Tcp({}), kPid, nullptr,
+                  L"100.64.0.0/10").admitted());
+}
+
+CASE(public_gap_is_refused_even_when_declared) {
+    const std::wstring publicGap =
+        L"0.0.0.0-7.255.255.255,9.0.0.0-9.255.255.255,11.0.0.0-126.255.255.255,"
+        L"128.0.0.0-169.253.255.255,169.255.0.0-172.15.255.255,"
+        L"172.32.0.0-192.167.255.255,192.169.0.0-255.255.255.255,::/0";
+    const auto fw = Snap({Rule(kDirIn, publicGap), Rule(kDirOut, publicGap)});
+    CHECK(!Decide(Tri::Clear, Tri::Clear, fw, kExe, Tcp({}), kPid).admitted());
+    CHECK(!Decide(Tri::Clear, Tri::Clear, fw, kExe, Tcp({}), kPid, nullptr, L"8.0.0.0/8").admitted());
+    CHECK(!Decide(Tri::Clear, Tri::Clear, fw, kExe, Tcp({}), kPid, nullptr,
+                  L"100.64.0.0/10,10.0.0.0/8").admitted());
+    CHECK(!Decide(Tri::Clear, Tri::Clear, GoodSnap(), kExe, Tcp({}), kPid, nullptr, L"8.0.0.0/8").admitted());
+    for (const auto* bad : {L"100.0.0.0/8", L"100.0.0.0/9", L"100.128.0.0/9",
+                            L"172.0.0.0/8", L"192.168.0.0/15", L"203.0.113.0/24"})
+        CHECK(!Decide(Tri::Clear, Tri::Clear, GoodSnap(), kExe, Tcp({}), kPid, nullptr, bad).admitted());
+    for (const auto* good : {L"10.0.0.0/8", L"100.64.0.0/10", L"100.127.255.255/32",
+                             L"127.0.0.0/8", L"169.254.0.0/16", L"172.16.0.0/12", L"192.168.0.0/16"})
+        CHECK(Decide(Tri::Clear, Tri::Clear, GoodSnap(), kExe, Tcp({}), kPid, nullptr, good).admitted());
+}
+
+CASE(private_exception_boundaries_are_contained) {
+    struct Bounds { uint32_t first, last; };
+    for (const Bounds b : {Bounds{0x0A000000u, 0x0AFFFFFFu}, Bounds{0x64400000u, 0x647FFFFFu},
+                           Bounds{0x7F000000u, 0x7FFFFFFFu}, Bounds{0xA9FE0000u, 0xA9FEFFFFu},
+                           Bounds{0xAC100000u, 0xAC1FFFFFu}, Bounds{0xC0A80000u, 0xC0A8FFFFu}}) {
+        CHECK(offline_network::PrivateRange(b.first, b.last));
+        CHECK(offline_network::PrivateRange(b.first, b.first));
+        CHECK(offline_network::PrivateRange(b.last, b.last));
+        CHECK(!offline_network::PrivateRange(b.first - 1, b.first - 1));
+        CHECK(!offline_network::PrivateRange(b.last + 1, b.last + 1));
+        CHECK(!offline_network::PrivateRange(b.first - 1, b.last));
+        CHECK(!offline_network::PrivateRange(b.first, b.last + 1));
+    }
+    CHECK(!offline_network::PrivateRange(1, 0));
+}
+
 CASE(cache_single_flight_waiter_shares_a_refusal) {
     FakeClock clk;
     std::atomic<int> probes{0};

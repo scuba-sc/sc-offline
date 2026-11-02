@@ -132,7 +132,10 @@ int main(int argc,char** argv) {
     assert(ship.load(&api,reinterpret_cast<sco_plugin*>(1))==SCO_OK);
     assert(crew.load(&api,reinterpret_cast<sco_plugin*>(2))==SCO_OK);
     assert(npc.load(&api,reinterpret_cast<sco_plugin*>(3))==SCO_OK);
-    assert(panels.size()==3 && panels.at("spawn.vehicles").title=="Vehicles" && panels.at("crew.crew").title=="Crew" && panels.at("npc.npcs").title=="NPCs");
+    assert(panels.size()==4 && panels.at("spawn.vehicles").title=="Vehicles" && panels.at("crew.crew").title=="Crew" && panels.at("npc.npcs").title=="NPCs" && panels.at("spawn.asop").title=="ASOP selection");
+    assert(panels.at("spawn.asop").nodes.size()==8 &&
+           panels.at("spawn.asop").nodes.at(71).label=="ASOP selection service unavailable" &&
+           panels.at("spawn.asop").nodes.at(72).label.find("native publication and observation unavailable")!=std::string::npos);
     assert(panels.at("npc.npcs").nodes.at(2).items.size()==64);
     Event("npc.npcs",7,SCO_WIDGET_BUTTON);Event("npc.npcs",2,SCO_WIDGET_LIST,0);
     assert(panels.at("npc.npcs").nodes.at(3).text=="synthetic_actor_64");

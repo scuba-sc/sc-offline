@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <new>
 #include <chrono>
 #include <string>
 #ifdef _WIN32
@@ -23,9 +24,47 @@ namespace S=sco::game::services;
 static unsigned checks;
 static const sco_api* host_api=nullptr;
 static int fail_storage_query_after=0;
+static const sco_storage_v1* real_storage=nullptr;
+static sco_storage_v1 wrapped_storage{};
+static int fail_delete=0, fail_commit=0;
+static sco_result Delete(sco_plugin* self,const char* key) {
+    if(fail_delete==1) return SCO_FAILED;
+    const auto r=real_storage->del(self,key);
+    return fail_delete==2 && r==SCO_OK ? SCO_FAILED : r;
+}
+static sco_result Commit(sco_plugin* self) {
+    if(fail_commit==1) return SCO_FAILED;
+    const auto r=real_storage->commit(self);
+    return fail_commit==2 && r==SCO_OK ? SCO_FAILED : r;
+}
+static const sco_widgets_v1* real_widgets=nullptr;
+static sco_widgets_v1 wrapped_widgets{};
+static bool fail_panel=false, throw_panel=false;
+static sco_widget_event_fn last_callback=nullptr;
+static void* last_context=nullptr;
+static sco_result SetPanel(sco_plugin* self,const char* id,const char* title,const sco_widget_node* nodes,
+                           uint32_t count,uint32_t stride,sco_widget_event_fn fn,void* ctx) {
+    if(throw_panel) { throw_panel=false; throw std::bad_alloc{}; }
+    if(fail_panel) { fail_panel=false; return SCO_FAILED; }
+    const auto r=real_widgets->set_panel(self,id,title,nodes,count,stride,fn,ctx);
+    if(r==SCO_OK) { last_callback=fn; last_context=ctx; }
+    return r;
+}
 static sco_result Query(const char* name,uint32_t version,const void** out) {
     if(!std::strcmp(name,SCO_STORAGE_NAME) && fail_storage_query_after && --fail_storage_query_after==0) {
         *out=nullptr;return SCO_UNAVAILABLE;
+    }
+    if(!std::strcmp(name,SCO_STORAGE_NAME)) {
+        const auto r=host_api->query_service(name,version,out);
+        if(r==SCO_OK) { real_storage=static_cast<const sco_storage_v1*>(*out); wrapped_storage=*real_storage;
+            wrapped_storage.del=Delete; wrapped_storage.commit=Commit; *out=&wrapped_storage; }
+        return r;
+    }
+    if(!std::strcmp(name,SCO_WIDGETS_NAME)) {
+        const auto r=host_api->query_service(name,version,out);
+        if(r==SCO_OK) { real_widgets=static_cast<const sco_widgets_v1*>(*out); wrapped_widgets=*real_widgets;
+            wrapped_widgets.set_panel=SetPanel; *out=&wrapped_widgets; }
+        return r;
     }
     return host_api->query_service(name,version,out);
 }
@@ -92,7 +131,12 @@ int main(int argc,char** argv) {
     auto* owner=sco::host::NewPlugin("gear_presets"); Check(owner && load(&wrapped,owner)==SCO_OK);
     Check(Has("Capture a complete layout") && Choices()==0);
     Event(1,SCO_WIDGET_TEXT_INPUT,0,"Helmet kit"); Event(2,SCO_WIDGET_BUTTON); Check(Has("Captured complete layout"));
-    Event(3,SCO_WIDGET_BUTTON); Check(Has("Preset saved") && Choices()==1);
+    // A post-save presentation exception must not replace the completed result.
+    auto save_callback=last_callback; auto* save_context=last_context;
+    throw_panel=true; Event(3,SCO_WIDGET_BUTTON); Check(Choices()==0);
+    sco_widget_event no_op{}; no_op.size=sizeof(no_op); no_op.node_id=999; no_op.kind=SCO_WIDGET_BUTTON;
+    save_callback("gear_presets.main",&no_op,save_context);
+    Check(Has("Preset saved") && Choices()==1);
     std::string reply; Check(api->invoke(owner,"gear_presets.list",nullptr,0,Done,&reply)==SCO_OK && reply.find("1")!=std::string::npos);
     Event(5,SCO_WIDGET_COMBO,0); Event(6,SCO_WIDGET_BUTTON); Check(Has("same category; exact class unknown"));
     world.category=23; world.storage=101; ++world.generation;
@@ -108,13 +152,43 @@ int main(int argc,char** argv) {
     reply.clear(); Check(api->invoke(owner,"gear_presets.list",nullptr,0,Done,&reply)==SCO_OK && reply.find(" 2")!=std::string::npos && Choices()==2);
     Event(3,SCO_WIDGET_BUTTON); Check(Choices()==2); // a committed capture cannot be saved twice
     last_result=SCO_OK; Check(api->invoke(owner,"gear_presets.save",&arg,1,Done,&reply)==SCO_UNAVAILABLE && last_result==SCO_UNAVAILABLE && Choices()==2);
+    // A callback from an older published panel must not delete a new selection.
+    Event(5,SCO_WIDGET_COMBO,0); auto stale_callback=last_callback; auto* stale_context=last_context;
+    fail_panel=true; Event(5,SCO_WIDGET_COMBO,1);
+    sco_widget_event stale{}; stale.size=sizeof(stale); stale.node_id=9; stale.kind=SCO_WIDGET_BUTTON;
+    stale_callback("gear_presets.main",&stale,stale_context); Check(Choices()==2);
+    reply.clear(); Check(api->invoke(owner,"gear_presets.list",nullptr,0,Done,&reply)==SCO_OK && reply.find(" 1")!=std::string::npos && reply.find(" 2")!=std::string::npos);
+    Event(5,SCO_WIDGET_COMBO,1);
+    auto live_callback=last_callback; auto* live_context=last_context;
+    throw_panel=true; Event(9,SCO_WIDGET_BUTTON); Check(Choices()==2);
+    live_callback("gear_presets.main",&stale,live_context); // old published panel was not replaced
+    reply.clear(); Check(api->invoke(owner,"gear_presets.list",nullptr,0,Done,&reply)==SCO_OK);
+    Check(Choices()==1 && reply.find(" 1")!=std::string::npos && reply.find(" 2")==std::string::npos);
+    sco_arg id{}; id.type=SCO_ARG_INT; id.v.i=0;
+    Check(api->invoke(owner,"gear_presets.delete",&id,1,Done,&reply)==SCO_BAD_ARG);
+    id.v.i=2; Check(api->invoke(owner,"gear_presets.delete",&id,1,Done,&reply)==SCO_NOT_FOUND);
+    id.v.i=1; fail_storage_query_after=2; reply.clear();
+    Check(api->invoke(owner,"gear_presets.delete",&id,1,Done,&reply)==SCO_OK);
+    Check(reply.find("deleted, but the picker could not refresh")!=std::string::npos && Choices()==0);
+    Event(2,SCO_WIDGET_BUTTON); Event(3,SCO_WIDGET_BUTTON); Check(Choices()==1);
+    reply.clear(); Check(api->invoke(owner,"gear_presets.list",nullptr,0,Done,&reply)==SCO_OK && reply.find(" 3")!=std::string::npos);
+    auto old_callback=last_callback; auto* old_context=last_context;
     unload(); Check(W::Panels().empty()); Check(sco::Release(owner)==sco::Result::Ok);
-    owner=sco::host::NewPlugin("gear_presets"); Check(owner && load(&wrapped,owner)==SCO_OK && Choices()==2);
-    Event(5,SCO_WIDGET_COMBO,0); Event(6,SCO_WIDGET_BUTTON); Check(Has("different category"));
+    owner=sco::host::NewPlugin("gear_presets"); Check(owner && load(&wrapped,owner)==SCO_OK && Choices()==1);
+    Event(5,SCO_WIDGET_COMBO,0); Event(6,SCO_WIDGET_BUTTON); Check(Has("same category"));
+    old_callback("gear_presets.main",&stale,old_context); Check(Choices()==1);
+    id.v.i=3; fail_delete=1; Check(api->invoke(owner,"gear_presets.delete",&id,1,Done,&reply)==SCO_FAILED);
+    Check(Has("outcome is unknown") && Choices()==1);
+    fail_delete=2; Check(api->invoke(owner,"gear_presets.delete",&id,1,Done,&reply)==SCO_FAILED);
+    Check(Has("outcome is unknown") && Choices()==0); fail_delete=0;
+    Event(2,SCO_WIDGET_BUTTON); fail_commit=2;
+    Check(api->invoke(owner,"gear_presets.save",&arg,1,Done,&reply)==SCO_FAILED);
+    Check(Has("outcome is unknown")); fail_commit=0;
+    reply.clear(); Check(api->invoke(owner,"gear_presets.list",nullptr,0,Done,&reply)==SCO_OK && reply.find(" 4")!=std::string::npos && Choices()==1);
     S::StopGameInventory();
     static sc_inventory_v1 old{sizeof(old),0,nullptr};
     Check(sco::host::ProvideGameService(SC_INVENTORY_SERVICE_NAME,SC_INVENTORY_SERVICE_VERSION_1_1,&old)==sco::Result::Ok);
-    Event(2,SCO_WIDGET_BUTTON); Check(Has("unavailable or incomplete") && Choices()==2);
+    Event(2,SCO_WIDGET_BUTTON); Check(Has("unavailable or incomplete") && Choices()==1);
     unload(); Check(sco::Release(owner)==sco::Result::Ok);
     Check(sco::host::WithdrawGameService(SC_INVENTORY_SERVICE_NAME)==sco::Result::Ok);
     W::Stop(); sco::storage::Stop();

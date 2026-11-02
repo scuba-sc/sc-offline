@@ -62,6 +62,11 @@ sco_result PresetStore::Load(uint64_t id, Preset& out) noexcept {
         out = std::move(decoded); return SCO_OK;
     } catch (...) { return SCO_TOO_MANY; }
 }
+sco_result PresetStore::Delete(uint64_t id) noexcept {
+    if (!id) return SCO_BAD_ARG;
+    try { const auto key = Key(id); return storage_.Delete(key.c_str()); }
+    catch (...) { return SCO_TOO_MANY; }
+}
 sco_result PresetStore::List(std::vector<SavedPreset>& out) noexcept {
     try {
         std::vector<uint64_t> ids; auto result = Keys(ids); if (result != SCO_OK) return result;

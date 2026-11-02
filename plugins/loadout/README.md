@@ -3,7 +3,7 @@
 `loadout` 1.0.0 is a C++20 SDK consumer with three native exports, no product
 headers/ImGui globals, private engine calls, XML loader or gameplay fallback.
 It is **development work; not run in game**. Its G6/G7/content/widgets
-headers ship in the pinned published `sdk-v2.4.0-rc.2` (`sdk-v2.0.0` lacked them);
+headers ship in the pinned published `sdk-v2.4.0` (`sdk-v2.0.0` lacked them);
 the release workflow does not yet stage loadout. Do not substitute this local build for a published-release proof.
 
 ## Obtain, build, install
@@ -26,7 +26,7 @@ the release workflow does not yet stage loadout. Do not substitute this local bu
    `items.txt`, `outfits.txt` and `buildables.txt` unchanged into a separate
    `loadout_lists` data pack. It does not grant runtime filesystem access.
    A larger standalone `plugins/` build uses `SCO_LOADOUT_FEATURE=ON`; that switch
-defaults off until release staging is approved (the pinned sdk-v2.4.0-rc.2 ships
+defaults off until release staging is approved (the pinned sdk-v2.4.0 ships
    the headers). Runtime folder metadata
    itself is enabled, user-disableable, with no `disabled` marker.
 3. On Windows x64/MSVC, install the staged `data/plugins/loadout/` module and
@@ -183,6 +183,17 @@ submit/status/cancel members and requires **`game.loadout.async`**, independentl
 of those synchronous capabilities. No route falls back to a lower version or
 another mutation method. Table publication alone does not enable a backend.
 
+The Player panel displays the latest copied status of a retained job, refreshed
+at most once per existing 200 ms tick. It is a provider job observation, not a
+live inventory check; it also marks async capability revocation. If the service is
+unavailable or refuses, the display
+shows that instead of the previous observation. An invalid report pauses
+automatic polling; use Inspect to request another observation. A valid manual
+inspection resumes polling. No polling submits, retries, cancels or adds a timeout.
+If the widget provider rejects a panel replacement, it may continue drawing its
+previous copied panel; the plugin disables that panel's callbacks until a later
+successful publication. The latest observation cannot be shown until then.
+
 One job is retained until explicit cancellation/release, including after terminal
 status. While retained, another submit or synchronous equip refuses. Progress
 reports only completed slots: pending is not equip confirmation, and complete
@@ -255,9 +266,9 @@ acceptance remain separate from the gear selectors.
 
 ## Evidence and pending acceptance
 
-The consumer proof uses the checksum-verified published `sdk-v2.4.0-rc.1` combined
+The consumer proof uses the checksum-verified published stable `sdk-v2.4.0` combined
 archive (`sco-sdk-2.4.0.zip`, SHA-256
-`124751534277b89f0516af1897919c3485923811596e159a1f683bb80b1c243b`).
+`0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc`).
 Enable the three development workflows with `-DSCO_WORKFLOW_TESTS=ON`, then run:
 
 ```sh
@@ -277,7 +288,7 @@ failed publication, stale callbacks, unload/reload and the attributed seed file.
 isolated directory, verifies the archive, builds/runs all three workflows,
 checks the installation inventory and full compiler dependencies, and on POSIX
 runs ASan/UBSan plus missing-selector and four private-dependency negatives.
-The published RC1 generic checker has a separate known limitation: it treats
+The published generic checker has a separate known limitation: it treats
 the existing argument-free `loadout.progress` and `loadout.cancel` no-job
 `NOT_FOUND` observations as failures. Its raw **FAILED: 2 failure(s)** result is
 retained. The helper narrowly recognizes those exact two messages and rejects

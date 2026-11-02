@@ -11,6 +11,7 @@
 #include <atomic>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <mutex>
 
 bool DataFilePath(char*, DWORD, const char*);
@@ -167,18 +168,6 @@ bool Recover(const std::wstring& path,const std::wstring& marker) {
     if (!unstarted && !committed) return false;
     return Remove(stem+L".tmp") && Remove(stem+L".bak") && Remove(stem+L".candidate") && Remove(marker);
 }
-struct CommitNotice {
-    std::mutex mutex;
-    std::string bytes;
-    bool pending=false;
-};
-CommitNotice g_committed; // Written on the game thread by Replace, consumed by TickSelection.
-}
-bool TakeCommittedSelection(std::string& bytes) {
-    std::lock_guard lock(g_committed.mutex);
-    if(!g_committed.pending)return false;
-    bytes=std::move(g_committed.bytes);g_committed.bytes.clear();g_committed.pending=false;
-    return true;
 }
 bool FixedFile::Initialize() {
     path_.clear();diagnostic_.clear();char path[32768]{};
@@ -222,6 +211,11 @@ S::FileResult FixedFile::Read(void* context,S::Document& out) {
 S::FileResult FixedFile::Replace(void* context,const S::Document& expected,std::string_view bytes,S::Document& out,const S::CommitPermit& permit) {
     auto& self=*static_cast<FixedFile*>(context);
     if (self.path_.empty() || !permit.begin || bytes.size()>SC_ASOP_SELECTION_MAX_FILE_BYTES) return S::FileResult::Error;
+    CommittedSelectionNotice notice;
+    try {
+        const char* source=bytes.empty()?"":bytes.data();
+        notice=std::make_shared<const std::string>(source,bytes.size());
+    } catch (...) { return S::FileResult::Error; }
     self.diagnostic_.clear();
     DocumentLock lock(self.path_);if(!lock.locked)return S::FileResult::Busy;
     std::wstring pending;
@@ -265,7 +259,7 @@ S::FileResult FixedFile::Replace(void* context,const S::Document& expected,std::
     // Keep the marker until all other cleanup succeeds: interrupted cleanup fails closed.
     if (!Remove(backup) || !Remove(temp) || !Remove(candidate) || !Remove(marker)) return S::FileResult::OutcomeUnknown;
     self.diagnostic_.clear();out=std::move(saved);
-    { std::lock_guard notice(g_committed.mutex); g_committed.bytes.assign(bytes); g_committed.pending=true; }
+    g_committedSelection.Publish(std::move(notice));
     return S::FileResult::Ok;
 }
 }
