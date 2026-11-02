@@ -49,7 +49,7 @@ sco::Result TickSelection(void*) {
     static bool apply_deferred_reported=false;
     for (;;) {
         bool parse_failed=false,apply_threw=false;
-        sco::Result reconfigure_result=sco::Result::Unavailable;
+        sco::game::asop_host::Result reconfigure_result=sco::game::asop_host::Result::Unavailable;
         std::vector<std::string> ships;
         const auto applied=offline::asop_selection::g_committedSelection.ApplyNext([&](const std::string& committed) {
             try {
@@ -57,7 +57,7 @@ sco::Result TickSelection(void*) {
             } catch (...) { parse_failed=true; return false; }
             try { reconfigure_result=offline::asop::Reconfigure(ships); }
             catch (...) { apply_threw=true; return false; }
-            return reconfigure_result==sco::Result::Ok;
+            return reconfigure_result==sco::game::asop_host::Result::Ok;
         });
         if (applied==offline::asop_selection::NoticeApplyResult::None) {
             apply_deferred_reported=false;

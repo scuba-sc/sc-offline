@@ -50,9 +50,9 @@ void Tick(){const uint32_t n=1;CHECK(tick);tick("tick",&n,tick_context);}
 }
 int main(int argc,char** argv){
  test_module::Open(argc,argv);sco_api api{};api.size=sizeof(api);api.major=SCO_API_MAJOR;api.minor=SCO_API_MINOR;api.log=Log;api.has=Has;api.register_command=Register;api.query_service=Query;api.subscribe=Subscribe;api.unsubscribe=Unsubscribe;
- CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Get("A").value==1 && Get("B").value==0);CHECK(HasLabel("Select all classes"));
+ CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Get("A").value==1 && Get("B").value==0);CHECK(HasLabel("Select all available classes"));
  auto busyA=Get("A");CHECK(busyA.flags&SCO_WIDGET_DISABLED);Fire(busyA.id,SCO_WIDGET_TOGGLE,0);CHECK(Get("A").value==1);
- Press("Select all classes");CHECK(Get("A").value==1 && Get("B").value==1);CHECK(Get("All catalogue classes selected; unresolved saved names retained").kind==SCO_WIDGET_LABEL);
+ Press("Select all available classes");CHECK(Get("A").value==1 && Get("B").value==1);CHECK(Get("Available catalogue classes added; busy and unresolved names retained").kind==SCO_WIDGET_LABEL);
  auto old=Get("B");Fire(old.id,SCO_WIDGET_TOGGLE,1);CHECK(Get("B").value==1);
  Fire(old.id,SCO_WIDGET_TOGGLE,0);CHECK(Get("B").value==1); // stale panel event ignored
  Press("Save selection");CHECK(writes==1 && accepted==std::vector<std::string>({"A","Unresolved","B"}));
@@ -62,7 +62,7 @@ int main(int argc,char** argv){
  release_busy=false;Tick();CHECK(releases==1);CHECK(Get("B").value==1);
  Press("Select none");CHECK(Get("A").value==1 && Get("B").value==0);CHECK(Get("Available classes deselected; busy and unresolved names retained").kind==SCO_WIDGET_LABEL);reject_replace=true;Press("Save selection");CHECK(releases==2 && writes==1);reject_replace=false;Press("Save selection");CHECK(writes==2 && accepted==std::vector<std::string>({"A","Unresolved"}));phase=SC_ASOP_SELECTION_EDIT_CONFLICT;Tick();CHECK(releases==3);CHECK(Get("Save selection").flags&SCO_WIDGET_DISABLED);
  CHECK(Get("Reload file (discard draft)").kind==SCO_WIDGET_BUTTON);Press("Reload file (discard draft)");
- Press("Select none");CHECK(Get("A").value==1 && Get("B").value==0);Press("Select all classes");CHECK(Get("A").value==1 && Get("B").value==1);auto selectA=Get("A");Fire(selectA.id,SCO_WIDGET_TOGGLE,1);auto selectB=Get("B");Fire(selectB.id,SCO_WIDGET_TOGGLE,1);
+ Press("Select none");CHECK(Get("A").value==1 && Get("B").value==0);Press("Select all available classes");CHECK(Get("A").value==1 && Get("B").value==1);auto selectA=Get("A");Fire(selectA.id,SCO_WIDGET_TOGGLE,1);auto selectB=Get("B");Fire(selectB.id,SCO_WIDGET_TOGGLE,1);
  Press("Save selection");CHECK(writes==3 && accepted==std::vector<std::string>({"A","Unresolved","B"}));
  available=false;Tick();CHECK(Get("Save selection").flags&SCO_WIDGET_DISABLED);CHECK(Get("Save outcome unknown; waiting for selection service").kind==SCO_WIDGET_LABEL);const int publications_at_loss=publications;for(int i=0;i<10;++i)Tick();CHECK(publications==publications_at_loss);
  // A restarted provider invalidates the pending lease. Reconcile deliberately.
@@ -77,9 +77,14 @@ int main(int argc,char** argv){
  CHECK(Get("ASOP selection service unavailable").kind==SCO_WIDGET_LABEL);
  CHECK(Get("Save selection").flags&SCO_WIDGET_DISABLED);
  test_module::Unload();
- available=true;++session;file={"Unresolved"};catalogue.clear();
+ available=true;++session;++revision;file={"Unresolved"};catalogue={"A","B"};
+ CHECK(test_module::Load(&api,owner)==SCO_OK);Press("Select all available classes");
+ CHECK(Get("A").value==0 && Get("B").value==1);
+ CHECK(Get("Available catalogue classes added; busy and unresolved names retained").kind==SCO_WIDGET_LABEL);
+ test_module::Unload();
+ ++session;++revision;file={"Unresolved"};catalogue.clear();
  for(uint32_t i=0;i<SC_ASOP_SELECTION_MAX_CLASSES;++i)catalogue.push_back("Class"+std::to_string(i));
- CHECK(test_module::Load(&api,owner)==SCO_OK);Press("Select all classes");
+ CHECK(test_module::Load(&api,owner)==SCO_OK);Press("Select all available classes");
  CHECK(Get("Select all refused: selection limit would be exceeded; draft unchanged").kind==SCO_WIDGET_LABEL);
  CHECK(Get("Page 1; selected 1; native publication and observation unavailable").kind==SCO_WIDGET_LABEL);
  CHECK(Get("Save selection").flags&SCO_WIDGET_DISABLED);

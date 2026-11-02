@@ -91,8 +91,10 @@ void AsopEvent(const char* panel,const sco_widget_event* event,void*) {
     if(event->kind==SCO_WIDGET_BUTTON) {
         if(action==2){
             auto next=p.draft;
-            for(const auto& name:p.catalogue) {
+            for(size_t i=0;i<p.catalogue.size();++i) {
+                const auto& name=p.catalogue[i];
                 if(std::any_of(next.begin(),next.end(),[&](const std::string& x){return AsopEqual(x,name);}))continue;
+                if(i<p.busy.size() && (p.busy[i]&SC_ASOP_SELECTION_ROW_BUSY))continue;
                 if(next.size()>=SC_ASOP_SELECTION_MAX_CLASSES) {
                     std::snprintf(p.message,sizeof(p.message),"Select all refused: selection limit would be exceeded; draft unchanged");
                     RenderAsop();return;
@@ -101,9 +103,9 @@ void AsopEvent(const char* panel,const sco_widget_event* event,void*) {
             }
             if(next.size()!=p.draft.size()) {
                 p.draft=std::move(next);p.dirty=true;
-                std::snprintf(p.message,sizeof(p.message),"All catalogue classes selected; unresolved saved names retained");
+                std::snprintf(p.message,sizeof(p.message),"Available catalogue classes added; busy and unresolved names retained");
             } else {
-                std::snprintf(p.message,sizeof(p.message),"All catalogue classes are already selected; unresolved saved names retained");
+                std::snprintf(p.message,sizeof(p.message),"No additional available catalogue classes to select; busy and unresolved names retained");
             }
         }
         else if(action==3){
@@ -157,7 +159,7 @@ void RenderAsop() {
     nodes.push_back(Node(SCO_WIDGET_LABEL,p.base+7,p.message));
     nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+1,p.dirty?"Reload file (discard draft)":"Refresh selection",(p.pending || p.releasing)?SCO_WIDGET_DISABLED:0));
     const uint32_t disabled=(!p.ready || p.pending || p.stale || p.releasing)?SCO_WIDGET_DISABLED:0;
-    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+2,"Select all classes",disabled));
+    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+2,"Select all available classes",disabled));
     nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+3,"Select none",disabled));
     nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+4,"Previous classes",disabled));
     nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+5,"Next classes",disabled));
