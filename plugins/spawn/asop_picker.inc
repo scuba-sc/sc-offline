@@ -89,10 +89,40 @@ void AsopEvent(const char* panel,const sco_widget_event* event,void*) {
         p.stale=true;std::snprintf(p.message,sizeof(p.message),"Selection changed externally; draft retained, refresh to reconcile");RenderAsop();return;
     }
     if(event->kind==SCO_WIDGET_BUTTON) {
-        if(action==2){p.draft.clear();p.dirty=true;}
-        else if(action==3 && p.page>0)--p.page;
-        else if(action==4 && (static_cast<size_t>(p.page)+1)*16<p.catalogue.size())++p.page;
-        else if(action==5 && p.dirty) {
+        if(action==2){
+            auto next=p.draft;
+            for(const auto& name:p.catalogue) {
+                if(std::any_of(next.begin(),next.end(),[&](const std::string& x){return AsopEqual(x,name);}))continue;
+                if(next.size()>=SC_ASOP_SELECTION_MAX_CLASSES) {
+                    std::snprintf(p.message,sizeof(p.message),"Select all refused: selection limit would be exceeded; draft unchanged");
+                    RenderAsop();return;
+                }
+                next.push_back(name);
+            }
+            if(next.size()!=p.draft.size()) {
+                p.draft=std::move(next);p.dirty=true;
+                std::snprintf(p.message,sizeof(p.message),"All catalogue classes selected; unresolved saved names retained");
+            } else {
+                std::snprintf(p.message,sizeof(p.message),"All catalogue classes are already selected; unresolved saved names retained");
+            }
+        }
+        else if(action==3){
+            std::vector<std::string> kept;kept.reserve(p.draft.size());
+            bool removed=false,preserved=false;
+            for(const auto& name:p.draft) {
+                const auto found=std::find_if(p.catalogue.begin(),p.catalogue.end(),[&](const std::string& x){return AsopEqual(x,name);});
+                if(found==p.catalogue.end()){kept.push_back(name);preserved=true;continue;}
+                const size_t index=static_cast<size_t>(found-p.catalogue.begin());
+                if(index<p.busy.size() && (p.busy[index]&SC_ASOP_SELECTION_ROW_BUSY)){kept.push_back(name);preserved=true;continue;}
+                removed=true;
+            }
+            if(removed){p.draft=std::move(kept);p.dirty=true;}
+            if(removed)std::snprintf(p.message,sizeof(p.message),preserved?"Available classes deselected; busy and unresolved names retained":"Available classes deselected");
+            else std::snprintf(p.message,sizeof(p.message),preserved?"No available classes to deselect; busy and unresolved names retained":"No catalogue classes selected");
+        }
+        else if(action==4 && p.page>0)--p.page;
+        else if(action==5 && (static_cast<size_t>(p.page)+1)*16<p.catalogue.size())++p.page;
+        else if(action==6 && p.dirty) {
             if(!p.lease && t->acquire(g.self,p.state.session,&p.lease)!=SCO_OK){std::snprintf(p.message,sizeof(p.message),"Another editor owns the lease");RenderAsop();return;}
             if(p.key==std::numeric_limits<uint64_t>::max()){(void)AsopRelease(t);std::snprintf(p.message,sizeof(p.message),"Edit key exhausted");RenderAsop();return;}
             std::vector<sc_asop_selection_class> classes(p.draft.size());
@@ -127,10 +157,11 @@ void RenderAsop() {
     nodes.push_back(Node(SCO_WIDGET_LABEL,p.base+7,p.message));
     nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+1,p.dirty?"Reload file (discard draft)":"Refresh selection",(p.pending || p.releasing)?SCO_WIDGET_DISABLED:0));
     const uint32_t disabled=(!p.ready || p.pending || p.stale || p.releasing)?SCO_WIDGET_DISABLED:0;
-    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+2,"Select none",disabled)); // base+2 reserved: "select all" removed
-    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+3,"Previous classes",disabled));
-    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+4,"Next classes",disabled));
-    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+5,"Save selection",disabled || !p.dirty?SCO_WIDGET_DISABLED:0));
+    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+2,"Select all classes",disabled));
+    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+3,"Select none",disabled));
+    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+4,"Previous classes",disabled));
+    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+5,"Next classes",disabled));
+    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+6,"Save selection",disabled || !p.dirty?SCO_WIDGET_DISABLED:0));
     char status[160];std::snprintf(status,sizeof(status),"Page %u; selected %zu; native publication and observation unavailable",p.page+1,p.draft.size());
     nodes.push_back(Node(SCO_WIDGET_LABEL,p.base+8,status));
     const size_t start=static_cast<size_t>(p.page)*16;
