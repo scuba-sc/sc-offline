@@ -101,7 +101,6 @@ CryPak timing or gameplay.
 | --- | --- |
 | `storage\` | Your saves: `teleport.db` (the F7 / F8 position), `quantum.db` (your named Travel spots), `contracts.db` (your aUEC balance), each with SQLite's `-wal` and `-shm` files, and any plugin's own database. See [Saves](#saves) |
 | `wallet.txt` | Your aUEC balance, also in `storage\contracts.db`; you can edit it |
-| `asop_ships.txt` | The ship classes checked on the Vehicles tab. An ASOP terminal lists these. Missing or empty means none |
 | `spawn.txt` | Your F7 / F8 position from before `storage\`; read once, then left as it is |
 | `bookmarks.txt` | Your named Travel spots from before `storage\`; read once, then left as it is |
 | `locations_found.txt` | The results of the Travel scan |
@@ -110,6 +109,11 @@ CryPak timing or gameplay.
 | `game-path.txt` | The game folder the launcher found last time; delete it to make it search again |
 | `game-build.txt` | The game version from your last play, for the launcher's update check |
 | `menu_background.png` / `.jpg` | Your menu background image, if you add one |
+
+`asop_ships.txt` is reserved for the gated ASOP selection candidate. The current
+build refuses before the host selection service starts, so it does not create or
+read this file and the file does not change the terminal list. See the
+[ASOP selection candidate](asop-selection-candidate.md).
 
 ## Saves
 

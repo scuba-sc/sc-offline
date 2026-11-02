@@ -16,9 +16,7 @@ struct Options {
 };
 // Strict and atomic: one bad line rejects the whole file. Duplicates collapse case-insensitively, first spelling kept.
 bool ParseShips(const std::string& bytes, std::vector<std::string>& out);
-#ifdef SCO_ASOP_HOST_COMPOSITION
 sco::game::asop_host::Result Start(const Options& options, bool offlinePrepared, bool eacAbsent);
-#endif
 // Optional selection-adapter call. Even on the game thread this can return Unavailable:
 // current Core main has no approved engine-safe phase or reader/worker drain protocol.
 #ifdef SCO_ASOP_SELECTION_COMPOSITION

@@ -43,13 +43,14 @@ sco_result Register(sco_plugin*,const sco_command*){return SCO_OK;}
 sco_result Subscribe(sco_plugin*,const char*,sco_event_fn fn,void* ctx){tick=fn;tick_context=ctx;return SCO_OK;}
 sco_result Unsubscribe(sco_plugin*,const char*,sco_event_fn){return SCO_OK;}
 Node Get(const char* label){for(const auto& n:nodes)if(n.label==label)return n;std::fprintf(stderr,"missing node %s\n",label);std::exit(1);}
+bool HasLabel(const char* label){return std::any_of(nodes.begin(),nodes.end(),[&](const Node& n){return n.label==label;});}
 void Fire(uint32_t id,uint32_t kind,double value=0){sco_widget_event event{};event.size=sizeof(event);event.node_id=id;event.kind=kind;event.value=value;CHECK(callback);callback("spawn.asop",&event,callback_context);}
 void Press(const char* label){const auto n=Get(label);CHECK(!(n.flags&SCO_WIDGET_DISABLED));Fire(n.id,SCO_WIDGET_BUTTON);}
 void Tick(){const uint32_t n=1;CHECK(tick);tick("tick",&n,tick_context);}
 }
 int main(int argc,char** argv){
  test_module::Open(argc,argv);sco_api api{};api.size=sizeof(api);api.major=SCO_API_MAJOR;api.minor=SCO_API_MINOR;api.log=Log;api.has=Has;api.register_command=Register;api.query_service=Query;api.subscribe=Subscribe;api.unsubscribe=Unsubscribe;
- CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Get("A").value==1 && Get("B").value==0);
+ CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Get("A").value==1 && Get("B").value==0);CHECK(!HasLabel("Select all classes"));
  auto old=Get("B");Fire(old.id,SCO_WIDGET_TOGGLE,1);CHECK(Get("B").value==1);
  Fire(old.id,SCO_WIDGET_TOGGLE,0);CHECK(Get("B").value==1); // stale panel event ignored
  Press("Save selection");CHECK(writes==1 && accepted==std::vector<std::string>({"A","Unresolved","B"}));
@@ -59,13 +60,15 @@ int main(int argc,char** argv){
  release_busy=false;Tick();CHECK(releases==1);CHECK(Get("B").value==1);
  Press("Select none");reject_replace=true;Press("Save selection");CHECK(releases==2 && writes==1);reject_replace=false;Press("Save selection");CHECK(writes==2 && accepted.empty());phase=SC_ASOP_SELECTION_EDIT_CONFLICT;Tick();CHECK(releases==3);CHECK(Get("Save selection").flags&SCO_WIDGET_DISABLED);
  CHECK(Get("Reload file (discard draft)").kind==SCO_WIDGET_BUTTON);Press("Reload file (discard draft)");
- Press("Select all classes");Press("Save selection");CHECK(writes==3 && accepted==std::vector<std::string>({"A","B"}));
+ Press("Select none");auto selectA=Get("A");Fire(selectA.id,SCO_WIDGET_TOGGLE,1);auto selectB=Get("B");Fire(selectB.id,SCO_WIDGET_TOGGLE,1);
+ Press("Save selection");CHECK(writes==3 && accepted==std::vector<std::string>({"A","B"}));
  available=false;Tick();CHECK(Get("Save selection").flags&SCO_WIDGET_DISABLED);CHECK(Get("Save outcome unknown; waiting for selection service").kind==SCO_WIDGET_LABEL);const int publications_at_loss=publications;for(int i=0;i<10;++i)Tick();CHECK(publications==publications_at_loss);
  // A restarted provider invalidates the pending lease. Reconcile deliberately.
  available=true;Tick();CHECK(Get("Save selection").flags&SCO_WIDGET_DISABLED);available=false;Tick();
  ++session;++lease_id;available=true;Tick();CHECK(Get("Save selection").flags&SCO_WIDGET_DISABLED);
  CHECK(Get("Reload file (discard draft)").kind==SCO_WIDGET_BUTTON);Press("Reload file (discard draft)");
- Press("Select all classes");Press("Save selection");CHECK(writes==4);
+ Press("Select none");selectA=Get("A");Fire(selectA.id,SCO_WIDGET_TOGGLE,1);selectB=Get("B");Fire(selectB.id,SCO_WIDGET_TOGGLE,1);
+ Press("Save selection");CHECK(writes==4 && accepted==std::vector<std::string>({"A","B"}));
  phase=SC_ASOP_SELECTION_FILE_COMMITTED;file=accepted;++revision;Tick();CHECK(releases==4);auto stale=Get("A");++revision;Fire(stale.id,SCO_WIDGET_TOGGLE,0);CHECK(Get("Save selection").flags&SCO_WIDGET_DISABLED);
  test_module::Unload();CHECK(releases==4);
  available=false;CHECK(test_module::Load(&api,owner)==SCO_OK);
