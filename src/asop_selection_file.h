@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 #include <sco/game/asop_selection.h>
+#include "asop_selection_notice.h"
 #include <string>
 
 namespace offline::asop_selection {

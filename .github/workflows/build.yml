@@ -347,6 +347,15 @@ jobs:
           c++ -std=c++20 -Wall -Wextra -Werror -I external/sco-core/include src/asop_shell.cpp tools/asop-shell/start_failure_test.cpp -o asop_start_failure_test
           ./asop_start_failure_test
 
+      - name: ASOP committed selection retry model
+        run: |
+          c++ -std=c++20 -O1 -g -Wall -Wextra -Werror -pthread -I src tools/asop_selection_notice_test.cpp -o asop_selection_notice_test
+          ./asop_selection_notice_test
+          c++ -std=c++20 -O1 -g -Wall -Wextra -Werror -pthread -fsanitize=address,undefined -fno-omit-frame-pointer -I src tools/asop_selection_notice_test.cpp -o asop_selection_notice_test_asan
+          ./asop_selection_notice_test_asan
+          c++ -std=c++20 -O1 -g -Wall -Wextra -Werror -pthread -fsanitize=thread -I src tools/asop_selection_notice_test.cpp -o asop_selection_notice_test_tsan
+          ./asop_selection_notice_test_tsan
+
       - name: Host menu opt-in and ASOP fixture gate
         run: |
           test -f tools/asop_selection_workflow_test.cpp
@@ -617,6 +626,31 @@ jobs:
 
       - name: Build (Release)
         run: cmake --build build --config Release --parallel
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        name: Checkout reviewed Core development source for the gated ASOP adapter fixture
+        with:
+          repository: scuba-sc/sco-core
+          ref: a9a99f2d831d40f64e38ced8bb59f1575491b87b
+          path: _dev/sco-core
+          persist-credentials: false
+          submodules: false
+
+      - name: Build and run gated ASOP adapter refusal fixture (Windows)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $fixture = Join-Path $env:RUNNER_TEMP 'asop-adapter-fixture'
+          $hostSource = Join-Path $env:GITHUB_WORKSPACE '_dev/sco-core'
+          cmake -S . -B $fixture -G 'Visual Studio 18 2026' -A x64 `
+            "-DSCO_HOST_SOURCE_DIR=$hostSource" `
+            -DSCO_ASOP_HOST_COMPOSITION=ON `
+            -DSCO_ASOP_SELECTION_COMPOSITION=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build $fixture --config Release --target asop_offline_host_test --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir $fixture -C Release -R '^asop_offline_host_refusal$' --no-tests=error --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Test pinned host ownership fixtures (Windows)
         shell: pwsh

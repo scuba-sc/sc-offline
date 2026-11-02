@@ -11,6 +11,8 @@
 #include <atomic>
 #include <cstring>
 #include <limits>
+#include <memory>
+#include <mutex>
 
 bool DataFilePath(char*, DWORD, const char*);
 #ifdef SCO_ASOP_SELECTION_TESTING
@@ -209,6 +211,11 @@ S::FileResult FixedFile::Read(void* context,S::Document& out) {
 S::FileResult FixedFile::Replace(void* context,const S::Document& expected,std::string_view bytes,S::Document& out,const S::CommitPermit& permit) {
     auto& self=*static_cast<FixedFile*>(context);
     if (self.path_.empty() || !permit.begin || bytes.size()>SC_ASOP_SELECTION_MAX_FILE_BYTES) return S::FileResult::Error;
+    CommittedSelectionNotice notice;
+    try {
+        const char* source=bytes.empty()?"":bytes.data();
+        notice=std::make_shared<const std::string>(source,bytes.size());
+    } catch (...) { return S::FileResult::Error; }
     self.diagnostic_.clear();
     DocumentLock lock(self.path_);if(!lock.locked)return S::FileResult::Busy;
     std::wstring pending;
@@ -251,7 +258,9 @@ S::FileResult FixedFile::Replace(void* context,const S::Document& expected,std::
         (expected.present && (displaced_result!=S::FileResult::Ok || !Same(displaced,expected)))) return S::FileResult::Conflict;
     // Keep the marker until all other cleanup succeeds: interrupted cleanup fails closed.
     if (!Remove(backup) || !Remove(temp) || !Remove(candidate) || !Remove(marker)) return S::FileResult::OutcomeUnknown;
-    self.diagnostic_.clear();out=std::move(saved);return S::FileResult::Ok;
+    self.diagnostic_.clear();out=std::move(saved);
+    g_committedSelection.Publish(std::move(notice));
+    return S::FileResult::Ok;
 }
 }
 

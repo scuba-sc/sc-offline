@@ -9,8 +9,8 @@ excluded at build time; there is no runtime fallback when that owner refuses.
 The coordinated pin does not restore ASOP gameplay.
 
 `src/asop_shell.*` consumes the game-specific public host-source
-`sco::game::asop_host` interface. It is not a plugin service. The published
-The stable SDK 2.4.0 release (`sdk-v2.4.0`) carries G10 in
+`sco::game::asop_host` interface. It is not a plugin service. The stable SDK
+2.4.0 release (`sdk-v2.4.0`) carries G10 in
 `sco-sdk-host-source-sc-2.4.0.zip` (`include/sco/game/asop_host.h`; SDK 2.0.0 lacked it). This staged cutover
 remains opt-in: `SCO_ASOP_HOST_COMPOSITION` defaults to OFF.
 
@@ -37,10 +37,20 @@ hardening only: the legacy catalogue still builds once, and no selection editor,
 live-rebuild trigger, buffer-retirement policy or SDK cutover is introduced.
 The coordinated development core currently refuses native `Reconfigure` with
 `Unavailable`. Saving a selection is not evidence that a running terminal has
-changed; this consumer does not call `Reconfigure` or claim a live rebuild.
+changed. The optional source adapter is designed to report an unapplied selection
+and does not claim a live rebuild; the current product gate refuses before the
+adapter starts.
 `python3 tools/test_fleet_identity.py` compiles the actual legacy build/mapping/retrieve
 bodies under ASan/UBSan with synthetic engine reads and platform stand-ins. It does not
 exercise Windows locks/SEH, native hooks or game behavior.
+
+The optional selection-file adapter now keeps the newest committed selection
+notice pending until `Reconfigure` returns `Ok`; a parse failure, exception or
+non-`Ok` result leaves the notice available for retry and emits a deferred-apply
+message. An older in-flight apply cannot clear a newer notice. Current Core main
+still returns `Unavailable`, and this product's native-activation gate refuses
+before the adapter starts. These changes protect future integration state; they
+do not activate ASOP or establish live-reconfiguration acceptance.
 
 The shell preserves `SC_OFFLINE_ASOP` (unset/on versus off) and
 `SC_OFFLINE_ASOP_FLEET_LIST` (game versus ships). Invalid values refuse.

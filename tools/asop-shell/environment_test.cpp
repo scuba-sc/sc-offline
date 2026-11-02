@@ -2,13 +2,14 @@
 // Process-local environment and admission policy fixture; no game or native hooks.
 #include "../../src/asop_platform.cpp"
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <string>
 
 namespace offline::asop {
 static Options captured;
 static int calls = 0;
 static bool passedOffline = false, passedEac = false;
-bool ParseShips(const std::string&, std::vector<std::string>&) { return false; }
 sco::game::asop_host::Result Start(const Options& options, bool offline, bool eac) {
     captured = options; passedOffline = offline; passedEac = eac; ++calls;
     return sco::game::asop_host::Result::Ok;
@@ -22,6 +23,10 @@ static bool Set(const char* key, const std::string& value) {
 #else
     return value.empty() ? unsetenv(key) == 0 : setenv(key, value.c_str(), 1) == 0;
 #endif
+}
+static void WriteFile(const std::filesystem::path& file, const std::string& bytes) {
+    std::ofstream out(file, std::ios::binary);
+    out << bytes;
 }
 int main() {
     using namespace offline::asop;
@@ -45,6 +50,61 @@ int main() {
     CHECK(Set(mode, "OFF"));
     CHECK(StartFromEnvironment(false, false, nullptr) == Result::Ok && calls == 2);
     CHECK(!captured.enabled && !passedOffline && !passedEac);
+
+    // Ships mode: strict parsing, then file-state rules. A missing file in an existing directory is an explicit empty selection.
+    CHECK(Set(mode, "")); CHECK(Set(fleet, "ships"));
+    std::vector<std::string> names;
+    CHECK(ParseShips("", names) && names.empty());
+    CHECK(ParseShips("# only comments\n\n \t \n", names) && names.empty());
+    CHECK(ParseShips("  alpha \t\r\nbeta # note\r\n", names) && names == std::vector<std::string>({"alpha", "beta"}));
+    CHECK(ParseShips("Hornet\nhornet\nAURORA\naurora\n", names) && names == std::vector<std::string>({"Hornet", "AURORA"}));
+    CHECK(ParseShips(std::string(63, 'a') + "\n", names) && names.size() == 1);
+    CHECK(!ParseShips(std::string(64, 'a') + "\n", names));
+    CHECK(!ParseShips("two words\n", names));
+    CHECK(!ParseShips("caf\xC3\xA9\n", names));
+    CHECK(!ParseShips("\xEF\xBB\xBF" "alpha\n", names));
+    CHECK(!ParseShips("good\nbad name\n", names));
+
+    const auto dir = std::filesystem::temp_directory_path() / "sco-asop-environment-test";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+    const std::string file = (dir / "asop_ships.txt").string();
+    int before = calls;
+    CHECK(StartFromEnvironment(true, true, nullptr) == Result::InvalidConfig && calls == before);
+    CHECK(StartFromEnvironment(true, true, "") == Result::InvalidConfig && calls == before);
+    CHECK(StartFromEnvironment(false, true, nullptr) == Result::AdmissionRefused && calls == before);
+    CHECK(StartFromEnvironment(true, true, (dir / "missing" / "asop_ships.txt").string().c_str()) == Result::InvalidConfig && calls == before);
+    std::filesystem::create_directory(dir / "isdir");
+    CHECK(StartFromEnvironment(true, true, (dir / "isdir").string().c_str()) == Result::InvalidConfig && calls == before);
+    CHECK(StartFromEnvironment(true, true, file.c_str()) == Result::Ok && captured.ships.empty() && calls == before + 1);
+    before = calls;
+    WriteFile(file, "Aurora\r\nhornet # note\n");
+    CHECK(StartFromEnvironment(true, true, file.c_str()) == Result::Ok && captured.ships == std::vector<std::string>({"Aurora", "hornet"}) && calls == before + 1);
+    before = calls;
+    WriteFile(file, std::string(kMaxSelectionBytes, '#'));
+    CHECK(StartFromEnvironment(true, true, file.c_str()) == Result::Ok && calls == before + 1);
+    before = calls;
+    WriteFile(file, std::string(kMaxSelectionBytes + 1, '#'));
+    CHECK(StartFromEnvironment(true, true, file.c_str()) == Result::InvalidConfig && calls == before);
+    std::string full;
+    for (int i = 0; i < 2048; ++i) full += "ship" + std::to_string(i) + "\n";
+    before = calls;
+    WriteFile(file, full + "SHIP0\n");
+    CHECK(StartFromEnvironment(true, true, file.c_str()) == Result::Ok && captured.ships.size() == 2048 && calls == before + 1);
+    before = calls;
+    WriteFile(file, full + "extra\n");
+    CHECK(StartFromEnvironment(true, true, file.c_str()) == Result::InvalidConfig && calls == before);
+
+    // A pending replacement marker refuses startup: the file may be mid-commit.
+    WriteFile(file, "Aurora\n");
+    before = calls;
+    WriteFile(dir / "asop_ships.txt.sco-1234-1.pending", "marker");
+    CHECK(StartFromEnvironment(true, true, file.c_str()) == Result::InvalidConfig && calls == before);
+    std::filesystem::remove(dir / "asop_ships.txt.sco-1234-1.pending");
+    CHECK(StartFromEnvironment(true, true, file.c_str()) == Result::Ok && calls == before + 1);
+    before = calls;
+
+    std::filesystem::remove_all(dir);
     CHECK(Set(mode, "")); CHECK(Set(fleet, ""));
     std::printf("ASOP environment policy: %d failures\n", failures);
     return failures ? 1 : 0;

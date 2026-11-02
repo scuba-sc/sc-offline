@@ -110,6 +110,11 @@ CryPak timing or gameplay.
 | `game-build.txt` | The game version from your last play, for the launcher's update check |
 | `menu_background.png` / `.jpg` | Your menu background image, if you add one |
 
+`asop_ships.txt` is reserved for the gated ASOP selection candidate. The current
+build refuses before the host selection service starts, so it does not create or
+read this file and the file does not change the terminal list. See the
+[ASOP selection candidate](asop-selection-candidate.md).
+
 ## Saves
 
 The F7 / F8 spot, the Travel tab's saved spots and the wallet are kept by the built-in plugins `teleport`, `quantum` and `contracts` in sco-core's `sco.storage` service: one SQLite database each in `data\storage\<built-in>.db`. A save there is all or nothing, so a crash keeps either the old save or the new one.

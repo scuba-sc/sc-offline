@@ -4,6 +4,9 @@
 #include <sstream>
 namespace offline::asop {
 namespace host = sco::game::asop_host;
+#ifdef SCO_ASOP_SELECTION_COMPOSITION
+namespace { host::CatalogMode g_startedCatalog = host::CatalogMode::Game; }
+#endif
 bool ParseShips(const std::string& bytes, std::vector<std::string>& out) {
     if (bytes.size() > host::kMaxShips * 128) return false;
     std::istringstream input(bytes);
@@ -47,8 +50,23 @@ host::Result Start(const Options& options, bool offlinePrepared, bool eacAbsent)
         return host::Result::Unavailable;
     }
     if (result == host::Result::Unavailable) host::Stop();
+#ifdef SCO_ASOP_SELECTION_COMPOSITION
+    if (result == host::Result::Ok) g_startedCatalog = options.catalog;
+#endif
     return result;
 }
+#ifdef SCO_ASOP_SELECTION_COMPOSITION
+host::Result Reconfigure(const std::vector<std::string>& ships) {
+    host::Config config;
+    config.enabled = true;
+    config.catalog = g_startedCatalog;
+    std::vector<const char*> names;
+    for (const auto& name : ships) names.push_back(name.c_str());
+    config.shipClasses = names.data();
+    config.shipCount = names.size();
+    return host::Reconfigure(config);
+}
+#endif
 host::Status Status() { return host::Snapshot(); }
 void Stop() { host::Stop(); } // Admission closes before app/provider teardown.
 void Pump(uint32_t now) { host::Pump(now); } // Provider retains fleet cadence and lift ownership.

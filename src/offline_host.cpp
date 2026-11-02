@@ -9,13 +9,16 @@
 #ifdef SCO_ASOP_SELECTION_COMPOSITION
 #include "asop_catalogue.h"
 #include "asop_selection_file.h"
+#include "asop_shell.h"
 #include "common.h"
 #include <fstream>
+#include <memory>
 #include <string>
 #include <vector>
 namespace {
 namespace selection = sco::game::asop_selection;
 offline::asop_selection::FixedFile g_selectionFile; // retained even if Stop refuses
+bool ClassBusyThunk(void*, const char* name) { return sco::game::asop_host::FleetClassBusy(name); }
 bool ReadCatalogueFile(const char* path, std::string& out) {
     std::ifstream in(path, std::ios::binary | std::ios::ate);
     if (!in) return false;
@@ -37,9 +40,44 @@ sco::Result StartSelection(void*) {
         !offline::asop_selection::ParseCatalogue(first, options.catalogue) ||
         !g_selectionFile.Initialize()) return sco::Result::Unavailable;
     options.file = g_selectionFile.Adapter();
+    options.class_busy = ClassBusyThunk; // Runs under the selection lock; only fleet/ship locks inside.
     return selection::Start(options);
 }
-sco::Result TickSelection(void*) { return selection::Pump(); }
+// Keep a committed file notice pending until the host confirms that its runtime
+// selection was applied. Current Core main deliberately refuses Reconfigure.
+sco::Result TickSelection(void*) {
+    static bool apply_deferred_reported=false;
+    for (;;) {
+        bool parse_failed=false,apply_threw=false;
+        sco::game::asop_host::Result reconfigure_result=sco::game::asop_host::Result::Unavailable;
+        std::vector<std::string> ships;
+        const auto applied=offline::asop_selection::g_committedSelection.ApplyNext([&](const std::string& committed) {
+            try {
+                if (!offline::asop::ParseShips(committed, ships)) { parse_failed=true; return false; }
+            } catch (...) { parse_failed=true; return false; }
+            try { reconfigure_result=offline::asop::Reconfigure(ships); }
+            catch (...) { apply_threw=true; return false; }
+            return reconfigure_result==sco::game::asop_host::Result::Ok;
+        });
+        if (applied==offline::asop_selection::NoticeApplyResult::None) {
+            apply_deferred_reported=false;
+            break;
+        }
+        if (applied==offline::asop_selection::NoticeApplyResult::Deferred) {
+            if (parse_failed) {
+                if (!apply_deferred_reported) Log("[asop-selection] saved selection could not be parsed; runtime apply remains pending");
+            } else if (apply_threw) {
+                if (!apply_deferred_reported) Log("[asop-selection] selection file saved; runtime apply threw and remains pending");
+            } else if (!apply_deferred_reported) {
+                Log("[asop-selection] selection file saved; runtime apply is pending (Reconfigure result %u)",static_cast<unsigned>(reconfigure_result));
+            }
+            apply_deferred_reported=true;
+            break;
+        }
+        apply_deferred_reported=false;
+    }
+    return selection::Pump();
+}
 sco::Result StopSelection(void*) { return selection::Stop(); }
 }
 #endif
