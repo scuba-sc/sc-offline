@@ -31,11 +31,43 @@ and data packs, with no hidden picker or gameplay fallback.
 Catalog parsing skips blank/comment lines and invalid/oversized identifiers.
 Ship classes are bounded to 63 bytes, NPC archetypes to 127 bytes. The shared
 parser preserves discovery order, row order and duplicates with pack labels.
-Filtering is case-insensitive and requires every space-separated word; lists
-have 64-row pages and a visible match/page count. The total catalog limit is
-8192 accepted rows per feature; reaching it is reported. The public service's
-file/pack limits still apply. This is copied catalog order, not the old private
-size-ranked ship list; no public ship-size contract is invented.
+Filtering is ASCII case-insensitive and requires every space-separated word;
+lists have 64-row pages and a visible match/page count. Non-ASCII UTF-8 alias
+bytes display as authored but do not receive Unicode case folding.
+
+Packs may optionally provide human-authored labels in `lists/ships.aliases.txt`
+or `lists/npcs.aliases.txt`. Each non-comment row has exactly two tab-separated
+fields: an exact class identifier, then a display label. For example, a pack
+could contain the following row, where the separator is one literal tab:
+
+```text
+synthetic_shuttle	Synthetic Shuttle
+```
+
+That synthetic example does not assert a mapping for any real class. No alias
+map ships by default. Aliases change only the picker label and search text. The
+display label also includes the exact class identifier and source pack. The
+picker retains the original source item/line for each row, including duplicates;
+selection maps the displayed row back to its exact class identifier. The current
+game service accepts only that identifier, so pack provenance is not part of the
+spawn request. Without an alias, the existing `class [pack]` label and selection
+behavior are unchanged. The loadout panel's existing source-attributed aliases
+are a separate catalog and are not imported into these pickers.
+
+Alias files are optional and bounded: labels are at most 59 UTF-8 bytes, lines
+255 bytes, 8192 rows, 64 matching files, and 1 MiB aggregate across matching
+files. Class identifiers use the same feature-specific 63/127-byte limits as
+the base list. Labels must be valid UTF-8 without ASCII/C1 control or
+bidirectional formatting characters. The composed label must also fit the
+SDK's 255-byte widget text limit; if not, that row keeps its original label. A
+duplicate identifier within one sidecar invalidates aliases; identical labels
+from multiple packs are accepted, while conflicting labels mark that identifier
+ambiguous and leave its original catalog labels in place. If enumeration,
+reading, or parsing is incomplete or malformed, all optional aliases are ignored
+while the base catalog remains available. These files are human-authored
+presentation metadata, not authoritative game data. This is copied catalog
+order, not the old private size-ranked ship list; no public ship-size contract
+is invented.
 
 ## Actions and ownership
 
@@ -81,9 +113,11 @@ ctest --test-dir picker-build -R '^picker-module-workflow$' --output-on-failure
 cmake --install picker-build --prefix stage --component picker_catalog
 ```
 
-The fixture checks catalog/filter/page events, duplicate pack identity, owned
-selected-seat actions, foreign refusal, missing widgets/content/game services,
-creative refusal/revert, destination refusal and panel removal/reload. The host
+The fixture checks catalog/filter/page events, synthetic alias search and exact
+identifier selection, duplicate pack identity, ambiguous aliases, malformed
+data, incomplete-read fallback, owned selected-seat actions, foreign refusal,
+missing widgets/content/game services, creative refusal/revert, destination
+refusal and panel removal/reload. The host
 ImGui adapter also compiles against the product's renderer declarations locally.
 **Windows/MSVC host build, actual rendering/DPI, game session, real streaming and
 provider ownership cleanup remain NOT VERIFIED.** Release staging still needs an
