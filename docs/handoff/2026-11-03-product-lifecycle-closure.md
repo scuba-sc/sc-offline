@@ -25,6 +25,37 @@ unload. See [`native_activation_policy.h`](../../src/native_activation_policy.h#
 [`dllmain.cpp`](../../src/dllmain.cpp#L672), and
 [`sco_log_status.cpp`](../../external/sco-core/src/sco_log_status.cpp#L11).
 
+### Log-sink ordering audit
+
+The pre-registration path was checked against the actual core log call sites.
+In the current build, `InstallStartupGate` and the first `ModThread` branch
+return at `NativeActivationAvailable() == false`; all early worker diagnostics
+go through the product `Log`, independently of sco-core's sink. The anti-cheat
+inspection/refusal path is therefore unreachable in this build. If admission
+is later enabled, `InspectAntiCheat` still uses only Win32 inspection calls,
+and its refusal diagnostics use product `Log`; the existing
+`FreeLibraryAndExitThread` remains before `SetLogSink`.
+
+The earlier gate path, if enabled, calls only
+`sco::hook::AllocateNear`/`WriteCode` (including `WriteCode` in
+`StartupGateWait`); inspection of `external/sco-core/src/hook/sco_hook.cpp`
+found no core `Log` call in those helpers. No core log emission is reachable
+before sink registration. `SetLogSink` precedes `ReadStartOptions` and
+`StartOffline`; the former is product-only, while the latter reaches Core host,
+signature-report, and plugin logging after the callback is installed.
+Thus the move does not suppress a core diagnostic on the reviewed paths, and
+it leaves gate and anti-cheat refusal messages on the product logger's existing
+configured destinations unchanged.
+The portable core `test_core` logger/report test and the static native preflight
+both pass; neither runs the Windows refusal path.
+
+After registration, `ModThread` has no product unload path: it reaches its
+resident sleep loop even when `RunMainThreadService` returns. Product source
+does not clear the sink. This retains the callback's module backing for the
+current lifecycle and avoids the existing explicit early-unload race; it does
+not add an in-flight callback drain. An external `FreeLibrary` after
+registration remains unsafe and unproven.
+
 The restricted core `HostCapsule` is not a drop-in owner for the current
 product configuration. Its detailed contract requires external quit/DataCore
 hooks and rejects DataCore, game services, plugins, scripts, host service/menu
