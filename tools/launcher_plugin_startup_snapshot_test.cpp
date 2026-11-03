@@ -28,9 +28,11 @@ static void Reject(std::string text) {
 }
 
 int main(int argc, char** argv) {
-    CHECK(argc == 3);
+    CHECK(argc == 5);
     const std::string complete = ReadFile(argv[1]);
     const std::string starting = ReadFile(argv[2]);
+    const std::string writerEnabled = ReadFile(argv[3]);
+    const std::string writerDisabled = ReadFile(argv[4]);
 
     const auto parsed = report::Parse(complete);
     CHECK(parsed.status == report::Status::Complete);
@@ -46,11 +48,33 @@ int main(int argc, char** argv) {
     CHECK(report::FindPlugin(parsed.snapshot, "unknown_2") == nullptr); // invalid manifest aliases never bind to a current folder
     CHECK(report::FindPlugin(parsed.snapshot, "../sim_alpha") == nullptr);
 
+    const auto emittedEnabled = report::Parse(writerEnabled);
+    CHECK(emittedEnabled.status == report::Status::Complete);
+    CHECK(emittedEnabled.snapshot.pluginCount == 9 && emittedEnabled.snapshot.loadedCount == 1);
+    CHECK(emittedEnabled.snapshot.pluginsEnabledAtStart);
+    CHECK(report::FindPlugin(emittedEnabled.snapshot, "disabled_valid")->state == "disabled");
+    CHECK(report::FindPlugin(emittedEnabled.snapshot, "faulted_valid")->restartRequired);
+    CHECK(report::FindPlugin(emittedEnabled.snapshot, "unknown_7") == nullptr);
+    const auto emittedDisabled = report::Parse(writerDisabled);
+    CHECK(emittedDisabled.status == report::Status::Complete);
+    CHECK(emittedDisabled.snapshot.pluginCount == 2 && emittedDisabled.snapshot.loadedCount == 0);
+    CHECK(!emittedDisabled.snapshot.pluginsEnabledAtStart);
+    CHECK(report::FindPlugin(emittedDisabled.snapshot, "off_valid")->state == "off");
+    CHECK(report::FindPlugin(emittedDisabled.snapshot, "unknown_1") == nullptr);
+
     CHECK(report::Parse(starting).status == report::Status::NoCompletedSnapshot);
+    std::string startingWithNumericCounts = starting;
+    CHECK(ReplaceOnce(startingWithNumericCounts, "\"plugin_count\": null", "\"plugin_count\": 0"));
+    CHECK(ReplaceOnce(startingWithNumericCounts, "\"loaded_count\": null", "\"loaded_count\": 0"));
+    CHECK(report::Parse(startingWithNumericCounts).status == report::Status::Unknown);
     std::string failed = starting;
     CHECK(ReplaceOnce(failed, "\"record_state\": \"starting\"", "\"record_state\": \"failed\""));
     CHECK(ReplaceOnce(failed, "\"completed_at_utc\": null", "\"completed_at_utc\": \"2026-11-03T12:00:04Z\""));
     CHECK(report::Parse(failed).status == report::Status::NoCompletedSnapshot);
+    std::string failedWithNumericCounts = failed;
+    CHECK(ReplaceOnce(failedWithNumericCounts, "\"plugin_count\": null", "\"plugin_count\": 0"));
+    CHECK(ReplaceOnce(failedWithNumericCounts, "\"loaded_count\": null", "\"loaded_count\": 0"));
+    CHECK(report::Parse(failedWithNumericCounts).status == report::Status::Unknown);
     CHECK(ReplaceOnce(failed, "2026-11-03T12:00:00Z", "2026-11-03T12:00:05Z"));
     Reject(failed); // finalized incomplete records still need chronological timestamps
     CHECK(report::Parse(complete.substr(0, complete.size() / 2)).status == report::Status::Unknown);
