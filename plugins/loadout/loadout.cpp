@@ -7,6 +7,7 @@
 #include "sco_content.h"
 #include "sco_widgets.h"
 #include "slot_catalogue.h"
+#include "weapon_types.h"
 #include <algorithm>
 #include <cstddef>
 #include <cstdio>
@@ -35,6 +36,9 @@ struct State {
     std::shared_ptr<const catalogue::Data> curated, published_curated;
     std::array<int32_t,std::size(catalogue::kSlots)> curated_picks{};
     std::array<std::vector<int32_t>,std::size(catalogue::kSlots)> published_rows;
+    std::array<std::string,2> weapon_filters, attachment_filters;
+    std::array<weapon_types::Type,2> weapon_type{};
+    std::array<std::vector<weapon_types::Type>,2> published_types;
     bool player_events = false; uintptr_t player_cookie = 0;
     char curated_status[256]{};
     double height = 30, ahead = 8, speed = 30; bool sit = true;
@@ -340,7 +344,7 @@ sco_result Cancel(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) 
     return Answer(result,out,size,result==SCO_OK ? "Loadout job released; confirmed equipment remains, no rollback." : "Loadout cancellation refused/not found; no rollback or retry.");
 }
 sco_result ReadSlots() {
-    g.player_events=false;g.curated_picks.fill(0);g.curated.reset();g.published_curated.reset();
+    g.player_events=false;g.weapon_type.fill(weapon_types::All);g.weapon_filters={};g.attachment_filters={};g.curated_picks.fill(0);g.curated.reset();g.published_curated.reset();
     catalogue::Data data;const auto result=catalogue::Read(g.api,g.self,data);
     if(result==SCO_OK) {
         g.curated=std::make_shared<const catalogue::Data>(std::move(data));
@@ -492,6 +496,19 @@ std::vector<size_t> Filtered() {
     }
     return matches;
 }
+// Slot indices are catalogue identities, not the order used to draw the groups.
+size_t WeaponGroup(size_t slot) { return slot==1 || (slot>=5&&slot<=7) || slot>=11 ? 1u : 0u; }
+void ClearAttachments(size_t group) {
+    for(size_t i=2;i<std::size(weapon_slots);++i)
+        if(WeaponGroup(i)==group)g.curated_picks[i]=0;
+}
+bool PickerText(const sco_widget_event* e,std::string& out) {
+    if(e->kind!=SCO_WIDGET_TEXT_INPUT||!e->text)return false;
+    size_t length=0;while(length<=63&&e->text[length])++length;
+    if(length>63)return false;
+    for(size_t i=0;i<length;++i)if(static_cast<unsigned char>(e->text[i])<32||static_cast<unsigned char>(e->text[i])>126)return false;
+    out.assign(e->text,length);return true;
+}
 void Event(const char* panel,const sco_widget_event* e,void* context) {
     if (!g.api || !panel || !e || e->size<sizeof(*e)) return;
     if (std::strcmp(panel,"loadout.player") && std::strcmp(panel,"loadout.sq42")) return;
@@ -503,8 +520,28 @@ void Event(const char* panel,const sco_widget_event* e,void* context) {
     };
     if(!sq&&e->node_id>=200&&e->node_id<200+std::size(weapon_slots)) {
         const auto slot=static_cast<size_t>(e->node_id-200);
-        if(e->kind==SCO_WIDGET_COMBO&&e->index>=0&&g.published_curated&&static_cast<size_t>(e->index)<g.published_rows[slot].size())
-            g.curated_picks[slot]=g.published_rows[slot][static_cast<size_t>(e->index)];
+        if(e->kind==SCO_WIDGET_COMBO&&e->index>=0&&g.published_curated&&static_cast<size_t>(e->index)<g.published_rows[slot].size()) {
+            const auto selected=g.published_rows[slot][static_cast<size_t>(e->index)];
+            // Unchanged omits only this assignment; selecting a parent for the first
+            // time must preserve independently prepared attachments.
+            if(slot<2&&selected>0&&g.curated_picks[slot]>0&&selected!=g.curated_picks[slot])ClearAttachments(slot);
+            g.curated_picks[slot]=selected;
+        }
+    }
+    else if(!sq&&e->node_id>=240&&e->node_id<=243) {
+        const auto group=static_cast<size_t>((e->node_id-240)%2);
+        (void)PickerText(e,e->node_id<242?g.weapon_filters[group]:g.attachment_filters[group]);
+    }
+    else if(!sq&&e->node_id>=244&&e->node_id<=245) {
+        const auto group=static_cast<size_t>(e->node_id-244);
+        if(e->kind==SCO_WIDGET_COMBO&&e->index>=0&&static_cast<size_t>(e->index)<g.published_types[group].size()) {
+            g.weapon_type[group]=g.published_types[group][static_cast<size_t>(e->index)];
+            const auto selected=g.curated_picks[group];
+            if(g.curated&&selected>0&&static_cast<size_t>(selected)<=g.curated->classes[group].size()&&
+               !weapon_types::Matches(g.weapon_type[group],g.curated->classes[group][static_cast<size_t>(selected)-1])) {
+                g.curated_picks[group]=0;ClearAttachments(group);
+            }
+        }
     }
     else if (!sq) switch(e->node_id) {
         case 1:
@@ -605,22 +642,50 @@ void Publish() {
     std::array<std::vector<std::string>,std::size(weapon_slots)> curated_labels;
     std::array<std::vector<int32_t>,std::size(weapon_slots)> curated_rows;
     bool chosen=false;
-    for(size_t i=0;i<std::size(weapon_slots);++i) {
-        auto& choices=curated_options[i];choices.push_back("Unchanged (omit slot)");
-        auto& rows=curated_rows[i];rows={0};
-        int32_t selected=0;
-        if(g.curated) {
-            const auto& classes=g.curated->classes[i];rows=catalogue::Rows(classes,g.curated_picks[i],g.filter);
-            auto& labels=curated_labels[i];labels.reserve(rows.size()-1);
-            for(size_t row=1;row<rows.size();++row) {
-                labels.push_back(catalogue::Display(classes[static_cast<size_t>(rows[row])-1]));
-                if(rows[row]==g.curated_picks[i])selected=static_cast<int32_t>(row);
-            }
-            for(const auto& label:labels)choices.push_back(label.c_str());
+    std::array<std::vector<weapon_types::Type>,2> type_rows;
+    std::array<std::vector<const char*>,2> type_options;
+    add(SCO_WIDGET_ROW,260,"Weapon groups");
+    constexpr size_t order[2][7]{{0,2,3,4,8,9,10},{1,5,6,7,11,12,13}};
+    for(size_t group=0;group<2;++group) {
+        const auto parent=261u+static_cast<uint32_t>(group);
+        add(SCO_WIDGET_COLUMN,parent,group?"Secondary weapon / tool":"Primary weapon / tool").parent=260;
+        auto grouped=[&](uint32_t kind,uint32_t id,const char* label,uint32_t flags=0)->sco_widget_node& {
+            auto& node=add(kind,id,label,flags);node.parent=parent;return node;
+        };
+        grouped(SCO_WIDGET_LABEL,250u+static_cast<uint32_t>(group),group?"Secondary weapon / tool":"Primary weapon / tool");
+        auto& types=type_rows[group];auto& labels=type_options[group];types.push_back(weapon_types::All);
+        if(g.curated)for(int type=weapon_types::All+1;type<weapon_types::Count;++type) {
+            const auto value=static_cast<weapon_types::Type>(type);
+            for(const auto& cls:g.curated->classes[group])if(weapon_types::Matches(value,cls)){types.push_back(value);break;}
         }
-        text.push_back(std::string("Curated ")+weapon_slots[i].name);
-        auto& slot=add(SCO_WIDGET_COMBO,200+static_cast<uint32_t>(i),text.back().c_str(),choices.size()>1?0u:SCO_WIDGET_DISABLED);
-        slot.items=choices.data();slot.item_count=static_cast<uint32_t>(choices.size());slot.index=selected;chosen|=g.curated_picks[i]>0;
+        int32_t type_index=0;
+        for(size_t i=0;i<types.size();++i){labels.push_back(weapon_types::Label(types[i]));if(types[i]==g.weapon_type[group])type_index=static_cast<int32_t>(i);}
+        auto& type=grouped(SCO_WIDGET_COMBO,244u+static_cast<uint32_t>(group),"Weapon / tool type");
+        type.items=labels.data();type.item_count=static_cast<uint32_t>(labels.size());type.index=type_index;
+        grouped(SCO_WIDGET_TEXT_INPUT,240u+static_cast<uint32_t>(group),"Search weapon / tool (63 ASCII characters)").text=g.weapon_filters[group].c_str();
+        for(const auto i:order[group]) {
+            if(i==order[group][1])grouped(SCO_WIDGET_TEXT_INPUT,242u+static_cast<uint32_t>(group),"Search attachments / modules (63 ASCII characters)").text=g.attachment_filters[group].c_str();
+            auto& choices=curated_options[i];choices.push_back("Unchanged (omit slot)");
+            auto& rows=curated_rows[i];rows={0};int32_t selected=0;
+            if(g.curated) {
+                const auto& classes=g.curated->classes[i];
+                for(size_t c=0;c<classes.size();++c) {
+                    const auto pick=static_cast<int32_t>(c+1);
+                    const auto& filter=i<2?g.weapon_filters[group]:g.attachment_filters[group];
+                    if(i<2&&!weapon_types::Matches(g.weapon_type[group],classes[c]))continue;
+                    if(pick==g.curated_picks[i]||(catalogue::Matches(classes[c],g.filter)&&catalogue::Matches(classes[c],filter)))rows.push_back(pick);
+                }
+                auto& display=curated_labels[i];display.reserve(rows.size()-1);
+                for(size_t row=1;row<rows.size();++row) {
+                    display.push_back(catalogue::Display(classes[static_cast<size_t>(rows[row])-1]));
+                    if(rows[row]==g.curated_picks[i])selected=static_cast<int32_t>(row);
+                }
+                for(const auto& label:display)choices.push_back(label.c_str());
+            }
+            text.push_back(std::string("Curated ")+weapon_slots[i].name);
+            auto& slot=grouped(SCO_WIDGET_COMBO,200+static_cast<uint32_t>(i),text.back().c_str(),choices.size()>1?0u:SCO_WIDGET_DISABLED);
+            slot.items=choices.data();slot.item_count=static_cast<uint32_t>(choices.size());slot.index=selected;chosen|=g.curated_picks[i]>0;
+        }
     }
     add(SCO_WIDGET_BUTTON,220,"Apply curated choices (1.1)",chosen&&!g.job?0u:SCO_WIDGET_DISABLED);
     add(SCO_WIDGET_BUTTON,221,"Submit curated choices job (1.2)",chosen&&!g.job?0u:SCO_WIDGET_DISABLED);
@@ -638,7 +703,7 @@ void Publish() {
     if(next_player_cookie<std::numeric_limits<uintptr_t>::max()) {
         const auto cookie=++next_player_cookie;
         if(w->set_panel(g.self,"loadout.player","Player",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(sco_widget_node),Event,reinterpret_cast<void*>(cookie))==SCO_OK) {
-            g.published_curated=g.curated;g.published_rows=std::move(curated_rows);g.player_cookie=cookie;g.player_events=true;
+            g.published_curated=g.curated;g.published_rows=std::move(curated_rows);g.published_types=std::move(type_rows);g.player_cookie=cookie;g.player_events=true;
         }
     }
     nodes.clear(); options.clear(); text.clear();

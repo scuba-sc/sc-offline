@@ -312,3 +312,30 @@ compatibility, actual async resource cleanup, game rendering, SRT parent-default
 behavior, outfits/head/visor mapping and duplication/corruption checks remain
 game acceptance work. Release staging, tagging/publication, backend defaults and
 SDK pin adoption are separate decisions.
+
+## Grouped weapon pickers
+
+The Player panel places primary and secondary weapon/tool selectors in separate
+columns, with their public attachment slots directly underneath. Each column has
+its own weapon type, weapon search and attachment search (up to 63 printable ASCII
+characters). These filters intersect the existing shared gear/curated search.
+Only types present in that column's copied catalogue are offered. Unknown model
+families stay under Other; classification uses the family after the manufacturer
+prefix, not words in a variant suffix. It is a UI grouping, not a native type probe.
+
+Searching keeps an already selected item visible. A type change that excludes the
+selected weapon clears that column's UI assignments, including its attachments;
+switching between two selected weapon classes also resets that column's attachment
+choices. Choosing the first parent or Unchanged preserves independent attachment
+assignments. The other column is untouched. Reloading the slot catalogue resets
+types and per-column searches. Filtering never submits/applies equipment, cancels
+a retained job, or unequips anything in the game. Existing version/capability and
+publication-cookie guards remain in force.
+
+The grouped fields are logical slot groups, not a new compatibility resolver.
+Providers still validate native attachment compatibility. This change adds no
+localization service, images, extracted game data, engine calls or SDK contracts.
+
+`loadout-weapon-picker` runs the actual module with synthetic content/widgets and
+checks independent filters, layout preorder, selection reset, invalid/stale
+callbacks and absence of loadout effects. This candidate has not been run in game.
