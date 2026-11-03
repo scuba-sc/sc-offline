@@ -86,7 +86,7 @@ inline bool PrintableUtf8(std::string_view text) noexcept {
         // Keep terminal/widget control and bidirectional formatting characters
         // out of labels while allowing ordinary authored UTF-8 text.
         if((codepoint>=0x80 && codepoint<=0x9f) || codepoint==0x00ad || codepoint==0x061c ||
-           (codepoint>=0x200b && codepoint<=0x200f) || codepoint==0x2028 || codepoint==0x2029 ||
+           codepoint==0x200b || codepoint==0x200e || codepoint==0x200f || codepoint==0x2028 || codepoint==0x2029 ||
            (codepoint>=0x202a && codepoint<=0x202e) || (codepoint>=0x2060 && codepoint<=0x206f) ||
            codepoint==0xfeff || (codepoint>=0xfff9 && codepoint<=0xfffb))return false;
         i+=count;

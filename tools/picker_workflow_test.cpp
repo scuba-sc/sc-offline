@@ -138,6 +138,10 @@ int main(int argc,char** argv) {
     assert(parsedAliases.at("synthetic_id")=="Étoile");
     assert(sco::picker::MatchesEveryWordAsciiInsensitive("Étoile","Étoile"));
     assert(!sco::picker::MatchesEveryWordAsciiInsensitive("Étoile","étoile"));
+    const std::string zwnjAlias="synthetic_id\t\xe0\xa4\x95\xe0\xa5\x8d\xe2\x80\x8c\xe0\xa4\xb7\n";
+    const std::string zwjAlias="synthetic_id\t\xf0\x9f\x91\xa9\xe2\x80\x8d\xf0\x9f\x9a\x80\n";
+    assert(sco::picker::Catalog::ParseAliasFile(zwnjAlias,127,parsedAliases));
+    assert(sco::picker::Catalog::ParseAliasFile(zwjAlias,127,parsedAliases));
     assert(!sco::picker::Catalog::ParseAliasFile("synthetic_id\tlabel \xe2\x80\xae\n",127,parsedAliases));
     sco::picker::Choice boundary;
     boundary.value=std::string(127,'c');boundary.pack=std::string(63,'p');

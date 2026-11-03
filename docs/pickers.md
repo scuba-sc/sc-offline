@@ -57,8 +57,9 @@ are a separate catalog and are not imported into these pickers.
 Alias files are optional and bounded: labels are at most 59 UTF-8 bytes, lines
 255 bytes, 8192 rows, 64 matching files, and 1 MiB aggregate across matching
 files. Class identifiers use the same feature-specific 63/127-byte limits as
-the base list. Labels must be valid UTF-8 without ASCII/C1 control or
-bidirectional formatting characters. The composed label must also fit the
+the base list. Labels must be valid UTF-8 without ASCII/C1 controls or
+bidirectional formatting characters. Zero-width joiner/non-joiner characters
+are preserved for scripts that use them. The composed label must also fit the
 SDK's 255-byte widget text limit; if not, that row keeps its original label. A
 duplicate identifier within one sidecar invalidates aliases; identical labels
 from multiple packs are accepted, while conflicting labels mark that identifier
