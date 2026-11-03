@@ -28,11 +28,15 @@ static void Reject(std::string text) {
 }
 
 int main(int argc, char** argv) {
-    CHECK(argc == 5);
+    CHECK(argc == 8);
     const std::string complete = ReadFile(argv[1]);
     const std::string starting = ReadFile(argv[2]);
+    // Exact writer-emitted records supplied from sco-core commit ac1f6396357ab8e984e620ce1cbcf3c53aee03f7.
     const std::string writerEnabled = ReadFile(argv[3]);
     const std::string writerDisabled = ReadFile(argv[4]);
+    const std::string writerStarting = ReadFile(argv[5]);
+    const std::string writerFailed = ReadFile(argv[6]);
+    const std::string writerIncomplete = ReadFile(argv[7]);
 
     const auto parsed = report::Parse(complete);
     CHECK(parsed.status == report::Status::Complete);
@@ -61,6 +65,10 @@ int main(int argc, char** argv) {
     CHECK(!emittedDisabled.snapshot.pluginsEnabledAtStart);
     CHECK(report::FindPlugin(emittedDisabled.snapshot, "off_valid")->state == "off");
     CHECK(report::FindPlugin(emittedDisabled.snapshot, "unknown_1") == nullptr);
+
+    CHECK(report::Parse(writerStarting).status == report::Status::NoCompletedSnapshot);
+    CHECK(report::Parse(writerFailed).status == report::Status::NoCompletedSnapshot);
+    CHECK(report::Parse(writerIncomplete).status == report::Status::NoCompletedSnapshot);
 
     CHECK(report::Parse(starting).status == report::Status::NoCompletedSnapshot);
     std::string startingWithNumericCounts = starting;
