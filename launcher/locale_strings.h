@@ -23,6 +23,20 @@
     X(Actions, "launcher.heading.actions", "Actions") \
     X(Plugins, "launcher.heading.plugins", "Plugins") \
     X(Output, "launcher.heading.output", "Output") \
+    X(PluginStartupTitle, "launcher.plugins.startup_title", "Last startup snapshot (may be stale)") \
+    X(PluginStartupNone, "launcher.plugins.startup_none", "No completed startup snapshot") \
+    X(PluginStartupUnknown, "launcher.plugins.startup_unknown", "Unknown") \
+    X(PluginStartupComplete, "launcher.plugins.startup_complete", "Completed: {time}; plugins setting then: {enabled}") \
+    X(PluginStartupCurrent, "launcher.plugins.startup_current", "Current global setting: {enabled}") \
+    X(PluginStartupRow, "launcher.plugins.startup_row", "Folder setting: {desired} · At last startup: {state}") \
+    X(PluginStartupOff, "launcher.plugins.startup_off", "Plugins off") \
+    X(PluginStartupDisabled, "launcher.plugins.startup_disabled", "Disabled") \
+    X(PluginStartupRefused, "launcher.plugins.startup_refused", "Refused") \
+    X(PluginStartupReady, "launcher.plugins.startup_ready", "Ready") \
+    X(PluginStartupLoaded, "launcher.plugins.startup_loaded", "Loaded") \
+    X(PluginStartupCrashed, "launcher.plugins.startup_crashed", "Crashed") \
+    X(PluginStartupUnloaded, "launcher.plugins.startup_unloaded", "Unloaded") \
+    X(PluginStartupFaulted, "launcher.plugins.startup_faulted", "Faulted (restart required)") \
     X(LeftMod, "launcher.status.left_mod", "the mod is still in Bin64") \
     X(LeftFirewall, "launcher.status.left_firewall", "firewall rule \"{name}\"") \
     X(LeftHosts, "launcher.status.left_hosts", "the EAC line in the hosts file") \

@@ -220,6 +220,9 @@ jobs:
       - name: Install clang + mingw-w64 headers
         run: sudo apt-get update -qq && sudo apt-get install -y -qq clang g++-mingw-w64-x86-64-posix
 
+      - name: Test launcher plugin startup snapshot parser
+        run: tools/test_launcher_plugin_startup_snapshot.sh
+
       # Pinned-host parsing remains separate from the exact stable-source check below.
       - name: tools/check.sh (pinned host source)
         run: tools/check.sh
