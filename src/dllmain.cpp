@@ -594,6 +594,12 @@ static BOOL CALLBACK FindGameWindow(HWND hwnd, LPARAM out) {
     return TRUE;
 }
 
+// Set only once ModThread has passed the fail-closed gate and the early refusal
+// path that unloads this module. The sink is an atomic borrowed callback in
+// sco-core; core has no in-flight sink drain, so do not publish it on paths that
+// may return or unload the DLL.
+static void ForwardCoreLog(const char* line) { Log("%s", line); }
+
 // The message hook is the bootstrap's, not teleport's: it starts the host kit (and with it the
 // built-in plugins and plugins) on its first tick whether or not a feature resolved. It stays off
 // only when the game is running online.
@@ -651,6 +657,9 @@ static DWORD WINAPI ModThread(LPVOID param) {
             "overlay Vulkan layers (OBS, Steam), and one of those can crash the game while it loads. Start sc-offline.exe "
             "normally, not \"Run as administrator\", and untick \"Run this program as an administrator\" on StarCitizen.exe.");
 
+    // No core host work occurs before this point. Keep the borrowed sink out of
+    // the fail-closed and early-unload paths above.
+    sco::SetLogSink(ForwardCoreLog);
     ReadStartOptions();
     StartOffline();
     ReleaseStartupGate();
@@ -660,14 +669,10 @@ static DWORD WINAPI ModThread(LPVOID param) {
     for (;;) Sleep(1000);
 }
 
-// sco-core's lines ([core], [plugin], [app], [status]) go to mod.log and the console like ours.
-static void ForwardCoreLog(const char* line) { Log("%s", line); }
-
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
         InitLog();
-        sco::SetLogSink(ForwardCoreLog);
         InstallStartupGate();
         if (!CreateThread(nullptr, 0, ModThread, hModule, 0, nullptr)) ReleaseStartupGate();
     }

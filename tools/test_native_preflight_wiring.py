@@ -17,6 +17,16 @@ assert start.strip().startswith(guard), 'product mutations must be guarded befor
 worker = source.split('static DWORD WINAPI ModThread(LPVOID param) {', 1)[1].split('\n}', 1)[0]
 assert worker.index('if (!offline_host::NativeActivationAvailable())') < worker.index('GetModuleHandleW(')
 assert worker.index('return 0;', worker.index('if (!offline_host::NativeActivationAvailable())')) < worker.index('StartOffline();')
+# The core logger stores an atomic borrowed function pointer and has no in-flight
+# callback drain. Do not publish the DLL callback in DllMain or before ModThread's
+# fail-closed and early-unload paths.
+dllmain = source.split('BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {', 1)[1]
+assert 'SetLogSink(ForwardCoreLog)' not in dllmain, 'do not publish a callback from DllMain'
+sink = worker.index('sco::SetLogSink(ForwardCoreLog)')
+assert sink > worker.index('if (!offline_host::NativeActivationAvailable())')
+assert sink > worker.index('FreeLibraryAndExitThread'), 'early unload path must precede sink registration'
+assert sink > worker.index('if (InspectAntiCheat() != AcCheck::Clear)')
+assert sink < worker.index('StartOffline();'), 'install before the first core host operation'
 assert source.count('InstallStartupGate();') == 1
 assert source.count('StartOffline();') == 1
 print('Windows native preflight call-site wiring: PASS (static)')
