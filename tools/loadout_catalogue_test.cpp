@@ -17,7 +17,7 @@ sco_plugin* owner=nullptr;
 void Check(bool ok,const char* why){++checks;if(!ok){std::fprintf(stderr,"loadout catalogue: %s\n",why);std::exit(1);}}
 struct File{std::string name,bytes;};
 std::vector<File> files={{"lists/loadout_slots.txt","[primary_optic]\nFixtureOptic\n[primary]\nFixtureWeapon\n[sidearm_tool_battery]\nFixtureBattery\n"}};
-struct Node{uint32_t kind=0,flags=0;int32_t index=0;std::string label,text;std::vector<std::string> options;};
+struct Node{uint32_t parent=0,kind=0,flags=0;int32_t index=0;std::string label,text;std::vector<std::string> options;};
 struct Panel{std::map<uint32_t,Node> nodes;sco_widget_event_fn fn=nullptr;void* ctx=nullptr;} panel;
 std::map<std::string,sco_command> commands;
 sco_widgets_v1 widgets{};sco_content_v1 content{};sc_loadout_v1_2 loadout{};
@@ -54,9 +54,15 @@ sco_result SetPanel(sco_plugin* self,const char* id,const char*,const sco_widget
     Check(self==owner&&stride==sizeof(*nodes),"widget owner/stride");if(std::strcmp(id,"loadout.player"))return SCO_OK;if(panelResult!=SCO_OK)return panelResult;
     Panel next;next.fn=fn;next.ctx=ctx;
     for(uint32_t i=0;i<count;++i){Check(nodes[i].size==sizeof(*nodes),"node extent");Check((nodes[i].item_count==0)==(nodes[i].items==nullptr),"empty array invariant");Check(nodes[i].label&&std::strlen(nodes[i].label)<=255,"label byte bound");
-        auto& n=next.nodes[nodes[i].id];n.kind=nodes[i].kind;n.flags=nodes[i].flags;n.index=nodes[i].index;n.label=nodes[i].label;n.text=nodes[i].text?nodes[i].text:"";
+        auto& n=next.nodes[nodes[i].id];n.parent=nodes[i].parent;n.kind=nodes[i].kind;n.flags=nodes[i].flags;n.index=nodes[i].index;n.label=nodes[i].label;n.text=nodes[i].text?nodes[i].text:"";
         if(nodes[i].kind==SCO_WIDGET_COMBO)Check(nodes[i].item_count<=256&&nodes[i].index>=-1&&(nodes[i].index<0||static_cast<uint32_t>(nodes[i].index)<nodes[i].item_count),"combo contract bounds");
         for(uint32_t j=0;j<nodes[i].item_count;++j){Check(nodes[i].items[j]&&std::strlen(nodes[i].items[j])<=255,"option bound");n.options.emplace_back(nodes[i].items[j]);}
+    }
+    std::vector<uint32_t> ancestors{0};
+    for(uint32_t i=0;i<count;++i) {
+        while(!ancestors.empty()&&ancestors.back()!=nodes[i].parent)ancestors.pop_back();
+        Check(!ancestors.empty(),"contiguous preorder layout");
+        if(nodes[i].kind==SCO_WIDGET_ROW||nodes[i].kind==SCO_WIDGET_COLUMN)ancestors.push_back(nodes[i].id);
     }
     panel=std::move(next);return SCO_OK;
 }
@@ -94,12 +100,55 @@ void Button(uint32_t id){Send(id,SCO_WIDGET_BUTTON);}
 bool Disabled(uint32_t id){return (panel.nodes.at(id).flags&SCO_WIDGET_DISABLED)!=0;}
 void Tick(uint32_t delta=200){static uint32_t now=100000;now+=delta;Check(tick!=nullptr,"tick callback");tick("tick",&now,tickCtx);}
 }
+namespace {
+int32_t Option(uint32_t node,const char* text) {
+    const auto& options=panel.nodes.at(node).options;
+    for(size_t i=0;i<options.size();++i)if(options[i]==text)return static_cast<int32_t>(i);
+    Check(false,"expected picker option absent");return 0;
+}
+void Choose(uint32_t id,const char* text){Send(id,SCO_WIDGET_COMBO,Option(id,text));}
+void PickerWorkflow() {
+    files={{"lists/loadout_slots.txt","[primary]\nmaker_rifle_alpha\nmaker_rifle_beta\nmaker_smg_alpha\nUnknownThing\n[sidearm]\nmaker_pistol_alpha_sniper_variant\nmaker_medgun_alpha\n[primary_optic]\nFixtureOptic\nOtherOptic\n[sidearm_optic]\nSideOptic\n"}};
+    Check(Call("loadout.reload_slots")==SCO_OK,"synthetic picker catalogue reload");Tick();
+    Check(panel.nodes.count(260)&&panel.nodes.count(244)&&panel.nodes.count(245),"grouped type/search controls absent");
+    Check(panel.nodes.at(260).kind==SCO_WIDGET_ROW&&panel.nodes.at(261).parent==260&&panel.nodes.at(262).parent==260,"two columns under one row");
+    for(uint32_t id:{200u,202u,203u,204u,208u,209u,210u,240u,242u,244u})Check(panel.nodes.at(id).parent==261,"primary controls grouped");
+    for(uint32_t id:{201u,205u,206u,207u,211u,212u,213u,241u,243u,245u})Check(panel.nodes.at(id).parent==262,"secondary controls grouped");
+    Check(panel.nodes.at(244).options==std::vector<std::string>{"All types","Rifles","Submachine guns","Other"},"only present primary types");
+    Check(panel.nodes.at(245).options==std::vector<std::string>{"All types","Pistols","Medical devices"},"pistol sniper suffix remains pistol");
+    Choose(244,"Rifles");Check(panel.nodes.at(200).options.size()==3,"rifle category");
+    Choose(245,"Pistols");Choose(201,"maker_pistol_alpha_sniper_variant");Choose(205,"SideOptic");
+    Choose(200,"maker_rifle_alpha");Choose(202,"FixtureOptic");Choose(200,"maker_rifle_beta");
+    Check(panel.nodes.at(202).index==0&&panel.nodes.at(201).index>0&&panel.nodes.at(205).index>0,"new primary clears own attachments only");
+    Choose(202,"FixtureOptic");Choose(244,"Submachine guns");
+    Check(panel.nodes.at(200).index==0&&panel.nodes.at(202).index==0&&panel.nodes.at(205).index>0,"type exclusion clears own selection and attachments");
+    Choose(244,"All types");Send(240,SCO_WIDGET_TEXT_INPUT,0,"BETA");
+    Check(panel.nodes.at(200).options==std::vector<std::string>{"Unchanged (omit slot)","maker_rifle_beta"},"case-insensitive independent primary search");
+    Check(panel.nodes.at(201).index>0&&panel.nodes.at(201).options.size()==2,"secondary unchanged by primary search");
+    Send(242,SCO_WIDGET_TEXT_INPUT,0,"Other");Check(panel.nodes.at(202).options==std::vector<std::string>{"Unchanged (omit slot)","OtherOptic"},"independent attachment search");
+    Choose(202,"OtherOptic");Send(242,SCO_WIDGET_TEXT_INPUT,0,"no match");Check(panel.nodes.at(202).index>0,"selected attachment retained and visible through search");
+    Choose(244,"Submachine guns");Check(panel.nodes.at(200).options.size()==1,"type and search intersect");
+    auto old=panel;Send(240,SCO_WIDGET_TEXT_INPUT,0,"");const auto current=panel.nodes.at(244).index;
+    sco_widget_event late{};late.size=sizeof(late);late.kind=SCO_WIDGET_COMBO;late.node_id=244;late.index=0;
+    old.fn("loadout.player",&late,old.ctx);Check(panel.nodes.at(244).index==current,"stale type callback ignored");
+    Send(244,SCO_WIDGET_COMBO,999);Check(panel.nodes.at(244).index==current,"invalid type index ignored");
+    Send(240,SCO_WIDGET_TEXT_INPUT,0,std::string(64,'x').c_str());Check(panel.nodes.at(240).text.empty(),"oversized search refused");
+    Send(240,SCO_WIDGET_TEXT_INPUT,0,"bad\ntext");Check(panel.nodes.at(240).text.empty(),"control characters refused");
+    Send(240,SCO_WIDGET_TEXT_INPUT,0,"alpha");Check(panel.nodes.at(200).options.size()==2,"valid search after refusal");
+    auto saved=panel;panelResult=SCO_FAILED;Send(240,SCO_WIDGET_TEXT_INPUT,0,"no match");panelResult=SCO_OK;
+    saved.fn("loadout.player",&late,saved.ctx);Tick();Check(panel.nodes.at(244).index==current,"failed publication cannot admit old callbacks");
+    Check(Call("loadout.reload_slots")==SCO_OK,"reload resets picker filters");Tick();Check(panel.nodes.at(244).index==0&&panel.nodes.at(240).text.empty(),"reload reset matches published controls");
+    Check(!applies&&!submits&&!cancels&&!statuses,"UI controls never apply,submit,cancel or poll jobs");
+    test_module::Unload();test_module::Close();std::printf("weapon picker: %u checks PASS; actual module, synthetic services; not run in game\n",checks);
+}
+}
 int main(int argc,char** argv){
     Check(argc==2||argc==3,"module and optional source catalogue");test_module::Open(2,argv);int token=0;owner=reinterpret_cast<sco_plugin*>(&token);
     widgets.size=sizeof(widgets);widgets.set_panel=SetPanel;widgets.remove_panel=Remove;content.size=sizeof(content);content.item=Item;content.read=Read;
     loadout.size=sizeof(loadout);loadout.apply=Apply;loadout.submit=Submit;loadout.status=Status;loadout.cancel=Cancel;
     sco_api api{};api.size=sizeof(api);api.major=SCO_API_MAJOR;api.minor=SCO_API_MINOR;api.log=Log;api.has=Has;api.register_command=Register;api.subscribe=Subscribe;api.unsubscribe=Unsubscribe;api.query_service=Query;
     Check(test_module::Load(&api,owner)==SCO_OK,"module load");
+    if(argc==3&&!std::strcmp(argv[2],"--picker")){PickerWorkflow();return 0;}
     Check(panel.nodes.count(200)&&panel.nodes.count(213),"independent public-slot selectors published by actual module");
     Check(panel.nodes[200].options==std::vector<std::string>{"Unchanged (omit slot)","FixtureWeapon"},"explicit parent catalogue options");
     Check(panel.nodes[202].options==std::vector<std::string>{"Unchanged (omit slot)","FixtureOptic"},"explicit optic catalogue options");

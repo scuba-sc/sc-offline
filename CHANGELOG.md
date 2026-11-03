@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Group primary and secondary loadout choices in two columns with independent type, weapon and attachment filters; filtering changes UI selections only.
+
 - **Adopt the stable SDK 2.4.0 package.** The coordinated development host
   source and standalone plugin archive now use sco-core `6106fa36`; the combined
   archive is checksum- and source-verified against `sdk-v2.4.0`. Linux tutorial,
