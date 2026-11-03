@@ -1,9 +1,10 @@
 # Product lifecycle closure inventory
 
-Status: developer handoff only. Reviewed on sc-offline base
+Status: developer handoff with an attach-time log-sink deferral on the isolated
+branch. Inventory review was against sc-offline base
 `38066870c58f73ccd7751c4fd6d1a44936cdcb32` with sco-core
 `6106fa3639cbcc28f78a1ded8de2707de019f4d3`. No product startup or activation
-was changed. No private signature patterns, binary bytes, addresses, or
+was enabled. No private signature patterns, binary bytes, addresses, or
 reverse-engineered offsets are reproduced here.
 
 ## Current boundary
@@ -12,12 +13,17 @@ reverse-engineered offsets are reproduced here.
 `InstallStartupGate`, `StartOffline`, `offline_host::{Prepare,Start,Tick}` and
 the first work in `ModThread` all stop at that gate. Thus this inventory maps
 compiled/intended product paths; it does not claim they ran in this build.
-The exceptions are DLL attach setup and the forwarded core log callback:
-`DllMain` installs `ForwardCoreLog` and creates `ModThread` before the latter
-returns at the gate. See [`native_activation_policy.h`](../../src/native_activation_policy.h#L1),
+DLL attach still initializes product logging and starts `ModThread`, but the
+false gate now returns before the core log sink is installed. If the gate ever
+admits startup, `ForwardCoreLog` is registered only after anti-cheat refusal and
+its explicit unload path, immediately before the first core host work. The
+pinned logger stores an atomic callback pointer but offers no in-flight drain;
+this ordering closes the known early unload path, not arbitrary external DLL
+unload. See [`native_activation_policy.h`](../../src/native_activation_policy.h#L1),
 [`dllmain.cpp`](../../src/dllmain.cpp#L279),
-[`dllmain.cpp`](../../src/dllmain.cpp#L666), and
-[`offline_host.cpp`](../../src/offline_host.cpp#L49).
+[`dllmain.cpp`](../../src/dllmain.cpp#L628),
+[`dllmain.cpp`](../../src/dllmain.cpp#L672), and
+[`sco_log_status.cpp`](../../external/sco-core/src/sco_log_status.cpp#L11).
 
 The restricted core `HostCapsule` is not a drop-in owner for the current
 product configuration. Its detailed contract requires external quit/DataCore
@@ -42,11 +48,11 @@ unbounded. Optional CMake compositions are OFF by default (`SCO_HOST_MENU_CLIENT
 
 | Surface | Backing and last access | Current shutdown evidence / gap |
 |---|---|---|
-| **DLL attach, log sink, control thread** | `DllMain` initializes the logging lock, installs the core log callback `ForwardCoreLog`, and starts `ModThread` (`src/dllmain.cpp:663-673`; `src/common.cpp:5-49`). The logger's lock, console handle, and optional file are static. The thread handle is discarded; with the current gate the thread logs and returns, but the later startup path can run indefinitely (`src/dllmain.cpp:622-660`). | No product code clears the core log sink or closes logger state. The only explicit unload path is `FreeLibraryAndExitThread` after anti-cheat refusal; that path is behind the current gate and would need to remove or retain the log callback before unload. Keep the module mapped until callbacks and thread code have ended, or prove a clear-and-join sequence. |
+| **DLL attach, log sink, control thread** | `DllMain` initializes the logging lock and starts `ModThread` (`src/dllmain.cpp:672-680`; `src/common.cpp:5-49`). The worker handle is discarded; with the current gate the thread logs and returns, but the later startup path can run indefinitely (`src/dllmain.cpp:628-670`). `ForwardCoreLog` is now installed by that worker only after the gate and anti-cheat checks, immediately before host startup (`src/dllmain.cpp:601`, `src/dllmain.cpp:660-663`). | The fail-closed path publishes no core callback. The existing explicit `FreeLibraryAndExitThread` path precedes sink registration. The sink setter is atomic but there is no in-flight callback drain; a future external unload path after registration still needs a core drain contract or a process-lifetime module owner. Logger file/console state has no product close path. |
 | **Early entry gate** | Dormant because `InstallStartupGate` returns at the policy check (`src/dllmain.cpp:81-82`). If enabled, it retains the executable entry pointer and original bytes, allocates a nearby stub, creates an event, and calls `StartupGateWait` from the entry path (`src/dllmain.cpp:58-113`). | `StartupGateWait` restores the entry bytes before continuing, but no matching free of the stub or close of the event is present. Restoration is not evidence that the waiter has returned or that the module can unload. Add explicit one-shot resource retirement only with a proven post-wait point; otherwise retain through process exit. |
 | **Admission inspector and host options** | `InspectOfflineEnvironment` reads `g_evidence` and returns OS admission data; the callback code and evidence/probe state live in the DLL (`src/dllmain.cpp:261-269`, `src/admission_evidence.h`, `src/admission_probe.cpp`). `PrepareHostKit` also supplies `SetFeatureCaps`, static Lua runtime `kLua`, static reserved chord strings, plugin/storage paths, and a static `sco::Image` descriptor (`src/dllmain.cpp:330-348`, `405-448`). | None of these host callbacks runs while the gate is false. No product owner currently pins the executable image, resolver implementation/state, inspector code, or callback context. The static image descriptor does not own mapped image bytes; core's copied signature snapshot is not a lease. Build an actual root before any options copy/exposure, then retain it on every uncertain/terminal result. |
 | **Plugins, Lua, DataCore, and capability adapter** | Product setup sets `pluginsEnabled`, `scripts`, `setCapabilities`, `gameServices`, `dataCore`, and data roots; it registers the game Lua extension and provides the script runtime callbacks (`src/dllmain.cpp:405-442`). Built-ins and external plugin modules can add their own callbacks and workers. | No loader is reached under the current gate. Detailed `HostCapsule` explicitly rejects these fields. The product has no inventory/lease covering every plugin module, script extension, service table, callback context, or plugin-created worker. These require a compatible core contract and a plugin lifecycle that participates in the same owner/admission model; a non-null owner token is not enough. |
-| **Game-thread message hook and tick callbacks** | `RunMainThreadService` finds a window, installs `GetMsgProc`, and optionally starts the menu (`src/dllmain.cpp:588-619`). `GetMsgProc` can call `StopHostKit` on `WM_QUIT` or invoke `OnMainThreadTick`, which calls core tick, hangar/ASOP processing, menu frame, hotkeys, and legacy feature ticks (`src/dllmain.cpp:473-585`). | No hook is installed today. Future `UnhookWindowsHookEx` is attempted only after a terminal core phase; its own comment preserves the handle for in-flight callbacks but does not wait for them. `StopHostKit` does not unregister all feature hooks or prove every callback returned. Add callback-entry exclusion and an in-flight drain before releasing any callback code or contexts. |
+| **Game-thread message hook and tick callbacks** | `RunMainThreadService` finds a window, installs `GetMsgProc`, and optionally starts the menu (`src/dllmain.cpp:606-626`). `GetMsgProc` can call `StopHostKit` on `WM_QUIT` or invoke `OnMainThreadTick`, which calls core tick, hangar/ASOP processing, menu frame, hotkeys, and legacy feature ticks (`src/dllmain.cpp:473-585`). | No hook is installed today. Future `UnhookWindowsHookEx` is attempted only after a terminal core phase; its own comment preserves the handle for in-flight callbacks but does not wait for them. `StopHostKit` does not unregister all feature hooks or prove every callback returned. Add callback-entry exclusion and an in-flight drain before releasing any callback code or contexts. |
 | **Runtime event subscriptions** | Successful `StartHostKit` subscribes static callbacks `OnContractActorDied` and, under the ASOP composition flag, `StopAsopBeforeProviders`, using static owner tokens (`src/dllmain.cpp:487-529`). They can access contract/ASOP state and callback code in the DLL. | These subscriptions are not reached today, and product source has no explicit `sco::Unsubscribe` call. The runtime contract says unsubscribe prevents later dispatch; when called off the game thread, the caller must also arrange a game-thread task after unsubscribe before freeing context (`external/sco-core/include/sco/runtime.h:168-181`). Tie unsubscription and in-flight dispatch completion to the host shutdown contract; do not infer it from a Stop result. |
 | **Native patches and detours** | `ApplyOfflinePatches` obtains borrowed `.text`/`.rdata` section views and writes product patches; statuses retain target pointers (`src/common.cpp:51-69`, `src/patches.cpp:324-345`). Generic and feature detours use `sco::hook::InstallDetour`, with original/trampoline pointers in static globals (`src/hooks.cpp:17-25`, `237-273`; feature installs in `src/contracts.cpp`, `src/services.cpp`, and `src/fleet.cpp`). Fleet also has a direct code patch and near stub (`src/fleet.cpp:1377-1400`). | All installation is behind `StartOffline`, so none is active today. No product uninstall/restore call was found. Detoured functions can enter DLL code at any later game call; feature hooks call cached original pointers. `g_hooksInstalled` is only a boolean, not a ledger or owner. Either add a reviewed reverse-install protocol plus native entry/in-flight exclusion, or keep all detour code, trampolines, backing, and module resident until process exit. |
 | **Resolved engine addresses and feature state** | `g_text`/`g_rdata` point into the executable mapping. `StartOffline` resolves teleport, spawn, NPC, legacy placement, CVars, missions, contracts, and (unless ASOP host composition is selected) fleet and hangars (`src/dllmain.cpp:289-303`). These modules retain raw function pointers, slots, and object/state pointers in globals; see resolver entrypoints in `src/teleport.cpp:14`, `src/spawner.cpp:95`, `src/npc.cpp:30`, `src/build.cpp:24`, `src/cvars.cpp:103`, `src/missions.cpp:208`, `src/contracts.cpp:2141`, `src/fleet.cpp:1445`, and `src/services.cpp:682`. | Resolver entrypoints are gated and have no common cache-clear routine. Main-thread tick stops when `offline_host::Running()` is false, but patched game entrypoints can still invoke detours independently. A signature report/snapshot only copies metadata. Track every cached address and its last caller under the same native-reader protocol; clear it only after the corresponding hook/readers are demonstrably drained. |
@@ -73,8 +79,9 @@ wire product callbacks or plugins, map the real executable, enumerate actual
 game readers/workers, establish a native execution barrier, test Windows/MSVC
 failure behavior, or prove successful game-host retirement. The refusal and
 source-wiring checks establish fail-closed behavior only. No native or game
-proof was produced by this inventory; no tests were run for this documentation
-change.
+proof was produced by this inventory. The log-sink ordering is guarded by the
+source-level `test_native_preflight_wiring.py`; it is not a runtime callback
+drain test.
 
 ## Minimal ordered implementation plan
 
@@ -83,12 +90,13 @@ change.
    plugins/Lua/DataCore/services/adapters, or split those consumers behind a
    host path whose callback and shutdown contract is explicit. Do not weaken
    `DetailedConfiguration` by assertion or no-op owner.
-2. Produce a per-feature inventory/owner graph. Account for the attach-time log
-   sink already registered by `DllMain`, then root every later dependency before
-   Prepare, options copy, callback registration, or native write. Include the
-   DLL/code module, image and resolver backing, Platform callback code/context,
-   plugin modules, cached engine targets, hook allocations, event subscriptions,
-   menu resources, IIM calls and every worker.
+2. Produce a per-feature inventory/owner graph. Preserve the log-sink deferral:
+   current fail-closed startup publishes no callback, and a future sink remains
+   borrowed code with no logger drain API. Root every dependency before Prepare,
+   options copy, callback registration, or native write. Include the DLL/code
+   module, image and resolver backing, Platform callback code/context, plugin
+   modules, cached engine targets, hook allocations, event subscriptions, menu
+   resources, IIM calls and every worker.
 3. Add one real entry-admission protocol used by every detour, callback,
    provider operation and worker. Stop must close new entry, establish the
    game-thread/native quiescent point, drain existing leases and copied output,
