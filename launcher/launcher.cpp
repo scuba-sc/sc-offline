@@ -53,6 +53,7 @@
 #include "install_identity_win32.h"
 #include "localization_win32.h"
 #include "locale_ru_builtin.h"
+#include "plugin_startup_snapshot.h"
 #include "../src/version.h"
 #include "../src/private_network_ranges.h"
 #define IMGUI_DEFINE_MATH_OPERATORS
@@ -2593,6 +2594,7 @@ struct Gui {
     bool discord = false, pluginsOn = true;   // the Discord plugin is on; plugins in sc-offline.ini
     std::vector<PluginEntry> plugins;
     ULONGLONG pluginsAt = 0;
+    sco::launcher::plugin_startup::ParseResult pluginStartupSnapshot;
     char plugSearch[64] = "";
     float plugScroll = 0;
     std::string plugOpen;        // folder of the plugin whose settings are open; "" shows the list
@@ -3544,6 +3546,70 @@ static std::vector<PluginEntry> ReadPlugins(const wstring& here) {
     return out;
 }
 
+// Reads only the future host-owned, versioned snapshot. Missing means no completed snapshot;
+// every other I/O or parse problem is unknown. The handle is opened read-only and the bounded
+// input is parsed strictly; this never tails mod.log or observes a live game process.
+static sco::launcher::plugin_startup::ParseResult ReadPluginStartupSnapshot(const wstring& here) {
+    using namespace sco::launcher::plugin_startup;
+    ParseResult result;
+    const wstring path = here + L"\\data\\plugin-startup.json";
+    HANDLE file = CreateFileW(path.c_str(), GENERIC_READ,
+                              FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                              nullptr, OPEN_EXISTING,
+                              FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    if (file == INVALID_HANDLE_VALUE) {
+        const DWORD error = GetLastError();
+        if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND)
+            result.status = Status::NoCompletedSnapshot;
+        return result;
+    }
+
+    BY_HANDLE_FILE_INFORMATION before{};
+    LARGE_INTEGER length{};
+    if (!GetFileInformationByHandle(file, &before) ||
+        (before.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT)) ||
+        !GetFileSizeEx(file, &length) || length.QuadPart < 0) {
+        CloseHandle(file);
+        return result;
+    }
+    const ULONGLONG infoSize = (static_cast<ULONGLONG>(before.nFileSizeHigh) << 32) | before.nFileSizeLow;
+    if (static_cast<ULONGLONG>(length.QuadPart) != infoSize || infoSize > kMaxFileBytes) {
+        CloseHandle(file);
+        return result;
+    }
+
+    std::string bytes;
+    try {
+        bytes.resize(static_cast<size_t>(length.QuadPart));
+    } catch (...) {
+        CloseHandle(file);
+        return result;
+    }
+    size_t offset = 0;
+    while (offset < bytes.size()) {
+        DWORD got = 0;
+        const DWORD request = static_cast<DWORD>(bytes.size() - offset); // bounded to 64 KiB above
+        if (!ReadFile(file, &bytes[offset], request, &got, nullptr) || !got) {
+            CloseHandle(file);
+            return result;
+        }
+        offset += got;
+    }
+    char extra = 0;
+    DWORD extraBytes = 0;
+    BY_HANDLE_FILE_INFORMATION after{};
+    const bool stable = ReadFile(file, &extra, 1, &extraBytes, nullptr) && extraBytes == 0 &&
+        GetFileInformationByHandle(file, &after) &&
+        before.dwVolumeSerialNumber == after.dwVolumeSerialNumber &&
+        before.nFileIndexHigh == after.nFileIndexHigh && before.nFileIndexLow == after.nFileIndexLow &&
+        before.ftLastWriteTime.dwHighDateTime == after.ftLastWriteTime.dwHighDateTime &&
+        before.ftLastWriteTime.dwLowDateTime == after.ftLastWriteTime.dwLowDateTime &&
+        before.nFileSizeHigh == after.nFileSizeHigh && before.nFileSizeLow == after.nFileSizeLow;
+    CloseHandle(file);
+    if (!stable) return result;
+    return Parse(bytes);
+}
+
 // Creates or removes the `disabled` marker; the host looks for any entry of that name at start.
 static bool SetPluginDisabled(const wstring& here, const wstring& folder, bool disable) {
     const wstring marker = here + L"\\data\\plugins\\" + folder + L"\\disabled";
@@ -3601,6 +3667,18 @@ static bool SavePluginSettings(const wstring& here, const PluginEntry& p, bool r
 static void PluginNote(const std::string& s) { g_gui.note = s; g_gui.noteAt = Seconds(); }
 static bool NoteLive() { return !g_gui.note.empty() && Seconds() - g_gui.noteAt < 10.0; }
 
+static LocaleKey PluginStartupStateKey(const std::string& state) {
+    if (state == "off") return LocaleKey::PluginStartupOff;
+    if (state == "disabled") return LocaleKey::PluginStartupDisabled;
+    if (state == "refused") return LocaleKey::PluginStartupRefused;
+    if (state == "ready") return LocaleKey::PluginStartupReady;
+    if (state == "loaded") return LocaleKey::PluginStartupLoaded;
+    if (state == "crashed") return LocaleKey::PluginStartupCrashed;
+    if (state == "unloaded") return LocaleKey::PluginStartupUnloaded;
+    if (state == "faulted") return LocaleKey::PluginStartupFaulted;
+    return LocaleKey::PluginStartupUnknown;
+}
+
 static void DrawPluginList(float x0, float y0, float x1, float y1) {
     Gui& g = g_gui;
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -3656,8 +3734,36 @@ static void DrawPluginList(float x0, float y0, float x1, float y1) {
         for (char& c : hay) c = char(tolower(static_cast<unsigned char>(c)));
         return hay.find(needle) != std::string::npos;
     };
-    float top = y0 + Px(44) + Px(10), bottom = y1 - Px(12);
+    float top = y0 + Px(44) + Px(74), bottom = y1 - Px(12);
     const float left = x0 + Px(12), right = x1 - Px(30);
+
+    // This is an old, host-written snapshot when a future writer is installed. It is never a
+    // live status indicator; desired settings remain the current switches and config above/below.
+    const float snapshotTop = y0 + Px(48), snapshotHeight = Px(64);
+    const ImVec2 snapshotMin(x0 + Px(12), snapshotTop), snapshotMax(x1 - Px(12), snapshotTop + snapshotHeight);
+    dl->AddRectFilled(snapshotMin, snapshotMax, Col(kUiRow), Px(8));
+    {
+        UseFont f(g.bold);
+        Label(ImVec2(snapshotMin.x + Px(12), snapshotMin.y + Px(5)), kUiText,
+              T(LocaleKey::PluginStartupTitle));
+    }
+    std::string startupText;
+    if (g.pluginStartupSnapshot.status == sco::launcher::plugin_startup::Status::Complete) {
+        const auto& snapshot = g.pluginStartupSnapshot.snapshot;
+        const char* enabled = T(snapshot.pluginsEnabledAtStart ? LocaleKey::On : LocaleKey::Off);
+        startupText = F(LocaleKey::PluginStartupComplete,
+                        {{"time", snapshot.completedAtUtc}, {"enabled", enabled}});
+    } else {
+        const LocaleKey key = g.pluginStartupSnapshot.status == sco::launcher::plugin_startup::Status::NoCompletedSnapshot
+            ? LocaleKey::PluginStartupNone : LocaleKey::PluginStartupUnknown;
+        startupText = T(key);
+    }
+    Label(ImVec2(snapshotMin.x + Px(12), snapshotMin.y + Px(27)), kUiTextDim,
+          Fit(startupText, snapshotMax.x - snapshotMin.x - Px(24), false).c_str());
+    const char* currentEnabled = T(g.pluginsOn ? LocaleKey::On : LocaleKey::Off);
+    const std::string currentSetting = F(LocaleKey::PluginStartupCurrent, {{"enabled", currentEnabled}});
+    Label(ImVec2(snapshotMin.x + Px(12), snapshotMin.y + Px(45)), kUiTextDim,
+          Fit(currentSetting, snapshotMax.x - snapshotMin.x - Px(24), false).c_str());
 
     if (NoteLive()) {
         const float nh = Px(36);
@@ -3689,7 +3795,7 @@ static void DrawPluginList(float x0, float y0, float x1, float y1) {
         return;
     }
 
-    const float rowH = Px(44), step = Px(50);
+    const float rowH = Px(58), step = Px(64);
     const float scroll = PluginsSlider("##pluginslider", left, top, bottom, x1 - Px(20), float(shown.size()) * step - (step - rowH), step);
     ImGui::PushClipRect(ImVec2(left, top), ImVec2(right, bottom), true);
     for (size_t k = 0; k < shown.size(); ++k) {
@@ -3714,7 +3820,7 @@ static void DrawPluginList(float x0, float y0, float x1, float y1) {
         if (!p.kind.empty()) tip += (tip.empty() ? "" : "\n") + F(LocaleKey::PluginKind, {{"kind", p.kind}});
         if (!tip.empty()) Tip(tip.c_str());
         dl->AddRectFilled(pos, pos + size, Col(Mix(kUiRow, kUiRowHover, h)), Px(8));
-        const float ty = ry + (rowH - ImGui::GetFontSize()) * 0.5f;
+        const float ty = ry + Px(5);
         const float tgW = Px(34), tgH = Px(18), tgX = pos.x + size.x - Px(14) - tgW;
         const bool gear = !p.settings.empty() || p.settingsBad;
         const float gearX = tgX - Px(10) - Px(28), rx = (gear ? gearX : tgX) - Px(12);
@@ -3728,6 +3834,17 @@ static void DrawPluginList(float x0, float y0, float x1, float y1) {
         const std::string meta = (p.version.empty() ? "" : "v" + p.version) + (p.author.empty() ? "" : (p.version.empty() ? "" : "  ") + p.author);
         const float mx = pos.x + Px(14) + nameW + Px(10);
         if (!meta.empty()) Label(ImVec2(mx, ty), kUiTextDim, Fit(meta, (std::max)(Px(10), rx - mx), false).c_str());
+        LocaleKey lastStateKey = LocaleKey::PluginStartupUnknown;
+        if (g.pluginStartupSnapshot.status == sco::launcher::plugin_startup::Status::Complete) {
+            const auto* last = sco::launcher::plugin_startup::FindPlugin(g.pluginStartupSnapshot.snapshot, p.id);
+            if (last) lastStateKey = PluginStartupStateKey(last->state);
+        }
+        const std::string desired = T(p.disabled ? LocaleKey::Off : LocaleKey::On);
+        const std::string lastState = T(lastStateKey);
+        const std::string startupRow = F(LocaleKey::PluginStartupRow,
+                                         {{"desired", desired}, {"state", lastState}});
+        Label(ImVec2(pos.x + Px(14), ry + Px(32)), kUiTextDim,
+              Fit(startupRow, rx - (pos.x + Px(14)), false).c_str());
         DrawSwitch(ImVec2(tgX, ry + (rowH - tgH) * 0.5f), on);
         if (gear) {
             ImGui::SetCursorScreenPos(ImVec2(gearX, ry + (rowH - Px(28)) * 0.5f));
@@ -3841,6 +3958,7 @@ static void DrawPlugins(float x0, float y0, float x1, float y1) {
     Gui& g = g_gui;
     if (g.plugOpen.empty() && (!g.pluginsAt || GetTickCount64() - g.pluginsAt > 3000)) {   // not while editing: that would drop the edits
         g.plugins = ReadPlugins(g.here);
+        g.pluginStartupSnapshot = ReadPluginStartupSnapshot(g.here);
         g.pluginsAt = GetTickCount64();
     }
     if (!g.plugOpen.empty()) {
