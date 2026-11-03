@@ -2,6 +2,7 @@
 #pragma once
 #include "sc_loadout.h"
 #include "sco_content.h"
+#include "../picker.h"
 #include <array>
 #include <cstddef>
 #include <cstring>
@@ -30,12 +31,7 @@ inline std::string_view Trim(std::string_view value) {
     return first==value.npos ? std::string_view{} : value.substr(first,value.find_last_not_of(" \t\r")-first+1);
 }
 inline bool Same(std::string_view a,std::string_view b) {
-    if(a.size()!=b.size())return false;
-    for(size_t i=0;i<a.size();++i) {
-        const auto lower=[](unsigned char c){return c>='A'&&c<='Z'?static_cast<unsigned char>(c+32):c;};
-        if(lower(static_cast<unsigned char>(a[i]))!=lower(static_cast<unsigned char>(b[i])))return false;
-    }
-    return true;
+    return sco::picker::EqualAsciiInsensitive(a,b);
 }
 // Display names from Alpha-Rome0's public GPL PR127, source 7ea9731b693bb9042ccbb721099ca88acb80d6f4.
 inline std::string_view Alias(std::string_view value) {
@@ -57,9 +53,7 @@ inline std::string Display(std::string_view value) {
     return alias.empty()?std::string(value):std::string(alias)+" ["+std::string(value)+"]";
 }
 inline bool Contains(std::string_view text,std::string_view query) {
-    if(query.size()>text.size())return false;
-    for(size_t i=0;i<=text.size()-query.size();++i)if(Same(text.substr(i,query.size()),query))return true;
-    return false;
+    return sco::picker::ContainsAsciiInsensitive(text,query);
 }
 inline bool Matches(std::string_view value,std::string_view query) {
     return Contains(value,query)||Contains(Alias(value),query);
