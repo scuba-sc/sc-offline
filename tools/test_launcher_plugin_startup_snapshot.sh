@@ -9,4 +9,7 @@ trap 'rm -rf "$TMP"' EXIT
   "$ROOT/tools/fixtures/plugin-startup-v1-complete.json" \
   "$ROOT/tools/fixtures/plugin-startup-v1-starting.json" \
   "$ROOT/tools/fixtures/plugin-startup-writer-complete-enabled.json" \
-  "$ROOT/tools/fixtures/plugin-startup-writer-complete-disabled.json"
+  "$ROOT/tools/fixtures/plugin-startup-writer-complete-disabled.json" \
+  "$ROOT/tools/fixtures/plugin-startup-writer-starting.json" \
+  "$ROOT/tools/fixtures/plugin-startup-writer-failed.json" \
+  "$ROOT/tools/fixtures/plugin-startup-writer-incomplete.json"
