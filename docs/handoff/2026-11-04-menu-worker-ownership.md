@@ -31,11 +31,23 @@ accepted frame has returned, it hides/destroys its own window and exits.
 If a callback or graphics call hangs, the worker can remain pending; it is not
 terminated, detached, or declared drained.
 
-`GetMsgProc` takes a separate lease through `CallNextHookEx`. The stop request
-signals `g_controlWakeEvent`, so `ModThread` wakes without waiting for core to
-reach a terminal phase. Terminal phase polling remains a fallback. The
-controller waits until admitted hook callbacks return before unhooking and
-draining the shared core owner. It then calls `Menu_Drain(1000)` separately.
+`GetMsgProc` takes a separate lease through `CallNextHookEx`. Its first product
+operation races atomically with `CallbackAdmission::Close`: if `Enter` wins, it
+increments the count and the controller waits for that callback to leave before
+draining the core owner; if `Close` wins, the callback only calls
+`CallNextHookEx` and cannot reach core, menu, or other product callbacks. The
+controller cannot observe a callback that entered the OS hook but has not yet
+executed `Enter`. Therefore it deliberately does not call
+`UnhookWindowsHookEx`: the hook remains registered, its handle stays stable,
+and the module/backing remain process-retained. Later rejected callbacks
+continue to forward until process exit. This closes product access after the
+admission boundary; it does not prove that every hook invocation returned or
+authorize unload.
+
+The stop request signals `g_controlWakeEvent`, so `ModThread` wakes without
+waiting for core to reach a terminal phase. Terminal phase polling remains a
+fallback. The controller waits for admitted hook callbacks before draining the
+shared core owner. It then calls `Menu_Drain(1000)` separately.
 The menu drain closes its own admission even for a core-owned terminal path.
 Only the original control thread may wait; calls from the game/menu thread or
 another controller are refused. Concurrent control calls return Busy without
@@ -63,6 +75,25 @@ have not been closed under a complete product/core contract. The registered
 window callback remains backed by the retained DLL. A malformed/crashed native
 process is outside this local census; no authenticity or recovery guarantee is
 made for trusted in-process plugins.
+
+## ASOP terminal callback ordering
+
+`StopHostKit` calls `offline::asop::Stop()` synchronously after requesting
+product/core stop. In the inspected sibling core source at
+`a9a99f2d831d40f64e38ced8bb59f1575491b87b`, `asop_host::Stop` closes ASOP
+admission, updates status, disables fleet admission, shuts down the handoff
+queue, and clears feature capabilities. Handoff shutdown wakes untaken calls;
+it does not join taken callbacks or engine workers. The implementation also
+takes internal mutex/SRW locks without a deadline. The public contract says
+this is terminal closure and requires callers to join engine workers before
+unload. It does not expose a nonblocking request paired with an owner drain.
+
+The registered ASOP `game.exit` callback is ordered before core provider
+withdrawal. Moving ASOP closure to `ModThread` or making it asynchronous would
+need a core API that preserves this ordering and reports completion. That API
+is absent from the selected source. Keep the current synchronous closure,
+describe its lock-wait limitation, and retain all backing. Do not count it as a
+drain or safe-unload proof.
 
 ## Core owner integration and current dependency
 
@@ -131,9 +162,11 @@ one-shot drain attempt.
 The broader inventory remains in
 [`2026-11-03-product-lifecycle-closure.md`](2026-11-03-product-lifecycle-closure.md).
 No spawner tick, picker behavior, plugin activation or other feature is added.
-The bootstrap `ModThread` handle still has its earlier ownership gap, and the
-message hook still lacks a complete entry/in-flight barrier. The menu's local
-census does not close either obligation.
+The bootstrap `ModThread` handle still has its earlier ownership gap. Hook
+admission now prevents callbacks that lose the close race from entering product
+code, while the registered hook and its backing remain retained because the
+entry-to-admission interval cannot be counted. The menu's local census does not
+close either obligation.
 
 ## Deferred acceptance
 

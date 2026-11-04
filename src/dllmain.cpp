@@ -486,7 +486,10 @@ static void StopHostKit(const char* trigger) {
     // before either the core owner or the menu worker is drained.
     RequestLifecycleStop(trigger);
 #ifdef SCO_ASOP_HOST_COMPOSITION
-    offline::asop::Stop(); // Untaken callers wake before app/provider teardown.
+    // This is synchronous admission closure, not a worker drain. The available
+    // API has no separate nonblocking request; moving it to the controller
+    // would need a core ordering contract for provider withdrawal.
+    offline::asop::Stop();
 #endif
 #ifdef SCO_OFFLINE_G1_HOST
     InvalidateEvidence();
@@ -626,6 +629,9 @@ static void RequestLifecycleStop(const char* trigger) {
 }
 
 static LRESULT CALLBACK GetMsgProc(int code, WPARAM wp, LPARAM lp) {
+    // This admission operation is deliberately the first product access in the
+    // callback. A callback that loses the close race only forwards to the next
+    // hook; it never touches the core, menu, or product state.
     HookCallbackLease callback;
     if (!callback) return CallNextHookEx(g_msgHook, code, wp, lp);
     if (code >= 0) {
@@ -700,8 +706,11 @@ static void RunMainThreadService() {
         }
         if (drained == WAIT_FAILED) Sleep(1000); // retain; never drain around an uncertain callback
     }
-    if (!UnhookWindowsHookEx(g_msgHook))
-        Log("[app] message hook removal failed (%lu); keeping callback backing retained", GetLastError());
+    // This registration path has no entry fence proving no thread has entered
+    // GetMsgProc but not yet executed HookCallbackLease::Enter. Keep the hook
+    // registered and its HHOOK stable. After Close, later entries take only the
+    // forwarding path above; the product module remains pinned.
+    Log("[app] message hook remains registered; closed admission forwards callbacks and backing stays retained");
     const auto coreDrain = offline_host::DrainRequestedStop(1000);
     Log("[app] core owner drain=%u; dependency backing remains process-retained",
         static_cast<unsigned>(coreDrain));
