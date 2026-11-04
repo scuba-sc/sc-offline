@@ -87,6 +87,10 @@ it does not join taken callbacks or engine workers. The implementation also
 takes internal mutex/SRW locks without a deadline. The public contract says
 this is terminal closure and requires callers to join engine workers before
 unload. It does not expose a nonblocking request paired with an owner drain.
+The optional `StopAsopBeforeProviders` runtime callback also invokes this same
+idempotent stop. A WM_QUIT path can therefore make the second call after the
+core exit callback; it repeats the synchronous lock acquisition, while still
+providing no drain evidence.
 
 The registered ASOP `game.exit` callback is ordered before core provider
 withdrawal. Moving ASOP closure to `ModThread` or making it asynchronous would
