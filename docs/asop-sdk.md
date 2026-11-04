@@ -1,33 +1,34 @@
 # ASOP host composition consumer
 
 The product currently refuses native startup pending a proven reader/worker
-exclusion and drain. The opt-in composition below is not active in this build.
-In addition, the coordinated core source `6106fa3639cbcc28f78a1ded8de2707de019f4d3` itself returns
-`Unavailable` from enabled ASOP Start until a safe phase is established. With
-`SCO_ASOP_HOST_COMPOSITION=ON`, the legacy fleet/services implementation is
-excluded at build time; there is no runtime fallback when that owner refuses.
-The coordinated pin does not restore ASOP gameplay.
+exclusion and drain. ASOP compositions are unavailable too: both
+`SCO_ASOP_HOST_COMPOSITION` and `SCO_ASOP_SELECTION_COMPOSITION` default to OFF,
+and CMake rejects either option until the product has a reviewed nonblocking
+stop request and ordered control-thread drain. The selected core pin
+`6106fa3639cbcc28f78a1ded8de2707de019f4d3` returns `Unavailable` from ASOP
+host Start before installing hooks, and its exposed `Stop` is synchronous.
+Neither the pin nor this product enables ASOP gameplay.
 
 `src/asop_shell.*` consumes the game-specific public host-source
 `sco::game::asop_host` interface. It is not a plugin service. The published
-The stable SDK 2.4.0 release (`sdk-v2.4.0`) carries G10 in
-`sco-sdk-host-source-sc-2.4.0.zip` (`include/sco/game/asop_host.h`; SDK 2.0.0 lacked it). This staged cutover
-remains opt-in: `SCO_ASOP_HOST_COMPOSITION` defaults to OFF.
+stable SDK 2.4.0 release (`sdk-v2.4.0`) carries G10 in
+`sco-sdk-host-source-sc-2.4.0.zip` (`include/sco/game/asop_host.h`; SDK 2.0.0
+lacked it). Header availability alone is insufficient to enable this consumer;
+the missing lifecycle contract is the current blocker.
 
-## Configure
+## Current configure status
 
-For a Windows x64 host build using a local dependency containing G10:
+There is no supported configure command for either ASOP composition. Setting
+`SCO_ASOP_HOST_COMPOSITION=ON` or `SCO_ASOP_SELECTION_COMPOSITION=ON` fails
+configuration with an explanatory error. The default build leaves both off.
+This keeps synchronous provider Stop callbacks out of the game message hook.
 
-```sh
-cmake -S . -B build -A x64 -DSCO_HOST_SOURCE_DIR=/path/to/approved-host-source -DSCO_ASOP_HOST_COMPOSITION=ON
-cmake --build build --config Debug --target dinput8
-```
-
-The option refuses an older dependency. With it ON, `fleet.cpp` and `services.cpp`
-leave the DLL target; product fleet entitlement/retrieve and elevator detours are
-not compiled/installed. The game pack becomes the only ASOP/hangar/ATC owner.
-With it OFF the legacy build is retained, not a runtime fallback
-from a failed G10 request. Do not install both hook owners.
+Re-enabling the host composition requires a core-owned nonblocking close request,
+an owner report for taken callbacks/work, and a control-thread drain/finalization
+order that keeps providers live until ASOP teardown completes. Re-enabling the
+selection composition also requires preserving its game-thread finalization
+contract. See the lifecycle handoff before changing these gates. Do not install
+both hook owners.
 
 The legacy path now encodes a never-reused session ID in each synthetic entitlement,
 not the current row position. IDs and immutable historical class names survive reorder,
@@ -49,23 +50,12 @@ copied, with duplicate/invalid classes refused atomically. No session persistenc
 claim is added. Readiness bits mean individual groups installed, not gameplay proof.
 Delivery/store/retrieve/claim, lift state and pad ownership belong to the game pack.
 
-Start occurs after the first game-thread host-service startup with positive product
-offline/EAC evidence. Timing against real loading callers requires Windows acceptance;
-the existing G10 contract requires startup before callers. The shell never re-installs
-legacy hooks when the new owner refuses. Every window message calls the provider Pump
-before the 100-ms feature throttle; never queue caller-frame continuations as plugin
-next-tick tasks. Stop closes admission and wakes untaken waiters before app teardown.
-Taken frames remain the provider's process-lifetime responsibility; join engine workers
-before unloading the image. Stop is not restoration/hot-reload of inherited patches.
-
-If the provider returns `Unavailable` or throws a C++ exception from Start, the
-product immediately calls Stop and reports `Unavailable`. Stop closes custom admission while retaining
-installed hooks and backing for process lifetime; it is not rollback. Core must
-also close admission as part of its own failed installation path: the product
-cannot prevent callers entering while Start is still executing. This protection
-does not establish native-reader exclusion or make a partial installation safe to
-unload. A repeated `AlreadyStarted` response is not a new installation failure
-and does not stop the existing owner.
+The shell and provider sources remain scaffold material only. Do not call their
+synchronous `Stop` from a hook, runtime callback, or start-failure handler. A
+future ordered coordinator must close admission without waiting, keep callbacks
+and providers alive, then finalize on the required thread and drain accepted
+work. A refusal or exception is not evidence that partial installation can be
+unloaded. `AlreadyStarted` is not a new installation failure.
 
 Portable compile-only target:
 

@@ -485,25 +485,12 @@ static void StopHostKit(const char* trigger) {
     // Runs inside the game hook. Request closure and wake ModThread, but return
     // before either the core owner or the menu worker is drained.
     RequestLifecycleStop(trigger);
-#ifdef SCO_ASOP_HOST_COMPOSITION
-    // This is synchronous admission closure, not a worker drain. The available
-    // API has no separate nonblocking request; moving it to the controller
-    // would need a core ordering contract for provider withdrawal.
-    offline::asop::Stop();
-#endif
 #ifdef SCO_OFFLINE_G1_HOST
     InvalidateEvidence();
 #else
     (void)trigger;
 #endif
 }
-
-#ifdef SCO_ASOP_HOST_COMPOSITION
-static const char kAsopExitOwner = 0;
-static void StopAsopBeforeProviders(const char*, const void*, void*) {
-    offline::asop::Stop();
-}
-#endif
 
 // Contracts run on the retained host engine (contracts.cpp), as the v0.7.7 built-in did, until a
 // published missions/economy provider lets the external plugin take over. Its mission accounting
@@ -527,17 +514,12 @@ static void StartHostKit() {
     }
 #ifdef SCO_ASOP_HOST_COMPOSITION
     if (g_hostKitStarted) {
-        // G1 owns engine quit and admission-loss teardown. Its app::Stop dispatches
-        // game.exit before withdrawing providers, including the direct quit path.
-        const auto subscribed = sco::Subscribe(&kAsopExitOwner, "game.exit", StopAsopBeforeProviders, nullptr);
-        if (subscribed != sco::Result::Ok) {
-            Log("[asop] shutdown subscription refused: %s; ASOP stays inactive", sco::ResultName(subscribed));
-        } else {
-            char ships[MAX_PATH]{};
-            ShipsFilePath(ships, sizeof(ships));
-            const auto r = offline::asop::StartFromEnvironment(g_offline, InspectAntiCheat() == AcCheck::Clear, ships);
-            Log("[asop] host composition result=%u; no product fallback", static_cast<unsigned>(r));
-        }
+        // CMake currently rejects this composition until it has a nonblocking
+        // stop request and same-owner drain that preserve provider ordering.
+        char ships[MAX_PATH]{};
+        ShipsFilePath(ships, sizeof(ships));
+        const auto r = offline::asop::StartFromEnvironment(g_offline, InspectAntiCheat() == AcCheck::Clear, ships);
+        Log("[asop] host composition result=%u; no product fallback", static_cast<unsigned>(r));
     }
 #endif
 #endif

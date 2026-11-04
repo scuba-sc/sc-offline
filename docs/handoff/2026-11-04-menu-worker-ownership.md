@@ -76,28 +76,50 @@ window callback remains backed by the retained DLL. A malformed/crashed native
 process is outside this local census; no authenticity or recovery guarantee is
 made for trusted in-process plugins.
 
-## ASOP terminal callback ordering
+## ASOP stop paths and integration dependency
 
-`StopHostKit` calls `offline::asop::Stop()` synchronously after requesting
-product/core stop. In the inspected sibling core source at
-`a9a99f2d831d40f64e38ced8bb59f1575491b87b`, `asop_host::Stop` closes ASOP
-admission, updates status, disables fleet admission, shuts down the handoff
-queue, and clears feature capabilities. Handoff shutdown wakes untaken calls;
-it does not join taken callbacks or engine workers. The implementation also
-takes internal mutex/SRW locks without a deadline. The public contract says
-this is terminal closure and requires callers to join engine workers before
-unload. It does not expose a nonblocking request paired with an owner drain.
-The optional `StopAsopBeforeProviders` runtime callback also invokes this same
-idempotent stop. A WM_QUIT path can therefore make the second call after the
-core exit callback; it repeats the synchronous lock acquisition, while still
-providing no drain evidence.
+No nonblocking ASOP stop contract is available in the inspected sibling core
+checkout at `a9a99f2d831d40f64e38ced8bb59f1575491b87b`; the selected submodule
+pin is `6106fa3639cbcc28f78a1ded8de2707de019f4d3`. The supplied newer core
+checkpoint was not imported. `asop_host::Stop` in that source synchronously
+updates state, closes fleet admission under an SRW lock, shuts down the handoff
+queue under a mutex, and clears capabilities. Handoff shutdown wakes untaken
+calls; it does not join taken callbacks or engine workers. Locks have no
+product-side deadline. The public contract requires callers to join workers
+before unload, and exposes no separate request/drain pair.
 
-The registered ASOP `game.exit` callback is ordered before core provider
-withdrawal. Moving ASOP closure to `ModThread` or making it asynchronous would
-need a core API that preserves this ordering and reports completion. That API
-is absent from the selected source. Keep the current synchronous closure,
-describe its lock-wait limitation, and retain all backing. Do not count it as a
-drain or safe-unload proof.
+The old product paths called `offline::asop::Stop()` directly from
+`StopHostKit` (the message hook) and from the `game.exit` callback before
+provider withdrawal. Both calls were removed. The shell's Start failure path
+also stopped calling synchronous Stop from the game-thread callout. The
+separate ASOP selection composition binds `selection::Stop` as a host-service
+callback; that API requires the game thread and has no product-side nonblocking
+close/drain contract either. `CMakeLists.txt` now rejects both ASOP composition
+options until their stop ordering is integrated. Both options remain OFF by
+default; native activation remains false.
+
+Required integration before re-enabling either option:
+
+1. Core must expose a nonblocking close request for ASOP admission and pending
+   handoffs. It must return without taking a lock that can wait for an active
+   game callback. For selection, the API must preserve its game-thread-only
+   finalization requirement.
+2. Core must keep provider and callback backing alive after the request, and
+   report active/taken work through the same owner used by the controller.
+   The `game.exit` callback may request closure before provider withdrawal, but
+   it must not call synchronous Stop or drain inside the hook/runtime callback.
+3. Core must provide a game-thread lifecycle point outside the current hook
+   callback for the selection service's thread-affine finalizer. Providers stay
+   live until that finalizer returns. After the admitted message-hook callback
+   returns, the independent controller coordinates that phase and drains the
+   exact owner. A timeout, exception, or ambiguous report retains all backing
+   and prevents restart. Any completed drain is reused rather than attempted a
+   second time.
+4. The message hook and DLL remain process-retained. This design would still
+   not prove safe unload or release native engine state.
+
+Without that API, ASOP composition stays unavailable. Do not call its
+synchronous Stop from a hook or treat its current idempotence as drain evidence.
 
 ## Core owner integration and current dependency
 
