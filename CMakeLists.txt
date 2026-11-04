@@ -210,6 +210,16 @@ if(TARGET sco_game_host)
   target_sources(dinput8 PRIVATE src/offline_host.cpp)
   target_link_libraries(dinput8 PRIVATE sco_game_host)
   target_compile_definitions(dinput8 PRIVATE SCO_OFFLINE_G1_HOST)
+  # Control-thread stop is only safe when the selected core source exposes
+  # both halves of the same-owner non-draining request/drain contract.
+  file(READ "${SCO_CORE_SOURCE_DIR}/include/sco/game/host.h" SCO_GAME_HOST_H)
+  file(READ "${SCO_CORE_SOURCE_DIR}/include/sco/owned_shutdown.h" SCO_OWNED_SHUTDOWN_H)
+  if(SCO_GAME_HOST_H MATCHES "HostReport[ \t]+RequestStopDetailed[ \t]*\\([ \t]*\\)[ \t]*noexcept" AND
+     SCO_OWNED_SHUTDOWN_H MATCHES "void[ \t]+request_stop[ \t]*\\([ \t]*\\)[ \t]*noexcept")
+    target_compile_definitions(dinput8 PRIVATE SCO_CORE_NON_DRAINING_STOP_API)
+  else()
+    message(STATUS "Core lacks request_stop/RequestStopDetailed: product host remains fail-closed")
+  endif()
 elseif(SCO_HOST_SOURCE_DIR)
   message(FATAL_ERROR "SCO_HOST_SOURCE_DIR lacks the required sco_game_host composition target")
 else()

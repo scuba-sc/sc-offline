@@ -2,8 +2,9 @@
 
 Local implementation based on published product-lifetime scaffold
 `d0a86c088d2eb06971b6d8d8967a1762c88764b2`. Native activation remains
-unconditionally refused. This change is not exercised by the current product
-startup. **No builds, tests or game execution were run for this change.**
+unconditionally refused. This controller/core-owner follow-up is not exercised
+by product startup. **No builds, tests or game execution were run for these
+changes.**
 
 ## Actual product integration
 
@@ -23,16 +24,19 @@ close the event: the callback can still be about to signal it. Admission closes
 permanently and atomically with respect to entering callbacks.
 
 `Menu_RequestStop` in `src/menu_worker.h` closes frame admission and sets the
-worker's stop flag. It never waits or joins. `StopHostKit` calls it before the
-shell's core-stop call. The menu thread cancels a frame not yet taken and keeps
+worker's stop flag. It never waits or joins. `RequestLifecycleStop` closes it
+before asking the core owner to stop. The menu thread cancels a frame not yet taken and keeps
 pumping sent window messages while a game-thread frame is building. Once every
 accepted frame has returned, it hides/destroys its own window and exits.
 If a callback or graphics call hangs, the worker can remain pending; it is not
 terminated, detached, or declared drained.
 
-After observing core `Stopped` or `Failed`, `RunMainThreadService` unhooks its
-message hook and calls `Menu_Drain(1000)` on `ModThread`. Drain closes admission
-even for a core-owned terminal path that did not call shell `StopHostKit`.
+`GetMsgProc` takes a separate lease through `CallNextHookEx`. The stop request
+signals `g_controlWakeEvent`, so `ModThread` wakes without waiting for core to
+reach a terminal phase. Terminal phase polling remains a fallback. The
+controller waits until admitted hook callbacks return before unhooking and
+draining the shared core owner. It then calls `Menu_Drain(1000)` separately.
+The menu drain closes its own admission even for a core-owned terminal path.
 Only the original control thread may wait; calls from the game/menu thread or
 another controller are refused. Concurrent control calls return Busy without
 waiting. A start already reserved while stop arrives remains covered by that
@@ -60,11 +64,35 @@ window callback remains backed by the retained DLL. A malformed/crashed native
 process is outside this local census; no authenticity or recovery guarantee is
 made for trusted in-process plugins.
 
-## Exact core dependency for the next step
+## Core owner integration and current dependency
 
-No core header, ABI, submodule pin, or activation policy changes in this slice.
-The pinned interfaces remain `sco::OwnedShutdown::{try_read,start_worker}` and
-`sco::game::host::{HostCapsule,Options,PrepareDetailed,StopDetailed,HostReport}`.
+When the selected core headers declare `OwnedShutdown::request_stop()` and
+`host::RequestStopDetailed()`, `CMakeLists.txt` defines
+`SCO_CORE_NON_DRAINING_STOP_API`. The product root creates one shared owner and
+pins the product module before publishing the core logger. `AttachShutdownOwner`
+puts that same object in `Options`, holds a real module reference for resolver
+code, and pins the executable module containing the supplied image. The
+admitted `OnMainThreadTick` path holds a `Read` from that exact owner.
+`offline_host::RequestStop` closes its admission directly, then calls
+`RequestStopDetailed` for the core report. `DrainRequestedStop` calls
+`drain_until` on that same object from `ModThread` after callback return.
+Every drain result keeps the root retained. The menu report remains distinct.
+
+The named core commits are not present in this product checkout: the submodule
+is `6106fa3639cbcc28f78a1ded8de2707de019f4d3`, and the sibling
+`/workspace/sco-core` checkout is `a9a99f2d831d40f64e38ced8bb59f1575491b87b`.
+The supplied newer core heads were not imported. With the current pin, header
+detection disables this path, `AttachShutdownOwner` refuses, and core prepare,
+start and tick stay unavailable. Native activation remains false. Header-name
+detection does not validate the newer report's drain-state semantics; the
+product must be reviewed against the exact core source before enabling it.
+
+## Remaining core/product closure
+
+No core source, ABI, submodule pin, or activation policy changes in this slice.
+The current pin does not expose the non-draining stop pair. On compatible
+source, the product uses `sco::OwnedShutdown::{try_read,request_stop,drain_until}`
+and `sco::game::host::RequestStopDetailed`.
 The pinned `Options::shutdownOwner` contract explicitly excludes the product's
 plugins, Lua, DataCore, native services and host-menu/service adapters. A local
 menu report must not be passed off as proof satisfying that contract.
@@ -79,13 +107,13 @@ second host ABI here:
 2. Core terminal shutdown must close product callback admission before
    retiring providers, including native quit, admission loss and startup
    failure. The notification must not join on the game thread or inside a
-   runtime callout. Existing shell stop and terminal polling cover this menu
-   slice, not the native entry barrier.
-3. Enroll menu callbacks in the supported `OwnedShutdown::Read` domain for
-   their whole accepted use. Enroll the actual worker with the supported
-   worker owner (port to `start_worker`, or use a reviewed native-handle
-   integration if core provides one). Do not substitute a synthetic worker,
-   a no-op deleter, or a boolean drain callback for the real thread.
+   runtime callout. The shell event covers this menu slice, not the native
+   entry barrier.
+3. Keep the menu worker's separate drain report distinct from the core owner
+   drain. If the whole-product contract requires one owner to join it, use a
+   reviewed native-handle integration or port the actual loop to
+   `OwnedShutdown::start_worker`; do not substitute a synthetic worker, a
+   no-op deleter, or a boolean drain callback for the real thread.
 4. Preserve a control-thread phase that can join after game-thread callouts
    return, and retain the full dependency graph on timeout, fault, or uncertain
    shutdown. Joining a menu frame from its own game-thread callback deadlocks.
@@ -93,6 +121,12 @@ second host ABI here:
    `DependencyDisposition::ProcessRetained`, and core Stop success cannot
    authorize releasing product hooks, log sinks, crash handlers, image caches,
    IIM handoffs, plugin callbacks or renderer/client backing.
+
+The newer core report's drain state and read-only owner snapshot have not yet
+been integrated against their source because that commit is not present here.
+Treat `Drained` as historical cooperative evidence only. If the control path
+later observes a completed owner drain, reuse it; do not begin a second
+one-shot drain attempt.
 
 The broader inventory remains in
 [`2026-11-03-product-lifecycle-closure.md`](2026-11-03-product-lifecycle-closure.md).
@@ -115,12 +149,14 @@ c++ -std=c++20 -pthread -Isrc tools/menu_worker_lifetime_test.cpp -o /tmp/menu-w
 ```
 
 Before acceptance, run existing native-preflight, menu-frame, host-menu and
-source/scan checks; build Windows/MSVC in both host-menu configurations. Add a
+source/scan checks; build Windows/MSVC against the current pin and the exact
+newer core source. Add a
 Windows synthetic harness around the actual worker with controlled startup,
 frame completion, window creation and wait failures. Cover stop overlapping
 start; duplicate start; wrong-thread and concurrent drain; failed creation;
 timeout followed by completion; event wake after `Finish`; handle close failure;
-and proof that no wait/join occurs inside `DllMain`. A signalled worker handle
+message-hook wake after callback return; owner close and same-owner control
+thread drain; and proof that no wait/join occurs inside `DllMain`. A signalled worker handle
 does not prove healthy renderer initialization.
 
 Only after the coordinated whole-product ownership contract is implemented and
