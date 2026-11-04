@@ -21,6 +21,7 @@
 #include "fleet.h"
 #endif
 #include "menu.h"
+#include "menu_worker.h"
 #include "hotkeys.h"
 #include "builtins/builtins.h"
 #include "sco/app.h"
@@ -471,6 +472,7 @@ static bool PrepareHostKit() {
 }
 
 static void StopHostKit(const char* trigger) {
+    Menu_RequestStop(); // Close frame admission; never join on the game thread.
 #ifdef SCO_ASOP_HOST_COMPOSITION
     offline::asop::Stop(); // Untaken callers wake before app/provider teardown.
 #endif
@@ -622,6 +624,11 @@ static void RunMainThreadService() {
         Sleep(200);
     }
     UnhookWindowsHookEx(g_msgHook); // hook handle stays immutable for any in-flight callback
+    // This is ModThread, outside loader lock and game/runtime callbacks. A
+    // timeout retains every menu handle/backing; even Joined is not unload proof.
+    const auto menu = Menu_Drain(1000);
+    Log("[menu] worker drain: state=%u status=%u backing=%u; product backing remains process-retained",
+        static_cast<unsigned>(menu.worker), static_cast<unsigned>(menu.status), static_cast<unsigned>(menu.backing));
 #endif
 }
 

@@ -1,5 +1,10 @@
 # Product lifecycle closure inventory
 
+Follow-up: the local [menu worker ownership checkpoint](2026-11-04-menu-worker-ownership.md)
+implements the menu handle/admission/stop/drain slice. The table below records
+the earlier scaffold baseline; the follow-up identifies what changed and what
+still requires the coordinated core/product contract. Its checks are deferred.
+
 Status: developer handoff with an attach-time log-sink deferral on the isolated
 branch. Inventory review was against sc-offline base
 `38066870c58f73ccd7751c4fd6d1a44936cdcb32` with sco-core

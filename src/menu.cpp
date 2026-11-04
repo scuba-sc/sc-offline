@@ -8,6 +8,8 @@
 #include "menu_ui.h"
 #include "menu_window.h"
 #include "menu_frame_protocol.h"
+#include "menu_callback_admission.h"
+#include "menu_worker.h"
 #include "common.h"
 #include "version.h"
 #include <atomic>
@@ -50,6 +52,28 @@ static ID3D11DeviceContext*    g_context;
 static IDXGISwapChain*         g_swap;
 static ID3D11RenderTargetView* g_rtv;
 static UINT                    g_resizeW, g_resizeH;
+
+// The actual menu worker's control state. Never destroyed on DLL detach: after
+// exposure, code and renderer/client backing remain owned through process exit.
+static SRWLOCK g_workerLock = SRWLOCK_INIT;
+static HANDLE g_workerThread = nullptr;
+static HMODULE g_workerModule = nullptr;
+static DWORD g_workerControlThread = 0, g_workerThreadId = 0, g_gameThreadId = 0;
+static bool g_workerAttempted = false, g_workerJoined = false;
+static std::atomic<bool> g_workerStop{false};
+static sc_offline::menu_lifetime::CallbackAdmission g_frameAdmission;
+static std::atomic<bool> g_windowCallbacksClosed{false};
+
+class WorkerControlLock final {
+public:
+    WorkerControlLock() noexcept : held_(TryAcquireSRWLockExclusive(&g_workerLock) != FALSE) {}
+    ~WorkerControlLock() { if (held_) ReleaseSRWLockExclusive(&g_workerLock); }
+    explicit operator bool() const noexcept { return held_; }
+    WorkerControlLock(const WorkerControlLock&) = delete;
+    WorkerControlLock& operator=(const WorkerControlLock&) = delete;
+private:
+    bool held_;
+};
 
 namespace Window = sc_offline::menu_window;
 static Window::Size g_menuSize;
@@ -125,7 +149,7 @@ static bool GameThreadBuilding();
 static LRESULT CALLBACK MenuWndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
     // A message sent to the window while the game thread builds a frame doesn't reach ImGui: the
     // game thread has it until the frame is built.
-    if (!GameThreadBuilding()
+    if (!g_windowCallbacksClosed.load() && !GameThreadBuilding()
 #ifdef SCO_HOST_MENU_CLIENT
         && g_imguiUsable.load()
 #endif
@@ -726,6 +750,10 @@ static void AbortMenuFrame(void*) { sco::app::HostMenuAbort(); }
 #endif
 
 void Menu_GameThreadFrame() {
+    // Keep the lease until after Finish AND SetEvent. Building alone does not
+    // cover the final wake and cannot authorize closing g_frameBuilt.
+    sc_offline::menu_lifetime::CallbackLease frameLease(g_frameAdmission);
+    if (!frameLease) return;
     InterlockedExchange(&g_nudged, 0);
 #ifdef SCO_HOST_MENU_CLIENT
     ProductFrame request;
@@ -759,6 +787,7 @@ bool Menu_Typing() { return g_typing.load(); }
 // Menu thread: ask the game thread for a frame, and nudge its message loop once (the message hook
 // runs on the game's next message).
 static void RequestFrame() {
+    if (g_workerStop.load(std::memory_order_acquire)) return;
     if (g_frame.Current() != sc_offline::menu_frame::State::Idle) return;
     ImGui_ImplDX11_NewFrame();
     ImGui_ImplWin32_NewFrame();
@@ -806,6 +835,18 @@ static bool RecoverMenuImGui() {
 #endif
 
 static DWORD WINAPI MenuThread(LPVOID) {
+    struct CloseOnReturn {
+        ~CloseOnReturn() {
+            // Initialization failures must also stop accepting frames. Windows
+            // may destroy a partially created window as this thread exits.
+            Menu_RequestStop();
+            g_windowCallbacksClosed.store(true);
+            g_typing = false;
+        }
+    } closeOnReturn;
+    // A stop may overlap the reserved start before its HANDLE is published.
+    // Menu_Drain cannot report completion while Menu_Start holds control.
+    if (g_workerStop.load(std::memory_order_acquire)) return 0;
     if (ModLogSibling(g_menuSizePath, sizeof(g_menuSizePath), "menu-window.ini"))
         g_menuSize = Window::Load(g_menuSizePath);
     else {
@@ -855,6 +896,13 @@ static DWORD WINAPI MenuThread(LPVOID) {
         // Take ImGui back from a request the game thread hasn't started; let one it has finish.
         g_frame.CancelUnstarted();
         WaitWhileBuilding();
+        if (g_workerStop.load(std::memory_order_acquire)) {
+            // A frame may have published Built before its final event wake.
+            // Wait for the whole accepted callback, not just the frame state.
+            if (g_frameAdmission.ClosedAndDrained()) break;
+            Sleep(1);
+            continue;
+        }
 #ifdef SCO_HOST_MENU_CLIENT
         if (g_frame.TakeCancelled()) {
             if (!RecoverMenuImGui()) { visible = false; ShowMenu(false); }
@@ -912,9 +960,69 @@ static DWORD WINAPI MenuThread(LPVOID) {
         // Wakes for the built frame or the window's next message, whichever comes first.
         MsgWaitForMultipleObjects(1, &g_frameBuilt, FALSE, kMenuWaitMs, QS_ALLINPUT);
     }
+    g_typing = false;
+    g_windowCallbacksClosed.store(true);
+    ShowMenu(false);
+    // Only this thread owns the window. Retain ImGui, D3D, optional menu-client
+    // state and the DLL: core/plugin/native consumers are not drained here.
+    if (g_wnd && DestroyWindow(g_wnd)) g_wnd = nullptr;
+    return 0;
 }
 
 void Menu_Start(HWND gameWindow) {
+    WorkerControlLock lock;
+    if (!lock || g_workerAttempted || g_workerStop.load(std::memory_order_acquire)) return;
+    g_workerAttempted = true;
+    g_workerControlThread = GetCurrentThreadId();
+    g_gameThreadId = GetWindowThreadProcessId(gameWindow, nullptr);
+    if (!g_gameThreadId || g_workerControlThread == g_gameThreadId) {
+        Log("[menu] worker startup refused: a separate product control thread is required");
+        return;
+    }
+    // Acquire an actual reference before publishing MenuThread/MenuWndProc.
+    // No FreeLibrary follows exposure, including timeout and partial startup.
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+            reinterpret_cast<LPCWSTR>(&Menu_Start), &g_workerModule)) {
+        Log("[menu] worker startup refused: module backing unavailable (%lu)", GetLastError());
+        return;
+    }
     g_game = gameWindow;
-    if (HANDLE t = CreateThread(nullptr, 0, MenuThread, nullptr, 0, nullptr)) CloseHandle(t);
+    g_workerThread = CreateThread(nullptr, 0, MenuThread, nullptr, 0, &g_workerThreadId);
+    if (!g_workerThread)
+        Log("[menu] worker creation failed (%lu); module backing retained until process exit", GetLastError());
+}
+
+void Menu_RequestStop() noexcept {
+    g_frameAdmission.Close();
+    g_workerStop.store(true, std::memory_order_release);
+}
+
+MenuDrainReport Menu_Drain(uint32_t timeoutMs) noexcept {
+    Menu_RequestStop();
+    WorkerControlLock lock;
+    if (!lock) return {MenuWorkerState::Unknown, MenuBacking::UnknownRetainRequired, MenuDrainStatus::Busy};
+    const auto backing = g_workerModule ? MenuBacking::ProcessRetained : MenuBacking::NotAcquired;
+    const DWORD caller = GetCurrentThreadId();
+    if (g_workerAttempted && (caller != g_workerControlThread || caller == g_gameThreadId || caller == g_workerThreadId))
+        return {MenuWorkerState::Unknown, backing, MenuDrainStatus::WrongThread};
+    if (!g_workerThread)
+        return {g_workerJoined ? MenuWorkerState::Joined : MenuWorkerState::NotStarted, backing, MenuDrainStatus::Complete};
+    const DWORD waited = WaitForSingleObject(g_workerThread, timeoutMs > 60000 ? 60000 : timeoutMs);
+    if (waited != WAIT_OBJECT_0)
+        return {MenuWorkerState::Unknown, backing,
+                waited == WAIT_TIMEOUT ? MenuDrainStatus::TimedOut : MenuDrainStatus::WaitFailed};
+    // The worker has returned. No accepted callback can still touch its event.
+    // An early initialization failure also exposes no Wanted frame.
+    if (!g_frameAdmission.ClosedAndDrained())
+        return {MenuWorkerState::Unknown, backing, MenuDrainStatus::WaitFailed};
+    if (g_frameBuilt) {
+        if (!CloseHandle(g_frameBuilt))
+            return {MenuWorkerState::Joined, backing, MenuDrainStatus::WaitFailed};
+        g_frameBuilt = nullptr;
+    }
+    if (!CloseHandle(g_workerThread))
+        return {MenuWorkerState::Joined, backing, MenuDrainStatus::WaitFailed};
+    g_workerThread = nullptr;
+    g_workerJoined = true;
+    return {MenuWorkerState::Joined, backing, MenuDrainStatus::Complete};
 }
