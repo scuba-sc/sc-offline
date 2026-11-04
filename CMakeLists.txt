@@ -60,8 +60,8 @@ option(SCO_ASOP_HOST_COMPOSITION "Use the G10 host-source ASOP owner (requires c
 option(SCO_ASOP_SELECTION_COMPOSITION "Use the ASOP selection file service (requires coordinated stop/drain contract)" OFF)
 if(SCO_ASOP_HOST_COMPOSITION OR SCO_ASOP_SELECTION_COMPOSITION)
   message(FATAL_ERROR
-    "ASOP compositions are disabled: the product has no reviewed nonblocking request/control-thread "
-    "drain integration that preserves provider ordering")
+    "ASOP compositions are disabled: no reviewed nonblocking product quit notification/control-thread "
+    "drain exists; game.exit does not cover the required direct BeforeQuit path")
 endif()
 set(SCO_HOST_SOURCE_DIR "" CACHE PATH "Extracted host-source-sc kit (local override; gitlink unchanged)")
 if(SCO_HOST_SOURCE_DIR)

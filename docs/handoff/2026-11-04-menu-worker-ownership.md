@@ -91,18 +91,32 @@ before unload, and exposes no separate request/drain pair.
 The old product paths called `offline::asop::Stop()` directly from
 `StopHostKit` (the message hook) and from the `game.exit` callback before
 provider withdrawal. Both calls were removed. The shell's Start failure path
-also stopped calling synchronous Stop from the game-thread callout. The
-separate ASOP selection composition binds `selection::Stop` as a host-service
-callback; that API requires the game thread and has no product-side nonblocking
-close/drain contract either. `CMakeLists.txt` now rejects both ASOP composition
-options until their stop ordering is integrated. Both options remain OFF by
-default; native activation remains false.
+also stopped calling synchronous Stop from the game-thread callout.
+
+The runtime event was not a complete engine-quit signal. The product sets
+`QuitPolicy::Required` in `offline_host::Prepare`. In the inspected sibling
+core source, the direct engine hook calls `ForwardQuit`, which calls
+`BeforeQuit() -> Stop() -> StopImpl()` (`src/game/host.cpp:477-497, 591-615`).
+That path calls `BeforeDependentStop` and retains failure state; it does not
+call `app::Stop()` or dispatch `game.exit`. `app::Stop()` dispatches `game.exit`
+on its separate app teardown path (`src/app/sco_app.cpp:925`). A product
+`game.exit` subscription therefore could not notify the controller on direct
+engine quit. The product has no current shell-owned quit notification path for
+that event.
+
+The separate ASOP selection composition binds `selection::Stop` as a
+host-service callback; that API requires the game thread and has no product-side
+nonblocking close/drain contract either. `CMakeLists.txt` rejects both ASOP
+composition options until quit notification and stop ordering are integrated.
+Both options remain OFF by default; native activation remains false.
 
 Required integration before re-enabling either option:
 
 1. Core must expose a nonblocking close request for ASOP admission and pending
    handoffs. It must return without taking a lock that can wait for an active
-   game callback. For selection, the API must preserve its game-thread-only
+   game callback, and the direct `BeforeQuit` hook must invoke that request
+   before forwarding to the engine. A `game.exit` subscription alone is not
+   sufficient. For selection, the API must preserve its game-thread-only
    finalization requirement.
 2. Core must keep provider and callback backing alive after the request, and
    report active/taken work through the same owner used by the controller.

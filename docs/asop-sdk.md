@@ -7,6 +7,9 @@ and CMake rejects either option until the product has a reviewed nonblocking
 stop request and ordered control-thread drain. The selected core pin
 `6106fa3639cbcc28f78a1ded8de2707de019f4d3` returns `Unavailable` from ASOP
 host Start before installing hooks, and its exposed `Stop` is synchronous.
+The core's direct required quit hook calls `BeforeQuit -> StopImpl` without
+dispatching `app::Stop` or `game.exit`, so a `game.exit` subscription alone
+cannot close ASOP on every quit path.
 Neither the pin nor this product enables ASOP gameplay.
 
 `src/asop_shell.*` consumes the game-specific public host-source
