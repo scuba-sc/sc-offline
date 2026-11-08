@@ -62,5 +62,5 @@ with tempfile.TemporaryDirectory(prefix='sc-offline-pair-test-') as tmp:
     tracked.write_bytes(original)
     (off / 'build').mkdir()
     (off / 'build' / 'ignored-test').write_text('test')
-    verify(ok=False, reason='ignored offline files present')
+    verify(ok=False, reason='ignored files present in source')
     print('paired source identity/dirty-source rejection: PASS')

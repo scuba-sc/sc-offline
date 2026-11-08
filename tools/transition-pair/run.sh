@@ -24,6 +24,12 @@ check_clean() {
     echo "source has tracked or untracked changes: $dir" >&2; return 1;
   }
 }
+check_no_ignored() {
+  local dir=$1
+  [ -z "$(git -C "$dir" clean -ndx)" ] || {
+    echo "ignored files present in source: $dir" >&2; return 1;
+  }
+}
 check_root "$root"; check_root "$core"
 check_clean "$root"; check_clean "$core"
 [ "$(git -C "$root" rev-parse HEAD)" = "$offline_commit" ] || { echo 'offline commit mismatch' >&2; exit 1; }
@@ -37,7 +43,7 @@ git -C "$root" merge-base --is-ancestor 259ee6284d4c37f2eafa32f668ff29f4bc266844
 [ "$(git -C "$core" rev-parse HEAD)" = c138c4c25dc08b37b734c21d9fd9f31450c07e1b ] || { echo 'Core commit mismatch' >&2; exit 1; }
 [ "$(git -C "$core" rev-parse 'HEAD^{tree}')" = 463ad23684fe967cfb37c2757eeaf29b520685d2 ] || { echo 'Core tree mismatch' >&2; exit 1; }
 # Ignored files could influence CMake. Offline is built in place, so reject them.
-[ -z "$(git -C "$root" clean -ndx)" ] || { echo 'ignored offline files present; use a clean checkout' >&2; exit 1; }
+check_no_ignored "$root"
 printf 'offline=%s tree=%s\ncore=%s tree=%s\nstable_gitlink=6106fa3639cbcc28f78a1ded8de2707de019f4d3\n' \
   "$offline_commit" "$offline_tree" c138c4c25dc08b37b734c21d9fd9f31450c07e1b 463ad23684fe967cfb37c2757eeaf29b520685d2
 # Resolve symlinked parents before any mkdir, including in verify-only mode.
@@ -63,7 +69,8 @@ touch "$build/fixture/.cmake/api/v1/query/codemodel-v2"
 cmake -S "$root/tools/offline-host" -B "$build/fixture" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON "-DSCO_HOST_SOURCE_DIR=$build/core"
 [ "$(git -C "$build/core" rev-parse HEAD)" = c138c4c25dc08b37b734c21d9fd9f31450c07e1b ]
 [ "$(git -C "$build/core" rev-parse 'HEAD^{tree}')" = 463ad23684fe967cfb37c2757eeaf29b520685d2 ]
-check_clean "$build/core"
+check_clean "$build/core"; check_no_ignored "$build/core"
+check_clean "$root"; check_no_ignored "$root"
 python3 "$root/tools/transition-pair/verify_cmake.py" "$build/fixture" "$build/core" "$root" fixture
 cmake --build "$build/fixture" --config Release --parallel 2
 listing=$(ctest --test-dir "$build/fixture" -C Release -N)
@@ -81,7 +88,8 @@ if [ "$mode" = --product ]; then
   cmake -S "$root" -B "$build/product" -DCMAKE_BUILD_TYPE=Release "-DSCO_HOST_SOURCE_DIR=$build/core"
   [ "$(git -C "$build/core" rev-parse HEAD)" = c138c4c25dc08b37b734c21d9fd9f31450c07e1b ]
   [ "$(git -C "$build/core" rev-parse 'HEAD^{tree}')" = 463ad23684fe967cfb37c2757eeaf29b520685d2 ]
-  check_clean "$build/core"
+  check_clean "$build/core"; check_no_ignored "$build/core"
+  check_clean "$root"; check_no_ignored "$root"
   python3 "$root/tools/transition-pair/verify_cmake.py" "$build/product" "$build/core" "$root" product
   cmake --build "$build/product" --config Release --parallel 2
 fi
