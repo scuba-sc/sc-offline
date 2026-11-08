@@ -27,6 +27,7 @@ python3 "$out/core/sdk/package.py" --development --profile legacy --out "$out/fi
 python3 "$out/core/sdk/package.py" --development --profile legacy --out "$out/second"
 archive="sco-sdk-$version.zip"
 cmp "$out/first/$archive" "$out/second/$archive" || { echo 'development archive is not reproducible' >&2; exit 1; }
+python3 "$out/core/tools/ip_audit.py" zip --development --profile legacy "$out/first/$archive"
 (cd "$out/first" && sha256sum "$archive" > SHA256SUMS)
 digest=$(sha256sum "$out/first/$archive" | cut -d' ' -f1)
 # Verify archive inventory and all source/profile metadata using the same strict
