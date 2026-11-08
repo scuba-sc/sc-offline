@@ -176,5 +176,9 @@ actual wrapper does not enter Core when native activation is refused.
 with a restricted synthetic detailed Core capsule and its exact owner. A
 synthetic admitted reader requests closure, then an independent controller
 waits for that reader before draining. It verifies retained backing and refusal
-of new reads. This is not product native adoption, an engine hook, direct quit,
-or evidence that native unload is safe.
+of new reads. `host_report_owner-mismatch` is a negative control: a different
+owner can be drained while the adopted capsule owner still has a live read.
+The helper does not check identity. A future detailed product adapter must prove
+that its supplied owner is the adopted capsule's exact owner before exposure.
+Neither case is product native adoption, an engine hook, direct quit, or evidence
+that native unload is safe.
