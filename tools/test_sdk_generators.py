@@ -82,6 +82,48 @@ class GeneratorSelection(unittest.TestCase):
                     self.assertEqual(command[command.index('-G') + 1], expected)
                     self.assertEqual(command[command.index('-A') + 1], 'x64')
 
+    def test_npc_configure_passes_verified_sdk_identity(self):
+        for candidate in (False, True):
+            with self.subTest(candidate=candidate), tempfile.TemporaryDirectory() as temp:
+                module = proof_module('npc')
+                root = Path(temp)
+                archive = root / 'sdk.zip'
+                argv = ['--archive', str(archive), '--sums', str(root / 'SHA256SUMS'),
+                        '--work', str(root / 'proof')]
+                digest = 'a' * 64
+                if candidate:
+                    argv += ['--candidate', '--sdk-version', '2.4.1-dev.1', '--sdk-sha256', digest,
+                             '--archive-sha256', digest, '--sdk-source', 'b' * 40, '--sdk-profile', 'legacy']
+                args = module.parse_args(argv)
+                with patch.object(module, 'verify_extract', return_value=(root / 'sdk', set())) as verify, \
+                     patch.object(module, 'run', side_effect=first_configure), \
+                     self.assertRaises(Configured) as caught:
+                    module.main(args)
+                command = caught.exception.command
+                self.assertIn('-DSCO_SDK_VERSION=' + args.sdk_version, command)
+                self.assertIn('-DSCO_SDK_SHA256=' + args.sdk_sha256, command)
+                self.assertIn('-DSCO_SDK_ARCHIVE=' + str(archive.resolve()), command)
+                self.assertEqual(verify.call_count, 1)
+
+    def test_loadout_isolated_copy_contains_only_needed_shared_picker(self):
+        with tempfile.TemporaryDirectory() as temp:
+            module = proof_module('loadout')
+            root = Path(temp)
+            args = module.parse_args(['--archive', str(root / 'sdk.zip'),
+                                      '--sums', str(root / 'SHA256SUMS'), '--work', str(root / 'proof')])
+            with patch.object(module, 'verify_extract', return_value=(root / 'sdk', set())), \
+                 patch.object(module, 'run', side_effect=first_configure), \
+                 self.assertRaises(Configured):
+                module.main(args)
+            source = root / 'proof/source'
+            picker = source / 'plugins/picker.h'
+            self.assertEqual(picker.read_bytes(), (TOOLS.parent / 'plugins/picker.h').read_bytes())
+            from check_inspector_sdk import own_source
+            self.assertTrue(own_source(picker, source, 'loadout', ()))
+            unrelated = source / 'plugins/unrelated.h'
+            unrelated.write_text('// not allowed\n')
+            self.assertFalse(own_source(unrelated, source, 'loadout', ()))
+
     @unittest.skipUnless(shutil.which('cmake'), 'CMake required for configure refusal')
     def test_missing_snapshot_contract_refuses_configure_before_build(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -91,8 +133,13 @@ class GeneratorSelection(unittest.TestCase):
             (sdk / 'SHA256SUMS').write_text('')
             for name in ('sco_api.h', 'sc_actors.h', 'sc_entities.h', 'sc_spatial.h'):
                 (sdk / 'include' / name).write_text('// synthetic header fixture\n')
+            archive = root / 'sco-sdk-2.4.1-dev.1.zip'
+            archive.write_bytes(b'synthetic archive for configure guard')
+            digest = hashlib.sha256(archive.read_bytes()).hexdigest()
             configured = subprocess.run(['cmake', '-S', str(TOOLS.parent / 'plugins'), '-B', str(root / 'build'),
                                          '-DSCO_SDK_INCLUDE_DIR=' + str(sdk / 'include'),
+                                         '-DSCO_SDK_VERSION=2.4.1-dev.1', '-DSCO_SDK_SHA256=' + digest,
+                                         '-DSCO_SDK_ARCHIVE=' + str(archive),
                                          '-DSCO_ADDITIONAL_FEATURES=OFF'], capture_output=True, text=True, timeout=60)
             self.assertNotEqual(configured.returncode, 0)
             self.assertIn('SDK public header missing: sc_actor_stats.h', configured.stdout + configured.stderr)

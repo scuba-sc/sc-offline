@@ -31,6 +31,9 @@ def main(args):
     source = work / 'source'
     (source / 'plugins').mkdir(parents=True)
     shutil.copytree(ROOT / 'plugins/loadout', source / 'plugins/loadout')
+    # slot_catalogue.h uses the shared product-owned picker; copy only this
+    # specific public-consumer helper, not the wider product host tree.
+    shutil.copy2(ROOT / 'plugins/picker.h', source / 'plugins/picker.h')
     (source / 'tools').mkdir()
     for name in ('loadout_catalogue_test.cpp', 'workflow_module.h'):
         shutil.copy2(ROOT / 'tools' / name, source / 'tools' / name)

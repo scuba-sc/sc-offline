@@ -40,6 +40,8 @@ def main(args):
     build = work / 'plugin-build'
     configure = ['cmake', '-S', source / 'plugins', '-B', build,
                  '-DSCO_SDK_INCLUDE_DIR=' + str(sdk / 'include'), '-DSCO_WORKFLOW_TESTS=ON',
+                 '-DSCO_SDK_VERSION=' + args.sdk_version, '-DSCO_SDK_SHA256=' + args.sdk_sha256,
+                 '-DSCO_SDK_ARCHIVE=' + str(args.archive.resolve()),
                  '-DSCO_ADDITIONAL_FEATURES=OFF',
                  '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON', '-DSCO_NPC_DEPENDENCY_TRACE=ON']
     configure += (['-G', args.generator, '-A', 'x64'] if os.name == 'nt'
