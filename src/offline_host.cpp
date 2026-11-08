@@ -46,8 +46,11 @@ sco::Result StopSelection(void*) { return selection::Stop(); }
 
 namespace gh = sco::game::host;
 namespace offline_host {
-namespace { std::atomic<bool> retained{false}; }
-bool RestartRequired() noexcept { return retained.load(std::memory_order_acquire); }
+namespace {
+enum class StopState { Idle, Stopping, Retained };
+std::atomic<StopState> stopState{StopState::Idle};
+}
+bool RestartRequired() noexcept { return stopState.load(std::memory_order_acquire) == StopState::Retained; }
 sco::Result Prepare(gh::Options options) {
     // Core Prepare owns a private registry candidate, but this product cannot
     // yet prove the image, resolver, reader and worker lifetimes it requires.
@@ -72,13 +75,30 @@ sco::Result Tick(uint32_t now) {
     return gh::Tick(now);
 }
 sco::Result Stop() {
-    if (RestartRequired()) return sco::Result::Failed;
+    // Reserve this composition seam before entering Core. A conflicting call
+    // makes the outcome terminal, even if the first call later reports success.
+    // This is not a native reader or worker drain gate.
+    auto state = stopState.load(std::memory_order_acquire);
+    for (;;) {
+        if (state == StopState::Retained) return sco::Result::Failed;
+        const auto next = state == StopState::Idle ? StopState::Stopping : StopState::Retained;
+        if (stopState.compare_exchange_weak(state, next, std::memory_order_acq_rel)) {
+            if (next == StopState::Retained) return sco::Result::Failed;
+            break;
+        }
+    }
     try {
         const auto result = gh::Stop();
-        if (result != sco::Result::Ok) retained.store(true, std::memory_order_release);
+        if (result != sco::Result::Ok) {
+            stopState.store(StopState::Retained, std::memory_order_release);
+            return result;
+        }
+        auto expected = StopState::Stopping;
+        if (!stopState.compare_exchange_strong(expected, StopState::Idle, std::memory_order_acq_rel))
+            return sco::Result::Failed;
         return result;
     } catch (...) {
-        retained.store(true, std::memory_order_release);
+        stopState.store(StopState::Retained, std::memory_order_release);
         return sco::Result::Failed;
     }
 }

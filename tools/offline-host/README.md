@@ -150,3 +150,15 @@ reader exclusion, worker census, mapped code ownership, original-quit safety,
 Windows failure behavior, or game acceptance. The detailed contract is part of
 the published SDK source and the current product pin; these synthetic tests do
 not establish safe native activation, shutdown, or gameplay.
+
+## Product Stop overlap refusal
+
+`stop_overlap_test` links the actual product composition wrapper to a controllable
+synthetic Core stub. Separate processes check overlapping and reentrant Stop
+requests, wrong-thread results, and sequential successful stops. An overlapping
+request marks restart required, prevents another entry to Core through this
+wrapper, and makes the in-flight result fail even if the stub returns success.
+The existing failure and exception tests cover the terminal latch. Pinned Core
+already has its own control-entry gate; this wrapper safeguard is not a new
+Core drain mechanism. The test does not model real readers, workers, module
+ownership, game-thread behavior, or a safe native shutdown.
