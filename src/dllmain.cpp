@@ -607,7 +607,7 @@ static void RequestLifecycleStop(const char* trigger) {
             trigger, sco::ResultName(request.result), static_cast<unsigned>(request.phase),
             static_cast<unsigned>(request.dependencies));
 #else
-        Log("[app] lifecycle stop request (%s): host unavailable; backing stays retained", trigger);
+        Log("[app] lifecycle stop request (%s): host unavailable; no Core request made", trigger);
 #endif
     }
     if (g_controlWakeEvent && !SetEvent(g_controlWakeEvent))
