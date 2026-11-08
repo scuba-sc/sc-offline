@@ -2,6 +2,9 @@
 // Restricted synthetic game-host composition. No native barrier or product activation.
 #include "sco/game/host.h"
 #include "src/game/host_testing.h"
+#ifdef SCO_HAS_REQUEST_API
+#include "../../src/stop_request_protocol.h"
+#endif
 #ifdef SCO_HAS_REAP_TEST_ACCESS
 #include "tests/owned_shutdown_test_access.h"
 #endif
@@ -163,6 +166,44 @@ int main(int argc, char** argv) {
         } else {
             CHECK(started.result == R::Ok && started.phase == gh::Phase::Running);
             CHECK(!gh::Status().quitHookInstalled && !gh::Status().dataCoreActive);
+#ifdef SCO_HAS_REQUEST_API
+            if (mode == "cooperative-request") {
+                // Synthetic admitted callback, same owner as the adopted capsule.
+                // This is not a product hook, native reader or direct quit path.
+                offline_host::detail::StopRequestGate gate;
+                std::promise<gh::HostReport> requested;
+                std::promise<void> release;
+                auto releaseRead = release.get_future().share();
+                auto* owner = retained->owner.get();
+                std::thread callback([&] {
+                    auto read = owner->try_read(); CHECK(read);
+                    requested.set_value(offline_host::detail::RequestOwnedStop(
+                        gate, [&] { return retained->owner; }));
+                    releaseRead.wait(); // keep the admitted read through this wait
+                });
+                auto requestFuture = requested.get_future();
+                CHECK(requestFuture.wait_for(2s) == std::future_status::ready);
+                const auto report = requestFuture.get(); Retained(report);
+                CHECK(report.result == R::Ok && report.phase == gh::Phase::Running &&
+                      report.drain == gh::DrainDisposition::Requested);
+                CHECK(gate.RestartRequired() && owner->closed() && !owner->try_read());
+                std::promise<void> drainStarted;
+                auto drain = std::async(std::launch::async, [&] {
+                    drainStarted.set_value();
+                    return offline_host::detail::DrainOwnedStop(gate, retained->owner, 5000);
+                });
+                CHECK(drainStarted.get_future().wait_for(2s) == std::future_status::ready);
+                CHECK(drain.wait_for(20ms) == std::future_status::timeout && !owner->ready());
+                release.set_value(); callback.join();
+                CHECK(drain.wait_for(2s) == std::future_status::ready &&
+                      drain.get() == offline_host::OwnerDrain::DrainedRetained);
+                CHECK(owner->ready() && gate.RestartRequired());
+                const auto after = gh::StatusDetailed(); Retained(after);
+                CHECK(after.drain == gh::DrainDisposition::Drained && !wb.expired() && !wc.expired());
+                std::puts("cooperative request and controller drain: synthetic retention verified");
+                return 0;
+            }
+#endif
             if (mode == "wrong-thread") {
                 gh::HostReport other;
                 std::thread t([&] { other = gh::StopDetailed(); }); t.join();

@@ -74,7 +74,7 @@ check_clean "$root"; check_no_ignored "$root"
 python3 "$root/tools/transition-pair/verify_cmake.py" "$build/fixture" "$build/core" "$root" fixture
 cmake --build "$build/fixture" --config Release --parallel 2
 listing=$(ctest --test-dir "$build/fixture" -C Release -N)
-for name in owned_capsule_host owned_capsule_legacy-request host_report_wrong-thread host_report_reentry host_report_retained_reap \
+for name in owned_capsule_host owned_capsule_legacy-request host_report_cooperative-request host_report_wrong-thread host_report_reentry host_report_retained_reap \
             native_activation_refusal product_registry_refusal \
             product_request_normal product_request_reentrant product_request_competing \
             product_request_failure; do

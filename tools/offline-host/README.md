@@ -171,3 +171,10 @@ refusal and that contention cannot authorize a drain while the first request is
 still in progress. This is not a real Core-owner integration, callback drain,
 Windows failure test, or safe-native-shutdown proof. `refusal_test` verifies the
 actual wrapper does not enter Core when native activation is refused.
+
+`host_report_cooperative-request` uses the same product request/drain helper
+with a restricted synthetic detailed Core capsule and its exact owner. A
+synthetic admitted reader requests closure, then an independent controller
+waits for that reader before draining. It verifies retained backing and refusal
+of new reads. This is not product native adoption, an engine hook, direct quit,
+or evidence that native unload is safe.

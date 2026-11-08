@@ -7,6 +7,7 @@
 #include <new>
 #include <utility>
 #ifdef SCO_CORE_NON_DRAINING_STOP_API
+#include "stop_request_protocol.h"
 #include <windows.h>
 #endif
 #ifdef SCO_HOST_MENU_CLIENT
@@ -152,30 +153,9 @@ sco::game::host::HostReport RequestStop() noexcept {
 #ifdef SCO_CORE_NON_DRAINING_STOP_API
     if (!NativeActivationAvailable())
         return StopReport(sco::Result::Unavailable, gh::Phase::Idle, gh::DependencyDisposition::NeverExposed);
-    // Close the product request seam before calling the owner or Core. A
-    // competing request is terminal and cannot start a second Core request.
-    if (!stopRequest.Begin())
-        return StopReport(sco::Result::Failed, gh::Phase::Failed, gh::DependencyDisposition::ProcessRetained);
-    auto owner = ProductOwner();
-    if (!owner) {
-        stopRequest.Finish();
-        return StopReport(sco::Result::Failed, gh::Phase::Failed, gh::DependencyDisposition::ProcessRetained);
-    }
-    try {
-        // The product uses legacy Prepare, not a detailed HostCapsule. The
-        // detailed Core request therefore reports Unavailable on this route;
-        // close the separately owned product owner first and retain everything.
-        // That report is not adoption, drain, or direct-quit evidence.
-        owner->request_stop();
-        const auto report = gh::RequestStopDetailed();
-        if (!stopRequest.Finish())
-            return StopReport(sco::Result::Failed, gh::Phase::Failed, gh::DependencyDisposition::ProcessRetained);
-        return report;
-    } catch (...) {
-        try { owner->fault(); } catch (...) {}
-        stopRequest.Finish();
-        return StopReport(sco::Result::Failed, gh::Phase::Failed, gh::DependencyDisposition::ProcessRetained);
-    }
+    // Legacy Prepare does not adopt a detailed HostCapsule, so the Core report
+    // is Unavailable here. Owner closure is independent and remains retained.
+    return detail::RequestOwnedStop(stopRequest, [] { return ProductOwner(); });
 #else
     return StopReport(sco::Result::Unavailable, gh::Phase::Idle, gh::DependencyDisposition::NeverExposed);
 #endif
@@ -183,17 +163,8 @@ sco::game::host::HostReport RequestStop() noexcept {
 
 OwnerDrain DrainRequestedStop(uint32_t timeoutMs) noexcept {
 #ifdef SCO_CORE_NON_DRAINING_STOP_API
-    auto owner = ProductOwner();
-    if (!owner || !stopRequest.DrainMayStart()) return OwnerDrain::Unavailable;
-    const auto bounded = timeoutMs > 60000 ? 60000 : timeoutMs;
-    try {
-        const bool drained = owner->drain_until(std::chrono::steady_clock::now() +
-            std::chrono::milliseconds(bounded));
-        return drained ? OwnerDrain::DrainedRetained : OwnerDrain::IncompleteRetained;
-    } catch (...) {
-        try { owner->fault(); } catch (...) {}
-        return OwnerDrain::IncompleteRetained;
-    }
+    if (!stopRequest.DrainMayStart()) return OwnerDrain::Unavailable;
+    return detail::DrainOwnedStop(stopRequest, ProductOwner(), timeoutMs);
 #else
     (void)timeoutMs;
     return OwnerDrain::Unavailable;
