@@ -1,10 +1,10 @@
 # Private paired-source qualification
 
-This development-only pairing leaves the product's stable `external/sco-core`
-gitlink and published SDK 2.4.0 archive checks unchanged. It selects the reviewed
-Core source through the existing `SCO_HOST_SOURCE_DIR` mechanism. Core source is
-`c138c4c25dc08b37b734c21d9fd9f31450c07e1b`, tree
-`463ad23684fe967cfb37c2757eeaf29b520685d2`. Its stable ancestor is
+This development-only pairing checks the product's `external/sco-core` gitlink
+against the selected development Core source and selects that same source through
+the existing `SCO_HOST_SOURCE_DIR` mechanism. Core source is
+`70c84fd24705b9230278d4229e00836999412bfd`, tree
+`46ed0d125a07336e0c0d0159491a54ec48baf4ad`. Its published stable ancestor is
 `6106fa3639cbcc28f78a1ded8de2707de019f4d3`. The offline branch includes
 `259ee6284d4c37f2eafa32f668ff29f4bc266844`; the caller must supply the exact
 paired offline commit and tree from the accompanying identity record.
@@ -30,6 +30,8 @@ into the new build directory to avoid ignored build artifacts in the input
 checkout affecting compilation. Offline ignored files are rejected because that
 source is built in place. Both source checks reject tracked and untracked edits.
 It never changes the gitlink, fetches a remote, or changes release workflows.
+This Core commit is a private local candidate and is not fetchable from the
+public origin unless separately published. Use its verified bundle for transfer.
 The caller-supplied Offline hashes must come from the separate reviewed pairing
 identity record, not from an untrusted checkout; they avoid a self-referential
 commit hash in a tracked script.
@@ -41,8 +43,8 @@ host and Core must be rebuilt together; existing frozen C plugin ABI and
 archive, native reader/worker exclusion, 5.0 mappings or game behavior. Product
 `NativeActivationAvailable()` remains hard false. Not run in game.
 
-The stable `tools/check.sh`, `tools/sdk-headers.py` and published SDK archive
-checks default to the pinned submodule, not this override. Their results are
-stable-pin coverage unless explicitly run in a separately prepared and verified
-candidate-paired tree. Core's own tests are separate: the offline fixture sets
+`tools/check.sh` and `tools/sdk-headers.py` default to the pinned submodule,
+not the override; verify its source before reporting their results. Published
+SDK archive checks remain separate historical qualification. Core's own tests
+are separate: the offline fixture sets
 `SCO_BUILD_TESTS=OFF`. Selector compilation is not product startup wiring.

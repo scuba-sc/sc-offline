@@ -37,15 +37,15 @@ check_clean "$root"; check_clean "$core"
 git -C "$root" merge-base --is-ancestor 259ee6284d4c37f2eafa32f668ff29f4bc266844 HEAD || {
   echo 'offline candidate ancestry mismatch' >&2; exit 1;
 }
-[ "$(git -C "$root" rev-parse HEAD:external/sco-core)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3 ] || {
-  echo 'stable offline gitlink mismatch' >&2; exit 1;
+[ "$(git -C "$root" rev-parse HEAD:external/sco-core)" = 70c84fd24705b9230278d4229e00836999412bfd ] || {
+  echo 'development offline gitlink mismatch' >&2; exit 1;
 }
-[ "$(git -C "$core" rev-parse HEAD)" = c138c4c25dc08b37b734c21d9fd9f31450c07e1b ] || { echo 'Core commit mismatch' >&2; exit 1; }
-[ "$(git -C "$core" rev-parse 'HEAD^{tree}')" = 463ad23684fe967cfb37c2757eeaf29b520685d2 ] || { echo 'Core tree mismatch' >&2; exit 1; }
+[ "$(git -C "$core" rev-parse HEAD)" = 70c84fd24705b9230278d4229e00836999412bfd ] || { echo 'Core commit mismatch' >&2; exit 1; }
+[ "$(git -C "$core" rev-parse 'HEAD^{tree}')" = 46ed0d125a07336e0c0d0159491a54ec48baf4ad ] || { echo 'Core tree mismatch' >&2; exit 1; }
 # Ignored files could influence CMake. Offline is built in place, so reject them.
 check_no_ignored "$root"
-printf 'offline=%s tree=%s\ncore=%s tree=%s\nstable_gitlink=6106fa3639cbcc28f78a1ded8de2707de019f4d3\n' \
-  "$offline_commit" "$offline_tree" c138c4c25dc08b37b734c21d9fd9f31450c07e1b 463ad23684fe967cfb37c2757eeaf29b520685d2
+printf 'offline=%s tree=%s\ncore=%s tree=%s\ndevelopment_gitlink=70c84fd24705b9230278d4229e00836999412bfd\n' \
+  "$offline_commit" "$offline_tree" 70c84fd24705b9230278d4229e00836999412bfd 46ed0d125a07336e0c0d0159491a54ec48baf4ad
 # Resolve symlinked parents before any mkdir, including in verify-only mode.
 [ ! -e "$build" ] || { echo 'build directory already exists' >&2; exit 1; }
 build_abs=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$build")
@@ -61,14 +61,14 @@ build=$(cd "$build" && pwd -P)
 # Clone the verified object locally so ignored/generated files in the input Core
 # workspace cannot affect the build. This does not fetch from or publish to GitHub.
 git clone -q --no-hardlinks --no-checkout "$core" "$build/core"
-git -C "$build/core" checkout -q --detach c138c4c25dc08b37b734c21d9fd9f31450c07e1b
-[ "$(git -C "$build/core" rev-parse 'HEAD^{tree}')" = 463ad23684fe967cfb37c2757eeaf29b520685d2 ]
+git -C "$build/core" checkout -q --detach 70c84fd24705b9230278d4229e00836999412bfd
+[ "$(git -C "$build/core" rev-parse 'HEAD^{tree}')" = 46ed0d125a07336e0c0d0159491a54ec48baf4ad ]
 [ -z "$(git -C "$build/core" status --porcelain --untracked-files=all)" ]
 mkdir -p "$build/fixture/.cmake/api/v1/query"
 touch "$build/fixture/.cmake/api/v1/query/codemodel-v2"
 cmake -S "$root/tools/offline-host" -B "$build/fixture" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON "-DSCO_HOST_SOURCE_DIR=$build/core"
-[ "$(git -C "$build/core" rev-parse HEAD)" = c138c4c25dc08b37b734c21d9fd9f31450c07e1b ]
-[ "$(git -C "$build/core" rev-parse 'HEAD^{tree}')" = 463ad23684fe967cfb37c2757eeaf29b520685d2 ]
+[ "$(git -C "$build/core" rev-parse HEAD)" = 70c84fd24705b9230278d4229e00836999412bfd ]
+[ "$(git -C "$build/core" rev-parse 'HEAD^{tree}')" = 46ed0d125a07336e0c0d0159491a54ec48baf4ad ]
 check_clean "$build/core"; check_no_ignored "$build/core"
 check_clean "$root"; check_no_ignored "$root"
 python3 "$root/tools/transition-pair/verify_cmake.py" "$build/fixture" "$build/core" "$root" fixture
@@ -86,8 +86,8 @@ if [ "$mode" = --product ]; then
   mkdir -p "$build/product/.cmake/api/v1/query"
   touch "$build/product/.cmake/api/v1/query/codemodel-v2"
   cmake -S "$root" -B "$build/product" -DCMAKE_BUILD_TYPE=Release "-DSCO_HOST_SOURCE_DIR=$build/core"
-  [ "$(git -C "$build/core" rev-parse HEAD)" = c138c4c25dc08b37b734c21d9fd9f31450c07e1b ]
-  [ "$(git -C "$build/core" rev-parse 'HEAD^{tree}')" = 463ad23684fe967cfb37c2757eeaf29b520685d2 ]
+  [ "$(git -C "$build/core" rev-parse HEAD)" = 70c84fd24705b9230278d4229e00836999412bfd ]
+  [ "$(git -C "$build/core" rev-parse 'HEAD^{tree}')" = 46ed0d125a07336e0c0d0159491a54ec48baf4ad ]
   check_clean "$build/core"; check_no_ignored "$build/core"
   check_clean "$root"; check_no_ignored "$root"
   python3 "$root/tools/transition-pair/verify_cmake.py" "$build/product" "$build/core" "$root" product
