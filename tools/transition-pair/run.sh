@@ -61,6 +61,9 @@ git -C "$build/core" checkout -q --detach c138c4c25dc08b37b734c21d9fd9f31450c07e
 mkdir -p "$build/fixture/.cmake/api/v1/query"
 touch "$build/fixture/.cmake/api/v1/query/codemodel-v2"
 cmake -S "$root/tools/offline-host" -B "$build/fixture" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON "-DSCO_HOST_SOURCE_DIR=$build/core"
+[ "$(git -C "$build/core" rev-parse HEAD)" = c138c4c25dc08b37b734c21d9fd9f31450c07e1b ]
+[ "$(git -C "$build/core" rev-parse 'HEAD^{tree}')" = 463ad23684fe967cfb37c2757eeaf29b520685d2 ]
+check_clean "$build/core"
 python3 "$root/tools/transition-pair/verify_cmake.py" "$build/fixture" "$build/core" "$root" fixture
 cmake --build "$build/fixture" --config Release --parallel 2
 listing=$(ctest --test-dir "$build/fixture" -C Release -N)
@@ -76,6 +79,9 @@ if [ "$mode" = --product ]; then
   mkdir -p "$build/product/.cmake/api/v1/query"
   touch "$build/product/.cmake/api/v1/query/codemodel-v2"
   cmake -S "$root" -B "$build/product" -DCMAKE_BUILD_TYPE=Release "-DSCO_HOST_SOURCE_DIR=$build/core"
+  [ "$(git -C "$build/core" rev-parse HEAD)" = c138c4c25dc08b37b734c21d9fd9f31450c07e1b ]
+  [ "$(git -C "$build/core" rev-parse 'HEAD^{tree}')" = 463ad23684fe967cfb37c2757eeaf29b520685d2 ]
+  check_clean "$build/core"
   python3 "$root/tools/transition-pair/verify_cmake.py" "$build/product" "$build/core" "$root" product
   cmake --build "$build/product" --config Release --parallel 2
 fi
