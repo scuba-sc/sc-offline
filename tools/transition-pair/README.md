@@ -16,7 +16,11 @@ directory outside both source trees:
 tools/transition-pair/run.sh CORE_SOURCE BUILD_DIR OFFLINE_COMMIT OFFLINE_TREE
 ```
 
-`--verify-only` checks identities and source cleanliness without building.
+`--verify-only` checks identities, source cleanliness, and build-directory
+containment without building or creating the directory. The runner checks the
+CMake cache and file-API target sources and dependencies after each configure,
+including the selected Core's new app source and exact-profile selector. It
+requires fresh build directories, so no old library cache can be reused.
 `--product` also configures and builds the product with the same Core override;
 that extra step requires the Windows/MSVC x64 toolchain described in
 `docs/build.md`. The ordinary path builds and runs every registered synthetic
@@ -36,3 +40,9 @@ host and Core must be rebuilt together; existing frozen C plugin ABI and
 `game.build` 1.0 remain unchanged. This check does not certify a published SDK
 archive, native reader/worker exclusion, 5.0 mappings or game behavior. Product
 `NativeActivationAvailable()` remains hard false. Not run in game.
+
+The stable `tools/check.sh`, `tools/sdk-headers.py` and published SDK archive
+checks default to the pinned submodule, not this override. Their results are
+stable-pin coverage unless explicitly run in a separately prepared and verified
+candidate-paired tree. Core's own tests are separate: the offline fixture sets
+`SCO_BUILD_TESTS=OFF`. Selector compilation is not product startup wiring.

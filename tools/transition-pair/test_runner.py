@@ -36,6 +36,14 @@ with tempfile.TemporaryDirectory(prefix='sc-offline-pair-test-') as tmp:
         if (result.returncode == 0) != ok or (reason and reason not in result.stdout):
             raise AssertionError(result.stdout)
     verify()
+    inside = run(str(runner), str(src), str(off / 'new-build'), commit, tree, '--verify-only')
+    if inside.returncode == 0 or 'outside both source trees' not in inside.stdout:
+        raise AssertionError(inside.stdout)
+    alias = base / 'source-link'
+    alias.symlink_to(off, target_is_directory=True)
+    inside = run(str(runner), str(src), str(alias / 'new-build'), commit, tree, '--verify-only')
+    if inside.returncode == 0 or 'outside both source trees' not in inside.stdout:
+        raise AssertionError(inside.stdout)
     verify(expected_commit='0' * 40, ok=False, reason='offline commit mismatch')
     verify(expected_tree='0' * 40, ok=False, reason='offline tree mismatch')
     verify(source=off, ok=False, reason='Core commit mismatch')

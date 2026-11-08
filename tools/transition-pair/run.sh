@@ -40,14 +40,15 @@ git -C "$root" merge-base --is-ancestor 259ee6284d4c37f2eafa32f668ff29f4bc266844
 [ -z "$(git -C "$root" clean -ndx)" ] || { echo 'ignored offline files present; use a clean checkout' >&2; exit 1; }
 printf 'offline=%s tree=%s\ncore=%s tree=%s\nstable_gitlink=6106fa3639cbcc28f78a1ded8de2707de019f4d3\n' \
   "$offline_commit" "$offline_tree" c138c4c25dc08b37b734c21d9fd9f31450c07e1b 463ad23684fe967cfb37c2757eeaf29b520685d2
-[ "$mode" != --verify-only ] || exit 0
-for cmd in cmake ctest; do command -v "$cmd" >/dev/null || { echo "$cmd not found" >&2; exit 2; }; done
-# Never reuse a CMake cache, alter source trees, or remove existing files.
+# Resolve symlinked parents before any mkdir, including in verify-only mode.
 [ ! -e "$build" ] || { echo 'build directory already exists' >&2; exit 1; }
 build_abs=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$build")
 for source in "$root" "$core"; do
   case "$build_abs/" in "$source/"*) echo 'build directory must be outside both source trees' >&2; exit 1;; esac
 done
+[ "$mode" != --verify-only ] || exit 0
+for cmd in cmake ctest; do command -v "$cmd" >/dev/null || { echo "$cmd not found" >&2; exit 2; }; done
+# Never reuse a CMake cache, alter source trees, or remove existing files.
 mkdir -p "$build_abs"
 build=$build_abs
 build=$(cd "$build" && pwd -P)
@@ -57,7 +58,10 @@ git clone -q --no-hardlinks --no-checkout "$core" "$build/core"
 git -C "$build/core" checkout -q --detach c138c4c25dc08b37b734c21d9fd9f31450c07e1b
 [ "$(git -C "$build/core" rev-parse 'HEAD^{tree}')" = 463ad23684fe967cfb37c2757eeaf29b520685d2 ]
 [ -z "$(git -C "$build/core" status --porcelain --untracked-files=all)" ]
+mkdir -p "$build/fixture/.cmake/api/v1/query"
+touch "$build/fixture/.cmake/api/v1/query/codemodel-v2"
 cmake -S "$root/tools/offline-host" -B "$build/fixture" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON "-DSCO_HOST_SOURCE_DIR=$build/core"
+python3 "$root/tools/transition-pair/verify_cmake.py" "$build/fixture" "$build/core" "$root" fixture
 cmake --build "$build/fixture" --config Release --parallel 2
 listing=$(ctest --test-dir "$build/fixture" -C Release -N)
 for name in owned_capsule_host host_report_wrong-thread host_report_reentry host_report_retained_reap \
@@ -69,7 +73,10 @@ done
 ctest --test-dir "$build/fixture" -C Release --no-tests=error --output-on-failure
 if [ "$mode" = --product ]; then
   # Product is Windows/MSVC x64 only; caller supplies the appropriate toolchain.
+  mkdir -p "$build/product/.cmake/api/v1/query"
+  touch "$build/product/.cmake/api/v1/query/codemodel-v2"
   cmake -S "$root" -B "$build/product" -DCMAKE_BUILD_TYPE=Release "-DSCO_HOST_SOURCE_DIR=$build/core"
+  python3 "$root/tools/transition-pair/verify_cmake.py" "$build/product" "$build/core" "$root" product
   cmake --build "$build/product" --config Release --parallel 2
 fi
 printf '%s\n' 'Paired source qualification finished; this is not native/game acceptance.'
