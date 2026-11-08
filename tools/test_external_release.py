@@ -39,7 +39,7 @@ class ExternalRelease(unittest.TestCase):
         self.assertNotIn('kBuiltins', registry)
         self.assertIn('src/contracts.cpp', host)  # retained legacy engine, callers unchanged
         self.assertIn('contracts_sdk_check.py', workflow)
-        self.assertIn('needs: [build, inspector-sdk, npc-sdk, contracts-sdk, external-sdk]', workflow)
+        self.assertIn('needs: [build, development-sdk-proofs, inspector-sdk, npc-sdk, contracts-sdk, external-sdk]', workflow)
         profiles = json.loads((ROOT / 'tools/release-plugin-profiles.json').read_text())
         contracts = next(p for p in profiles['profiles']['player-offline']['plugins'] if p['id'] == 'contracts')
         self.assertEqual((contracts['artifact_dir'], contracts['module'], contracts['disabled']),

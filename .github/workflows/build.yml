@@ -381,6 +381,39 @@ jobs:
           done
           echo "src/third_party/imgui and external/sco-core/sdk/third_party/imgui match"
 
+      - name: Save the exact development SDK for isolated consumer proofs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: development-sdk-candidate
+          path: |
+            ${{ runner.temp }}/sdk-development/first/*
+            ${{ runner.temp }}/sdk-development/sdk-version.txt
+            ${{ runner.temp }}/sdk-development/sdk-sha256.txt
+            ${{ runner.temp }}/sdk-development/core-source.sha
+          if-no-files-found: error
+          retention-days: 7
+
+  development-sdk-proofs:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025-vs2026]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: development-sdk-candidate
+          path: ${{ runner.temp }}/sdk-development
+      - name: Run isolated consumer proofs against selected development Core
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then py=python; else py=python3; fi
+          "$py" tools/ci-dev-sdk-proofs.py "$RUNNER_TEMP/sdk-development" "$RUNNER_TEMP/development-proofs"
+
   # Its own job, not a step of `check`: `build` waits for `check`, so a failing scan gate there
   # would also hide whether the sources compile. The two answers are independent. Like every job
   # here it runs on pull requests and on each push to main, so a green main shows the gate holds.
@@ -732,7 +765,7 @@ jobs:
   # G3 requires a future approved SDK; do not revive host-embedded bridges-test builds.
 
   release:
-    needs: [build, inspector-sdk, npc-sdk, contracts-sdk, external-sdk]
+    needs: [build, development-sdk-proofs, inspector-sdk, npc-sdk, contracts-sdk, external-sdk]
     runs-on: ubuntu-24.04
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
