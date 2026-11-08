@@ -235,3 +235,16 @@ does not prove healthy renderer initialization.
 Only after the coordinated whole-product ownership contract is implemented and
 reviewed should native/game acceptance be considered. This local callback census
 does not exclude game detours, stop the engine, or make activation safe.
+
+## Detailed request and legacy product preparation
+
+The current product calls legacy `gh::Prepare(options)`, not `PrepareDetailed`
+with an adopted `HostCapsule`. The paired Core's `RequestStopDetailed()`
+therefore returns `Unavailable` on this path. The product independently calls
+`request_stop()` on its own retained owner first; that is the closure request,
+not evidence that Core adopted a capsule or that a drain occurred. The actual
+report must remain visible as unavailable. A real supported product route for
+required hooks and detailed ownership remains unresolved; switching to the
+restricted synthetic detailed configuration would not solve that gap. Native
+activation remains hard false. The `legacy-request` real-Core fixture is
+synthetic and does not establish direct-quit ordering or native safety.

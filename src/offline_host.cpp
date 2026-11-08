@@ -162,7 +162,10 @@ sco::game::host::HostReport RequestStop() noexcept {
         return StopReport(sco::Result::Failed, gh::Phase::Failed, gh::DependencyDisposition::ProcessRetained);
     }
     try {
-        // Close owner admission first. Core's report is not drain evidence.
+        // The product uses legacy Prepare, not a detailed HostCapsule. The
+        // detailed Core request therefore reports Unavailable on this route;
+        // close the separately owned product owner first and retain everything.
+        // That report is not adoption, drain, or direct-quit evidence.
         owner->request_stop();
         const auto report = gh::RequestStopDetailed();
         if (!stopRequest.Finish())

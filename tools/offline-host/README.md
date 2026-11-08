@@ -38,6 +38,11 @@ admission inspector returns synthetic evidence only.
   At the current pinned core source `6106fa3`, the last returns Failed and
   retains state even after a successful owned drain; later Stop and Start
   refuse. The fixture's root remains live for process lifetime.
+* `legacy-request` exercises real Core legacy Prepare followed by its detailed
+  RequestStop. No detailed capsule was adopted, so that report is Unavailable
+  and cannot close the owner. The fixture separately requests owner closure,
+  as the product does, and verifies the detailed report remains Unavailable.
+  This is synthetic and does not validate native quit or safe teardown.
 * `start-fault` injects an owner fault through the inspector during the actual
   Start transition after Activate, and verifies terminal failure and retention.
 * `after-app-start` uses the pinned core's existing private synthetic
