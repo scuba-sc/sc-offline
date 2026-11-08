@@ -30,6 +30,9 @@ assert sink < worker.index('StartOffline();'), 'install before the first core ho
 # The product request may run in a hook callback, so it must only request.
 request = (root / 'src/offline_host.cpp').read_text().split('sco::game::host::HostReport RequestStop() noexcept {', 1)[1].split('\nOwnerDrain DrainRequestedStop', 1)[0]
 assert 'drain_until' not in request and 'gh::Stop(' not in request
+callback = source.split('static LRESULT CALLBACK GetMsgProc(int code, WPARAM wp, LPARAM lp) {', 1)[1].split('\n}', 1)[0]
+assert callback.count('CallNextHookEx(nullptr, code, wp, lp)') == 2
+assert 'CallNextHookEx(g_msgHook' not in callback
 hook_request = source.split('static void RequestLifecycleStop(const char* trigger) {', 1)[1].split('\n}', 1)[0]
 assert 'DrainRequestedStop' not in hook_request and 'Menu_Drain' not in hook_request
 controller = source.split('static void RunMainThreadService() {', 1)[1].split('\n}', 1)[0]

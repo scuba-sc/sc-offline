@@ -615,7 +615,7 @@ static LRESULT CALLBACK GetMsgProc(int code, WPARAM wp, LPARAM lp) {
     // callback. A callback that loses the close race only forwards to the next
     // hook; it never touches the core, menu, or product state.
     HookCallbackLease callback;
-    if (!callback) return CallNextHookEx(g_msgHook, code, wp, lp);
+    if (!callback) return CallNextHookEx(nullptr, code, wp, lp);
     if (code >= 0) {
         // WM_QUIT is terminal BEFORE queued work/render/input; a non-removing peek
         // also must not execute a tick while quit is pending. Game-pack quit owns the
@@ -624,7 +624,7 @@ static LRESULT CALLBACK GetMsgProc(int code, WPARAM wp, LPARAM lp) {
             if (wp & PM_REMOVE) StopHostKit("WM_QUIT");
         } else OnMainThreadTick();
     }
-    return CallNextHookEx(g_msgHook, code, wp, lp);
+    return CallNextHookEx(nullptr, code, wp, lp);
 }
 
 static BOOL CALLBACK FindGameWindow(HWND hwnd, LPARAM out) {
