@@ -601,10 +601,14 @@ static void RequestLifecycleStop(const char* trigger) {
     if (g_hookCallbackAdmission.ClosedAndDrained() && g_hookCallbacksDrainedEvent)
         SetEvent(g_hookCallbacksDrainedEvent);
     if (!g_stopRequestIssued.exchange(true, std::memory_order_acq_rel)) {
+#ifdef SCO_OFFLINE_G1_HOST
         const auto request = offline_host::RequestStop();
         Log("[app] lifecycle stop request (%s): result=%s phase=%u dependency=%u; backing stays retained",
             trigger, sco::ResultName(request.result), static_cast<unsigned>(request.phase),
             static_cast<unsigned>(request.dependencies));
+#else
+        Log("[app] lifecycle stop request (%s): host unavailable; backing stays retained", trigger);
+#endif
     }
     if (g_controlWakeEvent && !SetEvent(g_controlWakeEvent))
         Log("[app] controller wake signal failed (%lu); retained phase check remains active", GetLastError());
@@ -713,6 +717,13 @@ static DWORD WINAPI ModThread(LPVOID param) {
         Log("[app] offline startup unavailable: native reader and worker exclusion and drain are not proven; close the game and await a validated build");
         return 0;
     }
+#ifndef SCO_OFFLINE_G1_HOST
+    // A missing host composition is a refusal even if another build flag
+    // claims a stop contract; do not publish callbacks without a module owner.
+    Log("[app] offline startup unavailable: game host composition missing");
+    ReleaseStartupGate();
+    return 0;
+#else
     if (!offline_host::ProductControlStopContractAvailable()) {
         Log("[app] offline startup unavailable: Core lacks the non-draining stop and owner-drain contract");
         ReleaseStartupGate();
@@ -767,6 +778,7 @@ static DWORD WINAPI ModThread(LPVOID param) {
     RunMainThreadService();
 
     for (;;) Sleep(1000);
+#endif // SCO_OFFLINE_G1_HOST
 }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
