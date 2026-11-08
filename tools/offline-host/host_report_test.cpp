@@ -167,6 +167,23 @@ int main(int argc, char** argv) {
             CHECK(started.result == R::Ok && started.phase == gh::Phase::Running);
             CHECK(!gh::Status().quitHookInstalled && !gh::Status().dataCoreActive);
 #ifdef SCO_HAS_REQUEST_API
+            if (mode == "owner-mismatch") {
+                // Negative control: helper alone cannot establish that its
+                // supplied owner is the one adopted by the detailed capsule.
+                offline_host::detail::StopRequestGate gate;
+                auto other = std::make_shared<sco::OwnedShutdown>();
+                auto read = retained->owner->try_read(); CHECK(read);
+                const auto report = offline_host::detail::RequestOwnedStop(gate, [&] { return other; });
+                Retained(report);
+                CHECK(report.result == R::Ok && retained->owner->closed() && other->closed());
+                CHECK(offline_host::detail::DrainOwnedStop(gate, other, 1000) ==
+                      offline_host::OwnerDrain::DrainedRetained);
+                CHECK(other->ready() && !retained->owner->ready());
+                CHECK(gh::StatusDetailed().drain == gh::DrainDisposition::Requested);
+                CHECK(!wc.expired() && !wb.expired());
+                std::puts("mismatched owner: helper cannot establish identity (synthetic)");
+                return 0;
+            }
             if (mode == "cooperative-request") {
                 // Synthetic admitted callback, same owner as the adopted capsule.
                 // This is not a product hook, native reader or direct quit path.

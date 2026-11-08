@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Shared product request/control ordering. Never grants native admission or
 // unload; callers must own and retain the complete backing independently.
+// A caller using a detailed capsule must independently prove that getOwner()
+// returns that exact capsule's owner. This helper cannot establish identity.
 #include "offline_host.h"
 #include "stop_request_gate.h"
 #include <chrono>
