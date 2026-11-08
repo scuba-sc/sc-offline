@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "offline_host.h"
 #include "native_activation_policy.h"
-#include <atomic>
+#include "stop_request_gate.h"
 #include <chrono>
 #include <memory>
 #include <new>
 #include <utility>
+#ifdef SCO_CORE_NON_DRAINING_STOP_API
 #include <windows.h>
+#endif
 #ifdef SCO_HOST_MENU_CLIENT
 #include "menu.h"
 #endif
@@ -51,8 +53,8 @@ sco::Result StopSelection(void*) { return selection::Stop(); }
 
 namespace gh = sco::game::host;
 namespace offline_host {
-namespace { std::atomic<bool> retained{false}; }
-bool RestartRequired() noexcept { return retained.load(std::memory_order_acquire); }
+namespace { detail::StopRequestGate stopRequest; }
+bool RestartRequired() noexcept { return stopRequest.RestartRequired(); }
 
 namespace {
 gh::HostReport StopReport(sco::Result result, gh::Phase phase,
@@ -150,18 +152,25 @@ sco::game::host::HostReport RequestStop() noexcept {
 #ifdef SCO_CORE_NON_DRAINING_STOP_API
     if (!NativeActivationAvailable())
         return StopReport(sco::Result::Unavailable, gh::Phase::Idle, gh::DependencyDisposition::NeverExposed);
+    // Close the product request seam before calling the owner or Core. A
+    // competing request is terminal and cannot start a second Core request.
+    if (!stopRequest.Begin())
+        return StopReport(sco::Result::Failed, gh::Phase::Failed, gh::DependencyDisposition::ProcessRetained);
     auto owner = ProductOwner();
-    if (!owner) return StopReport(sco::Result::Failed, gh::Phase::Failed, gh::DependencyDisposition::ProcessRetained);
+    if (!owner) {
+        stopRequest.Finish();
+        return StopReport(sco::Result::Failed, gh::Phase::Failed, gh::DependencyDisposition::ProcessRetained);
+    }
     try {
-        // Close owner admission first. RequestStopDetailed may report a busy
-        // host control frame; it must not be the only operation that closes.
+        // Close owner admission first. Core's report is not drain evidence.
         owner->request_stop();
         const auto report = gh::RequestStopDetailed();
-        retained.store(true, std::memory_order_release);
+        if (!stopRequest.Finish())
+            return StopReport(sco::Result::Failed, gh::Phase::Failed, gh::DependencyDisposition::ProcessRetained);
         return report;
     } catch (...) {
         try { owner->fault(); } catch (...) {}
-        retained.store(true, std::memory_order_release);
+        stopRequest.Finish();
         return StopReport(sco::Result::Failed, gh::Phase::Failed, gh::DependencyDisposition::ProcessRetained);
     }
 #else
@@ -172,16 +181,14 @@ sco::game::host::HostReport RequestStop() noexcept {
 OwnerDrain DrainRequestedStop(uint32_t timeoutMs) noexcept {
 #ifdef SCO_CORE_NON_DRAINING_STOP_API
     auto owner = ProductOwner();
-    if (!owner || !RestartRequired()) return OwnerDrain::Unavailable;
+    if (!owner || !stopRequest.DrainMayStart()) return OwnerDrain::Unavailable;
     const auto bounded = timeoutMs > 60000 ? 60000 : timeoutMs;
     try {
         const bool drained = owner->drain_until(std::chrono::steady_clock::now() +
             std::chrono::milliseconds(bounded));
-        retained.store(true, std::memory_order_release);
         return drained ? OwnerDrain::DrainedRetained : OwnerDrain::IncompleteRetained;
     } catch (...) {
         try { owner->fault(); } catch (...) {}
-        retained.store(true, std::memory_order_release);
         return OwnerDrain::IncompleteRetained;
     }
 #else
@@ -195,6 +202,7 @@ sco::Result Prepare(gh::Options options) {
     // yet prove the image, resolver, reader and worker lifetimes it requires.
     if (RestartRequired() || !NativeActivationAvailable()) return sco::Result::Unavailable;
 #ifndef SCO_CORE_NON_DRAINING_STOP_API
+    (void)options;
     return sco::Result::Unavailable;
 #else
     if (!options.shutdownOwner || options.shutdownOwner != ProductOwner()) return sco::Result::BadArg;
@@ -221,6 +229,7 @@ sco::Result Start() {
 sco::Result Tick(uint32_t now) {
     if (RestartRequired() || !NativeActivationAvailable()) return sco::Result::Unavailable;
 #ifndef SCO_CORE_NON_DRAINING_STOP_API
+    (void)now;
     return sco::Result::Unavailable;
 #else
     return gh::Tick(now);

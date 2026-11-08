@@ -220,7 +220,8 @@ if(TARGET sco_game_host)
   file(READ "${SCO_CORE_SOURCE_DIR}/include/sco/game/host.h" SCO_GAME_HOST_H)
   file(READ "${SCO_CORE_SOURCE_DIR}/include/sco/owned_shutdown.h" SCO_OWNED_SHUTDOWN_H)
   if(SCO_GAME_HOST_H MATCHES "HostReport[ \t]+RequestStopDetailed[ \t]*\\([ \t]*\\)[ \t]*noexcept" AND
-     SCO_OWNED_SHUTDOWN_H MATCHES "void[ \t]+request_stop[ \t]*\\([ \t]*\\)[ \t]*noexcept")
+     SCO_OWNED_SHUTDOWN_H MATCHES "void[ \t]+request_stop[ \t]*\\([ \t]*\\)([ \t]*noexcept)?" AND
+     SCO_OWNED_SHUTDOWN_H MATCHES "bool[ \t]+drain_until[ \t]*\\(")
     target_compile_definitions(dinput8 PRIVATE SCO_CORE_NON_DRAINING_STOP_API)
   else()
     message(STATUS "Core lacks request_stop/RequestStopDetailed: product host remains fail-closed")

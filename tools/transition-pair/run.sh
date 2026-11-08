@@ -75,9 +75,9 @@ python3 "$root/tools/transition-pair/verify_cmake.py" "$build/fixture" "$build/c
 cmake --build "$build/fixture" --config Release --parallel 2
 listing=$(ctest --test-dir "$build/fixture" -C Release -N)
 for name in owned_capsule_host host_report_wrong-thread host_report_reentry host_report_retained_reap \
-            native_activation_refusal native_activation_exception_refusal product_registry_refusal \
-            product_stop_overlap product_stop_reentrant product_stop_core-busy \
-            product_stop_wrong-thread product_stop_repeat-success; do
+            native_activation_refusal product_registry_refusal \
+            product_request_normal product_request_reentrant product_request_competing \
+            product_request_failure; do
   printf '%s\n' "$listing" | grep -E "Test +#[0-9]+: ${name}$" >/dev/null || { echo "missing test: $name" >&2; exit 1; }
 done
 ctest --test-dir "$build/fixture" -C Release --no-tests=error --output-on-failure

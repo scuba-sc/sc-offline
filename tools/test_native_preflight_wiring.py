@@ -27,6 +27,13 @@ assert sink > worker.index('if (!offline_host::NativeActivationAvailable())')
 assert sink > worker.index('FreeLibraryAndExitThread'), 'early unload path must precede sink registration'
 assert sink > worker.index('if (InspectAntiCheat() != AcCheck::Clear)')
 assert sink < worker.index('StartOffline();'), 'install before the first core host operation'
+# The product request may run in a hook callback, so it must only request.
+request = (root / 'src/offline_host.cpp').read_text().split('sco::game::host::HostReport RequestStop() noexcept {', 1)[1].split('\nOwnerDrain DrainRequestedStop', 1)[0]
+assert 'drain_until' not in request and 'gh::Stop(' not in request
+hook_request = source.split('static void RequestLifecycleStop(const char* trigger) {', 1)[1].split('\n}', 1)[0]
+assert 'DrainRequestedStop' not in hook_request and 'Menu_Drain' not in hook_request
+controller = source.split('static void RunMainThreadService() {', 1)[1].split('\n}', 1)[0]
+assert controller.index('ClosedAndDrained()') < controller.index('DrainRequestedStop(')
 assert source.count('InstallStartupGate();') == 1
 assert source.count('StartOffline();') == 1
 print('Windows native preflight call-site wiring: PASS (static)')

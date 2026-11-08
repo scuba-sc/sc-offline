@@ -151,22 +151,17 @@ Windows failure behavior, or game acceptance. The detailed contract is part of
 the published SDK source and the current product pin; these synthetic tests do
 not establish safe native activation, shutdown, or gameplay.
 
-## Product Stop overlap refusal
+## Product non-draining Stop request
 
-`stop_overlap_test` links the actual product composition wrapper to a controllable
-synthetic Core stub. Separate processes check overlapping and reentrant Stop
-requests, wrong-thread results, and sequential successful stops. In the overlap
-and reentry cases, the second request changes Stopping to Retained while the
-first holds the reservation. It refuses a second Core entry and forces the
-first result to fail even if the stub returns success. The `core-busy` case
-also models pinned Core's control-entry refusal (Unavailable on a second entry).
-Against the baseline, its separate `core-busy-baseline` negative-control mode
-observes the first call return Ok despite the second call latching retention;
-the fixed wrapper returns Failed and enters Core once. The successful transition
-from Stopping to Idle releases the reservation before the wrapper returns, so
-calls overlapping only in wall-clock time can both succeed if the later call
-acquires the reservation after that transition. The existing failure and
-exception tests cover the terminal latch. Pinned Core
-already has its own control-entry gate; this wrapper safeguard is not a new
-Core drain mechanism. The test does not model real readers, workers, module
-ownership, game-thread behavior, or a safe native shutdown.
+The product no longer calls synchronous Core Stop through this seam. Its request
+path closes the product request gate, requests owner closure, then asks Core for
+its non-draining report; a separate controller may drain only after the request
+has returned. The hard-false native policy refuses before this work. The older
+synchronous Stop-stub cases are superseded; they do not test this request path.
+
+`request_gate_test` exercises the actual atomic request gate with synthetic work:
+normal completion, reentry, competing request and failure. It checks restart
+refusal and that contention cannot authorize a drain while the first request is
+still in progress. This is not a real Core-owner integration, callback drain,
+Windows failure test, or safe-native-shutdown proof. `refusal_test` verifies the
+actual wrapper does not enter Core when native activation is refused.
