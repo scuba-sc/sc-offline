@@ -20,8 +20,9 @@ sco::OwnedShutdown::Read TryRead() noexcept;
 // retention; this does not wait for or perform a drain.
 sco::game::host::HostReport RequestStop() noexcept;
 enum class OwnerDrain { Unavailable, DrainedRetained, IncompleteRetained };
-// Independent control thread only, after request completion. Drains the exact
-// owner passed in Options; never a callback or loader-lock operation.
+// Independent control thread only, after owner/Core request work completes and
+// retention is published. This can precede RequestStop's return instruction.
+// Drains the exact owner passed in Options; never a callback or loader lock.
 OwnerDrain DrainRequestedStop(uint32_t timeoutMs) noexcept;
 // A failed or uncertain stop refuses restart; backing must remain live until exit.
 bool RestartRequired() noexcept;

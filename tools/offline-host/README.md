@@ -161,7 +161,8 @@ not establish safe native activation, shutdown, or gameplay.
 The product no longer calls synchronous Core Stop through this seam. Its request
 path closes the product request gate, requests owner closure, then asks Core for
 its non-draining report; a separate controller may drain only after the request
-has returned. The hard-false native policy refuses before this work. The older
+work completes and retention is published. Publication can precede the wrapper's
+return instruction. The hard-false native policy refuses before this work. The older
 synchronous Stop-stub cases are superseded; they do not test this request path.
 
 `request_gate_test` exercises the actual atomic request gate with synthetic work:
