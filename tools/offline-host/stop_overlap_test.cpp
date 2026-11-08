@@ -59,6 +59,8 @@ int main(int argc, char** argv) {
         return ok ? 0 : 1;
     }
     sco::Result outer = sco::Result::Ok, other = sco::Result::Ok;
+    // Both cases force the second call to complete while the first call is
+    // still inside the stub, before the first can release its reservation.
     if (reenter) {
         outer = offline_host::Stop();
         other = nested;

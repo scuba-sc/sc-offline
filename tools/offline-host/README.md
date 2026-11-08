@@ -155,10 +155,14 @@ not establish safe native activation, shutdown, or gameplay.
 
 `stop_overlap_test` links the actual product composition wrapper to a controllable
 synthetic Core stub. Separate processes check overlapping and reentrant Stop
-requests, wrong-thread results, and sequential successful stops. An overlapping
-request marks restart required, prevents another entry to Core through this
-wrapper, and makes the in-flight result fail even if the stub returns success.
-The existing failure and exception tests cover the terminal latch. Pinned Core
+requests, wrong-thread results, and sequential successful stops. In the overlap
+and reentry cases, the second request changes Stopping to Retained while the
+first holds the reservation. It refuses a second Core entry and forces the
+first result to fail even if the stub returns success. The successful transition
+from Stopping to Idle releases the reservation before the wrapper returns, so
+calls overlapping only in wall-clock time can both succeed if the later call
+acquires the reservation after that transition. The existing failure and
+exception tests cover the terminal latch. Pinned Core
 already has its own control-entry gate; this wrapper safeguard is not a new
 Core drain mechanism. The test does not model real readers, workers, module
 ownership, game-thread behavior, or a safe native shutdown.

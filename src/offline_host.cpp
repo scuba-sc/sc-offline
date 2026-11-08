@@ -75,9 +75,10 @@ sco::Result Tick(uint32_t now) {
     return gh::Tick(now);
 }
 sco::Result Stop() {
-    // Reserve this composition seam before entering Core. A conflicting call
-    // makes the outcome terminal, even if the first call later reports success.
-    // This is not a native reader or worker drain gate.
+    // Reserve this composition seam before entering Core. A concurrent or
+    // reentrant call that changes Stopping to Retained refuses a second Core
+    // entry. If it latches before the successful Stopping-to-Idle transition,
+    // the first call also fails. This is not a native reader or worker gate.
     auto state = stopState.load(std::memory_order_acquire);
     for (;;) {
         if (state == StopState::Retained) return sco::Result::Failed;
