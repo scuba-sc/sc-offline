@@ -28,7 +28,9 @@ Result Stop() {
     // negative control reports failure rather than deadlocking or recursing.
     const int count = ++calls;
     if (mode == 1) return Result::WrongThread;
-    if (mode == 2 || count != 1) return Result::Ok;
+    if (mode == 2) return Result::Ok;
+    // Model pinned Core's busy control-entry refusal for a second call.
+    if (count != 1) return mode == 3 ? Result::Unavailable : Result::Ok;
     if (reenter) {
         nested = offline_host::Stop();
     } else {
@@ -45,6 +47,8 @@ int main(int argc, char** argv) {
     reenter = std::strcmp(argv[1], "reentrant") == 0;
     if (std::strcmp(argv[1], "wrong-thread") == 0) mode = 1;
     if (std::strcmp(argv[1], "repeat-success") == 0) mode = 2;
+    const bool baseline = std::strcmp(argv[1], "core-busy-baseline") == 0;
+    if (baseline || std::strcmp(argv[1], "core-busy") == 0) mode = 3;
     if (!reenter && mode == 0 && std::strcmp(argv[1], "overlap") != 0) return 2;
     if (mode == 1) {
         const bool ok = offline_host::Stop() == sco::Result::WrongThread &&
@@ -77,6 +81,16 @@ int main(int argc, char** argv) {
         }
         changed.notify_all();
         worker.join();
+    }
+    if (baseline) {
+        // Run this mode only against the baseline source as a negative control:
+        // Core refuses the overlapping call, but the first wrapper returns Ok
+        // despite the other wrapper having latched restart-required.
+        const bool ok = outer == sco::Result::Ok && other == sco::Result::Unavailable &&
+            calls == 2 && offline_host::RestartRequired() &&
+            offline_host::Stop() == sco::Result::Failed && calls == 2;
+        std::printf("baseline busy-control incoherence observed: %s\n", ok ? "PASS" : "FAIL");
+        return ok ? 0 : 1;
     }
     const bool ok = outer == sco::Result::Failed && other == sco::Result::Failed &&
         calls == 1 && offline_host::RestartRequired() &&

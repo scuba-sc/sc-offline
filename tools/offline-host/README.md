@@ -158,7 +158,11 @@ synthetic Core stub. Separate processes check overlapping and reentrant Stop
 requests, wrong-thread results, and sequential successful stops. In the overlap
 and reentry cases, the second request changes Stopping to Retained while the
 first holds the reservation. It refuses a second Core entry and forces the
-first result to fail even if the stub returns success. The successful transition
+first result to fail even if the stub returns success. The `core-busy` case
+also models pinned Core's control-entry refusal (Unavailable on a second entry).
+Against the baseline, its separate `core-busy-baseline` negative-control mode
+observes the first call return Ok despite the second call latching retention;
+the fixed wrapper returns Failed and enters Core once. The successful transition
 from Stopping to Idle releases the reservation before the wrapper returns, so
 calls overlapping only in wall-clock time can both succeed if the later call
 acquires the reservation after that transition. The existing failure and
