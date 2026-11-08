@@ -35,7 +35,7 @@ admission inspector returns synthetic evidence only.
 * `host` exercises actual Prepare, Start, wrong-thread Stop, reentrant Stop
   from the Tick inspector, and game-thread Stop. Inspector reentry is an
   adversarial contract violation; production inspectors must be non-reentrant.
-  At the current pinned core source `6106fa3`, the last returns Failed and
+  In the earlier stable Core source `6106fa3`, the last returns Failed and
   retains state even after a successful owned drain; later Stop and Start
   refuse. The fixture's root remains live for process lifetime.
 * `legacy-request` exercises real Core legacy Prepare followed by its detailed
@@ -76,14 +76,14 @@ For older source packages without `HostCapsule`, Linux has a legacy
 `options_copy_fault_test` fallback. It replaces ordinary allocation operators
 with malloc/free-backed equivalents and arms a one-shot thread-local allocation
 failure during the old Options copy. This fallback is not registered for the
-current stable pin. Stable 2.4.0 instead runs `host_report_options-copy`, which
+earlier stable pin. Stable 2.4.0 instead runs `host_report_options-copy`, which
 injects a failure during the actual partial capsule/Options copy and verifies
 that the owning backing remains retained. It is synthetic Linux evidence, not
 Windows allocator evidence or a native reader barrier.
 
 ## Published stable host report qualification
 
-The current product pin and published SDK source are core commit
+The published stable SDK source was Core commit
 `6106fa3639cbcc28f78a1ded8de2707de019f4d3`, tag
 [`sdk-v2.4.0`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0).
 The host-source archive SHA-256 is
@@ -153,7 +153,7 @@ Every adopted terminal result stays `ProcessRetained`; a failed stop does not
 authorize restart, destruction or unload. These tests do not establish native
 reader exclusion, worker census, mapped code ownership, original-quit safety,
 Windows failure behavior, or game acceptance. The detailed contract is part of
-the published SDK source and the current product pin; these synthetic tests do
+the published SDK source; these synthetic tests do
 not establish safe native activation, shutdown, or gameplay.
 
 ## Product non-draining Stop request

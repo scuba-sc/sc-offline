@@ -1,7 +1,7 @@
 # SDK 2.4.0 release coordinates and consumer qualification
 
-The embedded host and standalone plugin consumers now target the published stable
-SDK 2.4.0 release, tag [`sdk-v2.4.0`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0).
+The following section records the historical published stable SDK 2.4.0
+release, tag [`sdk-v2.4.0`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0).
 The annotated tag peels to Core source `6106fa3639cbcc28f78a1ded8de2707de019f4d3`.
 Candidate run [41342490537](https://github.com/scuba-sc/sco-core/actions/runs/41342490537)
 and publication run [41343086992](https://github.com/scuba-sc/sco-core/actions/runs/41343086992)
@@ -23,9 +23,10 @@ source and byte-compared with the published release assets.
 | Star Citizen game overlay | `sco-sdk-game-sc-0.8.0.zip` | `a5881e321bb456a3a17894413a07ece9ce6d3787bd6d1ad7dcc34fc288951f6b` | 203 |
 | Star Citizen host source | `sco-sdk-host-source-sc-2.4.0.zip` | `a0aaaba07e3d4eb0d8c264912cd6f2ab23f0d237a99fa07816005790a76efc4c` | 986 |
 
-The default offline host build consumes the exact source commit through the
-`external/sco-core` gitlink. Standalone plugin builds consume the combined
-`legacy` archive and its release checksum inventory. The separate host-source
+The current private development host uses the exact `external/sco-core` gitlink,
+which is newer than this historical release. Current development plugin proofs
+must use a matching source-identified development `legacy` archive. The published
+`legacy` archive and its release checksum inventory remain historical inputs. The separate host-source
 archive is available to explicit `SCO_HOST_SOURCE_DIR` development overrides;
 its digest is recorded here, but it is not the default embedded-host input. The
 profiles have different roles and their headers must not be overlaid. The

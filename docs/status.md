@@ -1,6 +1,10 @@
 # What is not verified in game
 
-## Stable SDK 2.4.0 consumer integration
+## Historical stable SDK 2.4.0 consumer integration
+
+The current private development candidate uses the source in its exact Core
+gitlink and requires a matching development SDK. The historical stable results
+below do not certify the new pair. Native startup remains refused.
 
 The combined plugin archive is the published stable `sdk-v2.4.0` release, source
 `6106fa3639cbcc28f78a1ded8de2707de019f4d3`, SHA-256
@@ -54,10 +58,11 @@ Since v0.7.8.1 the shell reports offline-session and network
 evidence from live firewall and connection reads (see above); it still never infers
 safety from flags or patch success.
 
-The embedded development host source pin is
-`6106fa3639cbcc28f78a1ded8de2707de019f4d3`; external plugins use the published
-stable SDK 2.4.0's checksum-pinned `sco-sdk-2.4.0.zip`: plugin ABI **1.1**,
-Star Citizen game pack **0.8.0**. Static signature evidence targets
+The historical SDK 2.4.0 host source was
+`6106fa3639cbcc28f78a1ded8de2707de019f4d3`; its external plugin archive was
+checksum-pinned `sco-sdk-2.4.0.zip`. The current development gitlink is newer
+and requires matching development SDK proofs: plugin ABI **1.1**, Star Citizen
+game pack **0.8.0**. Static signature evidence targets
 **4.10.197.2878**. Actor-stats contracts are now present in the host source;
 stat units, ranges, writes and actual game behavior remain **NOT RUN**. The
 candidate's default-off services stay off. See [coordinates and release limits](sdk-candidate.md).
