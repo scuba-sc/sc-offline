@@ -91,7 +91,7 @@ static void Host(const std::string& mode) {
         const auto before = gh::RequestStopDetailed();
         CHECK(before.result == sco::Result::Unavailable &&
               before.dependencies == gh::DependencyDisposition::ProcessRetained &&
-              before.drain == gh::DrainDisposition::NotAdopted &&
+              before.drain == gh::DrainDisposition::Unknown && before.sessionId == 0 &&
               before.phase == gh::Phase::Prepared && !(*root)->shutdown->closed());
         // Product explicitly requests the same owner before asking for the
         // detailed report. The report remains Unavailable; closure is the
@@ -100,7 +100,7 @@ static void Host(const std::string& mode) {
         const auto after = gh::RequestStopDetailed();
         CHECK(after.result == sco::Result::Unavailable &&
               after.dependencies == gh::DependencyDisposition::ProcessRetained &&
-              after.drain == gh::DrainDisposition::NotAdopted && (*root)->shutdown->closed());
+              after.drain == gh::DrainDisposition::Unknown && after.sessionId == 0 && (*root)->shutdown->closed());
         return;
     }
     if (mode == "start-fault") {
