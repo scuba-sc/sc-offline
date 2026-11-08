@@ -18,12 +18,13 @@ git clone -q --no-hardlinks --no-checkout "$core" "$out/core"
 git -C "$out/core" checkout -q --detach "$expected"
 [ "$(git -C "$out/core" rev-parse HEAD)" = "$expected" ]
 [ "$(git -C "$out/core" rev-parse 'HEAD^{tree}')" = "$(git -C "$core" rev-parse 'HEAD^{tree}')" ]
-version=$(tr -d '\r\n' < "$out/core/sdk/VERSION")
-case "$version" in *-dev.*) ;; *) echo 'Core sdk/VERSION must identify a development build' >&2; exit 1;; esac
+[ -f "$out/core/sdk/DEVELOPMENT_VERSION" ] || { echo 'Core lacks an explicit development package version' >&2; exit 1; }
+version=$(tr -d '\r\n' < "$out/core/sdk/DEVELOPMENT_VERSION")
+case "$version" in *-dev.*) ;; *) echo 'Core sdk/DEVELOPMENT_VERSION must identify a development build' >&2; exit 1;; esac
 mkdir -p "$out/first" "$out/second" "$out/extracted"
 export PYTHONDONTWRITEBYTECODE=1
-python3 "$out/core/sdk/package.py" --profile legacy --out "$out/first"
-python3 "$out/core/sdk/package.py" --profile legacy --out "$out/second"
+python3 "$out/core/sdk/package.py" --development --profile legacy --out "$out/first"
+python3 "$out/core/sdk/package.py" --development --profile legacy --out "$out/second"
 archive="sco-sdk-$version.zip"
 cmp "$out/first/$archive" "$out/second/$archive" || { echo 'development archive is not reproducible' >&2; exit 1; }
 (cd "$out/first" && sha256sum "$archive" > SHA256SUMS)
