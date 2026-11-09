@@ -85,6 +85,24 @@ static void Host(const std::string& mode) {
     }
     CHECK(gh::Prepare(opts) == sco::Result::Ok);
     CHECK(gh::Status().phase == gh::Phase::Prepared);
+    if (mode == "legacy-request") {
+        // Legacy Prepare does not adopt a detailed HostCapsule. The detailed
+        // request cannot close this owner, even after successful legacy Prepare.
+        const auto before = gh::RequestStopDetailed();
+        CHECK(before.result == sco::Result::Unavailable &&
+              before.dependencies == gh::DependencyDisposition::ProcessRetained &&
+              before.drain == gh::DrainDisposition::Unknown && before.sessionId == 0 &&
+              before.phase == gh::Phase::Prepared && !(*root)->shutdown->closed());
+        // Product explicitly requests the same owner before asking for the
+        // detailed report. The report remains Unavailable; closure is the
+        // separate owner request, not evidence of detailed capsule adoption.
+        (*root)->shutdown->request_stop();
+        const auto after = gh::RequestStopDetailed();
+        CHECK(after.result == sco::Result::Unavailable &&
+              after.dependencies == gh::DependencyDisposition::ProcessRetained &&
+              after.drain == gh::DrainDisposition::Unknown && after.sessionId == 0 && (*root)->shutdown->closed());
+        return;
+    }
     if (mode == "start-fault") {
         CHECK(gh::Activate() == sco::Result::Ok);
         faultOnInspect = true;
@@ -165,7 +183,7 @@ int main(int argc, char** argv) {
     if (argc != 2) return 2;
     const std::string mode = argv[1];
     if (mode == "copy" || mode == "copy-negative") Copy(mode == "copy");
-    else if (mode == "badarg" || mode == "admission" || mode == "budget" || mode == "host" || mode == "start-fault") Host(mode);
+    else if (mode == "badarg" || mode == "admission" || mode == "budget" || mode == "host" || mode == "legacy-request" || mode == "start-fault") Host(mode);
 #ifdef SCO_CAPSULE_PRIVATE_SEAM
     else if (mode == "after-app-start") Host(mode);
 #endif

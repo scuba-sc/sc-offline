@@ -52,7 +52,6 @@ jobs:
             test "$(gh api repos/scuba-sc/sc-offline/pulls/192 --jq '.state + ":" + .base.ref + ":" + .head.sha')" = "open:main:$OFFLINE_RUN_SHA"
           fi
           test "$(git -C ../offline-source rev-parse HEAD)" = "$OFFLINE_RUN_SHA"
-          test "$(git -C ../offline-source rev-parse HEAD:external/sco-core)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
           test -z "$(git -C ../offline-source status --porcelain)"
           test "$(git -C ../stable-core rev-parse HEAD)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
           git -C ../stable-core fetch origin refs/tags/sdk-v2.4.0:refs/tags/sdk-v2.4.0
@@ -141,7 +140,6 @@ jobs:
           INPUT_KIND: ${{ matrix.source }}
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD:external/sco-core)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
           test "$(git -C stable-core rev-parse HEAD)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
           test -z "$(git -C stable-core status --porcelain)"
           workspace="$GITHUB_WORKSPACE"; temp="$RUNNER_TEMP"; py=python3; generator=()
@@ -204,7 +202,6 @@ jobs:
             test "$(gh api repos/scuba-sc/sc-offline/pulls/192 --jq '.state + ":" + .base.ref + ":" + .head.sha')" = "open:main:$OFFLINE_RUN_SHA"
           fi
           test "$(git -C offline-source rev-parse HEAD)" = "$OFFLINE_RUN_SHA"
-          test "$(git -C offline-source rev-parse HEAD:external/sco-core)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
           test -z "$(git -C offline-source status --porcelain)"
 
   # Seconds on Linux: parse errors and MSVC C2712 risks fail here, before the Windows build.
@@ -220,6 +217,9 @@ jobs:
       - name: Install clang + mingw-w64 headers
         run: sudo apt-get update -qq && sudo apt-get install -y -qq clang g++-mingw-w64-x86-64-posix
 
+      - name: Test launcher plugin startup snapshot parser
+        run: tools/test_launcher_plugin_startup_snapshot.sh
+
       # Pinned-host parsing remains separate from the exact stable-source check below.
       - name: tools/check.sh (pinned host source)
         run: tools/check.sh
@@ -229,21 +229,18 @@ jobs:
           tools/test_app_stop.sh external/sco-core
           tools/test_menu_widgets_release.sh external/sco-core
 
-      - name: Verify the published SDK source and archive
-        run: |
-          set -eu
-          git -C external/sco-core fetch --depth=1 origin 6106fa3639cbcc28f78a1ded8de2707de019f4d3
-          git -C external/sco-core checkout --detach 6106fa3639cbcc28f78a1ded8de2707de019f4d3
-          tools/ci-dev-sdk-preflight.sh external/sco-core "$RUNNER_TEMP/sdk-development"
+      - name: Generate and verify the selected development SDK
+        run: tools/ci-dev-sdk-preflight.sh external/sco-core "$RUNNER_TEMP/sdk-development"
 
-      - name: Check stable-SDK consumers against pinned host source
+      - name: Check consumers against selected development host source
         run: tools/check.sh
 
-      - name: Test gear consumer with source-built SDK 2.4.0
+      - name: Test gear consumer with source-built development SDK
         run: |
           set -eu
           test -d plugins/gear_presets
-          SDK_INCLUDE="$RUNNER_TEMP/sdk-development/extracted/sco-sdk-2.4.0/include"
+          SDK_VERSION=$(cat "$RUNNER_TEMP/sdk-development/sdk-version.txt")
+          SDK_INCLUDE="$RUNNER_TEMP/sdk-development/extracted/sco-sdk-$SDK_VERSION/include"
           test -f "$SDK_INCLUDE/scosdk/game/inventory_layout.hpp"
           cmake -S external/sco-core -B "$RUNNER_TEMP/core-development" -DCMAKE_BUILD_TYPE=Release -DSCO_BUILD_TESTS=OFF
           cmake --build "$RUNNER_TEMP/core-development" --parallel 2 --target sco_widgets sco_storage sco_host sco_runtime sco_core sco_sqlite
@@ -253,10 +250,11 @@ jobs:
             ctest --test-dir "$RUNNER_TEMP/gear-development" -R "^$t$" --no-tests=error --output-on-failure
           done
 
-      - name: Configure spawn and ASOP consumers with source-built SDK 2.4.0
+      - name: Configure spawn and ASOP consumers with source-built development SDK
         run: |
           set -eu
-          SDK_INCLUDE="$RUNNER_TEMP/sdk-development/extracted/sco-sdk-2.4.0/include"
+          SDK_VERSION=$(cat "$RUNNER_TEMP/sdk-development/sdk-version.txt")
+          SDK_INCLUDE="$RUNNER_TEMP/sdk-development/extracted/sco-sdk-$SDK_VERSION/include"
           test -f tools/asop_selection_workflow_test.cpp
           test -f "$SDK_INCLUDE/sc_asop_selection.h"
           cmake -S plugins/spawn -B "$RUNNER_TEMP/spawn-development" -DSCO_SDK_INCLUDE_DIR="$SDK_INCLUDE" -DSCO_WORKFLOW_TESTS=ON
@@ -329,6 +327,7 @@ jobs:
           c++ -std=c++20 -Wall -Wextra -Werror -I src -I external/sco-core/include tools/offline-host/capability_refusal_test.cpp -o capability_refusal_test
           ./capability_refusal_test
           python3 tools/test_native_preflight_wiring.py
+          python3 tools/test_no_host_fallback.py
 
       - name: Owned signature snapshot diagnostics
         run: |
@@ -383,6 +382,39 @@ jobs:
           done
           echo "src/third_party/imgui and external/sco-core/sdk/third_party/imgui match"
 
+      - name: Save the exact development SDK for isolated consumer proofs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: development-sdk-candidate
+          path: |
+            ${{ runner.temp }}/sdk-development/first/*
+            ${{ runner.temp }}/sdk-development/sdk-version.txt
+            ${{ runner.temp }}/sdk-development/sdk-sha256.txt
+            ${{ runner.temp }}/sdk-development/core-source.sha
+          if-no-files-found: error
+          retention-days: 7
+
+  development-sdk-proofs:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025-vs2026]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: development-sdk-candidate
+          path: ${{ runner.temp }}/sdk-development
+      - name: Run isolated consumer proofs against selected development Core
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then py=python; else py=python3; fi
+          "$py" tools/ci-dev-sdk-proofs.py "$RUNNER_TEMP/sdk-development" "$RUNNER_TEMP/development-proofs"
+
   # Its own job, not a step of `check`: `build` waits for `check`, so a failing scan gate there
   # would also hide whether the sources compile. The two answers are independent. Like every job
   # here it runs on pull requests and on each push to main, so a green main shows the gate holds.
@@ -415,7 +447,8 @@ jobs:
       - name: Built-ins include only SDK headers
         run: python3 tools/sdk-headers.py
 
-  # External workflows use only the published SDK; none of these jobs initializes the host submodule.
+  # Historical published-archive compatibility checks. These do not qualify
+  # current development host or the development SDK; no release conclusion follows.
   inspector-sdk-posix:
     runs-on: ubuntu-24.04
     steps:
@@ -733,7 +766,7 @@ jobs:
   # G3 requires a future approved SDK; do not revive host-embedded bridges-test builds.
 
   release:
-    needs: [build, inspector-sdk, npc-sdk, contracts-sdk, external-sdk]
+    needs: [build, development-sdk-proofs, inspector-sdk, npc-sdk, contracts-sdk, external-sdk]
     runs-on: ubuntu-24.04
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -742,6 +775,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Refuse packaging an unpublished development Core with stable plugin artifacts
+        run: |
+          echo "Development Core requires a separately reviewed matching release SDK and plugin artifacts." >&2
+          exit 1
 
       - name: Download DLL + launcher artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1

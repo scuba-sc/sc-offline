@@ -1,6 +1,10 @@
 # What is not verified in game
 
-## Stable SDK 2.4.0 consumer integration
+## Historical stable SDK 2.4.0 consumer integration
+
+The current private development candidate uses the source in its exact Core
+gitlink and requires a matching development SDK. The historical stable results
+below do not certify the new pair. Native startup remains refused.
 
 The combined plugin archive is the published stable `sdk-v2.4.0` release, source
 `6106fa3639cbcc28f78a1ded8de2707de019f4d3`, SHA-256
@@ -54,10 +58,11 @@ Since v0.7.8.1 the shell reports offline-session and network
 evidence from live firewall and connection reads (see above); it still never infers
 safety from flags or patch success.
 
-The embedded development host source pin is
-`6106fa3639cbcc28f78a1ded8de2707de019f4d3`; external plugins use the published
-stable SDK 2.4.0's checksum-pinned `sco-sdk-2.4.0.zip`: plugin ABI **1.1**,
-Star Citizen game pack **0.8.0**. Static signature evidence targets
+The historical SDK 2.4.0 host source was
+`6106fa3639cbcc28f78a1ded8de2707de019f4d3`; its external plugin archive was
+checksum-pinned `sco-sdk-2.4.0.zip`. The current development gitlink is newer
+and requires matching development SDK proofs: plugin ABI **1.1**, Star Citizen
+game pack **0.8.0**. Static signature evidence targets
 **4.10.197.2878**. Actor-stats contracts are now present in the host source;
 stat units, ranges, writes and actual game behavior remain **NOT RUN**. The
 candidate's default-off services stay off. See [coordinates and release limits](sdk-candidate.md).
@@ -71,7 +76,7 @@ The release-pin smoke checks: offline startup was **observed once** for v0.7.8.1
 releases; owner Windows/in-game acceptance remains **NOT RUN**. No synthetic
 fixture or checker result certifies gameplay. Policy: [decisions.md](decisions.md).
 
-sco-core keeps the matching table for the `game.*` services, with the evidence level of each capability and what a run has to show: [docs/game/status.md](https://github.com/scuba-sc/sco-core/blob/6106fa3639cbcc28f78a1ded8de2707de019f4d3/docs/game/status.md) at the pinned commit. Read it for the service side (for example `game.actors.state`, `game.entities.query_radius`, `game.entities.watch` and `game.events.vehicle_seat` are held **off** until a run decides them). This page lists the sc-offline side: what each converted feature still needs checked. The steps are the ones in the bodies of [#95](https://github.com/scuba-sc/sc-offline/pull/95), [#97](https://github.com/scuba-sc/sc-offline/pull/97) and [#98](https://github.com/scuba-sc/sc-offline/pull/98); `mod.log` lines are quoted as those PRs wrote them.
+sco-core keeps the matching table for the `game.*` services, with the evidence level of each capability and what a run has to show: [docs/game/status.md](https://github.com/scuba-sc/sco-core/blob/d06f9124d6d7d380295ada4bc2af8968b98a051c/docs/game/status.md) at the development pin. Read it for the service side (for example `game.actors.state`, `game.entities.query_radius`, `game.entities.watch` and `game.events.vehicle_seat` are held **off** until a run decides them). This page lists the sc-offline side: what each converted feature still needs checked. The steps are the ones in the bodies of [#95](https://github.com/scuba-sc/sc-offline/pull/95), [#97](https://github.com/scuba-sc/sc-offline/pull/97) and [#98](https://github.com/scuba-sc/sc-offline/pull/98); `mod.log` lines are quoted as those PRs wrote them.
 
 ## Step 7B: tutorial evidence ledger
 

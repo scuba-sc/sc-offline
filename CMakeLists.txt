@@ -56,8 +56,13 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # Added after CMAKE_MSVC_RUNTIME_LIBRARY above, so its libraries get the static CRT too: they link
 # into dinput8.dll, and CI's verify step checks the DLL imports no dynamic CRT.
 option(SCO_HOST_MENU_CLIENT "Use the development host menu client" OFF)
-option(SCO_ASOP_HOST_COMPOSITION "Use the G10 host-source ASOP owner (requires newer host kit)" OFF)
-option(SCO_ASOP_SELECTION_COMPOSITION "Use the ASOP selection file service (development host kit required)" OFF)
+option(SCO_ASOP_HOST_COMPOSITION "Use the G10 host-source ASOP owner (requires coordinated stop/drain contract)" OFF)
+option(SCO_ASOP_SELECTION_COMPOSITION "Use the ASOP selection file service (requires coordinated stop/drain contract)" OFF)
+if(SCO_ASOP_HOST_COMPOSITION OR SCO_ASOP_SELECTION_COMPOSITION)
+  message(FATAL_ERROR
+    "ASOP compositions are disabled: no reviewed nonblocking product quit notification/control-thread "
+    "drain exists; game.exit does not cover the required direct BeforeQuit path")
+endif()
 set(SCO_HOST_SOURCE_DIR "" CACHE PATH "Extracted host-source-sc kit (local override; gitlink unchanged)")
 if(SCO_HOST_SOURCE_DIR)
   set(SCO_CORE_SOURCE_DIR "${SCO_HOST_SOURCE_DIR}")
@@ -210,6 +215,17 @@ if(TARGET sco_game_host)
   target_sources(dinput8 PRIVATE src/offline_host.cpp)
   target_link_libraries(dinput8 PRIVATE sco_game_host)
   target_compile_definitions(dinput8 PRIVATE SCO_OFFLINE_G1_HOST)
+  # Control-thread stop is only safe when the selected core source exposes
+  # both halves of the same-owner non-draining request/drain contract.
+  file(READ "${SCO_CORE_SOURCE_DIR}/include/sco/game/host.h" SCO_GAME_HOST_H)
+  file(READ "${SCO_CORE_SOURCE_DIR}/include/sco/owned_shutdown.h" SCO_OWNED_SHUTDOWN_H)
+  if(SCO_GAME_HOST_H MATCHES "HostReport[ \t]+RequestStopDetailed[ \t]*\\([ \t]*\\)[ \t]*noexcept" AND
+     SCO_OWNED_SHUTDOWN_H MATCHES "void[ \t]+request_stop[ \t]*\\([ \t]*\\)([ \t]*noexcept)?" AND
+     SCO_OWNED_SHUTDOWN_H MATCHES "bool[ \t]+drain_until[ \t]*\\(")
+    target_compile_definitions(dinput8 PRIVATE SCO_CORE_NON_DRAINING_STOP_API)
+  else()
+    message(STATUS "Core lacks request_stop/RequestStopDetailed: product host remains fail-closed")
+  endif()
 elseif(SCO_HOST_SOURCE_DIR)
   message(FATAL_ERROR "SCO_HOST_SOURCE_DIR lacks the required sco_game_host composition target")
 else()

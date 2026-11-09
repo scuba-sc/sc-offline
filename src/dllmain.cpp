@@ -21,6 +21,8 @@
 #include "fleet.h"
 #endif
 #include "menu.h"
+#include "menu_worker.h"
+#include "menu_callback_admission.h"
 #include "hotkeys.h"
 #include "builtins/builtins.h"
 #include "sco/app.h"
@@ -47,6 +49,7 @@
 #include <filesystem>
 #include <cstring>
 #include <iterator>
+#include <atomic>
 
 #pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "advapi32.lib")
@@ -80,6 +83,7 @@ extern "C" void StartupGateWait() {
 
 static void InstallStartupGate() {
     if (!offline_host::NativeActivationAvailable()) return;
+    if (!offline_host::ProductControlStopContractAvailable()) return;
     auto* base = reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr));
     wchar_t path[MAX_PATH];
     const DWORD length = GetModuleFileNameW(nullptr, path, MAX_PATH);
@@ -278,6 +282,7 @@ static bool PrepareHostKit();
 
 static void StartOffline() {
     if (!offline_host::NativeActivationAvailable()) return;
+    if (!offline_host::ProductControlStopContractAvailable()) return;
     // sco-core's signature rows first. They match the game's original bytes (sco-sigcheck checks
     // them against StarCitizen.exe on disk), and the ASOP rows cover bytes that the offline patches
     // and hooks below change (the shard gate, the fleet manager's retrieve). The report goes out
@@ -446,6 +451,10 @@ static bool PrepareHostKit() {
     options.inspect = InspectOfflineEnvironment;
     options.image = &original;
     options.platform = std::move(pf);
+    if (!offline_host::AttachShutdownOwner(options)) {
+        Log("[app] product owner unavailable or core stop contract missing; host remains refused");
+        return false;
+    }
     // D6: an admission refusal at load can be transient (firewall service not answering yet). Retry
     // only that case: Unavailable with the host back at Idle. Each attempt is a full fresh inspection
     // (refusals are never cached); Options are copied per attempt.
@@ -470,26 +479,18 @@ static bool PrepareHostKit() {
 #endif
 }
 
+static void RequestLifecycleStop(const char* trigger);
+
 static void StopHostKit(const char* trigger) {
-#ifdef SCO_ASOP_HOST_COMPOSITION
-    offline::asop::Stop(); // Untaken callers wake before app/provider teardown.
-#endif
+    // Runs inside the game hook. Request closure and wake ModThread, but return
+    // before either the core owner or the menu worker is drained.
+    RequestLifecycleStop(trigger);
 #ifdef SCO_OFFLINE_G1_HOST
-    const sco::Result result = offline_host::Stop();
     InvalidateEvidence();
-    if (result != sco::Result::Ok)
-        Log("[app] stop (%s) incomplete: %s; keep backing live and close the game before restarting", trigger, sco::ResultName(result));
 #else
     (void)trigger;
 #endif
 }
-
-#ifdef SCO_ASOP_HOST_COMPOSITION
-static const char kAsopExitOwner = 0;
-static void StopAsopBeforeProviders(const char*, const void*, void*) {
-    offline::asop::Stop();
-}
-#endif
 
 // Contracts run on the retained host engine (contracts.cpp), as the v0.7.7 built-in did, until a
 // published missions/economy provider lets the external plugin take over. Its mission accounting
@@ -513,17 +514,12 @@ static void StartHostKit() {
     }
 #ifdef SCO_ASOP_HOST_COMPOSITION
     if (g_hostKitStarted) {
-        // G1 owns engine quit and admission-loss teardown. Its app::Stop dispatches
-        // game.exit before withdrawing providers, including the direct quit path.
-        const auto subscribed = sco::Subscribe(&kAsopExitOwner, "game.exit", StopAsopBeforeProviders, nullptr);
-        if (subscribed != sco::Result::Ok) {
-            Log("[asop] shutdown subscription refused: %s; ASOP stays inactive", sco::ResultName(subscribed));
-        } else {
-            char ships[MAX_PATH]{};
-            ShipsFilePath(ships, sizeof(ships));
-            const auto r = offline::asop::StartFromEnvironment(g_offline, InspectAntiCheat() == AcCheck::Clear, ships);
-            Log("[asop] host composition result=%u; no product fallback", static_cast<unsigned>(r));
-        }
+        // CMake currently rejects this composition until it has a nonblocking
+        // stop request and same-owner drain that preserve provider ordering.
+        char ships[MAX_PATH]{};
+        ShipsFilePath(ships, sizeof(ships));
+        const auto r = offline::asop::StartFromEnvironment(g_offline, InspectAntiCheat() == AcCheck::Clear, ships);
+        Log("[asop] host composition result=%u; no product fallback", static_cast<unsigned>(r));
     }
 #endif
 #endif
@@ -551,10 +547,18 @@ static void OnMainThreadTick() {
     retry.Tick(sco::game::host::Status().phase == sco::game::host::Phase::Prepared,
                GetTickCount(), [] { StartHostKit(); });
     if (!offline_host::Running()) return;
+    // Hold the exact OwnedShutdown carried in host Options through every
+    // product consumer invoked by this admitted callback.
+    auto ownerRead = offline_host::TryRead();
+    if (!ownerRead) { RequestLifecycleStop("owner admission closed"); return; }
     const DWORD now = GetTickCount();
     // Re-inspect BEFORE cadence, OS callbacks or retained legacy consumers. Lost
     // admission cancels pending app tasks through G1 without executing them.
-    if (offline_host::Tick(now) != sco::Result::Ok || !offline_host::Running()) { InvalidateEvidence(); return; }
+    if (offline_host::Tick(now) != sco::Result::Ok || !offline_host::Running()) {
+        InvalidateEvidence();
+        RequestLifecycleStop("tick admission lost");
+        return;
+    }
 #ifdef SCO_ASOP_HOST_COMPOSITION
     offline::asop::Pump(now); // EVERY admitted message, never behind tick cadence.
 #else
@@ -572,8 +576,50 @@ static void OnMainThreadTick() {
 }
 
 static HHOOK g_msgHook = nullptr;
+static HANDLE g_controlWakeEvent = nullptr;
+static HANDLE g_hookCallbacksDrainedEvent = nullptr;
+static sc_offline::menu_lifetime::CallbackAdmission g_hookCallbackAdmission;
+static std::atomic<bool> g_stopRequestIssued{false};
+
+class HookCallbackLease final {
+public:
+    HookCallbackLease() noexcept : admitted_(g_hookCallbackAdmission.Enter()) {}
+    ~HookCallbackLease() {
+        if (!admitted_) return;
+        g_hookCallbackAdmission.Leave();
+        if (g_hookCallbackAdmission.ClosedAndDrained() && g_hookCallbacksDrainedEvent)
+            SetEvent(g_hookCallbacksDrainedEvent);
+    }
+    explicit operator bool() const noexcept { return admitted_; }
+private:
+    bool admitted_;
+};
+
+static void RequestLifecycleStop(const char* trigger) {
+    Menu_RequestStop();
+    g_hookCallbackAdmission.Close();
+    if (g_hookCallbackAdmission.ClosedAndDrained() && g_hookCallbacksDrainedEvent)
+        SetEvent(g_hookCallbacksDrainedEvent);
+    if (!g_stopRequestIssued.exchange(true, std::memory_order_acq_rel)) {
+#ifdef SCO_OFFLINE_G1_HOST
+        const auto request = offline_host::RequestStop();
+        Log("[app] lifecycle stop request (%s): result=%s phase=%u dependency=%u; backing stays retained",
+            trigger, sco::ResultName(request.result), static_cast<unsigned>(request.phase),
+            static_cast<unsigned>(request.dependencies));
+#else
+        Log("[app] lifecycle stop request (%s): host unavailable; no Core request made", trigger);
+#endif
+    }
+    if (g_controlWakeEvent && !SetEvent(g_controlWakeEvent))
+        Log("[app] controller wake signal failed (%lu); retained phase check remains active", GetLastError());
+}
 
 static LRESULT CALLBACK GetMsgProc(int code, WPARAM wp, LPARAM lp) {
+    // This admission operation is deliberately the first product access in the
+    // callback. A callback that loses the close race only forwards to the next
+    // hook; it never touches the core, menu, or product state.
+    HookCallbackLease callback;
+    if (!callback) return CallNextHookEx(nullptr, code, wp, lp);
     if (code >= 0) {
         // WM_QUIT is terminal BEFORE queued work/render/input; a non-removing peek
         // also must not execute a tick while quit is pending. Game-pack quit owns the
@@ -582,7 +628,7 @@ static LRESULT CALLBACK GetMsgProc(int code, WPARAM wp, LPARAM lp) {
             if (wp & PM_REMOVE) StopHostKit("WM_QUIT");
         } else OnMainThreadTick();
     }
-    return CallNextHookEx(g_msgHook, code, wp, lp);
+    return CallNextHookEx(nullptr, code, wp, lp);
 }
 
 static BOOL CALLBACK FindGameWindow(HWND hwnd, LPARAM out) {
@@ -594,11 +640,21 @@ static BOOL CALLBACK FindGameWindow(HWND hwnd, LPARAM out) {
     return TRUE;
 }
 
+// Set only once ModThread has passed the fail-closed gate and the early refusal
+// path that unloads this module. The sink is an atomic borrowed callback in
+// sco-core; core has no in-flight sink drain, so do not publish it on paths that
+// may return or unload the DLL.
+static void ForwardCoreLog(const char* line) { Log("%s", line); }
+
 // The message hook is the bootstrap's, not teleport's: it starts the host kit (and with it the
 // built-in plugins and plugins) on its first tick whether or not a feature resolved. It stays off
 // only when the game is running online.
 static void RunMainThreadService() {
     if (!g_offline) return;
+    if (!g_controlWakeEvent || !g_hookCallbacksDrainedEvent) {
+        Log("[app] lifecycle controller unavailable; keep host inactive");
+        return;
+    }
     if (g_tp.ok) LoadSavedSpot(StartingOverDaymar());
     HWND hwnd = nullptr;
     while (!hwnd) { EnumWindows(FindGameWindow, reinterpret_cast<LPARAM>(&hwnd)); if (!hwnd) Sleep(1000); }
@@ -611,11 +667,43 @@ static void RunMainThreadService() {
 #ifdef SCO_OFFLINE_G1_HOST
     for (;;) {
         const auto phase = sco::game::host::Status().phase;
-        if (phase == sco::game::host::Phase::Stopped || phase == sco::game::host::Phase::Failed) break;
+        if (phase == sco::game::host::Phase::Stopped || phase == sco::game::host::Phase::Failed) {
+            RequestLifecycleStop("core terminal phase");
+            break;
+        }
+        if (g_stopRequestIssued.load(std::memory_order_acquire)) break;
+        const DWORD wake = WaitForSingleObject(g_controlWakeEvent, 200);
+        if (wake == WAIT_OBJECT_0) break; // explicit stop request, independent of phase
+        if (wake == WAIT_FAILED) {
+            Log("[app] lifecycle controller wait failed (%lu); retaining hook and backing", GetLastError());
+            return;
+        }
         PostMessageW(hwnd, WM_NULL, 0, 0);
-        Sleep(200);
     }
-    UnhookWindowsHookEx(g_msgHook); // hook handle stays immutable for any in-flight callback
+    // An explicit request can originate inside this hook. Wait for all admitted
+    // callbacks to return before the independent thread drains their owner.
+    bool reportedPending = false;
+    while (!g_hookCallbackAdmission.ClosedAndDrained()) {
+        const DWORD drained = WaitForSingleObject(g_hookCallbacksDrainedEvent, 1000);
+        if (drained == WAIT_OBJECT_0) continue;
+        if (!reportedPending) {
+            Log("[app] admitted hook callback is still active; controller will wait and retain backing");
+            reportedPending = true;
+        }
+        if (drained == WAIT_FAILED) Sleep(1000); // retain; never drain around an uncertain callback
+    }
+    // This registration path has no entry fence proving no thread has entered
+    // GetMsgProc but not yet executed HookCallbackLease::Enter. Keep the hook
+    // registered and its HHOOK stable. After Close, later entries take only the
+    // forwarding path above; the product module remains pinned.
+    Log("[app] message hook remains registered; closed admission forwards callbacks and backing stays retained");
+    const auto coreDrain = offline_host::DrainRequestedStop(1000);
+    Log("[app] core owner drain=%u; dependency backing remains process-retained",
+        static_cast<unsigned>(coreDrain));
+    // Menu status is a separate product-local callback/worker census.
+    const auto menu = Menu_Drain(1000);
+    Log("[menu] worker drain: state=%u status=%u backing=%u; product backing remains process-retained",
+        static_cast<unsigned>(menu.worker), static_cast<unsigned>(menu.status), static_cast<unsigned>(menu.backing));
 #endif
 }
 
@@ -627,6 +715,18 @@ static DWORD WINAPI ModThread(LPVOID param) {
 
     if (!offline_host::NativeActivationAvailable()) {
         Log("[app] offline startup unavailable: native reader and worker exclusion and drain are not proven; close the game and await a validated build");
+        return 0;
+    }
+#ifndef SCO_OFFLINE_G1_HOST
+    // A missing host composition is a refusal even if another build flag
+    // claims a stop contract; do not publish callbacks without a module owner.
+    Log("[app] offline startup unavailable: game host composition missing");
+    ReleaseStartupGate();
+    return 0;
+#else
+    if (!offline_host::ProductControlStopContractAvailable()) {
+        Log("[app] offline startup unavailable: Core lacks the non-draining stop and owner-drain contract");
+        ReleaseStartupGate();
         return 0;
     }
 
@@ -651,6 +751,26 @@ static DWORD WINAPI ModThread(LPVOID param) {
             "overlay Vulkan layers (OBS, Steam), and one of those can crash the game while it loads. Start sc-offline.exe "
             "normally, not \"Run as administrator\", and untick \"Run this program as an administrator\" on StarCitizen.exe.");
 
+    // Controller events are created outside DllMain and before any host hook or
+    // callback is published. Refuse this path if either allocation fails.
+    g_controlWakeEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    g_hookCallbacksDrainedEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    if (!g_controlWakeEvent || !g_hookCallbacksDrainedEvent) {
+        Log("[app] lifecycle controller unavailable (%lu); startup remains refused", GetLastError());
+        if (g_controlWakeEvent) { CloseHandle(g_controlWakeEvent); g_controlWakeEvent = nullptr; }
+        if (g_hookCallbacksDrainedEvent) { CloseHandle(g_hookCallbacksDrainedEvent); g_hookCallbacksDrainedEvent = nullptr; }
+        ReleaseStartupGate();
+        return 0;
+    }
+    if (!offline_host::RetainProductModule()) {
+        Log("[app] product module owner unavailable; host callbacks remain refused");
+        ReleaseStartupGate();
+        return 0;
+    }
+
+    // No core host work occurs before this point. Keep the borrowed sink out of
+    // the fail-closed and early-unload paths above.
+    sco::SetLogSink(ForwardCoreLog);
     ReadStartOptions();
     StartOffline();
     ReleaseStartupGate();
@@ -658,16 +778,13 @@ static DWORD WINAPI ModThread(LPVOID param) {
     RunMainThreadService();
 
     for (;;) Sleep(1000);
+#endif // SCO_OFFLINE_G1_HOST
 }
-
-// sco-core's lines ([core], [plugin], [app], [status]) go to mod.log and the console like ours.
-static void ForwardCoreLog(const char* line) { Log("%s", line); }
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
         InitLog();
-        sco::SetLogSink(ForwardCoreLog);
         InstallStartupGate();
         if (!CreateThread(nullptr, 0, ModThread, hModule, 0, nullptr)) ReleaseStartupGate();
     }

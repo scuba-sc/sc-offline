@@ -1,6 +1,6 @@
 # Architecture: sc-offline on sco-core
 
-sc-offline is two things on top of [sco-core](https://github.com/scuba-sc/sco-core): the **host** that loads sco-core's kernel into Star Citizen, and the **reference consumer** of what sco-core publishes. The embedded host and standalone plugin defaults now use the published SDK 2.4.0 source `6106fa3639cbcc28f78a1ded8de2707de019f4d3` and checksum-pinned `sco-sdk-2.4.0.zip`: plugin ABI **1.1**, Star Citizen game pack **0.8.0**. Neither package checks nor a full Windows build certify gameplay. See [build.md](build.md) and [status.md](status.md).
+sc-offline is two things on top of [sco-core](https://github.com/scuba-sc/sco-core): the **host** that loads sco-core's kernel into Star Citizen, and the **reference consumer** of what sco-core publishes. The development host uses its exact Core gitlink and current plugin proofs require a matching development SDK; the published SDK 2.4.0 source and checksum-pinned archive are historical references: plugin ABI **1.1**, Star Citizen game pack **0.8.0**. Neither package checks nor a full Windows build certify gameplay. See [build.md](build.md) and [status.md](status.md).
 
 ## Loadout/SQ42 development boundary
 

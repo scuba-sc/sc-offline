@@ -48,7 +48,7 @@ class NpcRelease(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/build.yml').read_text()
         self.assertIn('npc-sdk-posix:', workflow)
         self.assertIn('npc-sdk:', workflow)
-        self.assertIn('needs: [build, inspector-sdk, npc-sdk, contracts-sdk, external-sdk]', workflow)
+        self.assertIn('needs: [build, development-sdk-proofs, inspector-sdk, npc-sdk, contracts-sdk, external-sdk]', workflow)
         profiles = json.loads((ROOT / 'tools/release-plugin-profiles.json').read_text())
         npc = next(p for p in profiles['profiles']['player-offline']['plugins'] if p['id'] == 'npc')
         self.assertEqual((npc['artifact_dir'], npc['module'], npc['disabled']),

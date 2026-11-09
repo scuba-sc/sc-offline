@@ -1,6 +1,6 @@
 # Native reader barrier: integration design and evidence gap
 
-**Current coordinated consumer source:** offline `external/sco-core` targets stable SDK source `6106fa3639cbcc28f78a1ded8de2707de019f4d3`; published package identities are in [sdk-candidate.md](../sdk-candidate.md). This 2026-10-31 design record's references to `44ffd129` and #304/#305 describe earlier baselines. Product startup remains unconditionally refused.
+**Current coordinated consumer source:** offline `external/sco-core` targets development source `d06f9124d6d7d380295ada4bc2af8968b98a051c`; historical published package identities are in [sdk-candidate.md](../sdk-candidate.md). This 2026-10-31 design record's references to `44ffd129` and #304/#305 describe earlier baselines. Product startup remains unconditionally refused.
 
 Status: design plus product refusal. No native registry owner is enabled. The
 offline #184 baseline at `00989b4443ad0de1a33ab45a9139892ff08b0546` and

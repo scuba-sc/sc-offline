@@ -88,6 +88,46 @@ The page manages `data\plugins\<id>\` the way the host (sco-core) reads it, with
 - **Reload**: only shows a note. Hot reload runs inside the game, through its `sco.reload` command; the launcher
   has no channel into the running game to call it.
 
+#### Last startup snapshot
+
+The Plugins page has a **Last startup snapshot (may be stale)** panel and a per-folder “At last startup” line.
+It reads only the optional `data\plugin-startup.json` file. It never tails `data\mod.log`, contacts the host,
+or reports live state. The current product has no writer for this file, so it normally shows **No completed
+startup snapshot**. The existing [host startup refusal](host-composition.md) is unchanged.
+
+The current `plugins` value in `sc-offline.ini` and each folder's `disabled` marker remain the desired settings.
+The panel's “plugins setting then” and row states describe an earlier startup only. Its timestamp makes the
+age visible; the launcher does not decide that a snapshot is fresh. A missing or explicitly incomplete record
+shows **No completed startup snapshot**. Unreadable, oversized, truncated, malformed, or unsupported input
+shows **Unknown**. A folder row shows **Unknown** when no valid-manifest ID in the snapshot matches it.
+Invalid-manifest aliases are not matched to folders. No free-form reason text is displayed.
+
+The proposed v1 JSON contract is deliberately closed and bounded: at most 64 KiB and 256 plugin rows; all
+strings are printable ASCII; the session ID is 32 lowercase hexadecimal characters; timestamps use UTC
+`YYYY-MM-DDTHH:MM:SSZ`. The session ID is an opaque unique ID for one host startup attempt; the launcher
+does not use it to infer freshness or authenticate the writer. Top-level fields are `schema_version`,
+`record_state`, `session_id`, `started_at_utc`, `completed_at_utc`, `plugins_enabled_at_start`,
+`plugin_count`, `loaded_count`, and `plugins`. A complete record has `record_state: "complete"`, a
+completion timestamp, matching row/count values, unique IDs, and a `loaded_count` equal to rows whose state
+is `loaded`. Each row has `id`,
+`manifest_valid`, `version`, `kind`, `state`, `reason_code`, and `restart_required`; kinds and states are
+fixed enums (`native`, `lua`, `data`, `builtin`, `unknown`; and `off`, `disabled`, `refused`, `ready`,
+`loaded`, `crashed`, `unloaded`, `faulted`). Reason codes are fixed identifiers (`plugins_off`,
+`plugin_disabled`, `invalid_manifest`, `plugin_refused`, `plugin_crashed`,
+`provider_fault_restart_required`), never host-provided prose. `starting` has no completion timestamp;
+`failed` and `incomplete` have a finalization timestamp. None supplies plugin rows or counts, and none is
+displayed as a completed snapshot.
+Unknown fields, duplicate keys or IDs, inconsistent counts, bad enum values, controls, non-ASCII bytes,
+and partial JSON are rejected.
+
+A future host writer should use the existing `data` directory and atomically replace the file only after
+flushing a complete bounded temporary file in that same directory. A crash before replacement leaves the
+previous snapshot, whose old timestamp stays visible; a published `starting`/`incomplete` record clears that
+previous result from the UI. The reader opens read-only, rejects reparse points and unstable/oversized reads,
+and parses only the bytes it read. No production writer or host-to-launcher integration is wired yet. In-process
+native plugins are trusted code that can modify local files, so this file would not authenticate a report
+against them. No new permission or live IPC path is part of this scaffold.
+
 ## Checks it runs every time
 
 1. **Which DLL.** The SHA-256 of the `dinput8.dll` next to the exe, and what it is: an sc-offline build

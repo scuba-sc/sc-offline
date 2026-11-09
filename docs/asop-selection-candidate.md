@@ -2,7 +2,7 @@
 
 This source-only candidate connects the public spawn-plugin selection panel to a host-owned file coordinator. It does not connect a native terminal hook, switch ASOP mode, publish a selection to the game, change the SDK pin, or establish gameplay evidence.
 
-`offline::asop_selection::FixedFile` resolves `asop_ships.txt` using the existing `DataFilePath` sibling policy. The configured path must be absolute and is copied at initialization. Its `Adapter()` returns the host-only callbacks used by `sco::game::asop_selection::Start`; the `FixedFile` object must remain alive until after `Stop`. The coordinator invokes `Pump` on the game thread to process at most one accepted file edit. On shutdown stop consumers, finish or reconcile taken file work, then stop the service before destroying its adapter. The development-only `SCO_ASOP_SELECTION_COMPOSITION` option wires these calls through the host lifecycle: it starts after host services and before consumers, pumps before each admitted host tick, and stops after consumer unload. The fixed adapter is retained if stop fails. This option is OFF by default. It reads the configured full `ships.txt` twice and refuses a missing, changing, oversized or invalid catalogue instead of publishing a partial list; a refused startup requires a host restart to retry.
+`offline::asop_selection::FixedFile` resolves `asop_ships.txt` using the existing `DataFilePath` sibling policy. The configured path must be absolute and is copied at initialization. Its `Adapter()` returns the host-only callbacks used by `sco::game::asop_selection::Start`; the `FixedFile` object must remain alive until after `Stop`. The coordinator invokes `Pump` on the game thread to process at most one accepted file edit. The development-only `SCO_ASOP_SELECTION_COMPOSITION` option is currently rejected by CMake: `selection::Stop` requires the game thread, and the product has no nonblocking close/drain ordering that keeps its provider alive until stop completes. The option remains OFF by default. The file reader itself is unchanged: it reads the configured full `ships.txt` twice and refuses a missing, changing, oversized or invalid catalogue instead of publishing a partial list; a refused startup requires a host restart to retry.
 
 The Windows implementation takes a per-path advisory mutex for cooperating instances, reads stable complete bounded documents, compares the copied base and file identity, writes and flushes unique temporary and candidate files, and records a flushed recovery marker. It asks the coordinator's permit immediately before `ReplaceFileW` for an existing target or fail-if-exists `MoveFileExW` for an absent target. It checks the displaced backup and reads back the canonical target. A competing noncooperating editor can still race the OS replacement. Unexpected or uncertain outcomes retain the marker and artifact stem in `Diagnostic()` and never report a successful commit. Startup/refresh clears a marker only for a verified unstarted preparation or a verified completed replacement; ambiguous states remain unavailable for manual reconciliation. The files are not a cross-process compare-and-swap or file-plus-engine transaction, and crash/power-loss guarantees depend on Windows and the filesystem.
 
@@ -11,9 +11,9 @@ The Windows implementation takes a per-path advisory mutex for cooperating insta
 The retained host menu client is separately gated by `SCO_HOST_MENU_CLIENT`, OFF by default. Enabling it requires the host-menu header and widgets 1.3 renderer; configuration refuses missing prerequisites. The selection and menu options are independent and do not enable native publication.
 
 When the pinned host lacks the development host headers, its syntax check
-preprocesses the two optional implementation files out and selecting either
-composition still refuses configuration. CI separately checks their complete
-bodies against the identified development source and requires both the spawn and
-ASOP synthetic workflows against its checksum-verified extracted SDK. The
-submodule is restored to its pinned revision before the remaining host checks;
-this preflight does not publish an SDK package or native terminal behavior.
+preprocesses the two optional implementation files out. Selecting either ASOP
+composition now refuses configuration before header checks because no reviewed
+product stop/drain order exists. CI still checks the retained source bodies
+against identified development sources; those synthetic workflows do not
+establish native terminal behavior. This preflight does not publish an SDK
+package or enable product startup.

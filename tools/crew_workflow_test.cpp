@@ -20,18 +20,19 @@ int queries = 0;
 bool published = false, player = true, partial = false, unknown_usable = false, accept_link = true;
 const char* missing_cap = nullptr;
 sco_result seat_result = SCO_OK, remove_result = SCO_OK, seats_result = SCO_OK;
-int fail_spawn_at = -1;
+int fail_spawn_at = -1, fail_register_at = -1, register_count = 0;
+bool fail_subscribe = false;
 const void* actors_override = nullptr;
 const void* vehicles_override = nullptr;
 const void* spatial_override = nullptr;
-int spawned = 0, removed = 0, seated = 0, ejected = 0, powered = 0;
+int spawned = 0, removed = 0, seated = 0, ejected = 0, powered = 0, ship_queries = 0;
 std::map<uint64_t,bool> owned;
 uint64_t occupants[3]{};
 sc_actors_v1 actors{};
 sc_spatial_v1 spatial{};
 sc_vehicles_v1 vehicles{};
 sco_result Player(uint64_t* id,uint64_t*) { *id = player ? 700u : 0u; return player ? SCO_OK : SCO_NOT_FOUND; }
-sco_result Ship(uint64_t* id) { *id = 800; return SCO_OK; }
+sco_result Ship(uint64_t* id) { ++ship_queries; *id = 800; return SCO_OK; }
 sco_result Seats(uint64_t ship,sc_vehicle_seat* out,uint32_t max,uint32_t* n,uint32_t* more) {
     CHECK(ship == 800); *n = max ? (partial ? 1u : 3u) : 0u; *more = partial || !max;
     for (uint32_t i = 0; i < *n; ++i) {
@@ -60,7 +61,7 @@ sco_result Remove(sco_plugin* self,uint64_t id) { CHECK(self == owner && owned[i
 void Providers() {
     published = player = accept_link = true; partial = unknown_usable = false;
     missing_cap = nullptr; fail_spawn_at = -1; seat_result = remove_result = seats_result = SCO_OK;
-    actors_override = vehicles_override = spatial_override = nullptr; spawned = removed = seated = ejected = powered = 0;
+    actors_override = vehicles_override = spatial_override = nullptr; spawned = removed = seated = ejected = powered = ship_queries = 0;
     owned.clear(); for (auto& in : occupants) in = 0;
     actors = {}; actors.size = sizeof(actors); actors.local_player = Player; actors.spawn_npc = Spawn; actors.despawn = Remove;
     spatial = {}; spatial.size = sizeof(spatial); spatial.player_pose = Pose;
@@ -79,10 +80,14 @@ sco_result Query(const char* name, uint32_t version, const void** out) {
 int Has(const char* name) { return !missing_cap || std::strcmp(name,missing_cap); }
 void Log(sco_plugin* self, sco_log_level, const char*) { CHECK(self == owner); }
 sco_result Register(sco_plugin* self, const sco_command* c) {
-    CHECK(self == owner); CHECK(c->ctx); commands[c->name] = *c; return SCO_OK;
+    CHECK(self == owner); CHECK(c->ctx);
+    if (++register_count == fail_register_at) return SCO_FAILED;
+    commands[c->name] = *c; return SCO_OK;
 }
 sco_result Subscribe(sco_plugin* self, const char* event, sco_event_fn fn, void*) {
-    CHECK(self == owner); CHECK(!std::strcmp(event,"tick")); tick = fn; return SCO_OK;
+    CHECK(self == owner); CHECK(!std::strcmp(event,"tick"));
+    if (fail_subscribe) return SCO_FAILED;
+    tick = fn; return SCO_OK;
 }
 sco_result Unsubscribe(sco_plugin* self, const char* event, sco_event_fn fn) {
     CHECK(self == owner); CHECK(!std::strcmp(event,"tick")); CHECK(tick == fn); tick = nullptr; return SCO_OK;
@@ -109,6 +114,15 @@ void Missing() {
     // The host, not the export, owns command withdrawal.
     commands.clear(); CHECK(test_module::Load(&api,owner) == SCO_OK);
     CHECK(Run("crew.target") == SCO_UNAVAILABLE); test_module::Unload(); commands.clear();
+    // A failed partial load must leave the module loadable again. The host owns
+    // withdrawal of commands registered before a failure.
+    register_count = 0; fail_register_at = 3;
+    CHECK(test_module::Load(&api,owner) == SCO_FAILED); CHECK(!tick);
+    commands.clear(); fail_register_at = -1; register_count = 0;
+    CHECK(test_module::Load(&api,owner) == SCO_OK); test_module::Unload(); commands.clear();
+    fail_subscribe = true; CHECK(test_module::Load(&api,owner) == SCO_FAILED); CHECK(!tick);
+    commands.clear(); fail_subscribe = false;
+    CHECK(test_module::Load(&api,owner) == SCO_OK); test_module::Unload(); commands.clear();
     std::puts("PASS missing providers / command withdrawal stand-in / reload / unload twice");
 }
 void Jobs() {
@@ -124,6 +138,10 @@ void Jobs() {
     CHECK(Run("crew.clear") == SCO_OK); CHECK(removed == 2); CHECK(occupants[0] == 700);
     CHECK(Run("crew.clear") == SCO_OK); CHECK(removed == 2);
     test_module::Unload(); test_module::Unload(); CHECK(!tick); commands.clear();
+    // A new session must ask for the current ship rather than reuse the pin.
+    Providers(); CHECK(test_module::Load(&api,owner) == SCO_OK);
+    CHECK(Run("crew.fill","synthetic_actor") == SCO_OK); CHECK(ship_queries == 1);
+    test_module::Unload(); commands.clear();
     std::puts("PASS target / Flight Ready / fill / seat confirmation / stand / player sit / owned clear");
 }
 void Reservation() {
@@ -225,6 +243,9 @@ void ReopenTimeoutPending() {
     Providers(); CHECK(test_module::Load(&api,owner) == SCO_OK);
     for (int batch = 0; batch < 32; ++batch) { CHECK(Run("crew.fill","synthetic_actor") == SCO_OK); CHECK(Run("crew.clear") == SCO_OK); }
     CHECK(spawned == 64 && removed == 64); CHECK(Run("crew.fill","synthetic_actor") == SCO_TOO_MANY); CHECK(spawned == 64); End();
+    // Unload starts a new session with a fresh ticket budget.
+    Providers(); CHECK(test_module::Load(&api,owner) == SCO_OK);
+    CHECK(Run("crew.fill","synthetic_actor") == SCO_OK); CHECK(spawned == 2); End();
     std::puts("PASS failed service reopen / tick deadline / wrong-thread pending removal retry / no ticket recycling / owner-release stand-in");
 }
 void BadInputsAndCapabilities() {
@@ -243,6 +264,9 @@ void BadInputsAndCapabilities() {
 }
 void EpochBeforeFirstTick() {
     Providers(); auto api = Api(); CHECK(test_module::Load(&api,owner) == SCO_OK);
+    uint32_t prior = 1; tick("tick",&prior,nullptr);
+    test_module::Unload(); commands.clear();
+    Providers(); CHECK(test_module::Load(&api,owner) == SCO_OK);
     CHECK(Run("crew.fill","synthetic_actor") == SCO_OK);
     uint32_t now = 100000; tick("tick",&now,nullptr); CHECK(removed == 0);
     now = 100750; tick("tick",&now,nullptr); CHECK(seated == 2);

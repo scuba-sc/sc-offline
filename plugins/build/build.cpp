@@ -405,12 +405,26 @@ sco_result Load(const sco_api* api,sco_plugin* self) {
     picker::Load(api,self,ObservePicker);
     return SCO_OK;
 }
+// Avoid a large aggregate temporary: GCC 13 fails to compile State assignment.
+// Keep this aligned with the member initializers above, including nonzero reach.
+void ResetState() {
+    g.api=nullptr; g.self=nullptr;
+    for(auto& p:g.placed)p={};
+    g.count=0; g.lease=0; g.preview=0; g.ghost=0; g.zone=0;
+    g.active=false; g.clocked=false; g.suppressed=false; g.stillSince=0;
+    for(auto& c:g.selected)c=0;
+    g.reach=50; g.yaw=0;
+    for(auto& v:g.lastPos)v=0;
+    for(auto& v:g.lastRot)v=0;
+    for(auto& v:g.lastCamera)v=0;
+    for(auto& v:g.lastCameraRot)v=0;
+}
 void Unload() {
     if(!g.api)return;
     if(Stop()!=SCO_OK)g.api->log(g.self,SCO_LOG_WARN,"Build preview/camera cleanup refused; public host owner-release required");
     char reply[192];if(Clear(nullptr,0,nullptr,reply,sizeof(reply))!=SCO_OK)g.api->log(g.self,SCO_LOG_WARN,"Build removal refused; host owner-release required (no private deletion)");
     picker::Unload();
-    g={};
+    ResetState();
 }
 #undef HAS
 } // namespace sco::features::build

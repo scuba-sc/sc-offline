@@ -35,9 +35,14 @@ admission inspector returns synthetic evidence only.
 * `host` exercises actual Prepare, Start, wrong-thread Stop, reentrant Stop
   from the Tick inspector, and game-thread Stop. Inspector reentry is an
   adversarial contract violation; production inspectors must be non-reentrant.
-  At the current pinned core source `6106fa3`, the last returns Failed and
+  In the earlier stable Core source `6106fa3`, the last returns Failed and
   retains state even after a successful owned drain; later Stop and Start
   refuse. The fixture's root remains live for process lifetime.
+* `legacy-request` exercises real Core legacy Prepare followed by its detailed
+  RequestStop. No detailed capsule was adopted, so that report is Unavailable
+  and cannot close the owner. The fixture separately requests owner closure,
+  as the product does, and verifies the detailed report remains Unavailable.
+  This is synthetic and does not validate native quit or safe teardown.
 * `start-fault` injects an owner fault through the inspector during the actual
   Start transition after Activate, and verifies terminal failure and retention.
 * `after-app-start` uses the pinned core's existing private synthetic
@@ -71,14 +76,14 @@ For older source packages without `HostCapsule`, Linux has a legacy
 `options_copy_fault_test` fallback. It replaces ordinary allocation operators
 with malloc/free-backed equivalents and arms a one-shot thread-local allocation
 failure during the old Options copy. This fallback is not registered for the
-current stable pin. Stable 2.4.0 instead runs `host_report_options-copy`, which
+earlier stable pin. Stable 2.4.0 instead runs `host_report_options-copy`, which
 injects a failure during the actual partial capsule/Options copy and verifies
 that the owning backing remains retained. It is synthetic Linux evidence, not
 Windows allocator evidence or a native reader barrier.
 
 ## Published stable host report qualification
 
-The current product pin and published SDK source are core commit
+The published stable SDK source was Core commit
 `6106fa3639cbcc28f78a1ded8de2707de019f4d3`, tag
 [`sdk-v2.4.0`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0).
 The host-source archive SHA-256 is
@@ -148,5 +153,78 @@ Every adopted terminal result stays `ProcessRetained`; a failed stop does not
 authorize restart, destruction or unload. These tests do not establish native
 reader exclusion, worker census, mapped code ownership, original-quit safety,
 Windows failure behavior, or game acceptance. The detailed contract is part of
-the published SDK source and the current product pin; these synthetic tests do
+the published SDK source; these synthetic tests do
 not establish safe native activation, shutdown, or gameplay.
+
+## Product non-draining Stop request
+
+The product no longer calls synchronous Core Stop through this seam. Its request
+path closes the product request gate, requests owner closure, then asks Core for
+its non-draining report; a separate controller may drain only after the request
+work completes and retention is published. Publication can precede the wrapper's
+return instruction. The hard-false native policy refuses before this work. The older
+synchronous Stop-stub cases are superseded; they do not test this request path.
+
+`request_gate_test` exercises the actual atomic request gate with synthetic work:
+normal completion, reentry, competing request and failure. It checks restart
+refusal and that contention cannot authorize a drain while the first request is
+still in progress. This is not a real Core-owner integration, callback drain,
+Windows failure test, or safe-native-shutdown proof. `refusal_test` verifies the
+actual wrapper does not enter Core when native activation is refused.
+
+`host_report_cooperative-request` uses the same product request/drain helper
+with a restricted synthetic detailed Core capsule and its exact owner. A
+synthetic admitted reader requests closure, then an independent controller
+waits for that reader before draining. It verifies retained backing and refusal
+of new reads. `host_report_owner-mismatch` is a negative control: a different
+owner can be drained while the adopted capsule owner still has a live read.
+The helper does not check identity. A future detailed product adapter must prove
+that its supplied owner is the adopted capsule's exact owner before exposure.
+Neither case is product native adoption, an engine hook, direct quit, or evidence
+that native unload is safe.
+
+## Capsule-bound non-native consumer
+
+`src/capsule_lifecycle.h` provides a portable restricted adapter, exercised here
+but not routed into Windows product startup. It owns an immutable capsule and
+uses only that capsule's shutdown owner for reads, requests and drains. There
+is no per-operation owner argument. Its own completed successful
+`PrepareDetailed` call establishes association; a nonzero session in a refused,
+busy or failed result does not. `Associated()` distinguishes this input's
+association from a returned Core report about another session. The adapter
+refuses request, start and drain before association, including during Prepare.
+It does not supply request-from-Prepare-callout support.
+
+Before calling Core, the adapter deliberately retains its capsule root for the
+process lifetime, including pre-adoption refusal and uncertain/busy results.
+This conservative over-retention avoids releasing potential dependencies on
+ambiguous outcomes; it is not proof that Core adopted that input. Construction
+alone is private and releasable. Preparation is single-attempt; no retry/reset
+or cleanup API exists. An exposed adapter may be destroyed after its public
+calls finish while a returned Read still lives: the owner and backing remain
+rooted. Capsule backing must actually own every dependency as required by Core.
+
+The `host_report_bound-*` cases use the real restricted Core route:
+
+- `private`: destroying an adapter before any Prepare releases its private inputs.
+- `repeat-start`: a non-Ok repeated Start latches refusal of ordinary use and
+  restart while preserving same-owner request/drain association.
+- `copy`: a reader requests stop, keeps its lease through the final output copy,
+  and an independent controller drains the same capsule owner.
+- `destroy-read`: destroying the adapter and caller references does not release
+  the capsule/backing while a returned Read remains live.
+- `timeout`: a held read exceeds the drain deadline; later release cannot turn
+  the terminal failed drain into success or permit restart.
+- `foreign`: an already-adopted other capsule cannot bind this adapter.
+- `busy`: adversarial inspector reentry while the actual Core control gate is
+  held returns another capsule's nonzero session without association. Reentrant
+  inspectors remain forbidden in production.
+- `refusal`, `root-allocation`, `failed-prepare`, `failed-start`: unsupported
+  inputs, failure before Core root allocation, failure after adoption before
+  Options copy, and failure after app startup retain backing, refuse ordinary
+  use and never authorize restart.
+
+The original cooperative and wrong-owner negative controls remain unchanged.
+These tests neither enroll native readers/workers nor prove native ownership,
+Windows teardown, successful app retirement or game acceptance. Native startup
+and ASOP remain refused; no frozen plugin C ABI or Core pin change is involved.

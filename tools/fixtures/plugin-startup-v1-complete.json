@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "record_state": "complete",
+  "session_id": "0123456789abcdef0123456789abcdef",
+  "started_at_utc": "2020-01-02T03:04:05Z",
+  "completed_at_utc": "2020-01-02T03:04:09Z",
+  "plugins_enabled_at_start": true,
+  "plugin_count": 3,
+  "loaded_count": 1,
+  "plugins": [
+    {
+      "id": "sim_alpha",
+      "manifest_valid": true,
+      "version": "1.2.0",
+      "kind": "native",
+      "state": "loaded",
+      "reason_code": null,
+      "restart_required": false
+    },
+    {
+      "id": "sim_beta",
+      "manifest_valid": true,
+      "version": "0.8.1-rc1",
+      "kind": "data",
+      "state": "faulted",
+      "reason_code": "provider_fault_restart_required",
+      "restart_required": true
+    },
+    {
+      "id": "unknown_2",
+      "manifest_valid": false,
+      "version": null,
+      "kind": "unknown",
+      "state": "refused",
+      "reason_code": "invalid_manifest",
+      "restart_required": false
+    }
+  ]
+}

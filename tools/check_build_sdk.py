@@ -34,7 +34,7 @@ def main(args):
     (source / 'plugins').mkdir(parents=True)
     shutil.copytree(ROOT / 'plugins/build', source / 'plugins/build')
     (source / 'tools').mkdir()
-    for name in ('build_picker_test.cpp', 'workflow_module.h'):
+    for name in ('build_picker_test.cpp', 'build_reset_test.cpp', 'workflow_module.h'):
         shutil.copy2(ROOT / 'tools' / name, source / 'tools' / name)
     build = work / 'plugin-build'
     configure = ['cmake', '-S', source / 'plugins/build', '-B', build,
@@ -43,9 +43,11 @@ def main(args):
     configure += (['-G', args.generator, '-A', 'x64'] if os.name == 'nt'
                   else ['-G', 'Unix Makefiles'])
     run(configure, work)
-    run(['cmake', '--build', build, '--config', 'Release', '--target', 'sc-offline-build', 'build-picker-test'], work)
+    run(['cmake', '--build', build, '--config', 'Release', '--target', 'sc-offline-build', 'build-picker-test', 'build-reset-test'], work)
     focused = ['ctest', '--test-dir', build, '-C', 'Release', '-R', '^build-picker$', '--output-on-failure', '-V']
+    reset_test = ['ctest', '--test-dir', build, '-C', 'Release', '-R', '^build-reset$', '--output-on-failure', '-V']
     print(run(focused, work).stdout)
+    print(run(reset_test, work).stdout)
     trace = trace_windows if os.name == 'nt' else trace_posix
     trace(build, source, sdk, public, feature='build')
     stage = work / 'stage'
@@ -85,13 +87,32 @@ def main(args):
              '-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer',
              '-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address,undefined',
              '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined'], work)
-        run(['cmake', '--build', sanitized, '--target', 'build-picker-test'], work)
-        print(run(['ctest', '--test-dir', sanitized, '-R', '^build-picker$', '--output-on-failure', '-V'], work).stdout)
+        run(['cmake', '--build', sanitized, '--target', 'build-picker-test', 'build-reset-test'], work)
+        print(run(['ctest', '--test-dir', sanitized, '-R', '^build-(picker|reset)$', '--output-on-failure', '-V'], work).stdout)
         cpp = source / 'plugins/build/build.cpp'
         original = cpp.read_text()
         mtime = cpp.stat().st_mtime_ns
         cmake = source / 'plugins/build/CMakeLists.txt'
         cmake_original = cmake.read_text()
+        # The reset fixture must reject stale array contents, a wrong nonzero
+        # default, and clearing state before the cleanup callbacks use it.
+        reset_mutants = {
+            'placement': ('for(auto& p:g.placed)p={};', 'for(auto& p:g.placed)(void)p;', 'placement defaults'),
+            'reach': ('g.reach=50; g.yaw=0;', 'g.reach=0; g.yaw=0;', 'reach and yaw defaults'),
+            'cleanup order': ('    picker::Unload();\n    ResetState();', '    ResetState();\n    picker::Unload();', 'picker cleanup before reset'),
+        }
+        for label, (before, after, expected) in reset_mutants.items():
+            if original.count(before) != 1:
+                raise AssertionError('Reset red-arm marker missing: ' + label)
+            cpp.write_text(original.replace(before, after))
+            run(['cmake', '--build', build, '--target', 'build-reset-test'], work)
+            red = run(reset_test, work, False)
+            if not red.returncode or expected not in red.stdout:
+                raise AssertionError('Reset red arm failed incorrectly: ' + label + '\n' + red.stdout)
+            print('Build reset red arm rejected: ' + label)
+        cpp.write_text(original)
+        run(['cmake', '--build', build, '--target', 'build-reset-test'], work)
+        print(run(reset_test, work).stdout)
         # The same fixture must detect the missing active picker owner.
         publish = source / 'plugins/build/picker.h'
         publish_original = publish.read_text()

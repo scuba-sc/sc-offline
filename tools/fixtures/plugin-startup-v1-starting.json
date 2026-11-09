@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "record_state": "starting",
+  "session_id": "fedcba9876543210fedcba9876543210",
+  "started_at_utc": "2026-11-03T12:00:00Z",
+  "completed_at_utc": null,
+  "plugins_enabled_at_start": true,
+  "plugin_count": null,
+  "loaded_count": null,
+  "plugins": null
+}
