@@ -5,7 +5,7 @@ exclusion and drain. ASOP compositions are unavailable too: both
 `SCO_ASOP_HOST_COMPOSITION` and `SCO_ASOP_SELECTION_COMPOSITION` default to OFF,
 and CMake rejects either option until the product has a reviewed nonblocking
 stop request and ordered control-thread drain. The selected core pin
-`6106fa3639cbcc28f78a1ded8de2707de019f4d3` returns `Unavailable` from ASOP
+`d06f9124d6d7d380295ada4bc2af8968b98a051c` returns `Unavailable` from ASOP
 host Start before installing hooks, and its exposed `Stop` is synchronous.
 The core's direct required quit hook calls `BeforeQuit -> StopImpl` without
 dispatching `app::Stop` or `game.exit`, so a `game.exit` subscription alone

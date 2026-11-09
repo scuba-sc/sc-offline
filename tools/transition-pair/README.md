@@ -3,8 +3,8 @@
 This development-only pairing checks the product's `external/sco-core` gitlink
 against the selected development Core source and selects that same source through
 the existing `SCO_HOST_SOURCE_DIR` mechanism. Core source is
-`38185eb8b00fab4b7d6c1652536839bb97d1141d`, tree
-`6abe5fe957195a812fa438b83ab5f8d194791ccc`. Its published stable ancestor is
+`d06f9124d6d7d380295ada4bc2af8968b98a051c`, tree
+`66d6b29f6c54aa1933aa2b8e0f2bc40d70c004c1`. Its published stable ancestor is
 `6106fa3639cbcc28f78a1ded8de2707de019f4d3`. The offline branch includes
 `259ee6284d4c37f2eafa32f668ff29f4bc266844`; the caller must supply the exact
 paired offline commit and tree from the accompanying identity record.

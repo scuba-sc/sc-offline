@@ -2,9 +2,10 @@
 
 ## Unreleased
 
-- **Adopt the stable SDK 2.4.0 package.** The coordinated development host
-  source and standalone plugin archive now use sco-core `6106fa36`; the combined
-  archive is checksum- and source-verified against `sdk-v2.4.0`. Linux tutorial,
+- **Stable SDK 2.4.0 package qualification.** The earlier host source and
+  standalone plugin archive used sco-core `6106fa36`; the combined archive is
+  checksum- and source-verified against `sdk-v2.4.0`. The current development
+  host instead pins `d06f9124d6d7d380295ada4bc2af8968b98a051c`. Linux tutorial,
   Teleport and Quantum package checks pass with synthetic/provider-free evidence.
   Native product startup remains refused; **not run in game**.
 
