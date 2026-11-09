@@ -266,14 +266,14 @@ sco_result Load(const sco_api* api,sco_plugin* self) {
         {sizeof(sco_command),0,"crew.clear","Remove crew","Only NPCs this plugin spawned","game.actors.despawn",nullptr,0,sizeof(sco_arg_def),Clear,&g},
         {sizeof(sco_command),0,"crew.power_on","Flight Ready","Provider validates ship authority","game.vehicles.flight_ready",nullptr,0,sizeof(sco_arg_def),Power,&g}
     };
-    for (const auto& c : commands) { const auto r = api->register_command(self,&c); if (r != SCO_OK) { g = {}; return r; } }
+    for (const auto& c : commands) { const auto r = api->register_command(self,&c); if (r != SCO_OK) { g = State{}; return r; } }
     const auto r = api->subscribe(self,"tick",Tick,nullptr);
-    if (r != SCO_OK) { g = {}; return r; }
+    if (r != SCO_OK) { g = State{}; return r; }
     g.subscribed = true; StartPicker();return SCO_OK;
 }
 void Unload() {
     if(g.api)StopPicker();
     if (g.subscribed && HAS_FN(g.api,sco_api,unsubscribe)) g.api->unsubscribe(g.self,"tick",Tick);
-    g = {}; // Host removes commands and releases actors-owned NPCs; no shutdown game calls.
+    g = State{}; // Host removes commands and releases actors-owned NPCs; no shutdown game calls.
 }
 }
