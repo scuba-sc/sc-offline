@@ -65,3 +65,10 @@ cmake --build <outside-build-root> --target sc_offline_host_composition
 This builds the actual portable product seam and its G1 dependencies, not the
 Windows DLL. Use the root Windows/MSVC build for the DLL and launcher. Real game,
 network, launcher-restoration and renderer acceptance require separate evidence.
+
+A portable capsule-bound adapter is qualified separately in
+[`tools/offline-host`](../tools/offline-host/README.md#capsule-bound-non-native-consumer).
+It binds read/request/drain operations to the immutable capsule owner only after
+its own successful detailed Prepare. This is a restricted non-native consumer
+milestone, not adoption by the product's legacy Prepare path. The hard-false
+native policy and every refusal boundary above remain in force.

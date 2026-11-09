@@ -4,6 +4,7 @@
 #include "src/game/host_testing.h"
 #ifdef SCO_HAS_REQUEST_API
 #include "../../src/stop_request_protocol.h"
+#include "../../src/capsule_lifecycle.h"
 #endif
 #ifdef SCO_HAS_REAP_TEST_ACCESS
 #include "tests/owned_shutdown_test_access.h"
@@ -64,9 +65,23 @@ struct Backing {
     ~Backing() { ++backings; }
 };
 static bool reenter = false;
+#ifdef SCO_HAS_REQUEST_API
+static offline_host::detail::CapsuleLifecycle* busyCandidate = nullptr;
+static gh::HostReport busyReport;
+#endif
 static gh::HostReport nestedStart, nestedStop;
 static gh::Admission Inspect() {
     ++inspections;
+#ifdef SCO_HAS_REQUEST_API
+    if (busyCandidate) {
+        auto* candidate = busyCandidate; busyCandidate = nullptr;
+        // Adversarial inspector reentry holds the actual Core control gate.
+        busyReport = candidate->Prepare();
+        CHECK(!candidate->Associated());
+        CHECK(candidate->RequestStop().result == R::Unavailable);
+        CHECK(candidate->Drain(0) == offline_host::OwnerDrain::Unavailable);
+    }
+#endif
     if (reenter) {
         reenter = false;
         nestedStart = gh::StartDetailed();
@@ -109,10 +124,141 @@ struct TlsTail {
     }
 };
 #endif
+#ifdef SCO_HAS_REQUEST_API
+static int BoundScenario(const std::string& mode) {
+    using Adapter = offline_host::detail::CapsuleLifecycle;
+    auto backing = std::make_shared<Backing>();
+    auto options = Configuration(backing);
+    if (mode == "bound-refusal") options.platform.gameServices = true;
+    auto capsule = std::make_shared<const gh::HostCapsule>(options, backing);
+    auto adapter = std::make_unique<Adapter>(capsule);
+    CHECK(!adapter->Associated() && !adapter->TryRead());
+    CHECK(adapter->RequestStop().result == R::Unavailable);
+    CHECK(adapter->Drain(0) == offline_host::OwnerDrain::Unavailable);
+    auto foreign = std::make_shared<Backing>();
+    auto foreignCapsule = std::make_shared<const gh::HostCapsule>(Configuration(foreign), foreign);
+    if (mode == "bound-private") {
+        std::weak_ptr<Backing> weakBacking = backing;
+        std::weak_ptr<const gh::HostCapsule> weakCapsule = capsule;
+        options = {}; backing.reset(); capsule.reset(); adapter.reset();
+        CHECK(weakBacking.expired() && weakCapsule.expired());
+        CHECK(gh::StatusDetailed().dependencies == D::NeverExposed);
+        return 0;
+    }
+    gh::HostReport prepared;
+    if (mode == "bound-foreign") {
+        CHECK(gh::PrepareDetailed(foreignCapsule).result == R::Ok);
+        prepared = adapter->Prepare();
+    } else if (mode == "bound-busy") {
+        busyCandidate = adapter.get();
+        CHECK(gh::PrepareDetailed(foreignCapsule).result == R::Ok);
+        prepared = busyReport;
+    } else {
+        if (mode == "bound-failed-prepare")
+            gh::testing::SetReportFault(gh::testing::ReportFault::BeforeOptionsCopy);
+        if (mode == "bound-root-allocation")
+            gh::testing::SetReportFault(gh::testing::ReportFault::BeforeRootAllocation);
+        prepared = adapter->Prepare();
+        gh::testing::SetReportFault(gh::testing::ReportFault::None);
+    }
+    if (mode == "bound-foreign" || mode == "bound-busy" ||
+        mode == "bound-refusal" || mode == "bound-failed-prepare" || mode == "bound-root-allocation") {
+        CHECK(prepared.result != R::Ok && !adapter->Associated());
+        if (mode == "bound-root-allocation") {
+            CHECK(prepared.result == R::Failed && prepared.sessionId == 0);
+            CHECK(prepared.dependencies == D::NeverExposed && !backing->owner->closed());
+        }
+        CHECK(adapter->RestartRequired() && !adapter->TryRead());
+        CHECK(adapter->Start().result == R::Unavailable);
+        CHECK(adapter->RequestStop().result == R::Unavailable);
+        CHECK(adapter->Drain(0) == offline_host::OwnerDrain::Unavailable);
+        CHECK(adapter->Prepare().result == R::Unavailable);
+        if (mode == "bound-foreign" || mode == "bound-busy") {
+            CHECK(prepared.sessionId != 0 && !foreign->owner->closed());
+            CHECK(!backing->owner->closed());
+        }
+    } else {
+        CHECK(prepared.result == R::Ok && adapter->Associated());
+        CHECK(!adapter->TryRead()); // startup admission remains shut
+        if (mode == "bound-failed-start") gh::testing::FailAfterAppStart(true);
+        const auto started = adapter->Start();
+        if (mode == "bound-failed-start") {
+            CHECK(started.result == R::Failed && backing->owner->closed());
+            CHECK(adapter->RestartRequired() && !adapter->TryRead());
+            CHECK(adapter->Start().result == R::Unavailable);
+            CHECK(adapter->RequestStop().result == R::Ok);
+        } else {
+            CHECK(started.result == R::Ok);
+            if (mode == "bound-repeat-start") {
+                CHECK(adapter->Start().result != R::Ok);
+                CHECK(adapter->Associated() && adapter->RestartRequired() && !adapter->TryRead());
+                CHECK(adapter->Start().result == R::Unavailable);
+                CHECK(adapter->RequestStop().result == R::Ok);
+                CHECK(adapter->Drain(1000) == offline_host::OwnerDrain::DrainedRetained);
+            } else if (mode == "bound-destroy-read") {
+                std::weak_ptr<Backing> weakBacking = backing;
+                std::weak_ptr<const gh::HostCapsule> weakCapsule = capsule;
+                auto read = adapter->TryRead(); CHECK(read);
+                auto* owner = backing->owner.get();
+                options = {}; backing.reset(); capsule.reset(); adapter.reset();
+                CHECK(!weakBacking.expired() && !weakCapsule.expired());
+                CHECK(owner->open());
+                CHECK(gh::RequestStopDetailed().result == R::Ok);
+                CHECK(owner->closed() && !owner->ready());
+                // The Read destructor below still has a live process-rooted owner.
+                return 0;
+            }
+            if (mode != "bound-repeat-start") {
+                std::promise<gh::HostReport> requested;
+                std::promise<void> release;
+                auto releaseRead = release.get_future();
+                std::string output;
+                std::thread callback([&] {
+                    auto read = adapter->TryRead(); CHECK(read);
+                    output = backing->resolver->output.substr(0, 1);
+                    requested.set_value(adapter->RequestStop());
+                    releaseRead.wait();
+                    output += backing->resolver->output.substr(1);
+                });
+                auto result = requested.get_future();
+                CHECK(result.wait_for(2s) == std::future_status::ready);
+                const auto report = result.get();
+                CHECK(report.result == R::Ok && report.sessionId == prepared.sessionId);
+                CHECK(adapter->RestartRequired() && !adapter->TryRead());
+                if (mode == "bound-timeout") {
+                    auto drain = std::async(std::launch::async, [&] { return adapter->Drain(0); });
+                    CHECK(drain.get() == offline_host::OwnerDrain::IncompleteRetained);
+                    release.set_value(); callback.join();
+                    CHECK(adapter->Drain(100) == offline_host::OwnerDrain::IncompleteRetained);
+                    CHECK(!backing->owner->ready());
+                } else {
+                    auto drain = std::async(std::launch::async, [&] { return adapter->Drain(5000); });
+                    CHECK(drain.wait_for(20ms) == std::future_status::timeout);
+                    release.set_value(); callback.join();
+                    CHECK(drain.get() == offline_host::OwnerDrain::DrainedRetained);
+                    CHECK(backing->owner->ready());
+                }
+                CHECK(output == "complete copied value");
+                CHECK(adapter->RequestStop().result == R::Failed);
+                CHECK(adapter->Start().result == R::Unavailable);
+            }
+        }
+    }
+    std::weak_ptr<Backing> weakBacking = backing;
+    std::weak_ptr<const gh::HostCapsule> weakCapsule = capsule;
+    options = {}; backing.reset(); capsule.reset(); adapter.reset();
+    CHECK(!weakBacking.expired() && !weakCapsule.expired());
+    std::puts("capsule-bound synthetic lifecycle: retained; no native activation");
+    return 0;
+}
+#endif
 int main(int argc, char** argv) {
     if (argc != 2) return 2;
     const std::string mode = argv[1];
     CHECK(gh::StatusDetailed().dependencies == D::NeverExposed);
+#ifdef SCO_HAS_REQUEST_API
+    if (mode.starts_with("bound-")) return BoundScenario(mode);
+#endif
     auto b = std::make_shared<Backing>();
     auto o = Configuration(b);
 #ifdef SCO_HAS_RETAINED_REAP

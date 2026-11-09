@@ -182,3 +182,49 @@ The helper does not check identity. A future detailed product adapter must prove
 that its supplied owner is the adopted capsule's exact owner before exposure.
 Neither case is product native adoption, an engine hook, direct quit, or evidence
 that native unload is safe.
+
+## Capsule-bound non-native consumer
+
+`src/capsule_lifecycle.h` provides a portable restricted adapter, exercised here
+but not routed into Windows product startup. It owns an immutable capsule and
+uses only that capsule's shutdown owner for reads, requests and drains. There
+is no per-operation owner argument. Its own completed successful
+`PrepareDetailed` call establishes association; a nonzero session in a refused,
+busy or failed result does not. `Associated()` distinguishes this input's
+association from a returned Core report about another session. The adapter
+refuses request, start and drain before association, including during Prepare.
+It does not supply request-from-Prepare-callout support.
+
+Before calling Core, the adapter deliberately retains its capsule root for the
+process lifetime, including pre-adoption refusal and uncertain/busy results.
+This conservative over-retention avoids releasing potential dependencies on
+ambiguous outcomes; it is not proof that Core adopted that input. Construction
+alone is private and releasable. Preparation is single-attempt; no retry/reset
+or cleanup API exists. An exposed adapter may be destroyed after its public
+calls finish while a returned Read still lives: the owner and backing remain
+rooted. Capsule backing must actually own every dependency as required by Core.
+
+The `host_report_bound-*` cases use the real restricted Core route:
+
+- `private`: destroying an adapter before any Prepare releases its private inputs.
+- `repeat-start`: a non-Ok repeated Start latches refusal of ordinary use and
+  restart while preserving same-owner request/drain association.
+- `copy`: a reader requests stop, keeps its lease through the final output copy,
+  and an independent controller drains the same capsule owner.
+- `destroy-read`: destroying the adapter and caller references does not release
+  the capsule/backing while a returned Read remains live.
+- `timeout`: a held read exceeds the drain deadline; later release cannot turn
+  the terminal failed drain into success or permit restart.
+- `foreign`: an already-adopted other capsule cannot bind this adapter.
+- `busy`: adversarial inspector reentry while the actual Core control gate is
+  held returns another capsule's nonzero session without association. Reentrant
+  inspectors remain forbidden in production.
+- `refusal`, `root-allocation`, `failed-prepare`, `failed-start`: unsupported
+  inputs, failure before Core root allocation, failure after adoption before
+  Options copy, and failure after app startup retain backing, refuse ordinary
+  use and never authorize restart.
+
+The original cooperative and wrong-owner negative controls remain unchanged.
+These tests neither enroll native readers/workers nor prove native ownership,
+Windows teardown, successful app retirement or game acceptance. Native startup
+and ASOP remain refused; no frozen plugin C ABI or Core pin change is involved.
