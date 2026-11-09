@@ -29,6 +29,25 @@ struct State {
     uint32_t now = 0;
     Job jobs[64]{};
 } g;
+// Keep this in step with the State and Job default member initializers.
+void ResetState() {
+    g.api = nullptr;
+    g.self = nullptr;
+    g.subscribed = false;
+    g.clock_known = false;
+    g.pinned = 0;
+    g.now = 0;
+    for (auto& j : g.jobs) {
+        j.phase = Phase::empty;
+        j.player = false;
+        j.actor = 0;
+        j.ship = 0;
+        j.seat = 0;
+        j.since = 0;
+        j.next = 0;
+        j.links = 0;
+    }
+}
 const sco_plugin_info info{sizeof(sco_plugin_info),SCO_API_MAJOR,SCO_API_MINOR,"crew","1.0.0","sc-offline"};
 template<class T> const T* Open(const char* name) {
     const void* out = nullptr;
@@ -266,14 +285,14 @@ sco_result Load(const sco_api* api,sco_plugin* self) {
         {sizeof(sco_command),0,"crew.clear","Remove crew","Only NPCs this plugin spawned","game.actors.despawn",nullptr,0,sizeof(sco_arg_def),Clear,&g},
         {sizeof(sco_command),0,"crew.power_on","Flight Ready","Provider validates ship authority","game.vehicles.flight_ready",nullptr,0,sizeof(sco_arg_def),Power,&g}
     };
-    for (const auto& c : commands) { const auto r = api->register_command(self,&c); if (r != SCO_OK) { g = State{}; return r; } }
+    for (const auto& c : commands) { const auto r = api->register_command(self,&c); if (r != SCO_OK) { ResetState(); return r; } }
     const auto r = api->subscribe(self,"tick",Tick,nullptr);
-    if (r != SCO_OK) { g = State{}; return r; }
+    if (r != SCO_OK) { ResetState(); return r; }
     g.subscribed = true; StartPicker();return SCO_OK;
 }
 void Unload() {
     if(g.api)StopPicker();
     if (g.subscribed && HAS_FN(g.api,sco_api,unsubscribe)) g.api->unsubscribe(g.self,"tick",Tick);
-    g = State{}; // Host removes commands and releases actors-owned NPCs; no shutdown game calls.
+    ResetState(); // Host removes commands and releases actors-owned NPCs; no shutdown game calls.
 }
 }
