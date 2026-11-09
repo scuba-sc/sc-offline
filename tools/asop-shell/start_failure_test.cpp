@@ -7,32 +7,56 @@
 namespace host = sco::game::asop_host;
 namespace {
 host::Result nextResult = host::Result::Unavailable;
-bool admitted = false, throwAfterInstall = false;
+bool backingLive = false, throwAfterInstall = false;
 int starts = 0, stops = 0;
+
+void Reset(host::Result result, bool throws = false, bool existingBacking = false) {
+    nextResult = result;
+    throwAfterInstall = throws;
+    backingLive = existingBacking;
+    starts = 0;
+    stops = 0;
+}
+
+int Check(const char* scenario, host::Result expected) {
+    offline::asop::Options options;
+    const auto result = offline::asop::Start(options, true, true);
+    if (result == expected && starts == 1 && stops == 0 && backingLive) return 0;
+    std::fprintf(stderr, "%s: result=%u starts=%d stops=%d backing=%d\n", scenario,
+                 static_cast<unsigned>(result), starts, stops, backingLive);
+    return 1;
+}
 }
 namespace sco::game::asop_host {
 Result Start(const Config&) {
-    ++starts; admitted = true;
+    ++starts;
+    // AlreadyStarted reports an existing installation, not a new partial start.
+    if (nextResult != Result::AlreadyStarted) backingLive = true;
     if (throwAfterInstall) throw std::runtime_error("synthetic installation failure");
     return nextResult;
 }
-void Stop() { ++stops; admitted = false; } // synthetic provider retains its backing
+// Simulate unsafe teardown so the fixture catches any synchronous Stop call.
+void Stop() { ++stops; backingLive = false; }
 Status Snapshot() { return {}; }
 void Pump(uint32_t) {}
 }
 int main() {
-    offline::asop::Options options;
-    if (offline::asop::Start(options, true, true) != host::Result::Unavailable ||
-        starts != 1 || stops != 1 || admitted) return 1;
-    nextResult = host::Result::Ok;
-    if (offline::asop::Start(options, true, true) != host::Result::Ok ||
-        starts != 2 || stops != 1 || !admitted) return 2;
-    nextResult = host::Result::AlreadyStarted;
-    if (offline::asop::Start(options, true, true) != host::Result::AlreadyStarted ||
-        starts != 3 || stops != 1 || !admitted) return 3;
-    throwAfterInstall = true;
-    if (offline::asop::Start(options, true, true) != host::Result::Unavailable ||
-        starts != 4 || stops != 2 || admitted) return 4;
+    int failures = 0;
+    Reset(host::Result::Unavailable);
+    failures += Check("partial start refused", host::Result::Unavailable);
+    Reset(host::Result::AdmissionRefused);
+    failures += Check("admission refused", host::Result::AdmissionRefused);
+    Reset(host::Result::InvalidConfig);
+    failures += Check("invalid configuration", host::Result::InvalidConfig);
+    Reset(host::Result::Disabled);
+    failures += Check("disabled", host::Result::Disabled);
+    Reset(host::Result::Ok);
+    failures += Check("started", host::Result::Ok);
+    Reset(host::Result::AlreadyStarted, false, true);
+    failures += Check("already started", host::Result::AlreadyStarted);
+    Reset(host::Result::Ok, true);
+    failures += Check("partial start threw", host::Result::Unavailable);
+    if (failures) return 1;
     std::puts("ASOP start failure propagation: PASS (synthetic)");
     return 0;
 }
