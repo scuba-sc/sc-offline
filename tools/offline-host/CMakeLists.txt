@@ -13,6 +13,24 @@ add_library(sc_offline_host_composition STATIC ../../src/offline_host.cpp)
 target_link_libraries(sc_offline_host_composition PUBLIC sco_game_host)
 include(CTest)
 if(BUILD_TESTING)
+  # Standalone file adapter tests only: neither target builds offline_host.cpp
+  # with ASOP enabled, or changes the product's native-activation refusal.
+  if(WIN32 AND EXISTS "${SCO_HOST_SOURCE_DIR}/include/sco/game/asop_selection.h"
+           AND EXISTS "${SCO_HOST_SOURCE_DIR}/src/net/sha2.c")
+    foreach(variant production fault)
+      add_executable(asop_selection_file_${variant}
+        ../asop_selection_file_test.cpp ../../src/asop_selection_file.cpp
+        "${SCO_HOST_SOURCE_DIR}/src/net/sha2.c")
+      set_property(TARGET asop_selection_file_${variant} PROPERTY
+        MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+      target_include_directories(asop_selection_file_${variant} PRIVATE "${SCO_HOST_SOURCE_DIR}/include")
+      if(variant STREQUAL "fault")
+        target_compile_definitions(asop_selection_file_${variant} PRIVATE SCO_ASOP_SELECTION_TESTING)
+      endif()
+      add_test(NAME asop_selection_file_${variant} COMMAND asop_selection_file_${variant})
+      set_tests_properties(asop_selection_file_${variant} PROPERTIES TIMEOUT 60)
+    endforeach()
+  endif()
   # The stable product pin includes the detailed contract. Keep feature detection
   # for ad hoc older kits; permanent product CI requires these report tests.
   file(READ "${SCO_HOST_SOURCE_DIR}/include/sco/game/host.h" host_header)
