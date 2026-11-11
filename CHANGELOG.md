@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Flight Ready keyboard fallback uses an owned worker that drains during shutdown; a refused request asks the player to press R.
+
 - **Keep plugin settings drafts on errors.** A failed Save or Reset leaves your edits in place so you can correct or retry them. Windows offscreen fixtures exercise the draft-retention behavior. **Not run in game.**
 
 - **Prepare mission scripts before hook installation.** Selected script bytes are loaded before publication; unreadable or empty inputs refuse the custom hook, and owner admission guards installation and replacement calls. Synthetic host fixtures exercise these paths; native activation stays refused and gameplay remains unrun.
