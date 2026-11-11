@@ -1,24 +1,37 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Windows selection composition must not bypass the native activation refusal.
+// Synthetic policy test: the product native-activation gate must refuse before
+// host callbacks, ASOP file access, selection startup, or game-engine work.
 #include "offline_host.h"
-#include <windows.h>
 #include <cstdio>
+#include <windows.h>
 
-static int prepareCalls = 0, startCalls = 0;
+static unsigned prepareCalls=0, startCalls=0, tickCalls=0, stopCalls=0, statusCalls=0;
+
 bool ShipsFilePath(char*, DWORD) { return false; }
 bool DataFilePath(char*, DWORD, const char*) { return false; }
+void Log(const char*, ...) {}
+
 namespace sco::game::host {
-Result Prepare(const Options&) { ++prepareCalls; return Result::Unavailable; }
-Result Start() { ++startCalls; return Result::Unavailable; }
-Result Tick(uint32_t) { return Result::Unavailable; }
-Result Stop() { return Result::Unavailable; }
-Snapshot Status() { return {}; }
+Result Prepare(const Options&) { ++prepareCalls; return Result::Ok; }
+Result Start() { ++startCalls; return Result::Ok; }
+Result Tick(uint32_t) { ++tickCalls; return Result::Ok; }
+Result Stop() { ++stopCalls; return Result::Ok; }
+Snapshot Status() { ++statusCalls; Snapshot value; value.phase=Phase::Running; return value; }
 }
+
 int main() {
     sco::game::host::Options options;
-    options.platform.gameServices = true;
-    if (offline_host::Prepare(options) != sco::Result::Unavailable ||
-        offline_host::Start() != sco::Result::Unavailable || prepareCalls || startCalls) return 1;
-    std::puts("ASOP selection composition refuses native activation: PASS");
+    if (offline_host::Prepare(options)!=sco::Result::Unavailable ||
+        offline_host::Start()!=sco::Result::Unavailable ||
+        offline_host::Tick(1)!=sco::Result::Unavailable ||
+        offline_host::Running()) {
+        std::puts("ASOP host refusal: FAIL (native gate did not fail closed)");
+        return 1;
+    }
+    if (prepareCalls || startCalls || tickCalls || stopCalls || statusCalls) {
+        std::puts("ASOP host refusal: FAIL (host callback ran before native safety proof)");
+        return 1;
+    }
+    std::puts("ASOP host refusal: PASS (native activation remains disabled before host callbacks)");
     return 0;
 }

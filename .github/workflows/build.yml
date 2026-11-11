@@ -350,10 +350,25 @@ jobs:
           c++ -std=c++20 -Wall -Wextra -Werror -I external/sco-core/include src/asop_shell.cpp tools/asop-shell/start_failure_test.cpp -o asop_start_failure_test
           ./asop_start_failure_test
 
+      - name: ASOP environment policy (synthetic)
+        run: |
+          c++ -std=c++20 -Wall -Wextra -Werror -I external/sco-core/include tools/asop-shell/environment_test.cpp -o asop_environment_test
+          ./asop_environment_test
+
+      - name: ASOP committed selection retry model
+        run: |
+          c++ -std=c++20 -O1 -g -Wall -Wextra -Werror -pthread -I src tools/asop_selection_notice_test.cpp -o asop_selection_notice_test
+          ./asop_selection_notice_test
+          c++ -std=c++20 -O1 -g -Wall -Wextra -Werror -pthread -fsanitize=address,undefined -fno-omit-frame-pointer -I src tools/asop_selection_notice_test.cpp -o asop_selection_notice_test_asan
+          ./asop_selection_notice_test_asan
+          c++ -std=c++20 -O1 -g -Wall -Wextra -Werror -pthread -fsanitize=thread -I src tools/asop_selection_notice_test.cpp -o asop_selection_notice_test_tsan
+          ./asop_selection_notice_test_tsan
+
       - name: Host menu opt-in and ASOP fixture gate
         run: |
           test -f tools/asop_selection_workflow_test.cpp
           python3 tools/test_host_menu_gate.py
+          python3 tools/test_asop_composition_gate.py
 
       - name: Headless menu size and tab overflow tests
         run: python3 tools/check_menu_window.py
