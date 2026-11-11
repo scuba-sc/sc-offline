@@ -14,6 +14,7 @@ import re
 import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import zipfile
 
@@ -25,12 +26,51 @@ SDK_ARCHIVE = SDK_ROOT + '.zip'
 SDK_SHA256 = '0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc'
 
 
+def add_windows_toolchain_options(parser):
+    parser.add_argument('--toolset', help='Explicit Visual Studio toolset (CMake -T)')
+    parser.add_argument('--try-compile-config', help='Configuration for CMake try_compile probes only')
+
+
+def windows_cmake_args(args):
+    # Call only on Windows. Keep the original x64 and Release proof semantics;
+    # try_compile configuration does not change build, test, install or CRT flags.
+    options = ['-G', args.generator, '-A', 'x64']
+    if getattr(args, 'toolset', None):
+        options += ['-T', args.toolset]
+    if getattr(args, 'try_compile_config', None):
+        options += ['-DCMAKE_TRY_COMPILE_CONFIGURATION=' + args.try_compile_config]
+    return options
+
+
 def run(argv, cwd, success=True):
     p = subprocess.run([str(x) for x in argv], cwd=cwd, text=True,
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, input="")
     if success and p.returncode:
         raise RuntimeError(p.stdout)
     return p
+
+
+def linux_clang_sanitizer_options(build, work):
+    """Link sanitizer test modules to Clang's shared runtime on Linux."""
+    if not sys.platform.startswith('linux'):
+        return []
+    compiler_files = list((build / 'CMakeFiles').glob('*/CMakeCXXCompiler.cmake'))
+    if len(compiler_files) != 1:
+        raise RuntimeError('Cannot identify the configured C++ compiler for sanitizer proof')
+    metadata = compiler_files[0].read_text(encoding='utf-8')
+    identity = re.search(r'^set\(CMAKE_CXX_COMPILER_ID "([^"]+)"\)', metadata, re.M)
+    compiler = re.search(r'^set\(CMAKE_CXX_COMPILER "([^"]+)"\)', metadata, re.M)
+    if not identity or not compiler:
+        raise RuntimeError('Incomplete CMake compiler metadata for sanitizer proof')
+    if identity.group(1) != 'Clang':
+        return []
+    library = 'libclang_rt.asan-' + os.uname().machine + '.so'
+    runtime = Path(run([compiler.group(1), '-print-file-name=' + library], work).stdout.strip())
+    if not runtime.is_absolute() or not runtime.is_file():
+        raise RuntimeError('Clang shared AddressSanitizer runtime is unavailable')
+    return ['-DCMAKE_MODULE_LINKER_FLAGS=-shared-libasan',
+            '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined -shared-libasan',
+            '-DCMAKE_BUILD_RPATH=' + str(runtime.parent)]
 
 
 def contained(path, root):
@@ -289,7 +329,7 @@ def main(args):
                  '-DSCO_ADDITIONAL_FEATURES=OFF',
                  '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON', '-DSCO_INSPECTOR_DEPENDENCY_TRACE=ON']
     if os.name == 'nt':
-        configure += ['-G', args.generator, '-A', 'x64']
+        configure += windows_cmake_args(args)
     else:
         configure += ['-G', 'Unix Makefiles']
     run(configure, work)
@@ -314,7 +354,7 @@ def main(args):
     checker_build = work / 'checker-build'
     configure = ['cmake', '-S', sdk, '-B', checker_build]
     if os.name == 'nt':
-        configure += ['-G', args.generator, '-A', 'x64']
+        configure += windows_cmake_args(args)
     run(configure, work)
     run(['cmake', '--build', checker_build, '--config', 'Release', '--target', 'sco-plugin-check'], work)
     checker = checker_build / ('Release/sco-plugin-check.exe' if os.name == 'nt' else 'sco-plugin-check')
@@ -384,6 +424,7 @@ def parse_args(argv=None):
                         help='Required with --candidate; independently locked archive SHA-256')
     parser.add_argument('--sdk-source', help='Exact full Core source commit for candidate')
     parser.add_argument('--sdk-profile', help='Candidate SDK profile (legacy)')
+    add_windows_toolchain_options(parser)
     return parser.parse_args(argv)
 
 

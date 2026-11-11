@@ -35,6 +35,33 @@ def proof_module(feature):
 
 
 class GeneratorSelection(unittest.TestCase):
+    def test_linux_loadout_sanitizer_uses_selected_clang_runtime(self):
+        import check_inspector_sdk as module
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            compiler = root / 'build/CMakeFiles/3.31/CMakeCXXCompiler.cmake'
+            compiler.parent.mkdir(parents=True)
+            compiler.write_text('set(CMAKE_CXX_COMPILER "/fixture/clang++")\n'
+                                'set(CMAKE_CXX_COMPILER_ID "Clang")\n')
+            runtime = root / 'runtime with spaces/libclang_rt.asan-x86_64.so'
+            runtime.parent.mkdir()
+            runtime.touch()
+            with patch.object(module.sys, 'platform', 'linux'), \
+                 patch.object(module.os, 'uname', return_value=SimpleNamespace(machine='x86_64'), create=True), \
+                 patch.object(module, 'run', return_value=SimpleNamespace(stdout=str(runtime))) as run:
+                flags = module.linux_clang_sanitizer_options(root / 'build', root)
+                self.assertIn('-DCMAKE_MODULE_LINKER_FLAGS=-shared-libasan', flags)
+                self.assertIn('-DCMAKE_BUILD_RPATH=' + str(runtime.parent), flags)
+                run.assert_called_once_with(['/fixture/clang++', '-print-file-name=' + runtime.name], root)
+                runtime.unlink()
+                with self.assertRaisesRegex(RuntimeError, 'runtime is unavailable'):
+                    module.linux_clang_sanitizer_options(root / 'build', root)
+            compiler.write_text('set(CMAKE_CXX_COMPILER "/fixture/g++")\n'
+                                'set(CMAKE_CXX_COMPILER_ID "GNU")\n')
+            with patch.object(module.sys, 'platform', 'linux'), patch.object(module, 'run') as run:
+                self.assertEqual(module.linux_clang_sanitizer_options(root / 'build', root), [])
+                run.assert_not_called()
+
     def test_posix_dependency_trace_flag_is_compiler_specific(self):
         from check_inspector_sdk import posix_dependency_trace_flags
         self.assertEqual(posix_dependency_trace_flags('Debian clang version 19.1.7'), [])

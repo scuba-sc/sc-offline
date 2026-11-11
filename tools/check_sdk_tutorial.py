@@ -34,6 +34,9 @@ def main():
     parser.add_argument('--sums', required=True, type=Path)
     parser.add_argument('--work', required=True, type=Path, help='New root outside checkout')
     parser.add_argument('--feature', choices=('npc', 'inspector', 'both'), default='both')
+    parser.add_argument('--generator', help='Windows Visual Studio generator for the copied proofs')
+    parser.add_argument('--toolset', help='Explicit Visual Studio toolset for the copied proofs')
+    parser.add_argument('--try-compile-config', help='Configuration for CMake try_compile probes only')
     parser.add_argument('--prepare-only', action='store_true',
                         help='Copy owned examples only; build/check commands are separate')
     args = parser.parse_args()
@@ -62,10 +65,15 @@ def main():
         print(f'Tutorial-owned source: {source}; build/check/tests NOT RUN')
         return
     selected = ('npc', 'inspector') if args.feature == 'both' else (args.feature,)
+    toolchain = []
+    for option, value in (('--generator', args.generator), ('--toolset', args.toolset),
+                          ('--try-compile-config', args.try_compile_config)):
+        if value:
+            toolchain.extend((option, value))
     for feature in selected:
         subprocess.run([sys.executable, str(source / 'tools' / owned(f'check_{feature}_sdk.py')),
                         '--archive', str(archive), '--sums', str(sums),
-                        '--work', str(work / f'{feature}-proof')], check=True)
+                        '--work', str(work / f'{feature}-proof'), *toolchain], check=True)
         print(f'tutorial_{feature}: copied source + named dynamic fixture + checker PASS', flush=True)
     print('SDK tutorial: PASS (synthetic; Windows/game/release NOT VERIFIED)', flush=True)
 

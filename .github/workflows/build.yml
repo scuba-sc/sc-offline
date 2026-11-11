@@ -291,7 +291,11 @@ jobs:
           python3 tools/test_launcher_allow.py
 
       - name: SDK proof generator defaults and explicit overrides
-        run: python3 tools/test_sdk_generators.py
+        run: |
+          python3 tools/test_sdk_generators.py
+          python3 tools/test_travel_sdk_generators.py
+          python3 tools/test_sdk_windows_generators.py
+          python3 tools/test_tutorial_utf8.py
 
       # The result a built-in command answers (sco-core #12): SCO_FAILED once it ran and failed,
       # SCO_UNAVAILABLE only for a capability this build doesn't have.
