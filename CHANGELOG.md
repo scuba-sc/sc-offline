@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix the TitanLink SDK proof test fixture when the temporary directory uses a symlink.
+
 - **Coordinate the development Core source.** Update the embedded host gitlink and paired-source checks to `d33932bc14b85af0caccc4636b42028f44f97710`; rebuild host and consumer kits together. Prior archive and runtime evidence remains historical. Native startup is refused; **not run in game**.
 
 - Flight Ready keyboard fallback uses an owned worker that drains during shutdown; a refused request asks the player to press R.
