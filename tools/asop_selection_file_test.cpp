@@ -61,6 +61,18 @@ static bool check_and_remove_artifacts(const std::string& expected_backup,const 
     if(!backup || !candidate || !marker)return false;
     bool ok=true;for(const auto& path:paths)if(!DeleteFileA(path.c_str()))ok=false;return ok;
 }
+static bool has_artifacts(const char* suffix) {
+    WIN32_FIND_DATAA entry{};
+    HANDLE find=FindFirstFileA((root+"\\asop_ships.txt.sco-*"+suffix).c_str(),&entry);
+    if(find==INVALID_HANDLE_VALUE)return false;
+    FindClose(find);return true;
+}
+static bool no_artifacts() {
+    WIN32_FIND_DATAA entry{};
+    HANDLE find=FindFirstFileA((root+"\\asop_ships.txt.sco-*").c_str(),&entry);
+    if(find==INVALID_HANDLE_VALUE)return GetLastError()==ERROR_FILE_NOT_FOUND;
+    FindClose(find);return false;
+}
 static bool run_crash_child(const char* mode) {
     char exe[32768]{};const DWORD n=GetModuleFileNameA(nullptr,exe,sizeof(exe));
     if(!n || n>=sizeof(exe))return false;
@@ -79,8 +91,14 @@ int main(int argc,char** argv) {
         root=argv[2];offline::asop_selection::FixedFile child;
         if(!child.Initialize())return 90;
         auto adapter=child.Adapter();S::Document current,out;
-        if(adapter.read(adapter.context,current)!=S::FileResult::Ok)return 91;
-        fault_mode=!std::strcmp(argv[1],"--crash-prepared")?5:!std::strcmp(argv[1],"--crash-replaced")?6:0;
+        const bool first_prepared=!std::strcmp(argv[1],"--first-crash-prepared");
+        const bool first_replaced=!std::strcmp(argv[1],"--first-crash-replaced");
+        const auto read=adapter.read(adapter.context,current);
+        if(first_prepared || first_replaced) {
+            if(read!=S::FileResult::NotFound || current.present)return 91;
+        } else if(read!=S::FileResult::Ok)return 91;
+        fault_mode=(!std::strcmp(argv[1],"--crash-prepared") || first_prepared)?5:
+                   (!std::strcmp(argv[1],"--crash-replaced") || first_replaced)?6:0;
         if(!fault_mode)return 92;
         S::CommitPermit yes{nullptr,allow};
         (void)adapter.replace(adapter.context,current,"ProcessRecovered\n",out,yes);return 93;
@@ -93,11 +111,26 @@ int main(int argc,char** argv) {
     CHECK(CreateDirectoryA(root.c_str(),nullptr)!=0);
     offline::asop_selection::FixedFile file;CHECK(file.Initialize());auto adapter=file.Adapter();
     S::Document absent,saved,current;
+    const auto path=root+"\\asop_ships.txt";
     CHECK(adapter.read(adapter.context,absent)==S::FileResult::NotFound && !absent.present);
     S::CommitPermit yes{nullptr,allow},no{nullptr,deny};
+#ifdef SCO_ASOP_SELECTION_TESTING
+    // First-save crashes must recover both before and after the absent target is replaced.
+    CHECK(run_crash_child("--first-crash-prepared"));
+    CHECK(has_artifacts(".pending"));
+    CHECK(GetFileAttributesA(path.c_str())==INVALID_FILE_ATTRIBUTES && GetLastError()==ERROR_FILE_NOT_FOUND);
+    CHECK(adapter.read(adapter.context,absent)==S::FileResult::NotFound && !absent.present);
+    CHECK(file.Diagnostic().empty() && no_artifacts());
+    CHECK(run_crash_child("--first-crash-replaced"));
+    CHECK(has_artifacts(".pending"));
+    CHECK(adapter.read(adapter.context,current)==S::FileResult::Ok && current.present && current.bytes=="ProcessRecovered\n");
+    CHECK(file.Diagnostic().empty() && no_artifacts());
+    CHECK(DeleteFileA(path.c_str())!=0);
+    CHECK(adapter.read(adapter.context,absent)==S::FileResult::NotFound && !absent.present);
+#endif
     CHECK(write_external("Created_Externally\n"));
     CHECK(adapter.replace(adapter.context,absent,"A\n",saved,yes)==S::FileResult::Conflict);
-    const auto path=root+"\\asop_ships.txt";CHECK(DeleteFileA(path.c_str())!=0);
+    CHECK(DeleteFileA(path.c_str())!=0);
     CHECK(adapter.replace(adapter.context,absent,"A\n",saved,yes)==S::FileResult::Ok && saved.present && saved.bytes=="A\n");
     CHECK(adapter.read(adapter.context,current)==S::FileResult::Ok && current.bytes=="A\n");
     CHECK(adapter.replace(adapter.context,current,"B\n",saved,no)==S::FileResult::Cancelled);
