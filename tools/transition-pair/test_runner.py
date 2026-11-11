@@ -73,6 +73,23 @@ with tempfile.TemporaryDirectory(prefix='sc-offline-pair-test-') as tmp:
         result = invoke(src, sibling)
         if result.returncode or sibling.exists():
             raise AssertionError(result.stdout)
+        # Test the actual volume semantics rather than assuming that POSIX
+        # paths are case-sensitive or that all case variants identify a root.
+        case_root = source.with_name(source.name.upper())
+        case_build = case_root / 'new-build'
+        try:
+            same_root = os.path.samefile(source, case_root)
+        except FileNotFoundError:
+            same_root = False
+        result = invoke(src, case_build)
+        if same_root:
+            if result.returncode == 0 or 'outside both source trees' not in result.stdout:
+                raise AssertionError(result.stdout)
+        elif result.returncode:
+            raise AssertionError(result.stdout)
+        if case_build.exists():
+            raise AssertionError('verify-only created a case-variant path')
+        print('case-variant source verify-only:', 'refused' if same_root else 'distinct')
     if os.name == 'nt':
         # Check a different mounted drive without creating a path there.
         other_drive_tested = False

@@ -21,8 +21,11 @@ receive shell paths. It converts all paths for the selected Python interpreter
 before comparing the build directory with both source roots.
 
 `--verify-only` checks identities, source cleanliness, and build-directory
-containment without building or creating the directory. The runner checks the
-CMake cache and file-API target sources and dependencies after each configure,
+containment without building or creating the directory. It checks existing
+ancestors by file identity as well as by path, so differently cased
+spellings on case-insensitive filesystems cannot bypass either source root.
+The check is not a race-free sandbox against concurrent path replacement.
+The runner checks the CMake cache and file-API target sources and dependencies after each configure,
 including the selected Core's new app source and exact-profile selector. It
 requires fresh build directories, so no old library cache can be reused.
 `--product` also configures and builds the product with the same Core override;
