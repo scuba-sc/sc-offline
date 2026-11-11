@@ -1,5 +1,9 @@
 # Menu worker ownership checkpoint
 
+This is a historical checkpoint. Its pin, implementation and test-status statements
+describe that checkpoint, not the current candidate; see [SDK candidate coordinates](../sdk-candidate.md)
+and the current source for subsequent changes.
+
 Local implementation based on published product-lifetime scaffold
 `d0a86c088d2eb06971b6d8d8967a1762c88764b2`. Native activation remains
 unconditionally refused. This controller/core-owner follow-up is not exercised
@@ -149,10 +153,10 @@ admitted `OnMainThreadTick` path holds a `Read` from that exact owner.
 `drain_until` on that same object from `ModThread` after callback return.
 Every drain result keeps the root retained. The menu report remains distinct.
 
-The named core commits are not present in this product checkout: the submodule
-is `6106fa3639cbcc28f78a1ded8de2707de019f4d3`, and the sibling
-`/workspace/sco-core` checkout is `a9a99f2d831d40f64e38ced8bb59f1575491b87b`.
-The supplied newer core heads were not imported. With the current pin, header
+At this checkpoint, the named core commits were not present in the product checkout:
+the submodule was `6106fa3639cbcc28f78a1ded8de2707de019f4d3`, and a separate
+Core checkout was `a9a99f2d831d40f64e38ced8bb59f1575491b87b`.
+The supplied newer core heads had not been imported. With the pin at that checkpoint, header
 detection disables this path, `AttachShutdownOwner` refuses, and core prepare,
 start and tick stay unavailable. Native activation remains false. Header-name
 detection does not validate the newer report's drain-state semantics; the

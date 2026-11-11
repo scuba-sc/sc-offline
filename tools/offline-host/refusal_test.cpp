@@ -61,7 +61,7 @@ int main() {
     const bool after = offline_host::Stop() == sco::Result::Unavailable && !offline_host::RestartRequired() &&
         offline_host::Prepare(options) == sco::Result::Unavailable && offline_host::Start() == sco::Result::Unavailable &&
         offline_host::Stop() == sco::Result::Unavailable && stopCalls == 0 && prepareCalls == 0 && startCalls == 0;
-    const bool ok = before && after && filterRefused && missionRefused;
+    const bool ok = before && after && filterRefused && missionRefused && !offline_host::FlightReadyOwner();
     std::printf("offline host native activation refusal: %s\n", ok ? "PASS" : "FAIL");
     return ok ? 0 : 1;
 }

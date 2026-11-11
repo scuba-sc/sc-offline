@@ -1,4 +1,6 @@
 #include "spawner.h"
+#include "offline_host.h"
+#include "flight_ready_worker.h"
 #include "patches.h"
 #include "teleport.h"
 #include "menu.h"
@@ -1232,21 +1234,32 @@ static bool SeatJobDone() {
     return PlayerAboard(g_seatJob.id, g_seatJob.name);
 }
 
-static void PressFlightReadyKey() {
-    if (HANDLE t = CreateThread(nullptr, 0, [](LPVOID) -> DWORD {
-            INPUT in[2] = {};
-            in[0].type = in[1].type = INPUT_KEYBOARD;
-            in[0].ki.wScan = in[1].ki.wScan = 0x13;
-            in[0].ki.dwFlags = KEYEVENTF_SCANCODE;
-            in[1].ki.dwFlags = KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP;
-            SendInput(1, &in[0], sizeof(INPUT));
-            Sleep(120);
-            SendInput(1, &in[1], sizeof(INPUT));
-            return 0;
-        }, nullptr, 0, nullptr))
-        CloseHandle(t);
+static bool PressFlightReadyKey() {
+    auto owner = offline_host::FlightReadyOwner();
+    if (!owner) return false;
+    try {
+        // Intentionally retained until process exit, like the product owner.
+        static auto* worker = new offline_host::FlightReadyWorker(owner, {
+            [] {
+                if (!GameHasFocus()) return false;
+                INPUT in = {};
+                in.type = INPUT_KEYBOARD;
+                in.ki.wScan = 0x13;
+                in.ki.dwFlags = KEYEVENTF_SCANCODE;
+                return SendInput(1, &in, sizeof(INPUT)) == 1;
+            },
+            [] {
+                INPUT in = {};
+                in.type = INPUT_KEYBOARD;
+                in.ki.wScan = 0x13;
+                in.ki.dwFlags = KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP;
+                if (SendInput(1, &in, sizeof(INPUT)) != 1) throw 1; // retain on unconfirmed key release
+            },
+            [] { Sleep(120); }
+        });
+        return worker->request();
+    } catch (...) { return false; }
 }
-
 // --- everything mounted on a ship ------------------------------------------------------------
 //
 // A spawned ship's parts get consecutive entity ids right after the ship's own (in the logs, a
@@ -1377,9 +1390,8 @@ static void RunPowerJob(DWORD now) {
         return;
     }
     if (g_sp.toggleFlightReady) Log("[ship] no seat dashboard on the %s; falling back to the R key", g_powerJob.name);
-    if (GameHasFocus()) {
-        PressFlightReadyKey();
-        SetMenuStatus("Couldn't reach the %s's dashboard directly - pressed Flight Ready (R) for you.", g_powerJob.name);
+    if (GameHasFocus() && PressFlightReadyKey()) {
+        SetMenuStatus("Couldn't reach the %s's dashboard directly - queued Flight Ready (R).", g_powerJob.name);
     } else {
         SetMenuStatus("Couldn't reach the %s's dashboard. Press R (Flight Ready) to power up.", g_powerJob.name);
     }

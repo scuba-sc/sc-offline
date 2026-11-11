@@ -177,6 +177,15 @@ bool AttachShutdownOwner(gh::Options& options) noexcept {
 #endif
 }
 
+std::shared_ptr<sco::OwnedShutdown> FlightReadyOwner() noexcept {
+#ifdef SCO_CORE_NON_DRAINING_STOP_API
+    if (!RetainProductModule()) return {};
+    return ProductOwner();
+#else
+    return {};
+#endif
+}
+
 sco::OwnedShutdown::Read TryRead() noexcept {
 #ifdef SCO_CORE_NON_DRAINING_STOP_API
     auto owner = ProductOwner();

@@ -3,6 +3,7 @@
 // Product composition seam. No engine offsets, patches, game pointers or OS policy.
 #include "sco/game/host.h"
 #include <cstdint>
+#include <memory>
 
 namespace offline_host {
 sco::Result Prepare(sco::game::host::Options options);
@@ -15,6 +16,8 @@ bool Running();
 bool AttachShutdownOwner(sco::game::host::Options& options) noexcept;
 // Product callbacks hold this same owner's read for their entire use.
 sco::OwnedShutdown::Read TryRead() noexcept;
+// Shared process-retained owner; unavailable while native activation is refused.
+std::shared_ptr<sco::OwnedShutdown> FlightReadyOwner() noexcept;
 // Admitted callback or controller terminal observer: reserves the request,
 // closes this owner, then asks Core for its report. Competing requests latch
 // retention; this does not wait for or perform a drain.
