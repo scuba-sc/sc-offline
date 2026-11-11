@@ -14,6 +14,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "quantum_test_directory.h"
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -106,7 +107,8 @@ int main(int argc,char** argv) {
     const auto unload=reinterpret_cast<void(*)()>(dlsym(module,"sco_plugin_unload"));
 #endif
     Check(load && unload,"public exports");
-    const auto path=std::filesystem::temp_directory_path()/"sco-quantum-content-test"; std::filesystem::remove_all(path); std::filesystem::create_directories(path); root=path.string();
+    static QuantumTestDirectory directory("sco-quantum-content-test");
+    const auto path=directory.path(); root=path.string();
     int token=0; owner=reinterpret_cast<sco_plugin*>(&token);
     sco_api api{}; api.size=sizeof(api); api.major=SCO_API_MAJOR; api.minor=SCO_API_MINOR; api.register_command=Register; api.query_service=Query; api.has=Has; api.subscribe=Subscribe; api.unsubscribe=Unsubscribe;
     settings.size=sizeof(settings); settings.get_string=GetString;
@@ -159,7 +161,7 @@ int main(int argc,char** argv) {
         auto short_api=std::make_unique<unsigned char[]>(bytes); std::memcpy(short_api.get(),&api,bytes); std::memcpy(short_api.get(),&bytes,4);
         Check(load(reinterpret_cast<const sco_api*>(short_api.get()),owner)==SCO_UNAVAILABLE,"physically short root query callback extent refused");
     }
-    std::filesystem::remove_all(path);
+    Check(directory.cleanup(),"temporary directory cleanup");
 #ifdef _WIN32
     FreeLibrary(module);
 #else
