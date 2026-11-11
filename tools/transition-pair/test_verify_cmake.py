@@ -4,6 +4,7 @@
 import json
 import pathlib
 import subprocess
+import sys
 import tempfile
 
 script = pathlib.Path(__file__).with_name('verify_cmake.py')
@@ -34,7 +35,7 @@ with tempfile.TemporaryDirectory(prefix='pair-cmake-check-') as tmp:
     (reply / 'model.json').write_text(json.dumps({'paths': {'source': str(offline)},
                                                    'configurations': [{'targets': refs}]}))
     def verify(ok, reason=''):
-        result = subprocess.run(['python3', str(script), str(build), str(core), str(offline), 'fixture'],
+        result = subprocess.run([sys.executable, str(script), str(build), str(core), str(offline), 'fixture'],
                                 text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         if (result.returncode == 0) != ok or (reason and reason not in result.stdout):
             raise AssertionError(result.stdout)
