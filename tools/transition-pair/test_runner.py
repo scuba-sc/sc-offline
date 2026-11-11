@@ -75,6 +75,7 @@ with tempfile.TemporaryDirectory(prefix='sc-offline-pair-test-') as tmp:
             raise AssertionError(result.stdout)
     if os.name == 'nt':
         # Check a different mounted drive without creating a path there.
+        other_drive_tested = False
         for letter in string.ascii_uppercase:
             drive = pathlib.Path(f'{letter}:/')
             if drive.exists() and drive.drive.casefold() != base.drive.casefold():
@@ -83,7 +84,10 @@ with tempfile.TemporaryDirectory(prefix='sc-offline-pair-test-') as tmp:
                     result = invoke(src, candidate)
                     if result.returncode or candidate.exists():
                         raise AssertionError(result.stdout)
+                    other_drive_tested = True
                     break
+        print('different-drive verify-only: PASS' if other_drive_tested else
+              'SKIP different-drive verify-only: no suitable mounted drive')
         print('SKIP symlink fixture on Windows')
     else:
         alias = base / 'source-link'
