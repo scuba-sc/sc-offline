@@ -3938,15 +3938,17 @@ static void DrawPluginSettings(float x0, float y0, float x1, float y1, PluginEnt
 
     std::string err;
     if (UiButton("Save##plugsave", ImVec2(left, footY), ImVec2(bw, bh), kAction, canEdit && dirty, kIcoCheck, T(LocaleKey::Save))) {
-        if (SavePluginSettings(g.here, p, false, err)) PluginNote(T(LocaleKey::SettingsSaved));
-        else PluginNote(err);
-        g.plugins = ReadPlugins(g.here);   // p is gone after this; the edits come back from what was saved
+        if (SavePluginSettings(g.here, p, false, err)) {
+            PluginNote(T(LocaleKey::SettingsSaved));
+            g.plugins = ReadPlugins(g.here);   // p is gone; reload canonical saved values
+        } else PluginNote(err);               // keep the drafts for correction or retry
         return;
     }
     if (UiButton("Reset##plugreset", ImVec2(left + bw + Px(8), footY), ImVec2(bw, bh), kPlain, canEdit && anyKept, -1, T(LocaleKey::Reset))) {
-        if (SavePluginSettings(g.here, p, true, err)) PluginNote(T(LocaleKey::SettingsReset));
-        else PluginNote(err);
-        g.plugins = ReadPlugins(g.here);
+        if (SavePluginSettings(g.here, p, true, err)) {
+            PluginNote(T(LocaleKey::SettingsReset));
+            g.plugins = ReadPlugins(g.here);
+        } else PluginNote(err);
         return;
     }
     const float mx = left + 2 * bw + Px(20);

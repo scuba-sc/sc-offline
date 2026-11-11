@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Keep plugin settings drafts on errors.** A failed Save or Reset leaves your edits in place so you can correct or retry them. Windows offscreen fixtures exercise the draft-retention behavior. **Not run in game.**
+
 - **Prepare mission scripts before hook installation.** Selected script bytes are loaded before publication; unreadable or empty inputs refuse the custom hook, and owner admission guards installation and replacement calls. Synthetic host fixtures exercise these paths; native activation stays refused and gameplay remains unrun.
 
 - **Preserve tutorial source encoding.** SDK tutorial source copies use UTF-8 explicitly; a prepare-only regression passed with Python UTF-8 mode disabled. This is not an SDK archive build or game acceptance.
