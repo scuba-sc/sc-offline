@@ -72,9 +72,12 @@ does not turn an unpublished archive into a published candidate or make an insta
 capability claim. Run the matching connected quantum, build and contracts fixtures
 documented by those consumers when a matching host-source build is available.
 
-Windows inspector, NPC and build proof scripts accept `--generator` for a locally installed toolchain
+Windows inspector, NPC, build, teleport and quantum proof scripts accept `--generator` for a locally
+installed toolchain
 (for example `--generator "Visual Studio 17 2022"`). Their default remains **Visual Studio 18 2026**,
-matching hosted CI. POSIX proofs use Unix Makefiles. This changes toolchain selection, never the
+matching hosted CI. Teleport and quantum accept only Visual Studio generators (2019, 2022 or 2026):
+their Windows dependency traces require MSBuild; Ninja is not supported. POSIX proofs use Unix Makefiles.
+This changes toolchain selection, never the
 SDK source/archive identity or dependency-isolation rules.
 
 Standalone modules/manifests stage under `<plugin-build>/test-plugins/{npc,inspector}/`.
@@ -371,6 +374,13 @@ host-independent synthetic proof. No host-only built-in adapter harness remains 
 
 CI invokes `tools/check_npc_sdk.py` and `tools/check_inspector_sdk.py`, each with
 `--archive <published.zip> --sums <release-SHA256SUMS> --work <new-directory-outside-checkout>`.
+The player-plugin SDK checkers also accept `--generator`, `--toolset`, and
+`--try-compile-config` for Windows. Their default remains the hosted Visual
+Studio 18 2026 generator; an explicit local VS 2022 proof can use
+`--generator "Visual Studio 17 2022" --toolset "v143,host=x64" --try-compile-config Release`.
+The toolset and try-compile option are applied to both the consumer and SDK
+checker configurations; build, test and install still use Release. The optional
+TitanLink proof retains its published stable SDK pin and is not a candidate proof.
 They verify archive and extracted checksums, copy feature/test sources into an
 isolated root, build/install the module and published checker, run only the named
 module workflow and invoke `npc.observe` / `inspector.read` with services absent.

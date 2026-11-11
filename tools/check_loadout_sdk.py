@@ -13,8 +13,8 @@ import shutil
 import sys
 
 sys.dont_write_bytecode = True
-from check_inspector_sdk import (SDK_VERSION, SDK_SHA256, contained, explicit_preflight_pin,
-                                 run, trace_posix, trace_windows, verify_extract)
+from check_inspector_sdk import (add_windows_toolchain_options, windows_cmake_args, SDK_VERSION, SDK_SHA256, contained, explicit_preflight_pin,
+                                 linux_clang_sanitizer_options, run, trace_posix, trace_windows, verify_extract)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -43,7 +43,7 @@ def main(args):
     configure = ['cmake', '-S', source / 'plugins/loadout', '-B', build,
                  '-DSCO_SDK_INCLUDE_DIR=' + str(sdk / 'include'), '-DSCO_WORKFLOW_TESTS=ON',
                  '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON', '-DSCO_LOADOUT_DEPENDENCY_TRACE=ON']
-    configure += (['-G', args.generator, '-A', 'x64'] if os.name == 'nt'
+    configure += (windows_cmake_args(args) if os.name == 'nt'
                   else ['-G', 'Unix Makefiles'])
     run(configure, work)
     run(['cmake', '--build', build, '--config', 'Release'], work)
@@ -68,7 +68,7 @@ def main(args):
     checker_build = work / 'checker-build'
     configure = ['cmake', '-S', sdk, '-B', checker_build]
     if os.name == 'nt':
-        configure += ['-G', args.generator, '-A', 'x64']
+        configure += windows_cmake_args(args)
     run(configure, work)
     run(['cmake', '--build', checker_build, '--config', 'Release', '--target', 'sco-plugin-check'], work)
     checker = checker_build / ('Release/sco-plugin-check.exe' if os.name == 'nt' else 'sco-plugin-check')
@@ -94,11 +94,12 @@ def main(args):
           ' SDK checker: expected no-job results accepted; clean pass')
     if os.name != 'nt':
         sanitized = work / 'sanitizer-build'
+        sanitizer_options = linux_clang_sanitizer_options(build, work)
         run(['cmake', '-S', source / 'plugins/loadout', '-B', sanitized,
              '-DSCO_SDK_INCLUDE_DIR=' + str(sdk / 'include'), '-DSCO_WORKFLOW_TESTS=ON',
              '-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer',
              '-DCMAKE_SHARED_LINKER_FLAGS=-fsanitize=address,undefined',
-             '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined'], work)
+             '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined', *sanitizer_options], work)
         run(['cmake', '--build', sanitized], work)
         print(run(['ctest', '--test-dir', sanitized, '--output-on-failure', '-V'], work).stdout)
         cpp = source / 'plugins/loadout/loadout.cpp'
@@ -168,6 +169,7 @@ def parse_args(argv=None):
     parser.add_argument('--sdk-source', help='Exact full Core source commit for candidate')
     parser.add_argument('--sdk-profile', help='Candidate SDK profile (legacy)')
     parser.add_argument('--generator', default='Visual Studio 18 2026')
+    add_windows_toolchain_options(parser)
     return parser.parse_args(argv)
 
 

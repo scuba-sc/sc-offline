@@ -13,7 +13,7 @@ import shutil
 import sys
 
 sys.dont_write_bytecode = True
-from check_inspector_sdk import (SDK_VERSION, SDK_SHA256, contained, explicit_preflight_pin,
+from check_inspector_sdk import (add_windows_toolchain_options, windows_cmake_args, SDK_VERSION, SDK_SHA256, contained, explicit_preflight_pin,
                                  run, trace_posix, trace_windows, verify_extract)
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -44,7 +44,7 @@ def main(args):
                  '-DSCO_SDK_ARCHIVE=' + str(args.archive.resolve()),
                  '-DSCO_ADDITIONAL_FEATURES=OFF',
                  '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON', '-DSCO_NPC_DEPENDENCY_TRACE=ON']
-    configure += (['-G', args.generator, '-A', 'x64'] if os.name == 'nt'
+    configure += (windows_cmake_args(args) if os.name == 'nt'
                   else ['-G', 'Unix Makefiles'])
     run(configure, work)
     run(['cmake', '--build', build, '--config', 'Release', '--target',
@@ -68,7 +68,7 @@ def main(args):
     checker_build = work / 'checker-build'
     configure = ['cmake', '-S', sdk, '-B', checker_build]
     if os.name == 'nt':
-        configure += ['-G', args.generator, '-A', 'x64']
+        configure += windows_cmake_args(args)
     run(configure, work)
     run(['cmake', '--build', checker_build, '--config', 'Release', '--target', 'sco-plugin-check'], work)
     checker = checker_build / ('Release/sco-plugin-check.exe' if os.name == 'nt' else 'sco-plugin-check')
@@ -130,6 +130,7 @@ def parse_args(argv=None):
     parser.add_argument('--sdk-profile', help='Candidate SDK profile (legacy)')
     parser.add_argument('--generator', default='Visual Studio 18 2026',
                         help='CMake generator for Windows (default: Visual Studio 18 2026)')
+    add_windows_toolchain_options(parser)
     return parser.parse_args(argv)
 
 

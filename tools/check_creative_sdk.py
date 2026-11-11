@@ -9,7 +9,7 @@ import shutil
 import sys
 
 sys.dont_write_bytecode = True
-from check_inspector_sdk import (SDK_VERSION, SDK_SHA256, contained, explicit_preflight_pin,
+from check_inspector_sdk import (add_windows_toolchain_options, windows_cmake_args, SDK_VERSION, SDK_SHA256, contained, explicit_preflight_pin,
                                  run, trace_posix, trace_windows, verify_extract)
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -37,7 +37,7 @@ def main(args):
     configure = ['cmake', '-S', source / 'plugins/creative', '-B', build,
                  '-DSCO_SDK_INCLUDE_DIR=' + str(sdk / 'include'), '-DSCO_WORKFLOW_TESTS=ON',
                  '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON', '-DSCO_CREATIVE_DEPENDENCY_TRACE=ON']
-    configure += (['-G', 'Visual Studio 18 2026', '-A', 'x64'] if os.name == 'nt'
+    configure += (windows_cmake_args(args) if os.name == 'nt'
                   else ['-G', 'Unix Makefiles'])
     run(configure, work)
     run(['cmake', '--build', build, '--config', 'Release', '--target',
@@ -67,7 +67,7 @@ def main(args):
     checker_build = work / 'checker-build'
     configure_checker = ['cmake', '-S', sdk, '-B', checker_build]
     if os.name == 'nt':
-        configure_checker += ['-G', 'Visual Studio 18 2026', '-A', 'x64']
+        configure_checker += windows_cmake_args(args)
     run(configure_checker, work)
     run(['cmake', '--build', checker_build, '--config', 'Release', '--target', 'sco-plugin-check'], work)
     checker = checker_build / ('Release/sco-plugin-check.exe' if os.name == 'nt' else 'sco-plugin-check')
@@ -131,7 +131,7 @@ def main(args):
     print('creative SDK source proof: PASS (synthetic; release-hook stand-in; not run in game)')
 
 
-if __name__ == '__main__':
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--archive', type=Path, required=True)
     parser.add_argument('--sums', type=Path, required=True)
@@ -143,4 +143,12 @@ if __name__ == '__main__':
     parser.add_argument('--sdk-source', help='Exact full Core source commit for candidate')
     parser.add_argument('--sdk-profile', help='Candidate SDK profile (legacy)')
     parser.add_argument('--sanitize', action='store_true', help='Also instrument the same focused module case on POSIX')
-    main(parser.parse_args())
+    parser.add_argument('--generator', default='Visual Studio 18 2026',
+                        choices=('Visual Studio 16 2019', 'Visual Studio 17 2022', 'Visual Studio 18 2026'),
+                        help='Windows Visual Studio generator for MSBuild dependency proofs')
+    add_windows_toolchain_options(parser)
+    return parser.parse_args(argv)
+
+
+if __name__ == '__main__':
+    main(parse_args())

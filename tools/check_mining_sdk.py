@@ -12,7 +12,7 @@ from pathlib import Path
 import shutil
 import sys
 sys.dont_write_bytecode = True
-from check_inspector_sdk import (SDK_VERSION, SDK_SHA256, contained, explicit_preflight_pin, run, verify_extract)
+from check_inspector_sdk import (add_windows_toolchain_options, windows_cmake_args, SDK_VERSION, SDK_SHA256, contained, explicit_preflight_pin, run, verify_extract)
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -40,7 +40,7 @@ def main(args):
     configure = ["cmake", "-S", source / "plugins/mining", "-B", build,
                  "-DSCO_SDK_INCLUDE_DIR=" + str(sdk / "include"), "-DSCO_WORKFLOW_TESTS=ON"]
     if os.name == "nt":
-        configure += ["-G", "Visual Studio 18 2026", "-A", "x64"]
+        configure += windows_cmake_args(args)
     run(configure, work)
     run(["cmake", "--build", build, "--config", "Release", "--target", "sc-offline-mining", "mining-module-test"], work)
     print(run(["ctest", "--test-dir", build, "-C", "Release", "-R", "^mining-workflow$", "--output-on-failure"], work).stdout)
@@ -63,7 +63,7 @@ def main(args):
     checker_build = work / "checker-build"
     checker_configure = ["cmake", "-S", str(sdk), "-B", str(checker_build)]
     if os.name == "nt":
-        checker_configure += ["-G", "Visual Studio 18 2026", "-A", "x64"]
+        checker_configure += windows_cmake_args(args)
     run(checker_configure, work)
     run(["cmake", "--build", checker_build, "--config", "Release", "--target", "sco-plugin-check"], work)
     checker = checker_build / ("Release/sco-plugin-check.exe" if os.name == "nt" else "sco-plugin-check")
@@ -74,7 +74,7 @@ def main(args):
     print("mining isolated module + settings import + staged sco-plugin-check PASS (synthetic; not run in game)")
 
 
-if __name__ == "__main__":
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--sums", type=Path, required=True)
@@ -85,4 +85,12 @@ if __name__ == "__main__":
     parser.add_argument('--archive-sha256', help='Required independent locked SHA-256 with --candidate')
     parser.add_argument('--sdk-source', help='Exact full Core source commit for candidate')
     parser.add_argument('--sdk-profile', help='Candidate SDK profile (legacy)')
-    main(parser.parse_args())
+    parser.add_argument('--generator', default='Visual Studio 18 2026',
+                        choices=('Visual Studio 16 2019', 'Visual Studio 17 2022', 'Visual Studio 18 2026'),
+                        help='Windows Visual Studio generator for MSBuild dependency proofs')
+    add_windows_toolchain_options(parser)
+    return parser.parse_args(argv)
+
+
+if __name__ == '__main__':
+    main(parse_args())

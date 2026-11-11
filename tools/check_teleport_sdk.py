@@ -16,8 +16,8 @@ import shutil
 import sys
 
 sys.dont_write_bytecode = True
-from check_inspector_sdk import (SDK_VERSION, SDK_SHA256, contained, explicit_preflight_pin,
-                                 run, trace_posix, trace_windows, verify_extract)
+from check_inspector_sdk import (add_windows_toolchain_options, windows_cmake_args, SDK_VERSION, SDK_SHA256, contained, explicit_preflight_pin,
+                                 linux_clang_sanitizer_options, run, trace_posix, trace_windows, verify_extract)
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -61,7 +61,7 @@ def prove(args, spec):
     configure = ['cmake', '-S', source / 'plugins' / feature, '-B', build,
                  '-DSCO_SDK_INCLUDE_DIR=' + str(sdk / 'include'), f'-D{spec["test_option"]}=ON',
                  '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON', f'-DSCO_{feature.upper()}_DEPENDENCY_TRACE=ON']
-    configure += (['-G', 'Visual Studio 18 2026', '-A', 'x64'] if os.name == 'nt'
+    configure += (windows_cmake_args(args) if os.name == 'nt'
                   else ['-G', 'Unix Makefiles', '-DCMAKE_BUILD_TYPE=Release'])
     run(configure, work)
     target = f'sc-offline-{feature}'
@@ -100,7 +100,7 @@ def prove(args, spec):
     checker_build = work / 'checker-build'
     configure = ['cmake', '-S', sdk, '-B', checker_build]
     if os.name == 'nt':
-        configure += ['-G', 'Visual Studio 18 2026', '-A', 'x64']
+        configure += windows_cmake_args(args)
     run(configure, work)
     run(['cmake', '--build', checker_build, '--config', 'Release', '--target', 'sco-plugin-check'], work)
     checker = checker_build / ('Release/sco-plugin-check.exe' if os.name == 'nt' else 'sco-plugin-check')
@@ -112,11 +112,12 @@ def prove(args, spec):
                 raise AssertionError('Missing-service checker reply missing: ' + token)
     if os.name != 'nt':
         sanitized = work / 'sanitizer-build'
+        sanitizer_options = linux_clang_sanitizer_options(build, work)
         run(['cmake', '-S', source / 'plugins' / feature, '-B', sanitized,
              '-DSCO_SDK_INCLUDE_DIR=' + str(sdk / 'include'), f'-D{spec["test_option"]}=ON',
              '-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer',
              '-DCMAKE_MODULE_LINKER_FLAGS=-fsanitize=address,undefined',
-             '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined'], work)
+             '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined', *sanitizer_options], work)
         for test_target in [spec['test_target']] + [test[1] for test in extra_tests]:
             run(['cmake', '--build', sanitized, '--target', test_target], work)
         names = [spec['test_name']] + [test[2] for test in extra_tests] + list(spec.get('extra_ctests', ()))
@@ -208,6 +209,10 @@ def prove(args, spec):
 
 def main(argv=None, spec=TELEPORT):
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--generator', default='Visual Studio 18 2026',
+                        choices=('Visual Studio 16 2019', 'Visual Studio 17 2022', 'Visual Studio 18 2026'),
+                        help='Windows Visual Studio generator; MSBuild dependency traces require a VS generator')
+    add_windows_toolchain_options(parser)
     parser.add_argument('--archive', type=Path, required=True)
     parser.add_argument('--sums', type=Path, required=True)
     parser.add_argument('--work', type=Path, required=True, help='New directory outside checkout')

@@ -15,7 +15,7 @@ import shlex
 import shutil
 import sys
 sys.dont_write_bytecode = True
-from check_inspector_sdk import contained, run, verify_extract
+from check_inspector_sdk import add_windows_toolchain_options, windows_cmake_args, contained, run, verify_extract
 ROOT = Path(__file__).resolve().parent.parent
 
 def trace_posix(build, source, sdk, public, feature="titanlink"):
@@ -84,10 +84,10 @@ def trace_windows(build, source, sdk, public, feature="titanlink"):
         if len(traces) != (3 if target.startswith("sco-feature-") else 1):
             raise AssertionError(f"Expected all MSVC traces per {feature} target")
         data_rows = [json.loads(path.read_text(encoding="utf-8-sig"))["Data"] for path in traces]
+        if any(not row["Includes"] for row in data_rows):
+            raise AssertionError("Empty MSVC include trace")
         data = {"Source": data_rows[0]["Source"], "Includes": [row["Source"] for row in data_rows] + [inc for row in data_rows for inc in row["Includes"]]}
         dependencies = [data["Source"]] + data["Includes"]
-        if not data["Includes"]:
-            raise AssertionError("Empty MSVC include trace")
         for dependency in dependencies:
             p = Path(dependency).resolve()
             if contained(p, sdk):
@@ -123,8 +123,8 @@ def main(args):
     build = work / 'plugin-build'
     configure = ['cmake', '-S', source / 'plugins/titanlink', '-B', build,
                  '-DSCO_SDK_INCLUDE_DIR=' + str(sdk / 'include'), '-DSCO_WORKFLOW_TESTS=ON',
-                 '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON', '-DSCO_DISCORD_DEPENDENCY_TRACE=ON']
-    configure += (['-G', 'Visual Studio 18 2026', '-A', 'x64'] if os.name == 'nt'
+                 '-DCMAKE_EXPORT_COMPILE_COMMANDS=ON', '-DSCO_TITANLINK_DEPENDENCY_TRACE=ON']
+    configure += (windows_cmake_args(args) if os.name == 'nt'
                   else ['-G', 'Unix Makefiles'])
     run(configure, work)
     run(['cmake', '--build', build, '--config', 'Release', '--target',
@@ -152,7 +152,7 @@ def main(args):
     checker_build = work / 'checker-build'
     configure = ['cmake', '-S', sdk, '-B', checker_build]
     if os.name == 'nt':
-        configure += ['-G', 'Visual Studio 18 2026', '-A', 'x64']
+        configure += windows_cmake_args(args)
     run(configure, work)
     run(['cmake', '--build', checker_build, '--config', 'Release', '--target', 'sco-plugin-check'], work)
     checker = checker_build / ('Release/sco-plugin-check.exe' if os.name == 'nt' else 'sco-plugin-check')
@@ -215,9 +215,17 @@ def main(args):
     print('TitanLink SDK proof: PASS (synthetic; Windows/cross-process/graphics NOT VERIFIED; not run in game)')
 
 
-if __name__ == '__main__':
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--archive', type=Path, required=True)
     parser.add_argument('--sums', type=Path, required=True)
     parser.add_argument('--work', type=Path, required=True, help='New directory outside checkout')
-    main(parser.parse_args())
+    parser.add_argument('--generator', default='Visual Studio 18 2026',
+                        choices=('Visual Studio 16 2019', 'Visual Studio 17 2022', 'Visual Studio 18 2026'),
+                        help='Windows Visual Studio generator for MSBuild dependency proofs')
+    add_windows_toolchain_options(parser)
+    return parser.parse_args(argv)
+
+
+if __name__ == '__main__':
+    main(parse_args())

@@ -14,7 +14,7 @@ import shutil
 import sys
 
 sys.dont_write_bytecode = True
-from check_inspector_sdk import (SDK_VERSION, SDK_SHA256, contained, explicit_preflight_pin,
+from check_inspector_sdk import (add_windows_toolchain_options, windows_cmake_args, SDK_VERSION, SDK_SHA256, contained, explicit_preflight_pin,
                                  run, trace_posix, trace_windows, verify_extract)
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -42,7 +42,7 @@ def main(args):
     if args.sanitizers:
         for var in ('CMAKE_CXX_FLAGS', 'CMAKE_C_FLAGS', 'CMAKE_EXE_LINKER_FLAGS', 'CMAKE_MODULE_LINKER_FLAGS'):
             flags.append('-D' + var + '=-fsanitize=address,undefined -fno-omit-frame-pointer')
-    generator = ['-G', 'Visual Studio 18 2026', '-A', 'x64'] if os.name == 'nt' else ['-G', 'Unix Makefiles']
+    generator = windows_cmake_args(args) if os.name == 'nt' else ['-G', 'Unix Makefiles']
     build = work / 'plugin-build'
     run(['cmake', '-S', feature, '-B', build, *generator,
          '-DSCO_SDK_INCLUDE_DIR=' + str(sdk / 'include'), '-DSCO_WORKFLOW_TESTS=ON',
@@ -146,7 +146,7 @@ def main(args):
     print('Crew SDK proof: PASS (synthetic; not run in game)')
 
 
-if __name__ == '__main__':
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--archive', type=Path, required=True)
     parser.add_argument('--sums', type=Path, required=True)
@@ -158,4 +158,12 @@ if __name__ == '__main__':
     parser.add_argument('--sdk-source', help='Exact full Core source commit for candidate')
     parser.add_argument('--sdk-profile', help='Candidate SDK profile (legacy)')
     parser.add_argument('--sanitizers', action='store_true', help='POSIX ASan/UBSan fixture and guard mutant')
-    main(parser.parse_args())
+    parser.add_argument('--generator', default='Visual Studio 18 2026',
+                        choices=('Visual Studio 16 2019', 'Visual Studio 17 2022', 'Visual Studio 18 2026'),
+                        help='Windows Visual Studio generator for MSBuild dependency proofs')
+    add_windows_toolchain_options(parser)
+    return parser.parse_args(argv)
+
+
+if __name__ == '__main__':
+    main(parse_args())
