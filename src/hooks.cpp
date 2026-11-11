@@ -1,4 +1,5 @@
 #include "hooks.h"
+#include "inventory_filter_dispatch.h"
 #ifndef SCO_ASOP_HOST_COMPOSITION
 #include "fleet.h"
 #endif
@@ -131,23 +132,23 @@ static const char* UnregisteredFilterProperty(uintptr_t self, uintptr_t filter) 
 
 static uint64_t __fastcall Hook_ValidateFilter(uintptr_t self, uintptr_t parent, uintptr_t state, uintptr_t filter,
                                                uintptr_t a5, uintptr_t a6, uintptr_t a7, uintptr_t a8) {
-    const uint64_t r = g_origValidateFilter(self, parent, state, filter, a5, a6, a7, a8);
-    if (r == 1 && parent != 0) {
-        if (const char* prop = UnregisteredFilterProperty(self, filter)) {
-            static volatile LONG reported = 0;
-            if (InterlockedIncrement(&reported) <= 20)
-                Log("[inv] dropping filter on property '%.80s' (not indexed offline)", prop);
-            return 4;
+    return sc_offline::inventory_filter::Dispatch(g_origValidateFilter,
+        [](uint64_t r, uintptr_t self, uintptr_t parent, uintptr_t filter) -> uint64_t {
+        if (r == 1 && parent != 0) {
+            if (const char* prop = UnregisteredFilterProperty(self, filter)) {
+                static volatile LONG reported = 0;
+                if (InterlockedIncrement(&reported) <= 20)
+                    Log("[inv] dropping filter on property '%.80s' (not indexed offline)", prop);
+                return 4;
+            }
         }
-    }
-    if (r == 1 || r == 3) {
         DumpPropertyRegistry(self);
         char desc[256];
         DescribeFilter(filter, desc, sizeof(desc));
         Log("[inv] filter REJECTED (result %llu, parent 0x%llx): %s", static_cast<unsigned long long>(r),
             static_cast<unsigned long long>(parent), desc);
-    }
-    return r;
+        return r;
+    }, self, parent, state, filter, a5, a6, a7, a8);
 }
 
 static uint64_t __fastcall Hook_ValidateProjection(uintptr_t self, uintptr_t state, uintptr_t projection, uintptr_t a4) {

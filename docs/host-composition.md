@@ -72,3 +72,18 @@ It binds read/request/drain operations to the immutable capsule owner only after
 its own successful detailed Prepare. This is a restricted non-native consumer
 milestone, not adoption by the product's legacy Prepare path. The hard-false
 native policy and every refusal boundary above remain in force.
+
+## Inventory filter post-original admission
+
+The inventory filter detour calls the original synchronously with its original
+arguments and no product read lease. For the two results with product
+post-processing, it then tries the same product owner read used by the message
+callback. A refused read returns the original result without product access to
+the borrowed filter or registry. An accepted read remains held through the
+final property/diagnostic log use; admitted behavior is otherwise unchanged.
+Without the G1 host, or without the owner API, the post-processing refuses.
+
+This narrow guard neither proves that the engine's borrowed arguments remain
+valid after the original returns nor resolves a quit that reenters while the
+same thread holds the post-processing lease. It does not count other native
+callbacks or workers, authorize native activation, or establish safe teardown.

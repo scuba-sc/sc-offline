@@ -328,6 +328,12 @@ jobs:
           c++ -std=c++20 -Wall -Wextra -Werror -I external/sco-core/include src/offline_host.cpp tools/offline-host/refusal_test.cpp -o offline_host_refusal_test
           ./offline_host_refusal_test
           ./offline_host_refusal_test exception
+          c++ -std=c++20 -Wall -Wextra -Werror -pthread -I src -I external/sco-core/include -DSCO_OFFLINE_G1_HOST tools/inventory_filter_dispatch_test.cpp -o inventory_filter_dispatch_g1
+          ./inventory_filter_dispatch_g1
+          c++ -std=c++20 -Wall -Wextra -Werror -pthread -I src tools/inventory_filter_dispatch_test.cpp -o inventory_filter_dispatch_no_g1
+          ./inventory_filter_dispatch_no_g1
+          c++ -std=c++20 -Wall -Wextra -Werror -I external/sco-core/include -DSCO_OFFLINE_G1_HOST src/offline_host.cpp tools/offline-host/refusal_test.cpp -o inventory_filter_no_owner
+          ./inventory_filter_no_owner
           c++ -std=c++20 -Wall -Wextra -Werror -I src -I external/sco-core/include tools/offline-host/capability_refusal_test.cpp -o capability_refusal_test
           ./capability_refusal_test
           python3 tools/test_native_preflight_wiring.py
@@ -340,6 +346,9 @@ jobs:
           cmake --build "$RUNNER_TEMP/offline-owned" --parallel 2
           ctest --test-dir "$RUNNER_TEMP/offline-owned" -N | grep -E 'Test +#[0-9]+: owned_capsule_host$' >/dev/null
           ctest --test-dir "$RUNNER_TEMP/offline-owned" -N | grep -E 'Test +#[0-9]+: owned_capsule_after_app_start$' >/dev/null
+          for scenario in inventory_filter_dispatch_g1 inventory_filter_dispatch_no_g1 inventory_filter_no_owner; do
+            ctest --test-dir "$RUNNER_TEMP/offline-owned" -N | grep -E "Test +#[0-9]+: ${scenario}$" >/dev/null
+          done
           for scenario in refusal reentry wrong-thread failed-start options-copy copy copy-negative retained_reap; do
             ctest --test-dir "$RUNNER_TEMP/offline-owned" -N | grep -E "Test +#[0-9]+: host_report_${scenario}$" >/dev/null
           done
@@ -687,7 +696,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $testList = $testJson | ConvertFrom-Json
           $names = @($testList.tests | ForEach-Object { $_.name })
-          foreach ($required in @('owned_capsule_host', 'owned_capsule_after_app_start', 'native_activation_refusal', 'product_registry_refusal', 'host_report_refusal', 'host_report_reentry', 'host_report_wrong-thread', 'host_report_failed-start', 'host_report_options-copy', 'host_report_copy', 'host_report_copy-negative', 'host_report_retained_reap')) {
+          foreach ($required in @('owned_capsule_host', 'owned_capsule_after_app_start', 'native_activation_refusal', 'product_registry_refusal', 'inventory_filter_dispatch_g1', 'inventory_filter_dispatch_no_g1', 'inventory_filter_no_owner', 'host_report_refusal', 'host_report_reentry', 'host_report_wrong-thread', 'host_report_failed-start', 'host_report_options-copy', 'host_report_copy', 'host_report_copy-negative', 'host_report_retained_reap')) {
             if ($required -notin $names) { throw "Missing required fixture: $required" }
           }
           ctest --test-dir "$env:RUNNER_TEMP/offline-owned" -C Release --no-tests=error --output-on-failure
