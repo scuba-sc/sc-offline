@@ -87,3 +87,28 @@ This narrow guard neither proves that the engine's borrowed arguments remain
 valid after the original returns nor resolves a quit that reenters while the
 same thread holds the post-processing lease. It does not count other native
 callbacks or workers, authorize native activation, or establish safe teardown.
+
+## Mission-script hook publication and admission
+
+The mission-script route loads all selected files before publishing its immutable,
+process-retained snapshot and attempting to install the existing XML hook. A
+missing, empty, or unreadable selected file refuses the custom hook and its
+registrations for that session; restart is required to retry. The original XML
+loader remains the fallback. The hook takes an owner read admission before
+examining its published selection and keeps that admission until a replacement
+engine call returns. An installation attempt also requires an owner admission;
+if shutdown closes admission first, it does not write the hook. An installation
+that was already admitted can still overlap closure and must be accounted for
+by a real drain protocol.
+
+These rules protect product-owned backing and count those product uses; they do
+not establish that the game has stopped accessing engine-owned objects or that
+the hook write is atomic with respect to game threads. In particular, the
+existing direct quit route may forward a reentrant quit while a read admission
+is still on the same stack. The lifetime of borrowed engine arguments and
+structured-exception behavior also require actual build-specific evidence. The
+native activation refusal remains in force.
+
+The synthetic mission fixtures exercise publication and admission on both sides
+of the owner boundary. They do not prove engine-object lifetime or native
+teardown safety; in-game behavior remains unrun.

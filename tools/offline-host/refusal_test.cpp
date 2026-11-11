@@ -3,12 +3,15 @@
 // No native reader gate, game image, Windows hook or success callback is modeled.
 #include "../../src/offline_host.h"
 #include "../../src/inventory_filter_dispatch.h"
+#include "../../src/mission_script_route.h"
 #include <cstdio>
 
 namespace gh = sco::game::host;
 namespace {
 int prepareCalls = 0, startCalls = 0, tickCalls = 0, statusCalls = 0, stopCalls = 0;
 gh::Admission Inspect() { return {}; }
+struct MissionScript { const char* game; const char* data; size_t size; };
+void* MissionOriginal(uintptr_t, void* out, const char*, bool) { return out; }
 }
 namespace sco::plugins {
 ModuleOps PlatformModuleOps() { return {}; }
@@ -32,6 +35,16 @@ int main() {
     const auto post = [&](auto, auto, auto, auto) { ++postCalls; return std::uint64_t{4}; };
     const auto filter = sc_offline::inventory_filter::Dispatch(original, post, 1, 2, 3, 4, 5, 6, 7, 8);
     const bool filterRefused = filter == 1 && originalCalls == 1 && postCalls == 0;
+    MissionScript script{"fixture.xml", "x", 1};
+    sc_offline::mission_script::Route<MissionScript, decltype(&MissionOriginal)> route;
+    const bool prepared = route.Prepare(&script, 1, &MissionOriginal, [](auto&) { return true; });
+    int matches = 0, loads = 0, writes = 0, output = 0;
+    const auto match = [&](const char*, const char*) { ++matches; return true; };
+    const auto load = [&](auto, auto, auto, auto, auto) -> void* { ++loads; return nullptr; };
+    const bool missionRefused = prepared &&
+        sc_offline::mission_script::Dispatch(route.Get(), match, load, 1, &output, "fixture.xml", false) == &output &&
+        !sc_offline::mission_script::Install([&] { ++writes; return true; }) &&
+        matches == 0 && loads == 0 && writes == 0;
     gh::Options options;
     options.inspect = Inspect;
     options.quit = gh::QuitPolicy::External;
@@ -48,7 +61,7 @@ int main() {
     const bool after = offline_host::Stop() == sco::Result::Unavailable && !offline_host::RestartRequired() &&
         offline_host::Prepare(options) == sco::Result::Unavailable && offline_host::Start() == sco::Result::Unavailable &&
         offline_host::Stop() == sco::Result::Unavailable && stopCalls == 0 && prepareCalls == 0 && startCalls == 0;
-    const bool ok = before && after && filterRefused;
+    const bool ok = before && after && filterRefused && missionRefused;
     std::printf("offline host native activation refusal: %s\n", ok ? "PASS" : "FAIL");
     return ok ? 0 : 1;
 }
