@@ -76,15 +76,29 @@ case "$platform" in
     ;;
 esac
 build_abs=$(python3 -c '
-import os, sys
+import os, stat, sys
 
 build, *sources = sys.argv[1:]
-if os.path.lexists(build):
+try:
+    os.lstat(build)
+except FileNotFoundError:
+    pass
+except OSError as exc:
+    sys.exit("cannot inspect build path: " + str(exc))
+else:
     sys.exit("build directory already exists")
 build = os.path.realpath(build)
 normalized_build = os.path.normcase(build)
+source_ids = []
 for source in sources:
     source = os.path.normcase(os.path.realpath(source))
+    try:
+        source_stat = os.stat(source)
+    except OSError as exc:
+        sys.exit("cannot inspect source path: " + str(exc))
+    if not stat.S_ISDIR(source_stat.st_mode):
+        sys.exit("source path must be a directory")
+    source_ids.append((source_stat.st_dev, source_stat.st_ino))
     try:
         common = os.path.commonpath((normalized_build, source))
     except ValueError:
@@ -96,6 +110,29 @@ for source in sources:
         raise
     if common == source:
         sys.exit("build directory must be outside both source trees")
+# A spelling comparison alone is insufficient on case-insensitive POSIX file
+# systems. Walk the existing ancestors of the proposed path and compare their
+# file identities to both roots. Missing components are expected; inability to
+# inspect any other component fails closed. This is not a race-free sandbox.
+ancestor = build
+found_ancestor = False
+while True:
+    try:
+        info = os.stat(ancestor)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        sys.exit("cannot inspect build ancestor: " + str(exc))
+    else:
+        found_ancestor = True
+        if (info.st_dev, info.st_ino) in source_ids:
+            sys.exit("build directory must be outside both source trees")
+    parent = os.path.dirname(ancestor)
+    if parent == ancestor:
+        break
+    ancestor = parent
+if not found_ancestor:
+    sys.exit("cannot inspect an existing build ancestor")
 print(build)
 ' "$build_native" "$root_native" "$core_native") || exit 1
 [ "$mode" != --verify-only ] || exit 0
