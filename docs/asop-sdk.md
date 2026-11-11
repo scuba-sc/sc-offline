@@ -4,12 +4,14 @@ The product currently refuses native startup pending a proven reader/worker
 exclusion and drain. ASOP compositions are unavailable too: both
 `SCO_ASOP_HOST_COMPOSITION` and `SCO_ASOP_SELECTION_COMPOSITION` default to OFF,
 and CMake rejects either option until the product has a reviewed nonblocking
-stop request and ordered control-thread drain. The selected core pin
-`d06f9124d6d7d380295ada4bc2af8968b98a051c` returns `Unavailable` from ASOP
-host Start before installing hooks, and its exposed `Stop` is synchronous.
-The core's direct required quit hook calls `BeforeQuit -> StopImpl` without
-dispatching `app::Stop` or `game.exit`, so a `game.exit` subscription alone
-cannot close ASOP on every quit path.
+stop request and ordered control-thread drain. The selected Core pin
+`d33932bc14b85af0caccc4636b42028f44f97710` refuses ASOP host Start
+before installing hooks even when validation and admission pass; invalid or
+disabled configurations may return other results. Its `Stop` is synchronous.
+The direct legacy quit detour requests owner closure and then immediately
+forwards the original call on the same stack; it does not drain the owner.
+The separate `ForwardQuit` helper calls `BeforeQuit`, which invokes `Stop`.
+Neither path proves engine-object lifetime or a safe native drain.
 Neither the pin nor this product enables ASOP gameplay.
 
 `src/asop_shell.*` consumes the game-specific public host-source

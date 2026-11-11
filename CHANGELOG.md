@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Coordinate the development Core source.** Update the embedded host gitlink and paired-source checks to `d33932bc14b85af0caccc4636b42028f44f97710`; rebuild host and consumer kits together. Prior archive and runtime evidence remains historical. Native startup is refused; **not run in game**.
+
 - Flight Ready keyboard fallback uses an owned worker that drains during shutdown; a refused request asks the player to press R.
 
 - **Keep plugin settings drafts on errors.** A failed Save or Reset leaves your edits in place so you can correct or retry them. Windows offscreen fixtures exercise the draft-retention behavior. **Not run in game.**
@@ -14,8 +16,8 @@
 
 - **Stable SDK 2.4.0 package qualification.** The earlier host source and
   standalone plugin archive used sco-core `6106fa36`; the combined archive is
-  checksum- and source-verified against `sdk-v2.4.0`. The current development
-  host instead pins `d06f9124d6d7d380295ada4bc2af8968b98a051c`. Linux tutorial,
+  checksum- and source-verified against `sdk-v2.4.0`. At that qualification the development
+  host pinned `d06f9124d6d7d380295ada4bc2af8968b98a051c`. Linux tutorial,
   Teleport and Quantum package checks pass with synthetic/provider-free evidence.
   Native product startup remains refused; **not run in game**.
 
