@@ -25,6 +25,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include "quantum_test_directory.h"
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -306,8 +307,8 @@ int main(int argc,char** argv) {
     api.has=Has; api.query_service=Query; api.register_command=Register; api.subscribe=Subscribe; api.unsubscribe=Unsubscribe; api.status=Status;
     spatial.size=sizeof(spatial); spatial.find_zone=FindZone;
     widgets.size=sizeof(widgets);widgets.set_panel=Panel;widgets.remove_panel=Remove;
-    const auto root=std::filesystem::temp_directory_path()/"sco-quantum-workflow-test";
-    std::filesystem::remove_all(root); std::filesystem::create_directories(root); data_root=root.string();
+    static QuantumTestDirectory directory("sco-quantum-workflow-test");
+    const auto root=directory.path(); data_root=root.string();
     { std::ofstream(root/"locations.txt")<<"Raw | Ignored base | wrong_zone | 999\n"; }
     int identity=1; auto* self=reinterpret_cast<sco_plugin*>(&identity);
     assert(load(&api,self)==SCO_OK && panels && ticks.size()==1 && enables==0 && holds==0);
@@ -358,6 +359,6 @@ int main(int argc,char** argv) {
 #else
     dlclose(module);
 #endif
-    std::filesystem::remove_all(root);
+    assert(directory.cleanup());
     std::puts("quantum actual-module PASS: legacy commands/Travel, no startup writes, absent/partial/null refusal, bounded controls, capability loss, game.relocation switch/capability/request/tick tracking, widgets and unload/reload; synthetic only");
 }

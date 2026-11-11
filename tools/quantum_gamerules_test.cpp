@@ -21,6 +21,7 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include "quantum_test_directory.h"
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -111,7 +112,8 @@ int main(int argc,char** argv) {
     const auto unload=reinterpret_cast<void(*)()>(dlsym(module,"sco_plugin_unload"));
 #endif
     Check(load&&unload,"public exports");
-    const auto path=std::filesystem::temp_directory_path()/"sco-quantum-gamerules-test";std::filesystem::remove_all(path);std::filesystem::create_directories(path);root=path.string();
+    static QuantumTestDirectory directory("sco-quantum-gamerules-test");
+    const auto path=directory.path();root=path.string();
     int identity=0;owner=reinterpret_cast<sco_plugin*>(&identity);
     sco_api api{};api.size=sizeof(api);api.major=SCO_API_MAJOR;api.minor=SCO_API_MINOR;api.has=Has;api.query_service=Query;api.register_command=Register;api.subscribe=Subscribe;api.unsubscribe=Unsubscribe;
     settings.size=sizeof(settings);settings.get_bool=GetBool;settings.get_string=GetString;spatial.size=sizeof(spatial);spatial.find_zone=FindZone;
@@ -143,5 +145,5 @@ int main(int argc,char** argv) {
 #else
     dlclose(module);
 #endif
-    std::filesystem::remove_all(path);std::printf("quantum GameRules presentation: %u checks PASS; actual module, synthetic public providers, no game\n",checks);
+    Check(directory.cleanup(),"temporary directory cleanup");std::printf("quantum GameRules presentation: %u checks PASS; actual module, synthetic public providers, no game\n",checks);
 }

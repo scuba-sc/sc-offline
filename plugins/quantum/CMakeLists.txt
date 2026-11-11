@@ -74,6 +74,13 @@ if(SCO_QUANTUM_TEST)
     target_compile_options(quantum-gamerules-test PRIVATE -Wall -Wextra -Werror)
   endif()
   add_test(NAME quantum-gamerules COMMAND quantum-gamerules-test $<TARGET_FILE:sc-offline-quantum>)
+  find_package(Python3 COMPONENTS Interpreter QUIET)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME quantum-concurrency COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/../../tools/quantum_temp_concurrency_test.py"
+      $<TARGET_FILE:quantum-workflow-test> $<TARGET_FILE:quantum-content-test>
+      $<TARGET_FILE:quantum-gamerules-test> $<TARGET_FILE:sc-offline-quantum>)
+  endif()
 endif()
 configure_file(plugin.ini "${CMAKE_BINARY_DIR}/plugins/quantum/plugin.ini" COPYONLY)
 install(TARGETS sc-offline-quantum LIBRARY DESTINATION data/plugins/quantum COMPONENT quantum

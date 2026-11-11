@@ -55,7 +55,7 @@ def prove(args, spec):
         shutil.copytree(ROOT / 'plugins' / folder, source / 'plugins' / folder)
     (source / 'tools').mkdir()
     extra_tests = spec.get('extra_tests', ())
-    for test_source in [spec['test_source']] + [test[0] for test in extra_tests]:
+    for test_source in [spec['test_source']] + [test[0] for test in extra_tests] + list(spec.get('extra_test_files', ())):
         shutil.copy2(ROOT / 'tools' / test_source, source / 'tools' / test_source)
     build = work / 'plugin-build'
     configure = ['cmake', '-S', source / 'plugins' / feature, '-B', build,
@@ -72,9 +72,13 @@ def prove(args, spec):
             run(['cmake', '--build', build, '--config', 'Release', '--target', test_target], work)
 
     def workflow():
-        names = [spec['test_name']] + [test[2] for test in extra_tests]
-        print(run(['ctest', '--test-dir', build, '-C', 'Release', '-R', '^(' + '|'.join(names) + ')$',
-                   '--output-on-failure', '-V'], work).stdout)
+        names = [spec['test_name']] + [test[2] for test in extra_tests] + list(spec.get('extra_ctests', ()))
+        output = run(['ctest', '--test-dir', build, '-C', 'Release', '-R', '^(' + '|'.join(names) + ')$',
+                     '--output-on-failure', '-V'], work).stdout
+        for name in spec.get('extra_ctests', ()):
+            if name not in output:
+                raise AssertionError('Required synthetic test not registered: ' + name)
+        print(output)
     build_all()
     workflow()
     trace = trace_windows if os.name == 'nt' else trace_posix
@@ -115,9 +119,13 @@ def prove(args, spec):
              '-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined'], work)
         for test_target in [spec['test_target']] + [test[1] for test in extra_tests]:
             run(['cmake', '--build', sanitized, '--target', test_target], work)
-        names = [spec['test_name']] + [test[2] for test in extra_tests]
-        print(run(['ctest', '--test-dir', sanitized, '-R', '^(' + '|'.join(names) + ')$',
-                   '--output-on-failure', '-V'], work).stdout)
+        names = [spec['test_name']] + [test[2] for test in extra_tests] + list(spec.get('extra_ctests', ()))
+        output = run(['ctest', '--test-dir', sanitized, '-R', '^(' + '|'.join(names) + ')$',
+                     '--output-on-failure', '-V'], work).stdout
+        for name in spec.get('extra_ctests', ()):
+            if name not in output:
+                raise AssertionError('Required synthetic test not registered: ' + name)
+        print(output)
         cpp = source / 'plugins' / feature / f'{feature}.cpp'
         original = cpp.read_text()
         mtime = cpp.stat().st_mtime_ns
