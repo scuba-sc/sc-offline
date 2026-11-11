@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix paired-source qualification to refuse build paths inside either source tree on Windows; verify-only does not create the proposed path. Not run in game.
+
 - Exercise the standalone ASOP selection file adapter in Windows host CI, including fault-injection fixtures; native composition remains refused and was not run in game.
 
 - Fix the TitanLink SDK proof test fixture when the temporary directory uses a symlink.

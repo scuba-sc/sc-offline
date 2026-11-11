@@ -15,6 +15,11 @@ directory outside both source trees:
 tools/transition-pair/run.sh CORE_SOURCE BUILD_DIR OFFLINE_COMMIT OFFLINE_TREE
 ```
 
+On Windows, run this with Git Bash and `cygpath` available. The runner refuses
+nonempty `MSYS_NO_PATHCONV` or `MSYS2_ARG_CONV_EXCL` because Git and CMake also
+receive shell paths. It converts all paths for the selected Python interpreter
+before comparing the build directory with both source roots.
+
 `--verify-only` checks identities, source cleanliness, and build-directory
 containment without building or creating the directory. The runner checks the
 CMake cache and file-API target sources and dependencies after each configure,

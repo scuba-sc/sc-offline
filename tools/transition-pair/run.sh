@@ -13,6 +13,16 @@ for hash in "$offline_commit" "$offline_tree"; do
 done
 root=$(cd "$(dirname "$0")/../.." && pwd -P)
 core=$(cd "$core" && pwd -P)
+platform=$(uname -s)
+case "$platform" in
+  MINGW*|MSYS*|CYGWIN*)
+    # Git and CMake also receive shell paths, so do not proceed when the
+    # caller has disabled their automatic conversion.
+    [ -z "${MSYS_NO_PATHCONV:-}" ] && [ -z "${MSYS2_ARG_CONV_EXCL:-}" ] || {
+      echo 'MSYS argument conversion must be enabled' >&2; exit 1;
+    }
+    ;;
+esac
 check_root() {
   local dir=$1 top
   top=$(git -C "$dir" rev-parse --show-toplevel) || return 1
@@ -46,12 +56,48 @@ git -C "$root" merge-base --is-ancestor 259ee6284d4c37f2eafa32f668ff29f4bc266844
 check_no_ignored "$root"
 printf 'offline=%s tree=%s\ncore=%s tree=%s\ndevelopment_gitlink=d33932bc14b85af0caccc4636b42028f44f97710\n' \
   "$offline_commit" "$offline_tree" d33932bc14b85af0caccc4636b42028f44f97710 c7563a009994c07598edae124608053dde85a92a
-# Resolve symlinked parents before any mkdir, including in verify-only mode.
-[ ! -e "$build" ] || { echo 'build directory already exists' >&2; exit 1; }
-build_abs=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$build")
-for source in "$root" "$core"; do
-  case "$build_abs/" in "$source/"*) echo 'build directory must be outside both source trees' >&2; exit 1;; esac
-done
+# Convert explicitly instead of relying on MSYS argument conversion, which can
+# be disabled by the caller. Then resolve all paths in the same Python process
+# before any mkdir, including in verify-only mode.
+build_native=$build; root_native=$root; core_native=$core
+case "$platform" in
+  MINGW*|MSYS*|CYGWIN*)
+    command -v cygpath >/dev/null || { echo 'cygpath required for Windows path checks' >&2; exit 1; }
+    # Cygwin/MSYS Python may use POSIX rather than Windows path semantics.
+    python_os=$(python3 -c 'import os; print(os.name)') || exit 1
+    case "$python_os" in
+      nt) path_option=-w ;;
+      posix) path_option=-u ;;
+      *) echo 'unsupported Python path semantics' >&2; exit 1 ;;
+    esac
+    build_native=$(cygpath "$path_option" -- "$build") || exit 1
+    root_native=$(cygpath "$path_option" -- "$root") || exit 1
+    core_native=$(cygpath "$path_option" -- "$core") || exit 1
+    ;;
+esac
+build_abs=$(python3 -c '
+import os, sys
+
+build, *sources = sys.argv[1:]
+if os.path.lexists(build):
+    sys.exit("build directory already exists")
+build = os.path.realpath(build)
+normalized_build = os.path.normcase(build)
+for source in sources:
+    source = os.path.normcase(os.path.realpath(source))
+    try:
+        common = os.path.commonpath((normalized_build, source))
+    except ValueError:
+        # On Windows, absolute paths on different drives are disjoint.
+        build_drive = os.path.splitdrive(normalized_build)[0]
+        source_drive = os.path.splitdrive(source)[0]
+        if os.name == "nt" and build_drive and source_drive and build_drive != source_drive:
+            continue
+        raise
+    if common == source:
+        sys.exit("build directory must be outside both source trees")
+print(build)
+' "$build_native" "$root_native" "$core_native") || exit 1
 [ "$mode" != --verify-only ] || exit 0
 for cmd in cmake ctest; do command -v "$cmd" >/dev/null || { echo "$cmd not found" >&2; exit 2; }; done
 # Never reuse a CMake cache, alter source trees, or remove existing files.
