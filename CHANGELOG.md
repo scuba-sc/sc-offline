@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Prepare mission scripts before hook installation.** Selected script bytes are loaded before publication; unreadable or empty inputs refuse the custom hook, and owner admission guards installation and replacement calls. Synthetic host fixtures exercise these paths; native activation stays refused and gameplay remains unrun.
+
 - **Preserve tutorial source encoding.** SDK tutorial source copies use UTF-8 explicitly; a prepare-only regression passed with Python UTF-8 mode disabled. This is not an SDK archive build or game acceptance.
 
 - Group primary and secondary loadout choices in two columns with independent type, weapon and attachment filters; filtering changes UI selections only. Based on [#198](https://github.com/scuba-sc/sc-offline/pull/198) by [@sKeepers](https://github.com/sKeepers).

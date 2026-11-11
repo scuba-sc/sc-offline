@@ -3,10 +3,12 @@
 #include "spawner.h"
 #include "teleport.h"
 #include "hooks.h"
+#include "mission_script_route.h"
 #include "menu.h"
 #include "sco/game/missions.h"
 #include "world_caps.h"
 #include <share.h>
+#include <atomic>
 #include <cstring>
 
 using CreateMissionFn = void(__fastcall*)(const void* request);
@@ -16,7 +18,7 @@ static uintptr_t* g_missionSettings = nullptr;
 
 using ConsoleCmdFn = void(__fastcall*)(void* args);
 static ConsoleCmdFn g_loadAllMissions = nullptr;
-static bool         g_scriptsLoaded = false;
+static std::atomic_flag g_scriptsLoadStarted = ATOMIC_FLAG_INIT;
 static int __fastcall NoArgCount(void*) { return 1; }
 static const char* __fastcall NoArg(void*, int) { return "mission_load_all"; }
 static void* const kNoArgsVtbl[] = { nullptr, reinterpret_cast<void*>(&NoArgCount), reinterpret_cast<void*>(&NoArg), nullptr };
@@ -32,11 +34,11 @@ constexpr int    kMaxScripts = 1024;
 struct Script { char game[200]; char disk[MAX_PATH]; char* data; size_t size; };
 static Script*       g_scripts = nullptr;
 static int           g_scriptCount = 0;
-static bool          g_scriptsAdded = false;
+static std::atomic<bool> g_scriptsAdded{false};
 static uintptr_t*    g_subsumption = nullptr;
 static uintptr_t*    g_system = nullptr;
 static FileChangeFn  g_fileChange = nullptr;
-static LoadXmlFileFn g_loadXmlFileOrig = nullptr;
+static sc_offline::mission_script::Route<Script, LoadXmlFileFn> g_scriptRoute;
 
 
 static bool ScriptsFolder(char* dir, size_t n) { return DataFilePath(dir, static_cast<DWORD>(n), "scripts"); }
@@ -82,13 +84,11 @@ static bool ReadScript(Script& s) {
 }
 
 static void* __fastcall LoadXmlFileHook(uintptr_t system, void* out, const char* path, bool reuseStrings) {
-    for (int i = 0; path && i < g_scriptCount; ++i) {
-        Script& s = g_scripts[i];
-        if (_stricmp(path, s.game)) continue;
-        if (!ReadScript(s)) break;
-        return VCall<void*>(system, kLoadXmlBufferSlot, out, static_cast<const char*>(s.data), s.size, reuseStrings);
-    }
-    return g_loadXmlFileOrig(system, out, path, reuseStrings);
+    return sc_offline::mission_script::Dispatch(g_scriptRoute.Get(),
+        [](const char* a, const char* b) { return _stricmp(a, b) == 0; },
+        [](uintptr_t target, void* result, const char* bytes, size_t size, bool reuse) {
+            return VCall<void*>(target, kLoadXmlBufferSlot, result, bytes, size, reuse);
+        }, system, out, path, reuseStrings);
 }
 
 static void ScriptId(const Script& s, char id[37]) {
@@ -140,20 +140,26 @@ static void AddOurScripts() {
     if (!library) { Log("[missions] %s", why); return; }
 
     uint8_t* slot = reinterpret_cast<uint8_t*>(Rd<uintptr_t>(system) + kLoadXmlFileSlot);
-    if (!g_loadXmlFileOrig) {
-        g_loadXmlFileOrig = reinterpret_cast<LoadXmlFileFn>(Rd<uintptr_t>(reinterpret_cast<uintptr_t>(slot)));
+    if (!g_scriptRoute.Get()) {
+        const auto original = reinterpret_cast<LoadXmlFileFn>(Rd<uintptr_t>(reinterpret_cast<uintptr_t>(slot)));
+        // Complete every read before exposing the hook. Do not retry a partial
+        // publication or free its backing after an uncertain slot write.
+        if (!g_scriptRoute.Prepare(g_scripts, static_cast<size_t>(g_scriptCount), original, ReadScript)) {
+            Log("[missions] script snapshot incomplete; custom script hook remains unavailable until restart");
+            return;
+        }
         const uintptr_t hook = reinterpret_cast<uintptr_t>(&LoadXmlFileHook);
         DWORD err = 0;
-        if (!WriteCode(slot, reinterpret_cast<const uint8_t*>(&hook), sizeof(hook), err)) {
-            Log("[missions] couldn't hook LoadXmlFromFile (%lu)", err);
-            g_loadXmlFileOrig = nullptr;
+        if (!sc_offline::mission_script::Install([&] {
+                return WriteCode(slot, reinterpret_cast<const uint8_t*>(&hook), sizeof(hook), err);
+            })) {
+            Log("[missions] script hook refused or couldn't be installed (%lu)", err);
             return;
         }
     }
     static char ids[kMaxScripts][37];
     static bool done[kMaxScripts];
     for (int i = 0; i < g_scriptCount; ++i) {
-        ReadScript(g_scripts[i]);
         ScriptId(g_scripts[i], ids[i]);
         done[i] = false;
     }
@@ -179,20 +185,19 @@ static void AddOurScripts() {
             Log("[missions] fault while adding script %s", g_scripts[next].game);
         }
     }
-    g_scriptsAdded = added == g_scriptCount;
+    g_scriptsAdded.store(added == g_scriptCount, std::memory_order_release);
     Log("[missions] added %d of our %d scripts to the game's script library (from %s)", added, g_scriptCount, dir);
 }
 
 bool HaveScript(const char* path) {
-    if (!g_scriptsAdded || !path) return false;
+    if (!g_scriptsAdded.load(std::memory_order_acquire) || !path) return false;
     for (int i = 0; i < g_scriptCount; ++i)
         if (!_stricmp(g_scripts[i].game, path)) return true;
     return false;
 }
 
 static void LoadMissionScripts() {
-    if (g_scriptsLoaded) return;
-    g_scriptsLoaded = true;
+    if (g_scriptsLoadStarted.test_and_set(std::memory_order_acq_rel)) return;
     if (!g_loadAllMissions) { Log("[missions] mission_load_all not found; the game can't find any mission"); return; }
     __try { AddOurScripts(); } __except (EXCEPTION_EXECUTE_HANDLER) { Log("[missions] fault while adding our scripts"); }
     __try {
