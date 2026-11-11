@@ -106,9 +106,10 @@ int main(int argc,char** argv) {
 #else
     (void)argc;(void)argv;
 #endif
-    char tmp[MAX_PATH]{};CHECK(GetTempPathA(MAX_PATH,tmp)>0);
+    char tmp[MAX_PATH]{};const DWORD tmp_size=GetTempPathA(MAX_PATH,tmp);
+    if(!tmp_size || tmp_size>=MAX_PATH) {std::fprintf(stderr,"Cannot resolve temporary root\n");return 1;}
     root=std::string(tmp)+"sco-asop-file-test-"+std::to_string(GetCurrentProcessId());
-    CHECK(CreateDirectoryA(root.c_str(),nullptr)!=0);
+    if(!CreateDirectoryA(root.c_str(),nullptr)) {std::fprintf(stderr,"Cannot create exclusive temporary root\n");return 1;}
     offline::asop_selection::FixedFile file;CHECK(file.Initialize());auto adapter=file.Adapter();
     S::Document absent,saved,current;
     const auto path=root+"\\asop_ships.txt";

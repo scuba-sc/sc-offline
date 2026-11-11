@@ -19,7 +19,8 @@ preprocesses the two optional implementation files out. Selecting either ASOP
 composition now refuses configuration before header checks because no reviewed
 product stop/drain order exists. CI exercises the spawn selection workflow,
 environment policy, notice retry model and refusal gates using synthetic
-fixtures. It does not compile the Windows file adapter or the combined Offline
-host composition fixture. Those checks do not establish native terminal
+fixtures. The Windows pinned-host test job also builds and runs the standalone
+file adapter test in production and fault-hook variants. It does not compile the
+combined Offline host composition fixture. Those checks do not establish native terminal
 behavior. This preflight does not publish an SDK package or enable product
 startup.
