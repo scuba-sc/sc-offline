@@ -24,10 +24,10 @@ what the build compiles in and where it comes from. It is not a legal opinion.
 The plugin DLLs (`data/plugins/*/`) are built from `plugins/` against sco-core's SDK
 headers; NPC and inspector are built against the published SDK archive.
 
-At this revision `external/sco-core` is pinned to `d06f9124d6d7d380295ada4bc2af8968b98a051c`
+At this revision `external/sco-core` is pinned to `d33932bc14b85af0caccc4636b42028f44f97710`
 (coordinated development source, not published SDK 2.4.0). sco-core keeps its own
-[`THIRD_PARTY_NOTICES.md`](https://github.com/scuba-sc/sco-core/blob/d06f9124d6d7d380295ada4bc2af8968b98a051c/THIRD_PARTY_NOTICES.md)
-and [`docs/legal/third-party-inventory.md`](https://github.com/scuba-sc/sco-core/blob/d06f9124d6d7d380295ada4bc2af8968b98a051c/docs/legal/third-party-inventory.md),
+[`THIRD_PARTY_NOTICES.md`](https://github.com/scuba-sc/sco-core/blob/d33932bc14b85af0caccc4636b42028f44f97710/THIRD_PARTY_NOTICES.md)
+and [`docs/legal/third-party-inventory.md`](https://github.com/scuba-sc/sco-core/blob/d33932bc14b85af0caccc4636b42028f44f97710/docs/legal/third-party-inventory.md),
 with each component's source and file hashes. Lua, SQLite and toml++ are not in this
 repository's own tree; they reach the release only through that submodule.
 

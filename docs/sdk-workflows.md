@@ -52,7 +52,7 @@ plugin ABI 1.1 and Star Citizen game pack 0.8.0 are distinct versions. The
 published release manifest binds the archive to source
 `6106fa3639cbcc28f78a1ded8de2707de019f4d3`; its exact profile hashes are in
 [SDK coordinates](sdk-candidate.md). The embedded development host instead uses Core source
-`d06f9124d6d7d380295ada4bc2af8968b98a051c`; the stable archive and its
+`d33932bc14b85af0caccc4636b42028f44f97710`; the stable archive and its
 recorded checks are historical and do not certify this development pairing. The
 stable release and all synthetic checks remain separate from gameplay acceptance.
 
