@@ -16,6 +16,11 @@ not Windows or game acceptance. The earlier MCP discovery transcript in the
 and in-game acceptance remain **NOT RUN**. In this cloud image `tools/check.sh`
 stops because MinGW-w64 headers are not installed.
 
+The tutorial copier reads and writes source as UTF-8 explicitly. A Windows
+prepare-only regression with Python UTF-8 mode disabled passed and checked that
+transformed non-ASCII content survived; it did not build an SDK archive or
+exercise the game.
+
 The newer [loadout/SQ42 consumer](../plugins/loadout/README.md) uses G6 typed
 equip, G7 **read-only** cvars, public copied content and optional widgets. Their
 headers ship in the pinned published SDK 2.4.0 (SDK 2.0.0 lacked them). Its build

@@ -55,7 +55,7 @@ def main():
     for name in files:
         destination = source / owned(name)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(owned((ROOT / name).read_text()))
+        destination.write_text(owned((ROOT / name).read_text(encoding='utf-8')), encoding='utf-8')
     # Preserve the project license for independently edited/copied source.
     shutil.copy2(ROOT / 'LICENSE', source / 'LICENSE')
     if args.prepare_only:
