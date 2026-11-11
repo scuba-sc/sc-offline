@@ -31,7 +31,9 @@ class WindowsGeneratorProofs(unittest.TestCase):
     def test_titanlink_rejects_an_empty_individual_msvc_include_trace(self):
         module = load('check_titanlink_sdk.py')
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            # MSVC traces are resolved before containment checks. Match that
+            # physical root when the system temporary directory is a symlink.
+            root = Path(temp).resolve()
             source, sdk, compiler, build = (root / name for name in ('source', 'sdk', 'compiler', 'build'))
             (source / 'plugins/titanlink').mkdir(parents=True)
             (sdk / 'include').mkdir(parents=True)
@@ -52,9 +54,36 @@ class WindowsGeneratorProofs(unittest.TestCase):
             with patch.object(module, 'ROOT', root / 'unrelated-checkout'), contextlib.redirect_stdout(io.StringIO()):
                 module.trace_windows(build, source, sdk, {header.resolve()})
                 path, src = rows[1]
+                private_header = source / 'plugins/private.h'
+                private_header.touch()
+                path.write_text(json.dumps({'Data': {'Source': str(src), 'Includes': [str(private_header)]}}))
+                with self.assertRaisesRegex(AssertionError, 'Non-public titanlink dependency'):
+                    module.trace_windows(build, source, sdk, {header.resolve()})
                 path.write_text(json.dumps({'Data': {'Source': str(src), 'Includes': []}}))
                 with self.assertRaisesRegex(AssertionError, 'Empty MSVC include trace'):
                     module.trace_windows(build, source, sdk, {header.resolve()})
+
+    def test_titanlink_trace_fixture_accepts_a_noncanonical_temporary_root(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            (root / 'existing').mkdir()
+            (root / 'fixture').mkdir()
+            alias = root / 'existing' / '..' / 'fixture'
+            with patch.object(tempfile, 'TemporaryDirectory', return_value=contextlib.nullcontext(str(alias))):
+                self.test_titanlink_rejects_an_empty_individual_msvc_include_trace()
+
+    def test_titanlink_trace_fixture_accepts_a_symlinked_temporary_root(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            physical = root / 'physical'
+            physical.mkdir()
+            alias = root / 'alias'
+            try:
+                alias.symlink_to(physical, target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f'directory symlink unavailable: {exc}')
+            with patch.object(tempfile, 'TemporaryDirectory', return_value=contextlib.nullcontext(str(alias))):
+                self.test_titanlink_rejects_an_empty_individual_msvc_include_trace()
 
     def test_plugin_and_checker_receive_explicit_or_default_settings(self):
         files = ['check_' + n + '_sdk.py' for n in
