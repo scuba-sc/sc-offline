@@ -4,6 +4,8 @@
 
 - **Preserve tutorial source encoding.** SDK tutorial source copies use UTF-8 explicitly; a prepare-only regression passed with Python UTF-8 mode disabled. This is not an SDK archive build or game acceptance.
 
+- Group primary and secondary loadout choices in two columns with independent type, weapon and attachment filters; filtering changes UI selections only. Based on [#198](https://github.com/scuba-sc/sc-offline/pull/198) by [@sKeepers](https://github.com/sKeepers).
+
 - **Stable SDK 2.4.0 package qualification.** The earlier host source and
   standalone plugin archive used sco-core `6106fa36`; the combined archive is
   checksum- and source-verified against `sdk-v2.4.0`. The current development
