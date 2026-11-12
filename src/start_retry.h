@@ -3,6 +3,28 @@
 #include <cstdint>
 
 namespace sc_offline {
+enum class StartDiagnosticAction { None, Refused, Recovered };
+
+// Only controls log emission. Every retry must still perform a fresh admission
+// inspection, even while an identical refusal is being suppressed.
+class StartDiagnostics {
+public:
+    StartDiagnosticAction Observe(bool started, int32_t result) noexcept {
+        if (started) {
+            if (!refused_) return StartDiagnosticAction::None;
+            refused_ = false;
+            return StartDiagnosticAction::Recovered;
+        }
+        if (refused_ && result == last_) return StartDiagnosticAction::None;
+        refused_ = true;
+        last_ = result;
+        return StartDiagnosticAction::Refused;
+    }
+private:
+    int32_t last_ = 0;
+    bool refused_ = false;
+};
+
 // Limit fresh admission inspections while the host remains Prepared. Unsigned elapsed
 // arithmetic permits GetTickCount to wrap; leaving Prepared resets the next attempt.
 class StartRetry {

@@ -506,7 +506,12 @@ static void StartHostKit() {
     InvalidateEvidence(); // Start re-inspects: no positive reading carried over from Prepare
     const sco::Result result = offline_host::Start();
     g_hostKitStarted = result == sco::Result::Ok;
-    if (!g_hostKitStarted) Log("[app] start refused: %s", sco::ResultName(result));
+    static sc_offline::StartDiagnostics diagnostics;
+    const auto diagnostic = diagnostics.Observe(g_hostKitStarted, static_cast<int32_t>(result));
+    if (diagnostic == sc_offline::StartDiagnosticAction::Refused)
+        Log("[app] start refused: %s", sco::ResultName(result));
+    else if (diagnostic == sc_offline::StartDiagnosticAction::Recovered)
+        Log("[app] start recovered after refusal");
     if (g_hostKitStarted) {
         const auto deaths = sco::Subscribe(&kContractsOwner, SC_GAME_EVENT_ACTOR_DIED, OnContractActorDied, nullptr);
         if (deaths != sco::Result::Ok)

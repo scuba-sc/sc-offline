@@ -5,6 +5,20 @@
 #include <cstdint>
 
 int main() {
+    // The diagnostic decision must not cache admission or prevent any retry.
+    using Action = sc_offline::StartDiagnosticAction;
+    sc_offline::StartDiagnostics diagnostic;
+    assert(diagnostic.Observe(true, 0) == Action::None);
+    assert(diagnostic.Observe(false, 1) == Action::Refused);
+    for (int i = 0; i < 11494; ++i)
+        assert(diagnostic.Observe(false, 1) == Action::None);
+    assert(diagnostic.Observe(false, 2) == Action::Refused);
+    assert(diagnostic.Observe(false, 2) == Action::None);
+    assert(diagnostic.Observe(false, 1) == Action::Refused);
+    assert(diagnostic.Observe(true, 0) == Action::Recovered);
+    assert(diagnostic.Observe(true, 0) == Action::None);
+    assert(diagnostic.Observe(false, 1) == Action::Refused);
+
     sc_offline::StartRetry retry;
     int attempts = 0;
     auto start = [&] { ++attempts; };
@@ -56,5 +70,18 @@ int main() {
         session_retry.Tick(phase == Phase::Prepared, 1500, inspect_and_start);
         assert(inspections == 2 && starts == 1); // repeated stop/messages do not restart
     }
+    sc_offline::StartRetry observed_retry;
+    sc_offline::StartDiagnostics observed_diagnostic;
+    unsigned inspections = 0, refusals = 0, recoveries = 0;
+    for (uint32_t now = 0; now <= 2500; now += 500) {
+        observed_retry.Tick(true, now, [&] {
+            ++inspections;
+            const bool admitted = inspections == 6;
+            const auto action = observed_diagnostic.Observe(admitted, admitted ? 0 : 1);
+            if (action == Action::Refused) ++refusals;
+            if (action == Action::Recovered) ++recoveries;
+        });
+    }
+    assert(inspections == 6 && refusals == 1 && recoveries == 1);
     std::puts("host start retry: cadence, phase reset and clock wrap passed");
 }
