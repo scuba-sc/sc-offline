@@ -105,6 +105,19 @@ async function runScenario(mock, cycle) {
       await invoke('inspector.stats', [0], 'UNAVAILABLE');
       const panel = await call('widgets.get', { id: 'inspector.main' });
       assert.match(JSON.stringify(panel), /unavailable/);
+      // Reads use the Inspector's real plugin owner; definitions remain available
+      // independently of the synthetic GameRules read capability.
+      await call('mock_game.caps.set', { name: 'game.gamerules.read', ready: true });
+      assert.match(await invoke('inspector.refresh'), /generation=3.*gamerules=available/);
+      assert.match(await invoke('inspector.gamerules', [2]), /field=quantum_travel_allowed value=1/);
+      assert.match(await invoke('inspector.gamerules', [3]), /field=quantum_boost_allowed value=0/);
+      await call('mock_game.caps.set', { name: 'game.gamerules.read', ready: false });
+      assert.match(await invoke('inspector.refresh'), /generation=4.*gamerules=unavailable/);
+      await invoke('inspector.gamerules', [2], 'UNAVAILABLE');
+      assert.match(await invoke('inspector.params', [10]), /name=overrideRespawnTimer.*type=float/);
+      await call('mock_game.caps.set', { name: 'game.gamerules.read', ready: true });
+      assert.match(await invoke('inspector.refresh'), /generation=5.*gamerules=available/);
+      assert.match(await invoke('inspector.gamerules', [9]), /field=boost_group_distance_threshold value=2500/);
       await assert.rejects(call('plugins.invoke', { name: 'inspector.inventory', args: ['0'] }),
         error => error.code === -32602);
       await invoke('inspector.inventory', [-1], 'BAD_ARG');
