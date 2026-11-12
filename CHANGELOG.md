@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Pair the build-200 development SDK.** Advance the local Core gitlink to `4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd` and record the matching unpublished `2.4.1-dev.3` archive identities. Static signature scans and synthetic checks do not establish gameplay or native activation.
+
 - Close the focused menu on Escape release, following [#216](https://github.com/scuba-sc/sc-offline/issues/216) by [@sKeepers](https://github.com/sKeepers). Synthetic input tests only; **not run in game**.
 
 - **Pair the local SDK 2.4.1 development checkpoint.** Advance the embedded Core source to `248d2a65ff979909695ece68ec8a0b71cbf26172` and record the matching `2.4.1-dev.2` plugin/host archive identities. Stable SDK defaults and earlier receipts remain separate. Native startup and ASOP composition remain refused; **not run in game**.

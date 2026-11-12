@@ -3,8 +3,8 @@
 This development-only pairing checks the product's `external/sco-core` gitlink
 against the selected development Core source and selects that same source through
 the existing `SCO_HOST_SOURCE_DIR` mechanism. Core source is
-`248d2a65ff979909695ece68ec8a0b71cbf26172`, tree
-`16bfa4183ef41f84293e9fc02f3d90afcce3f0ec`. This local checkpoint combines the reviewed lifecycle/SDK stack with storage metadata, copied diagnostic source sections and additive widget event tags. Its unpublished `2.4.1-dev.2` archives have distinct identities recorded in [SDK coordinates](../../docs/sdk-candidate.md). Earlier pairing results do not qualify this new commit. The offline branch includes
+`4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd`, tree
+`b80a97a9af8d19c447399922fa0664ecc22d4190`. This local checkpoint combines the reviewed lifecycle/SDK stack with storage metadata, copied diagnostic source sections and additive widget event tags. Its unpublished `2.4.1-dev.3` archives have distinct identities recorded in [SDK coordinates](../../docs/sdk-candidate.md). The 197/200 signature scans are static only; hauling semantics and gameplay remain unverified. Earlier pairing results do not qualify this new commit. The offline branch includes
 `259ee6284d4c37f2eafa32f668ff29f4bc266844`; the caller must supply the exact
 paired offline commit and tree from the accompanying identity record.
 

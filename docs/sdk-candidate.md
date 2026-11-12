@@ -25,13 +25,31 @@ source and byte-compared with the published release assets.
 
 ## Current coordinated development source
 
-The product gitlink selects Core `248d2a65ff979909695ece68ec8a0b71cbf26172`, tree
-`16bfa4183ef41f84293e9fc02f3d90afcce3f0ec`. This immutable local checkpoint combines
-the reviewed lifecycle/SDK stack with the additive storage metadata, copied
-Profile/Storage diagnostic sections and widget event-tag packet. It is
-unpublished; hosted fetch and consumer CI availability are not established.
+The product gitlink selects local Core `4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd`, tree `b80a97a9af8d19c447399922fa0664ecc22d4190`.
+This unpublished `2.4.1-dev.3` checkpoint adds the build-200 signature and
+metadata candidate to the earlier lifecycle, storage, diagnostics and widget
+work. Hosted fetch and consumer CI availability are not established.
 
-The matching source-bound `2.4.1-dev.2` archive coordinates are:
+| Profile | Development archive | SHA-256 |
+|---|---|---|
+| Combined plugin SDK (`legacy`) | `sco-sdk-2.4.1-dev.3.zip` | `f42b481269de82dc3c3c890e9311616335f5817cfb78a7a57b66b6cedc984a7b` |
+| Core SDK | `sco-sdk-core-2.4.1-dev.3.zip` | `197e6c3359d6ee6344bd7efe7399e7c81844fc0430c60bb84eedd74aa424d9da` |
+| Core source | `sco-sdk-core-source-2.4.1-dev.3.zip` | `80933d1755358af9aaea8c4a63451c67d29dd674392cb7b56692ca404fa6afe4` |
+| Game overlay | `sco-sdk-game-sc-0.8.1-sdk-2.4.1-dev.3.zip` | `0951be8668bdafbbeb23a1e3dbeb6a71e9abdfc555286f422c23f769d8fc5905` |
+| Host source | `sco-sdk-host-source-sc-2.4.1-dev.3.zip` | `8964e2fec409f2622024630caa4c3c00a0c4041ad7b6722a519f22df5accda75` |
+
+The game overlay binds the exact core archive; do not overlay either plugin kit
+onto host-source or source-checkout headers. Plugin ABI is 1.1; the game pack is
+0.8.1. The host uses its exact gitlink or an explicit matching host-source kit.
+The published 2.4.0 profiles and checks remain historical; the development
+archives are local and unpublished. Static sigcheck reports 347/347 on 197 and
+200, not gameplay or semantic equivalence. The 200 hauling target has an observed
+collection-layout difference. Native startup and ASOP activation remain refused.
+
+### Previous development pairing
+
+Core `248d2a65ff979909695ece68ec8a0b71cbf26172` and its `2.4.1-dev.2` archives
+are historical inputs; they do not qualify the new tuple:
 
 | Profile | Development archive | SHA-256 |
 |---|---|---|
@@ -41,30 +59,8 @@ The matching source-bound `2.4.1-dev.2` archive coordinates are:
 | Game overlay | `sco-sdk-game-sc-0.8.0-sdk-2.4.1-dev.2.zip` | `8729e97a8f7199ae1ec0ba05716134ec3a6ac0832c0e99d640f1a0f4bf6d55fc` |
 | Host source | `sco-sdk-host-source-sc-2.4.1-dev.2.zip` | `06af4a6e74b70ba6a719c371470bf15b6376d425d66d3de073b07b16ae5ce126` |
 
-The overlay binds the exact core ZIP above; it is not overlaid onto host-source
-or source-checkout headers. Plugin ABI remains 1.1 and the game overlay remains
-0.8.0. Earlier `2.4.1-dev.1`/d339 source and archive receipts are historical inputs,
-not validation of this tuple. Consumer builds, clean committed-source pairing,
-language qualification and release approval remain separate. Native startup
-remains refused; **not run in game**.
-
-The development host uses the exact `external/sco-core` gitlink,
-which is newer than this historical release. Current development plugin proofs
-must use the matching source-identified development `legacy` archive. The published
-`legacy` archive and its release checksum inventory remain historical inputs. The separate host-source
-archive is available to explicit `SCO_HOST_SOURCE_DIR` development overrides;
-its digest is recorded here, but it is not the default embedded-host input. The
-profiles have different roles and their headers must not be overlaid. The
-preflight and hosted consumer matrix check the official package coordinates
-before use.
-
-The SDK release package verification does not establish native reader exclusion,
-production ownership of the game image/resolver, Windows runtime behavior, or
-gameplay acceptance. Product native startup and ASOP native activation remain
-refused pending the required reader/worker exclusion and drain proof. Static
-signature metadata targets game build 4.10.197.2878 and remains pending in-game
-verification. CI and synthetic fixtures prove only the build paths and contracts
-they exercise.
+Consumer integration, hosted availability, reader/worker exclusion, ownership,
+Windows runtime behavior and human gameplay acceptance remain separate gates.
 
 Earlier RC2 and pre-release candidate coordinates are historical evidence only;
 they are not current consumer pins or substitutes for the stable archive digests

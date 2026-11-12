@@ -5,14 +5,14 @@ exclusion and drain. ASOP compositions are unavailable too: both
 `SCO_ASOP_HOST_COMPOSITION` and `SCO_ASOP_SELECTION_COMPOSITION` default to OFF,
 and CMake rejects either option until the product has a reviewed nonblocking
 stop request and ordered control-thread drain. The selected Core pin
-`248d2a65ff979909695ece68ec8a0b71cbf26172` refuses ASOP host Start
+`4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd` refuses ASOP host Start
 before installing hooks even when validation and admission pass; invalid or
 disabled configurations may return other results. Its `Stop` is synchronous.
 The direct legacy quit detour requests owner closure and then immediately
 forwards the original call on the same stack; it does not drain the owner.
 The separate `ForwardQuit` helper calls `BeforeQuit`, which invokes `Stop`.
 Neither path proves engine-object lifetime or a safe native drain.
-The selected local `2.4.1-dev.2` checkpoint and its matching host-source archive
+The selected local `2.4.1-dev.3` checkpoint and its matching host-source archive
 are recorded in [SDK coordinates](sdk-candidate.md). Earlier adapter and lifecycle
 receipts do not qualify this new pair. Neither the pin nor this product enables
 ASOP gameplay.
