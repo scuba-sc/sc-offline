@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Restore the owned `asop_ships.txt` startup selection route from [#117](https://github.com/scuba-sc/sc-offline/pull/117) by [@Alpha-Rome0](https://github.com/Alpha-Rome0), keeping the complete ship catalogue separate. ASOP composition and native activation remain refused; **not run in game**.
+
 - Harden paired-source path checks on case-insensitive filesystems; not run in game.
 - Fix paired-source qualification to refuse build paths inside either source tree on Windows; verify-only does not create the proposed path. Not run in game.
 

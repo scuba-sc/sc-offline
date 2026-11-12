@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "asop_shell.h"
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
@@ -92,7 +93,9 @@ bool ParseShips(const std::string& bytes, std::vector<std::string>& out) {
     return true;
 }
 // Host policy only: environment/filesystem inputs, no raw mechanics or session broker.
-sco::game::asop_host::Result StartFromEnvironment(bool offlinePrepared, bool eacAbsent, const char* selectionPath) {
+namespace {
+sco::game::asop_host::Result StartEnvironment(bool offlinePrepared, bool eacAbsent, const char* selectionPath,
+                                            ProductPathResolver resolver, void* context, bool productPath) {
     using namespace sco::game::asop_host;
     Options options;
     std::string value;
@@ -105,10 +108,25 @@ sco::game::asop_host::Result StartFromEnvironment(bool offlinePrepared, bool eac
     if (!options.enabled) return Start(options, offlinePrepared, eacAbsent);
     if (!offlinePrepared || !eacAbsent) return Result::AdmissionRefused;
     if (options.catalog == CatalogMode::Ships) {
+        char ownedPath[260]{}; // Match the product's bounded MAX_PATH DataFilePath contract.
+        if (productPath) {
+            if (!resolver || !resolver(context, ownedPath, sizeof(ownedPath), "asop_ships.txt") ||
+                std::find(ownedPath, ownedPath + sizeof(ownedPath), '\0') == ownedPath + sizeof(ownedPath) || !*ownedPath)
+                return Result::InvalidConfig;
+            selectionPath = ownedPath;
+        }
         if (!selectionPath || !*selectionPath) return Result::InvalidConfig;
         std::string bytes;
         if (!ReadSelection(selectionPath, bytes) || !ParseShips(bytes, options.ships)) return Result::InvalidConfig;
     }
     return Start(options, offlinePrepared, eacAbsent);
+}
+}
+sco::game::asop_host::Result StartFromEnvironment(bool offlinePrepared, bool eacAbsent, const char* selectionPath) {
+    return StartEnvironment(offlinePrepared, eacAbsent, selectionPath, nullptr, nullptr, false);
+}
+sco::game::asop_host::Result StartFromProductEnvironment(bool offlinePrepared, bool eacAbsent,
+                                                       ProductPathResolver resolver, void* context) {
+    return StartEnvironment(offlinePrepared, eacAbsent, nullptr, resolver, context, true);
 }
 }

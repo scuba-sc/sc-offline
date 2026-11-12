@@ -2,6 +2,7 @@
 // Process-local environment and admission policy fixture; no game or native hooks.
 #include "../../src/asop_platform.cpp"
 #include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <random>
@@ -28,6 +29,22 @@ static bool Set(const char* key, const std::string& value) {
 static void WriteFile(const std::filesystem::path& file, const std::string& bytes) {
     std::ofstream out(file, std::ios::binary);
     out << bytes;
+}
+struct ProductPaths {
+    enum class Outcome { Resolved, Failed, Empty, Unterminated } outcome = Outcome::Resolved;
+    std::filesystem::path root;
+    int calls = 0;
+    std::string requested;
+};
+static bool ResolveProductPath(void* context, char* path, std::size_t capacity, const char* file) {
+    auto& paths = *static_cast<ProductPaths*>(context);
+    ++paths.calls; paths.requested = file;
+    if (paths.outcome == ProductPaths::Outcome::Failed) return false;
+    if (paths.outcome == ProductPaths::Outcome::Empty) { if (capacity) *path = '\0'; return true; }
+    if (paths.outcome == ProductPaths::Outcome::Unterminated) { std::memset(path, 'x', capacity); return true; }
+    const auto resolved = (paths.root / file).string();
+    const int length = std::snprintf(path, capacity, "%s", resolved.c_str());
+    return length >= 0 && static_cast<std::size_t>(length) < capacity;
 }
 int main() {
     using namespace offline::asop;
@@ -112,6 +129,51 @@ int main() {
     std::filesystem::remove(dir / "asop_ships.txt.sco-1234-1.pending");
     CHECK(StartFromEnvironment(true, true, file.c_str()) == Result::Ok && captured.ships.empty() && calls == before + 1);
     before = calls;
+
+    // The actual product startup seam distinguishes the owned subset from the
+    // complete copied catalogue, while the general arbitrary-path API is retained.
+    const auto catalogue = dir / "ships.txt";
+    WriteFile(catalogue, "CatalogueOnly\nAnotherCatalogueClass\n");
+    WriteFile(file, "OwnedAurora\nOwnedHornet\n");
+    ProductPaths paths; paths.root = dir;
+    CHECK(StartFromEnvironment(true, true, catalogue.string().c_str()) == Result::Ok &&
+          captured.ships == std::vector<std::string>({"CatalogueOnly", "AnotherCatalogueClass"}) && calls == before + 1);
+    before = calls;
+    CHECK(StartFromProductEnvironment(true, true, ResolveProductPath, &paths) == Result::Ok && calls == before + 1);
+    const std::vector<std::string> owned{"OwnedAurora", "OwnedHornet"};
+    CHECK(paths.calls == 1 && paths.requested == "asop_ships.txt" && captured.ships == owned);
+    CHECK(captured.enabled && captured.catalog == sco::game::asop_host::CatalogMode::Ships && passedOffline && passedEac);
+    before = calls;
+    CHECK(StartFromProductEnvironment(true, true, nullptr) == Result::InvalidConfig && calls == before);
+    for (const auto outcome : {ProductPaths::Outcome::Failed, ProductPaths::Outcome::Empty, ProductPaths::Outcome::Unterminated}) {
+        paths.outcome = outcome;
+        const int resolvedBefore = paths.calls;
+        CHECK(StartFromProductEnvironment(true, true, ResolveProductPath, &paths) == Result::InvalidConfig &&
+              calls == before && paths.calls == resolvedBefore + 1);
+        CHECK(captured.ships == owned && captured.enabled && passedOffline && passedEac &&
+              captured.catalog == sco::game::asop_host::CatalogMode::Ships);
+    }
+    // Invalid policy and admission refusal precede path resolution and provider Start.
+    const int resolvedBefore = paths.calls;
+    CHECK(StartFromProductEnvironment(false, true, ResolveProductPath, &paths) == Result::AdmissionRefused && calls == before);
+    CHECK(StartFromProductEnvironment(true, false, ResolveProductPath, &paths) == Result::AdmissionRefused && calls == before);
+    CHECK(Set(mode, "invalid"));
+    CHECK(StartFromProductEnvironment(true, true, ResolveProductPath, &paths) == Result::InvalidConfig && calls == before);
+    CHECK(Set(mode, "")); CHECK(Set(fleet, "invalid"));
+    CHECK(StartFromProductEnvironment(true, true, ResolveProductPath, &paths) == Result::InvalidConfig && calls == before);
+    CHECK(paths.calls == resolvedBefore && captured.ships == owned);
+    // Disabled configuration still reaches Start with the original admission flags,
+    // and Game mode never needs a selection resolver at all.
+    CHECK(Set(mode, "off")); CHECK(Set(fleet, "ships"));
+    CHECK(StartFromProductEnvironment(false, false, ResolveProductPath, &paths) == Result::Ok && calls == before + 1);
+    CHECK(!captured.enabled && !passedOffline && !passedEac && captured.ships.empty() && paths.calls == resolvedBefore);
+    before = calls;
+    CHECK(Set(fleet, "invalid"));
+    CHECK(StartFromProductEnvironment(false, false, ResolveProductPath, &paths) == Result::InvalidConfig && calls == before);
+    CHECK(Set(mode, "")); CHECK(Set(fleet, "game"));
+    CHECK(StartFromProductEnvironment(true, true, nullptr) == Result::Ok && calls == before + 1);
+    CHECK(captured.enabled && captured.catalog == sco::game::asop_host::CatalogMode::Game && captured.ships.empty());
+    CHECK(paths.calls == resolvedBefore);
 
     std::filesystem::remove_all(dir);
     CHECK(Set(mode, "")); CHECK(Set(fleet, ""));

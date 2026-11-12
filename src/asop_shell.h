@@ -24,6 +24,12 @@ sco::game::asop_host::Result Reconfigure(const std::vector<std::string>& ships);
 #endif
 sco::game::asop_host::Status Status();
 sco::game::asop_host::Result StartFromEnvironment(bool offlinePrepared, bool eacAbsent, const char* selectionPath);
+// Product startup resolves the owned subset, never the full ship catalogue. The
+// resolver follows DataFilePath semantics; called only for admitted, enabled Ships mode.
+// Success must supply a nonempty path terminated within the provided capacity.
+using ProductPathResolver = bool (*)(void* context, char* path, std::size_t capacity, const char* file);
+sco::game::asop_host::Result StartFromProductEnvironment(bool offlinePrepared, bool eacAbsent,
+                                                       ProductPathResolver resolver, void* context = nullptr);
 // Query individual installation groups, not an all-or-nothing promise.
 bool Ready(uint32_t required);
 void Pump(uint32_t now);

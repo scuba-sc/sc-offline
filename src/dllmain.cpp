@@ -516,9 +516,10 @@ static void StartHostKit() {
     if (g_hostKitStarted) {
         // CMake currently rejects this composition until it has a nonblocking
         // stop request and same-owner drain that preserve provider ordering.
-        char ships[MAX_PATH]{};
-        ShipsFilePath(ships, sizeof(ships));
-        const auto r = offline::asop::StartFromEnvironment(g_offline, InspectAntiCheat() == AcCheck::Clear, ships);
+        const auto r = offline::asop::StartFromProductEnvironment(g_offline, InspectAntiCheat() == AcCheck::Clear,
+            [](void*, char* path, std::size_t capacity, const char* file) {
+                return DataFilePath(path, static_cast<DWORD>(capacity), file);
+            });
         Log("[asop] host composition result=%u; no product fallback", static_cast<unsigned>(r));
     }
 #endif
