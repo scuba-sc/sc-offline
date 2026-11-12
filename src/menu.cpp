@@ -76,6 +76,7 @@ private:
 };
 
 namespace Window = sc_offline::menu_window;
+static Window::EscapeInput g_escapeInput;
 static Window::Size g_menuSize;
 static char g_menuSizePath[MAX_PATH];
 static bool g_clipped = false;
@@ -145,8 +146,16 @@ static bool CreateDevice() {
 }
 
 static bool GameThreadBuilding();
+static void ShowMenu(bool show);
 
 static LRESULT CALLBACK MenuWndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
+    if (msg == WM_KILLFOCUS || msg == WM_CLOSE) g_escapeInput.Reset();
+    if ((msg == WM_CHAR || msg == WM_SYSCHAR) && g_escapeInput.Character(w == 0x1b)) return 0;
+    if ((msg == WM_KEYDOWN || msg == WM_KEYUP || msg == WM_SYSKEYDOWN || msg == WM_SYSKEYUP)
+        && g_escapeInput.Key(w == VK_ESCAPE, msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN,
+                             (static_cast<uintptr_t>(l) & (uintptr_t{1} << 30)) != 0,
+                             GetForegroundWindow() == h && IsWindowVisible(h),
+                             [] { ShowMenu(false); })) return 0;
     // A message sent to the window while the game thread builds a frame doesn't reach ImGui: the
     // game thread has it until the frame is built.
     if (!g_windowCallbacksClosed.load() && !GameThreadBuilding()
@@ -210,6 +219,7 @@ static void KeepCursorInMenu() {
 }
 
 static void ShowMenu(bool show) {
+    if (!show) g_escapeInput.Reset();
     if (show) {
         RECT r = {};
         GetWindowRect(g_game, &r);
@@ -891,7 +901,9 @@ static DWORD WINAPI MenuThread(LPVOID) {
     LoadBackground();
     if (SUCCEEDED(com)) CoUninitialize();
 
-    bool visible = false, wasDown = false;
+    bool& visible = g_escapeInput.visible;
+    visible = false;
+    bool wasDown = false;
     for (;;) {
         // Take ImGui back from a request the game thread hasn't started; let one it has finish.
         g_frame.CancelUnstarted();
@@ -928,7 +940,7 @@ static DWORD WINAPI MenuThread(LPVOID) {
 #endif
             && OurProcessHasFocus()) { visible = !visible; ShowMenu(visible); }
         wasDown = down;
-        if (visible && !IsWindowVisible(g_wnd)) { visible = false; ClipCursor(nullptr); g_clipped = false; }
+        if (visible && !IsWindowVisible(g_wnd)) { visible = false; g_escapeInput.Reset(); ClipCursor(nullptr); g_clipped = false; }
 
 #ifdef SCO_HOST_MENU_CLIENT
         if (!g_imguiUsable.load()) { g_typing = false; Sleep(50); continue; }

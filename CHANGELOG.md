@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Close the focused menu on Escape release, following [#216](https://github.com/scuba-sc/sc-offline/issues/216) by [@sKeepers](https://github.com/sKeepers). Synthetic input tests only; **not run in game**.
+
 - **Pair the local SDK 2.4.1 development checkpoint.** Advance the embedded Core source to `248d2a65ff979909695ece68ec8a0b71cbf26172` and record the matching `2.4.1-dev.2` plugin/host archive identities. Stable SDK defaults and earlier receipts remain separate. Native startup and ASOP composition remain refused; **not run in game**.
 
 - Restore the owned `asop_ships.txt` startup selection route from [#117](https://github.com/scuba-sc/sc-offline/pull/117) by [@Alpha-Rome0](https://github.com/Alpha-Rome0), keeping the complete ship catalogue separate. ASOP composition and native activation remain refused; **not run in game**.

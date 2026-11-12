@@ -8,6 +8,22 @@
 #include <cstdint>
 
 namespace sc_offline::menu_window {
+// Owned by the menu thread. The close callback must perform the real hide path.
+struct EscapeInput {
+    bool visible = false;
+    bool pending = false;
+    void Reset() { pending = false; }
+    // TranslateMessage can queue this after keydown, including after the hide.
+    bool Character(bool escape) const { return escape; }
+    template<class Close>
+    bool Key(bool escape, bool down, bool repeated, bool focused, Close close) {
+        if (!visible || !focused) { Reset(); return false; }
+        if (!escape) return false;
+        if (down) { if (!repeated) pending = true; }
+        else if (pending) { pending = false; visible = false; close(); }
+        return true;
+    }
+};
 struct Size { int width = 600, height = 900; };
 struct Bounds { int left, top, right, bottom; };
 constexpr int kMinWidth = 400, kMinHeight = 300, kMaxDimension = 32768;

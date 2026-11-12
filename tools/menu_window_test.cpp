@@ -9,6 +9,49 @@
 static int passed = 0, failed = 0;
 #define CHECK(x) do { if (x) ++passed; else { ++failed; std::printf("FAIL line %d: %s\n", __LINE__, #x); } } while (0)
 
+static void EscapeRouting() {
+    using sc_offline::menu_window::EscapeInput;
+    ImGui::CreateContext();
+    auto& io = ImGui::GetIO();
+    EscapeInput input;
+    int closes = 0, forwarded = 0;
+    bool focused = true;
+    auto key = [&](bool escape, bool down, bool repeated = false) {
+        if (!input.Key(escape, down, repeated, focused, [&] { ++closes; })) {
+            ++forwarded;
+            io.AddKeyEvent(escape ? ImGuiKey_Escape : ImGuiKey_A, down);
+        }
+    };
+    auto character = [&](bool escape) {
+        if (!input.Character(escape)) { ++forwarded; io.AddInputCharacter(escape ? 27 : 'a'); }
+    };
+    input.visible = true;
+    key(true, true); key(true, true, true); character(true);
+    CHECK(input.pending && input.visible && closes == 0 && forwarded == 0);
+    CHECK(GImGui->InputEventsQueue.Size == 0);
+    key(true, false);
+    CHECK(!input.visible && !input.pending && closes == 1);
+    character(true); // Already queued by TranslateMessage before dispatch.
+    CHECK(forwarded == 0 && GImGui->InputEventsQueue.Size == 0);
+    input.visible = true; // Reopen: the same visibility state drives the loop.
+    key(true, false);
+    CHECK(input.visible && closes == 1 && !input.pending);
+    key(false, true); character(false);
+    CHECK(forwarded == 2 && GImGui->InputEventsQueue.Size == 2);
+    key(true, true);
+    input.Reset(); // WM_KILLFOCUS
+    focused = false; key(true, false);
+    CHECK(input.visible && closes == 1 && !input.pending);
+    focused = true; key(true, true, true); key(true, false);
+    CHECK(input.visible && closes == 1 && !input.pending);
+    key(true, true); input.visible = false; input.Reset(); // M/frame hide.
+    input.visible = true; key(true, true, true); key(true, false);
+    CHECK(input.visible && closes == 1 && !input.pending);
+    key(true, true); key(true, false);
+    CHECK(!input.visible && closes == 2);
+    ImGui::DestroyContext();
+}
+
 static void LongTabTitles() {
     ImGui::CreateContext();
     auto& io = ImGui::GetIO();
@@ -94,6 +137,7 @@ int main(int argc, char** argv) {
     }
     { std::ofstream out(malformed, std::ios::binary); out << "\xef\xbb\xbf[window]\r\n# saved size\r\n width = 640 \r\n height = 480 \r\n"; }
     CHECK(Load(malformed).width == 640 && Load(malformed).height == 480);
+    EscapeRouting();
     LongTabTitles();
     std::printf("menu window: %d passed, %d failed (headless; not run in game)\n", passed, failed);
     return failed ? 1 : 0;
