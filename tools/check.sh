@@ -42,7 +42,7 @@ for f in "$ROOT"/src/*.cpp "$ROOT"/src/builtins/*.cpp "$ROOT"/src/builtins/*/*.c
      -fms-extensions \
      -D_WIN32 -D_WIN64 -DUNICODE -D_UNICODE -DNDEBUG -D_WINDLL \
      -nostdinc++ -isystem "$CXXINC" -isystem "$CXXINC/x86_64-w64-mingw32" -isystem "$CXXINC/backward" \
-     -isystem "$MWINC" -isystem "$SCOINC" -isystem "$SCOLUA" -isystem "$SCOLUA/third_party/lua/src" -I "$ROOT/src" -I "$ROOT/src/third_party/imgui" \
+     -isystem "$MWINC" -isystem "$SCOINC" -isystem "$ROOT/external/sco-core/third_party/sqlite" -isystem "$SCOLUA" -isystem "$SCOLUA/third_party/lua/src" -I "$ROOT/src" -I "$ROOT/src/third_party/imgui" \
      -Wno-everything "$f" 2>&1)
   rc=$?
   errs=$(printf '%s\n' "$out" | grep -E "error:")
