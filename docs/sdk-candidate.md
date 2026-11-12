@@ -25,16 +25,28 @@ source and byte-compared with the published release assets.
 
 ## Current coordinated development source
 
-The product gitlink selects Core `d33932bc14b85af0caccc4636b42028f44f97710`, tree `c7563a009994c07598edae124608053dde85a92a`.
-This unpublished development candidate repairs SDK archive member mode preservation.
-Its locally built and audited `2.4.1-dev.1` combined plugin archive has SHA-256
-`c24f81580b6b1f95bbd1a55f4346a75c7b3512b7d09755981dd0c795734aed1f`;
-its host-source archive has SHA-256
-`241c628f00bc00c315031a9e2c16b5bf1b8d9624eaad67a809cb3c2ad32e3fe8`,
-and its core-source archive has SHA-256
-`01d1ec68a60042f126aa3691fd64045534875cf5c552709d7b8e1f1b86fda745`.
-Consumer pairing and language qualification remain separate; these are not
-release coordinates. Native startup remains refused.
+The product gitlink selects Core `248d2a65ff979909695ece68ec8a0b71cbf26172`, tree
+`16bfa4183ef41f84293e9fc02f3d90afcce3f0ec`. This immutable local checkpoint combines
+the reviewed lifecycle/SDK stack with the additive storage metadata, copied
+Profile/Storage diagnostic sections and widget event-tag packet. It is
+unpublished; hosted fetch and consumer CI availability are not established.
+
+The matching source-bound `2.4.1-dev.2` archive coordinates are:
+
+| Profile | Development archive | SHA-256 |
+|---|---|---|
+| Combined plugin SDK (`legacy`) | `sco-sdk-2.4.1-dev.2.zip` | `f032b05da7e9e6690f4f63ce251dc5bf75685d64a33e1469f13636d300ae5e45` |
+| Core SDK | `sco-sdk-core-2.4.1-dev.2.zip` | `21e0aa2a0f997d3813408bd4c873771580a55d1d82d2eff67db45621c5321d55` |
+| Core source | `sco-sdk-core-source-2.4.1-dev.2.zip` | `de732bb29f52d34ecc1b2278bf9ef5419fab7872067d8960a58024cb374998bc` |
+| Game overlay | `sco-sdk-game-sc-0.8.0-sdk-2.4.1-dev.2.zip` | `8729e97a8f7199ae1ec0ba05716134ec3a6ac0832c0e99d640f1a0f4bf6d55fc` |
+| Host source | `sco-sdk-host-source-sc-2.4.1-dev.2.zip` | `06af4a6e74b70ba6a719c371470bf15b6376d425d66d3de073b07b16ae5ce126` |
+
+The overlay binds the exact core ZIP above; it is not overlaid onto host-source
+or source-checkout headers. Plugin ABI remains 1.1 and the game overlay remains
+0.8.0. Earlier `2.4.1-dev.1`/d339 source and archive receipts are historical inputs,
+not validation of this tuple. Consumer builds, clean committed-source pairing,
+language qualification and release approval remain separate. Native startup
+remains refused; **not run in game**.
 
 The development host uses the exact `external/sco-core` gitlink,
 which is newer than this historical release. Current development plugin proofs

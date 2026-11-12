@@ -1,5 +1,16 @@
 # What is not verified in game
 
+## Current local development pairing
+
+The development gitlink selects Core `248d2a65ff979909695ece68ec8a0b71cbf26172`,
+tree `16bfa4183ef41f84293e9fc02f3d90afcce3f0ec`, with unpublished
+`2.4.1-dev.2` archives. [SDK coordinates](sdk-candidate.md) records the matching
+plugin and host-source digests. This pairing includes the additive storage,
+diagnostic and widget contract packet; earlier stable/development receipts do
+not recertify it. The paired-source runner requires a new clean committed
+Offline identity before qualification. Native startup and ASOP composition
+remain refused; **not run in game**.
+
 ## Historical stable SDK 2.4.0 consumer integration
 
 The current private development candidate uses the source in its exact Core
@@ -76,7 +87,7 @@ The release-pin smoke checks: offline startup was **observed once** for v0.7.8.1
 releases; owner Windows/in-game acceptance remains **NOT RUN**. No synthetic
 fixture or checker result certifies gameplay. Policy: [decisions.md](decisions.md).
 
-sco-core keeps the matching table for the `game.*` services, with the evidence level of each capability and what a run has to show: [docs/game/status.md](https://github.com/scuba-sc/sco-core/blob/d33932bc14b85af0caccc4636b42028f44f97710/docs/game/status.md) at the development pin. Read it for the service side (for example `game.actors.state`, `game.entities.query_radius`, `game.entities.watch` and `game.events.vehicle_seat` are held **off** until a run decides them). This page lists the sc-offline side: what each converted feature still needs checked. The steps are the ones in the bodies of [#95](https://github.com/scuba-sc/sc-offline/pull/95), [#97](https://github.com/scuba-sc/sc-offline/pull/97) and [#98](https://github.com/scuba-sc/sc-offline/pull/98); `mod.log` lines are quoted as those PRs wrote them.
+sco-core keeps the matching table for the `game.*` services, with the evidence level of each capability and what a run has to show: [docs/game/status.md](https://github.com/scuba-sc/sco-core/blob/248d2a65ff979909695ece68ec8a0b71cbf26172/docs/game/status.md) at the development pin. Read it for the service side (for example `game.actors.state`, `game.entities.query_radius`, `game.entities.watch` and `game.events.vehicle_seat` are held **off** until a run decides them). This page lists the sc-offline side: what each converted feature still needs checked. The steps are the ones in the bodies of [#95](https://github.com/scuba-sc/sc-offline/pull/95), [#97](https://github.com/scuba-sc/sc-offline/pull/97) and [#98](https://github.com/scuba-sc/sc-offline/pull/98); `mod.log` lines are quoted as those PRs wrote them.
 
 ## Step 7B: tutorial evidence ledger
 

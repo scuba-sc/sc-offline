@@ -52,8 +52,11 @@ plugin ABI 1.1 and Star Citizen game pack 0.8.0 are distinct versions. The
 published release manifest binds the archive to source
 `6106fa3639cbcc28f78a1ded8de2707de019f4d3`; its exact profile hashes are in
 [SDK coordinates](sdk-candidate.md). The embedded development host instead uses Core source
-`d33932bc14b85af0caccc4636b42028f44f97710`; the stable archive and its
-recorded checks are historical and do not certify this development pairing. The
+`248d2a65ff979909695ece68ec8a0b71cbf26172`; the stable archive and its
+recorded checks are historical and do not certify this development pairing. Its
+matching unpublished combined archive is `sco-sdk-2.4.1-dev.2.zip`, SHA-256
+`f032b05da7e9e6690f4f63ce251dc5bf75685d64a33e1469f13636d300ae5e45`.
+Use explicit candidate arguments below for this tuple; stable defaults remain unchanged. The
 stable release and all synthetic checks remain separate from gameplay acceptance.
 
 The expanded inspector uses that same published stable SDK by default; no older unpublished candidate

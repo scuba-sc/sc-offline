@@ -3,8 +3,8 @@
 This development-only pairing checks the product's `external/sco-core` gitlink
 against the selected development Core source and selects that same source through
 the existing `SCO_HOST_SOURCE_DIR` mechanism. Core source is
-`d33932bc14b85af0caccc4636b42028f44f97710`, tree
-`c7563a009994c07598edae124608053dde85a92a`. This source adds guarded lifecycle and Rust qualification; its source-bound archives have distinct identities. Earlier pairing results do not qualify this new commit. The offline branch includes
+`248d2a65ff979909695ece68ec8a0b71cbf26172`, tree
+`16bfa4183ef41f84293e9fc02f3d90afcce3f0ec`. This local checkpoint combines the reviewed lifecycle/SDK stack with storage metadata, copied diagnostic source sections and additive widget event tags. Its unpublished `2.4.1-dev.2` archives have distinct identities recorded in [SDK coordinates](../../docs/sdk-candidate.md). Earlier pairing results do not qualify this new commit. The offline branch includes
 `259ee6284d4c37f2eafa32f668ff29f4bc266844`; the caller must supply the exact
 paired offline commit and tree from the accompanying identity record.
 
@@ -34,7 +34,7 @@ that extra step requires the Windows/MSVC x64 toolchain described in
 `tools/offline-host` test, requiring key ownership, product refusal and Stop
 regressions to be registered. The runner clones verified Core objects locally
 into the new build directory to avoid ignored build artifacts in the input
-checkout affecting compilation. Offline ignored files are rejected because that
+checkout affecting compilation. The clone uses `core.autocrlf=false` so checked-out source bytes retain the immutable Git content. Offline ignored files are rejected because that
 source is built in place. Both source checks reject tracked and untracked edits.
 It never changes the gitlink, fetches a remote, or changes release workflows.
 This Core commit is a private local candidate and is not fetchable from the
