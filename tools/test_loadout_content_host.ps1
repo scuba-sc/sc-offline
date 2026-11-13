@@ -6,8 +6,12 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
-$expected = '5b88cc99fe7fa254458aaf6c5bdf3a3318b20611c8fe664a172e0ae210145be4'
-if ((Get-FileHash -Algorithm SHA256 -LiteralPath $SdkArchive).Hash.ToLowerInvariant() -ne $expected) { throw 'SDK archive SHA-256 mismatch' }
+$approvedSdkArchives = @(
+    '5b88cc99fe7fa254458aaf6c5bdf3a3318b20611c8fe664a172e0ae210145be4'
+    '8ed1fe246e44097f89ac79104e01a7dae095a3023e7fac96f14fcf8d9db147af'
+)
+$actualSdkArchive = (Get-FileHash -Algorithm SHA256 -LiteralPath $SdkArchive).Hash.ToLowerInvariant()
+if ($approvedSdkArchives -notcontains $actualSdkArchive) { throw 'SDK archive SHA-256 mismatch' }
 $coreHead = (& git -C $CoreSourceDir rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $coreHead -ne 'e2dc4ac933b5565417fb067735ddc12104c8030d') { throw 'Core source commit mismatch' }
 if ((& git -C $CoreSourceDir status --porcelain)) { throw 'Core source must be clean' }

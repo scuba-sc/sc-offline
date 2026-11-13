@@ -34,9 +34,24 @@ source. They are local artifacts, not published release assets.
 
 | Profile | Local archive | SHA-256 |
 |---|---|---|
-| Combined core + game SDK (`legacy`) | `sco-sdk-2.4.1-dev.3.zip` | `5b88cc99fe7fa254458aaf6c5bdf3a3318b20611c8fe664a172e0ae210145be4` |
+| Combined core + game SDK (`legacy`), earlier local build | `sco-sdk-2.4.1-dev.3.zip` | `5b88cc99fe7fa254458aaf6c5bdf3a3318b20611c8fe664a172e0ae210145be4` |
+| Combined core + game SDK (`legacy`), reproduced by product `6e20945` preflight | `sco-sdk-2.4.1-dev.3.zip` | `8ed1fe246e44097f89ac79104e01a7dae095a3023e7fac96f14fcf8d9db147af` |
 | Core SDK | `sco-sdk-core-2.4.1-dev.3.zip` | `d3f7c27c43d8044dd3beba638af2264fe579984059f45a5285b5fba89ea71a78` |
 | Star Citizen game overlay | `sco-sdk-game-sc-0.8.1-sdk-2.4.1-dev.3.zip` | `28e87a3c691419a70b706db23d7e049ea5852c6386be8473444409f816740fea` |
+
+The `8ed1fe24` archive was generated twice by the committed development SDK
+preflight at product commit `6e2094583d4864ad3f3b002a289833b582e0fa30`; the
+two ZIPs were byte-identical. That run selected clean Core source
+`e2dc4ac933b5565417fb067735ddc12104c8030d` (tree
+`60f3e544244a8e487b08f32adbd4a81eab344d43`), audited the `legacy` profile,
+and verified the full archive inventory and compatibility metadata. The ZIP
+contains 374 files: 373 payload files covered by its embedded `SHA256SUMS`,
+plus that inventory. `COMPATIBILITY.json` identifies profile `legacy`, Core
+and game-SC source `e2dc4ac`, Core SDK `2.4.1-dev.3`, game overlay `0.8.1`,
+and plugin ABI `1.1`. The `5b88cc99` archive remains a distinct earlier local
+build with the same filename, version label, profile, and source metadata. The
+version label does not define a universal archive hash; neither archive is a
+published release asset.
 
 The standalone game overlay metadata names the Core archive above by its exact
 SHA-256. The combined archive contains both profiles and its metadata names Core
@@ -135,10 +150,25 @@ The Loadout consumer proof at product commit `3e68712` used the combined local
 embedded metadata identifies Core and game-SC source
 `e2dc4ac933b5565417fb067735ddc12104c8030d`. The six synthetic consumer CTest
 cases passed (6/6). The follow-on content-host integration check at product
-commit `f38dcdd` passed 1/1 against the clean e2 Core source. These results cover
-SDK consumer tests and that offline host integration case; they do not establish
-native activation, full outfit/provider parity or game acceptance. Production
-native activation remains refused, and Loadout has not been run in game.
+commit `f38dcdd` passed 1/1 against the clean e2 Core source using the then
+allowlisted `5b88cc99` archive. These are historical product checkpoints. They
+cover SDK consumer tests and that offline host integration case; they do not
+establish native activation, full outfit/provider parity or game acceptance.
+
+At product commit `6e2094583d4864ad3f3b002a289833b582e0fa30`, 12 individual
+synthetic SDK consumer checks passed against the reproduced `8ed1fe24` archive:
+NPC, Inspector, Loadout, Creative, Discord, Crew, Spawn, Build, Mining,
+Teleport, Quantum, and the Contracts read slice. The real-Core Loadout host
+proof was also run with that exact archive and clean Core source
+`e2dc4ac933b5565417fb067735ddc12104c8030d` (tree
+`60f3e544244a8e487b08f32adbd4a81eab344d43`); the isolated CTest passed 1/1.
+It built the Loadout module against the verified SDK and exercised Core plugin
+startup, synthetic list-pack content/reload/read behavior, and shutdown. The 12
+individual checks are not the consumer-proof aggregator or its separate list
+staging test. None of these synthetic results establishes native activation,
+full outfit/provider parity, or game acceptance. Production native activation
+remains refused, and Loadout has not been run in game. The `2.4.1-dev.3` label
+is unpublished development metadata, not release-status evidence.
 
 A prior Loadout proof used a separate `legacy` archive with the same filename,
 `2.4.1-dev.3` label, and SHA-256
