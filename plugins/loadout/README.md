@@ -248,7 +248,8 @@ the typed provider reports missing items at apply time.
 - Items retain `[slot]` sections, comments introduced by `#`, and one ASCII
   `[A-Za-z0-9_]` class per line, 1–95 bytes. Bounds: 3000 items.
 - Outfits retain `[name]` sections and `port class` lines, original labels and
-  all pieces (including unsupported ports). Bounds: 256 outfits, 32 pieces each.
+  all pieces (including unsupported ports). The historical preview holds at
+  most 256 outfits and 32 accepted pieces per section.
 - Build shortcuts retain the `[sq42]` group from the copied buildables list.
 - Reject malformed sections/classes, embedded NULs, oversized lines/records and
   snapshots beyond 1 MiB combined. Parsing is atomic; failed explicit reload
@@ -312,6 +313,37 @@ file parsing and preparation semantics. Their two standalone synthetic tests
 run with `SCO_WORKFLOW_TESTS=ON`. This model is not connected to player actions,
 the product module, or a native SDK provider; passing these tests does not
 establish game behavior or native outfit support.
+
+The importer also keeps bounded source audit evidence beside that historical
+preview. Each encountered section retains its full parsed name, including
+empty and unknown-only sections. Inspected `port class` records retain their
+original role and class alongside the stored 63-byte preview prefixes, lookup
+state, and final recipe disposition (emitted, duplicate, unsupported, orphan,
+or overridden by defaults). Non-comment suffixes after the section close or
+class token are retained and counted as preview losses; `#` comments remain
+stripped. Unknown classes and dropped-section reasons remain attributed to
+their source section. The audit has a 128 detailed-event limit per section;
+exceeding it returns `audit_overflow` without changing the prior snapshot.
+
+After the preview accepts 32 records in a section, later non-comment lines are
+explicitly marked uninspected. The audit counts uninspected lines/candidates
+and preserves the first exact candidate role/class when present; it does not
+look up or label those tail candidates as known or accepted. The section bound
+is 256 encountered headers, including empty and unknown-only sections. A
+257th header returns `section_limit` transactionally. This raw-header refusal
+is a deliberate audit bound; it differs from the old preview's limit of 256
+retained outfits. Both audit-limit errors leave the caller's prior snapshot
+unchanged.
+
+`assess_source_integrity` reports whether source evidence is complete under
+this legacy parser and counts preview losses such as skipped unknowns,
+dropped sections, token-prefix truncation, and non-emitted recipe inputs. An
+intact source assessment can still report unresolved recipe directives such
+as synthesized defaults. It only says the audit retained the parser-visible
+source evidence. It does not certify a complete outfit graph or safe
+application: defaults, provider class/schema validation, revalidation and
+native semantics remain unresolved. This audit adds no submit or activation
+path.
 
 The consumer proof uses the checksum-verified published stable `sdk-v2.4.0` combined
 archive (`sco-sdk-2.4.0.zip`, SHA-256
