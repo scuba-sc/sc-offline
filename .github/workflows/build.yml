@@ -858,10 +858,14 @@ jobs:
           cp built/dinput8.dll built/sc-offline.exe "stage/$pkg/"
           cp launcher/sc-offline.ini launcher/sc-offline.sh README.md CHANGELOG.md LICENSE THIRD_PARTY_NOTICES.md "stage/$pkg/"
           git ls-files -z docs | xargs -0 -r cp --parents -t "stage/$pkg/"
-          git ls-files -z data | xargs -0 cp --parents -t "stage/$pkg/"
+          git ls-files -z -- data ":(exclude)data/buildables.txt" | xargs -0 -r cp --parents -t "stage/$pkg/"
           # Ordinary public catalog pack; originals remain user-editable sources.
           mkdir -p "stage/$pkg/data/plugins/picker_catalog/lists"
           cp data/ships.txt data/npcs.txt "stage/$pkg/data/plugins/picker_catalog/lists/"
+          # The legacy top-level list is player-owned, including for older launchers.
+          mkdir -p "stage/$pkg/data/plugins/build_catalog/lists"
+          cp data/plugins/build_catalog/plugin.ini "stage/$pkg/data/plugins/build_catalog/"
+          cp data/buildables.txt "stage/$pkg/data/plugins/build_catalog/lists/"
           # Only the selected player profile is packaged; staging verifies module identity
           # and disabled-marker defaults before touching the release tree.
           python3 tools/stage-release-plugins.py --profile player-offline --artifact-root . --destination "stage/$pkg/data/plugins"

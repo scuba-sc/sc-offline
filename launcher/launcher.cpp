@@ -770,7 +770,7 @@ static bool RunWait(const wstring& exe, wstring cmd, const wstring& cwd, DWORD& 
 // Paths (relative to the launcher folder) an update must never replace.
 static bool PlayerOwned(const wstring& rel) {
     static const wchar_t* kKeep[] = { L"sc-offline.ini", L"data\\wallet.txt", L"data\\spawn.txt", L"data\\bookmarks.txt",
-        L"data\\locations_found.txt", L"data\\game-path.txt", L"data\\game-build.txt", L"data\\mod.log",
+        L"data\\locations_found.txt", L"data\\buildables.txt", L"data\\game-path.txt", L"data\\game-build.txt", L"data\\mod.log",
         L"data\\launcher.log", L"data\\registry-dump.txt" };
     for (const wchar_t* k : kKeep) if (!_wcsicmp(rel.c_str(), k)) return true;
     return !_wcsnicmp(rel.c_str(), L"data\\update\\", 12);

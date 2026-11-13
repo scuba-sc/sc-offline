@@ -135,6 +135,79 @@ class ReleaseManifest(unittest.TestCase):
             z.extractall(extracted)
         self.assertEqual(rm.check(extracted)[1], [])
 
+    def test_release_data_commands_preserve_legacy_and_package_catalog(self):
+        # Execute the data-staging commands from the release workflow itself, not a
+        # Python reconstruction. No updater, game, plugin DLLs or release publish.
+        root = os.path.dirname(HERE)
+        tracked = subprocess.check_output(
+            ["git", "ls-files", "-z", "--", "data"], cwd=root
+        ).decode("utf-8").split("\0")[:-1]
+        self.assertIn("data/buildables.txt", tracked)
+        source = os.path.join(root, "data", "buildables.txt")
+        with open(source, "rb") as f:
+            original = f.read()
+        with open(os.path.join(root, ".github", "workflows", "build.yml"), encoding="utf-8") as f:
+            workflow = f.read()
+        start = workflow.index('          git ls-files -z -- data ')
+        end = workflow.index('          # Only the selected player profile', start)
+        commands = workflow[start:end]
+        # The command remains directly sourced from the workflow; redirect its stage
+        # directory to a private test fixture, without editing or cleaning the tree.
+        target = self.dir.replace("\\", "/")
+        commands = commands.replace('stage/$pkg', target)
+        if os.name == "nt":
+            git = shutil.which("git")
+            bash = os.path.join(os.path.dirname(os.path.dirname(git)), "bin", "bash.exe")
+        else:
+            bash = shutil.which("bash")
+        self.assertTrue(bash and os.path.isfile(bash), "Git Bash or bash is required")
+        subprocess.run([bash, "-eu", "-c", commands], cwd=root, check=True)
+        with open(source, "rb") as f:
+            self.assertEqual(f.read(), original)
+        catalog = "data/plugins/build_catalog/lists/buildables.txt"
+        manifest = "data/plugins/build_catalog/plugin.ini"
+        with open(os.path.join(self.dir, *catalog.split("/")), "rb") as f:
+            self.assertEqual(f.read(), original)
+        with open(os.path.join(self.dir, *manifest.split("/")), encoding="utf-8") as f:
+            ini = f.read()
+        self.assertIn("id = build_catalog", ini)
+        self.assertIn("kind = data", ini)
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "data", "plugins", "build_catalog", "disabled")))
+        rm.write(self.dir, "v0.7.0", COMMIT, self.vh)
+        paths = {e["path"] for e in json.loads(self.manifest())["files"]}
+        self.assertNotIn("data/buildables.txt", paths)
+        self.assertTrue({catalog, manifest}.issubset(paths))
+        self.assertTrue((set(tracked) - {"data/buildables.txt"}).issubset(paths))
+        archive = os.path.join(self.tmp.name, "release.zip")
+        with zipfile.ZipFile(archive, "w") as z:
+            for rel in sorted(paths | {rm.NAME}):
+                z.write(os.path.join(self.dir, *rel.split("/")), rel)
+        extracted = os.path.join(self.tmp.name, "roundtrip")
+        with zipfile.ZipFile(archive) as z:
+            self.assertEqual(set(z.namelist()), paths | {rm.NAME})
+            self.assertEqual(z.read(catalog), original)
+            z.extractall(extracted)
+        self.assertEqual(rm.check(extracted)[1], [])
+        # Old launchers copy manifest entries only: applying those entries cannot
+        # replace this legacy file. This is a filesystem simulation, not an updater.
+        installed = os.path.join(self.tmp.name, "installed")
+        os.makedirs(os.path.join(installed, "data"))
+        legacy = os.path.join(installed, "data", "buildables.txt")
+        with open(legacy, "wb") as f:
+            f.write(b"player-owned list")
+        for rel in paths:
+            dst = os.path.join(installed, *rel.split("/"))
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copyfile(os.path.join(extracted, *rel.split("/")), dst)
+        with open(legacy, "rb") as f:
+            self.assertEqual(f.read(), b"player-owned list")
+        with open(os.path.join(root, "launcher", "launcher.cpp"), encoding="utf-8") as f:
+            launcher = f.read()
+        owned = launcher[launcher.index("static bool PlayerOwned("):launcher.index("static bool CanWriteTo(")]
+        self.assertIn('L"data\\\\buildables.txt"', owned)
+        swap = launcher[launcher.index("static bool SwapStaged("):]
+        self.assertIn("if (PlayerOwned(rel)) continue;", swap)
+
     def test_one_file_per_line(self):
         rm.write(self.dir, "v0.7.0", COMMIT, self.vh)
         file_lines = [l for l in self.manifest().splitlines() if '"path"' in l]

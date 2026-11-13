@@ -32,11 +32,18 @@ including duplicate rows and any pipe characters. Build lists do not use the
 Loadout catalogue's pipe-field format.
 
 The picker reads exactly one enabled public `lists/buildables.txt` List using
-`sco.content` 1.0. To use a legally held, user-owned list, explicitly copy it to
-`data/plugins/<your-pack>/lists/buildables.txt` while the host is stopped and
-provide an ordinary `kind = data` manifest. Restart after edits or enabling a
-pack. The original `data/buildables.txt` remains unchanged; this consumer neither
-imports it automatically nor stages a new pack in release folders.
+`sco.content` 1.0. Release staging and the CMake `build_catalog` component provide the
+default in `data/plugins/build_catalog/`. An existing top-level
+`data/buildables.txt` is preserved and is not imported automatically.
+
+To use your edited list, stop the host and launcher, create a separate
+`data/plugins/my_build_catalog/lists/`, and copy the legacy file to
+`lists/buildables.txt` there. Create `data/plugins/my_build_catalog/plugin.ini`
+with `id = my_build_catalog`, `name = My Build catalog`, `version = 1.0.0`,
+`api = 1.1`, and `kind = data` on separate lines. Create an empty `disabled`
+file in `data/plugins/build_catalog/` to disable the bundled pack, and restart.
+Keep the original as a backup and do not overwrite the bundled pack. Multiple
+enabled lists refuse as ambiguous; there is no raw-file fallback.
 
 The format is `[category]` followed by raw object identifiers, with `#` comments
 and blank lines. Copied bytes are bounded to 1 MiB and parsed atomically: at most
@@ -104,12 +111,14 @@ A missing-publication red arm must fail the same fixture. These are source and
 synthetic integration checks, **not run in game**.
 
 Windows/MSVC validation is recorded separately by the source review. Streamed
-prefab cleanup, collision, filtered rays, camera restore, rendering and default
-release staging remain unverified. The release workflow downloads
-sdk-v2.4.0, which ships these headers, but does not stage this module:
-release-folder wiring is required before shipping. This change enables no native backend and changes no SDK pin. The existing
-Windows input focus issue remains open; process focus alone does not establish that
-the Build controls are safe while interacting with other UI.
+prefab cleanup, collision, filtered rays, camera restore, and rendering remain
+unverified. The release workflow uses the `player-offline` profile, which includes
+the Build module, and downloads sdk-v2.4.0, which ships its required headers. The
+development release workflow remains refused; no release artifact or activation
+is established by this staging configuration. This change enables no native
+backend and changes no SDK pin. The existing Windows input focus issue remains
+open; process focus alone does not establish that the Build controls are safe
+while interacting with other UI.
 
 For a connected no-game preflight, build the actual module against an extracted
 checksum-verified SDK and build the matching Core source's `sco_host`,

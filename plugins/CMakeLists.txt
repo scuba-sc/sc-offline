@@ -97,6 +97,12 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../data/plugins/picker_catalog/plugin
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../data/ships.txt" "${CMAKE_CURRENT_SOURCE_DIR}/../data/npcs.txt"
   DESTINATION data/plugins/picker_catalog/lists COMPONENT picker_catalog)
 
+# The legacy source is installed only inside the independently disableable data pack.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../data/plugins/build_catalog/plugin.ini"
+  DESTINATION data/plugins/build_catalog COMPONENT build_catalog)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../data/buildables.txt"
+  DESTINATION data/plugins/build_catalog/lists COMPONENT build_catalog)
+
 # Ordinary first-party DataCore pack: no module, no reused native quantum ID.
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../data/plugins/quantum_drive"
   DESTINATION data/plugins COMPONENT quantum_drive)

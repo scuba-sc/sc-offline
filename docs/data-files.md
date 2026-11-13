@@ -10,7 +10,7 @@ Everything the menu reads is plain text in `data/`. Most files explain their own
 | `npcs.txt` | 2239 NPC archetypes |
 | `items.txt` | 1489 gear items, in ten slot sections |
 | `loadout_slots.txt` | Optional catalogue: 344 public logical weapon/attachment/tool choices in fourteen explicit target sections; copy into an enabled data pack to use it |
-| `buildables.txt` | 3728 objects in 18 groups, for Build mode and the Squadron 42 Spawn section |
+| `plugins/build_catalog/lists/buildables.txt` | Default Build and Squadron 42 picker catalog, copied from the tracked source list |
 | `outfits.txt` | 35 outfits: each is a `[name]` line, then one line per piece |
 | `locations.txt` | Places for the Travel tab: system, name, entity, radius |
 | `contract_scripts.txt` | The 796 contracts that run without any CIG mission script; see [features.md](features.md#contracts). |
@@ -50,13 +50,20 @@ but is not this consumer's input. Scan-generated `locations_found.txt` and
 bookmark storage keep their separate existing filesystem policy. Bounds and
 restart behavior: [Quantum curated destinations](../plugins/quantum/README.md#curated-destinations-from-an-ordinary-data-pack).
 
-The external Build module similarly reads exactly one enabled public
-`lists/buildables.txt` grouped list. Explicitly copy a user-owned list to an
-ordinary data pack while stopped and restart; the top-level `buildables.txt`
-remains untouched. Categories, global search, 64-row pages and SQ42 controls
-belong to the external owner. Missing, ambiguous or malformed lists refuse
-without a partial catalogue or raw-file fallback. No catalogue staging is added.
-Format, limits and ownership: [Build picker](../plugins/build/README.md#grouped-build-and-sq42-picker).
+The external Build module reads exactly one enabled public `lists/buildables.txt`
+grouped list. Release staging and the CMake `build_catalog` component provide
+an enabled `data/plugins/build_catalog` pack. The legacy top-level
+`data/buildables.txt` is omitted from releases, preserving an existing user file.
+
+To use your existing edited list, stop the host and launcher, create a separate
+`data/plugins/my_build_catalog/lists/` directory, and copy your legacy file to
+`lists/buildables.txt` there. Add `data/plugins/my_build_catalog/plugin.ini` with
+`id = my_build_catalog`, `name = My Build catalog`, `version = 1.0.0`,
+`api = 1.1`, and `kind = data` on separate lines. Create an empty `disabled`
+file in `data/plugins/build_catalog/` to disable the bundled pack, then restart.
+Keep your original as a backup. Two enabled lists are ambiguous and the picker
+refuses them; there is no automatic import or raw-file fallback. Do not overwrite
+the bundled pack with your edits. Format and limits: [Build picker](../plugins/build/README.md#grouped-build-and-sq42-picker).
 
 `data/plugins/quantum_drive/plugin.ini` declares an ordinary `kind = data`
 pack, separate from native/built-in `quantum`. It has no entry or code dependency.
