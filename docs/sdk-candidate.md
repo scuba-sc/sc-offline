@@ -46,6 +46,69 @@ archives are local and unpublished. Static sigcheck reports 347/347 on 197 and
 200, not gameplay or semantic equivalence. The 200 hauling target has an observed
 collection-layout difference. Native startup and ASOP activation remain refused.
 
+## Loadout profile candidate composition
+
+The local profile `player-offline-loadout-candidate` selects the 11 plugins from
+the stable `player-offline` profile plus enabled Loadout. It is an unpublished,
+inspection-only composition. The stable release profile and release gate are
+unchanged. Its disabled defaults remain explicit: `creative` and `discord` are
+disabled; the other ten entries are enabled. This local profile does not publish
+an SDK or plugin package, approve runtime activation, or qualify upgrades.
+
+Supply real caller-built artifacts for all 12 entries; the tool does not build
+or substitute modules. Use a controlled, existing absolute staging parent. Restrict its ACL to intended user accounts and verify that the
+parent and generated child are outside any game or launcher installation:
+
+```sh
+python -B tools/stage_loadout_candidate.py --artifact-root <absolute-artifact-root> --staging-parent <absolute-existing-non-install-directory>
+```
+
+The tool snapshots and validates selected artifacts and tracked product plugin
+defaults before writing, then creates a unique `sco-loadout-candidate-*` child
+under the supplied parent and prints its path. Candidate files use exclusive
+creation: occupied paths are refused and existing files are never replaced. It
+reports module hashes but cannot independently establish all binary provenance.
+Synthetic peer artifacts appear
+only in disposable tests and do not stand in for the real 11 peer binaries.
+
+By default, the items/outfits data pack is absent. To include it, pass
+`--lists-source <absolute-directory>` containing caller-supplied `items.txt` and
+`outfits.txt`. The tracked Loadout manifest is used unless an explicit
+`--lists-manifest <absolute-file>` is given; the manifest flag requires a list
+source. The existing no-replace list helper runs with buildables OFF. Conflicting
+destinations are refused. If list staging fails late, the already-composed plugin
+tree remains and the items/outfits pack may be partial; there is no rollback.
+A candidate-file write failure can also leave the unique child incomplete; the
+reported path identifies that tree.
+
+The supplied parent must be a pre-existing, nonredirected directory disjoint from
+the source, artifact and optional list paths. The parent, its ancestors and
+caller-supplied inputs must not be changed concurrently by another process. The
+path checks do not defend against hostile Windows parent replacement, and the
+tool cannot discover every possible installed game or launcher directory. Check
+the selected parent yourself. The tool does not write into an installation or
+provide an upgrade-preservation guarantee; this is a fresh inspection tree.
+
+### Loadout consumer proof identity
+
+One Loadout consumer proof used a separate extracted `legacy` SDK archive named
+`sco-sdk-2.4.1-dev.3.zip`. Its embedded metadata identifies Core source commit
+`c591513e194e9f3e0221cde62361a63a95453895`; the exact ZIP used in this proof had
+SHA-256
+`26fc210e9f236f9462a55a54375357abf27ace810c6896cf0b7548fbfaf50529`.
+Six consumer CTest cases passed, the two MSVC dependency traces were clean, and
+`sco-plugin-check` returned `OK: 0 failure(s)`. This SHA-256 is tied to that
+particular archive build. It is a separate build from the development archive
+coordinates above, whose Core source is `4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd`.
+It is not a universal hash for the `2.4.1-dev.3` label,
+does not replace the distinct development archive coordinates recorded above,
+and does not identify or qualify the other 11 profile artifacts.
+
+This evidence covers Loadout consumer compilation and offline tests against that
+exact extracted SDK. The candidate composition is not a release artifact or a
+runtime result. Production native activation remains refused; full outfit/provider
+parity and game acceptance remain pending.
+
 ### Previous development pairing
 
 Core `248d2a65ff979909695ece68ec8a0b71cbf26172` and its `2.4.1-dev.2` archives

@@ -6,6 +6,70 @@ It is **development work; not run in game**. Its G6/G7/content/widgets
 headers ship in the pinned published `sdk-v2.4.0` (`sdk-v2.0.0` lacked them);
 the release workflow does not yet stage loadout. Do not substitute this local build for a published-release proof.
 
+## Candidate-only profile composition
+
+A local, unpublished profile named `player-offline-loadout-candidate` combines the
+11 entries from the stable `player-offline` profile with enabled Loadout. It is an
+inspection candidate only. The stable release profile and release gate are
+unchanged; this local composition does not publish a package, approve runtime use,
+or establish Loadout parity. The profile leaves `creative` and `discord` disabled;
+the other ten entries, including Loadout, are enabled.
+
+For a real composition, supply real caller-built artifacts for all 12 entries; the
+tool does not build or substitute modules. It checks the selected manifests,
+modules, extra files and disabled markers, and reports module
+SHA-256 values. Those checks identify and validate the supplied bytes; they do not
+independently establish the build provenance of every binary. Synthetic peer
+artifacts are used only by disposable staging tests and are not release artifacts.
+The artifact root must include the real Loadout output at
+`built-loadout/loadout/loadout.dll` and the other entries described in
+[`tools/release-plugin-profiles.json`](../../tools/release-plugin-profiles.json).
+
+Run the local staging tool with an existing absolute staging parent under your
+control. Use an ACL that restricts access to the intended user accounts, and verify
+the parent and generated child are outside any game or launcher installation:
+
+```sh
+python -B tools/stage_loadout_candidate.py --artifact-root <absolute-artifact-root> --staging-parent <absolute-existing-non-install-directory>
+```
+
+The tool prints the path of a unique `sco-loadout-candidate-*` child under that
+parent. It snapshots the tracked product defaults and supplied inputs before
+writing. Candidate files use exclusive creation: occupied paths are refused and
+existing files are never replaced. It refuses redirected parents and parents
+that overlap the source, artifact or optional list inputs. The parent, its ancestors and supplied inputs
+must not be changed concurrently by another process. The path checks do not
+defend against a hostile Windows parent replacement, and the tool cannot identify
+all possible game installation directories; choose and inspect the staging parent
+accordingly. Quote paths containing spaces.
+
+Optional list staging is omitted by default. To include caller-supplied
+`items.txt` and `outfits.txt`, pass `--lists-source <absolute-list-directory>`;
+when that flag is present without `--lists-manifest`, the tracked Loadout list
+manifest is used. A custom manifest may be supplied with
+`--lists-manifest <absolute-file>`, which requires `--lists-source`. The pack is
+staged through the existing no-replace helper with buildables explicitly OFF.
+Conflicting files are refused, and a late list-stage failure can leave the
+items/outfits pack partially written after plugin composition. Inspect a reported
+partial tree before retrying; no rollback is promised. A candidate-file write
+failure can also leave the unique child incomplete; the reported path identifies
+that tree.
+
+This creates a fresh inspection tree and makes no upgrade-preservation promise.
+It does not merge into an existing installation or establish what an upgrade
+would retain. Production native activation remains refused. Full outfit/provider
+parity and game acceptance are pending; neither this tree nor synthetic peer
+fixtures are runtime or release evidence.
+
+The Loadout consumer proof used a separate `legacy` SDK archive named
+`sco-sdk-2.4.1-dev.3.zip`, SHA-256
+`26fc210e9f236f9462a55a54375357abf27ace810c6896cf0b7548fbfaf50529`, whose
+metadata identifies Core source `c591513e194e9f3e0221cde62361a63a95453895`.
+All six consumer CTest cases passed and `sco-plugin-check` reported zero failures.
+That digest identifies this exact proof archive only; it is not a universal
+version hash or proof for the other 11 supplied binaries. See the
+[SDK candidate record](../../docs/sdk-candidate.md#loadout-profile-candidate-composition)
+for the evidence boundary.
 ## Obtain, build, install
 
 1. Obtain the pinned published combined core+game SDK containing `sc_loadout.h`,

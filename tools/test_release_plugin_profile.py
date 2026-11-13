@@ -26,6 +26,10 @@ def offline_profile():
     return stage.load_profile("player-offline", PROFILE_PATH)
 
 
+def candidate_profile():
+    return stage.load_profile("player-offline-loadout-candidate", PROFILE_PATH)
+
+
 def make_artifacts(root: Path, profile: dict) -> None:
     for entry in profile["plugins"]:
         source = root / entry["artifact_dir"]
@@ -40,6 +44,111 @@ def make_artifacts(root: Path, profile: dict) -> None:
 
 
 class ReleasePluginProfile(unittest.TestCase):
+    def test_candidate_preserves_stable_entries_and_adds_enabled_loadout(self):
+        stable = offline_profile()
+        candidate = candidate_profile()
+        loadout = {
+            "id": "loadout",
+            "artifact_dir": "built-loadout/loadout",
+            "module": "loadout.dll",
+            "disabled": False,
+        }
+
+        self.assertEqual(candidate["plugins"], stable["plugins"] + [loadout])
+        ids = [entry["id"] for entry in candidate["plugins"]]
+        self.assertEqual(len(ids), 12)
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual(set(ids), {entry["id"] for entry in stable["plugins"]} | {"loadout"})
+        self.assertEqual(candidate["excluded"], {
+            plugin_id: reason
+            for plugin_id, reason in stable["excluded"].items()
+            if plugin_id != "loadout"
+        })
+        self.assertEqual(candidate["external_exclusions"], stable["external_exclusions"])
+
+        manifest = (ROOT / "plugins" / "loadout" / "plugin.ini").read_text(encoding="utf-8")
+        self.assertRegex(manifest, r"(?m)^id\s*=\s*loadout\s*$")
+        self.assertRegex(manifest, r"(?m)^entry\s*=\s*loadout\.dll\s*$")
+        self.assertFalse((ROOT / "plugins" / "loadout" / "disabled").exists())
+
+    def test_candidate_stages_all_twelve_plugins_and_disabled_defaults(self):
+        profile = candidate_profile()
+        with tempfile.TemporaryDirectory() as tmp:
+            temp = Path(tmp)
+            artifacts = temp / "artifacts"
+            destination = temp / "package" / "data" / "plugins"
+            make_artifacts(artifacts, profile)
+            shutil.copytree(ROOT / "data" / "plugins", destination)
+            stage.stage_profile(profile, artifacts, destination)
+
+            for entry in profile["plugins"]:
+                folder = destination / entry["id"]
+                self.assertTrue((folder / "plugin.ini").is_file(), entry["id"])
+                self.assertTrue((folder / entry["module"]).is_file(), entry["id"])
+                self.assertEqual((folder / "disabled").is_file(), entry["disabled"], entry["id"])
+                self.assertEqual(
+                    (folder / "plugin.ini").read_bytes(),
+                    (ROOT / "plugins" / entry["id"] / "plugin.ini").read_bytes(),
+                )
+
+            self.assertTrue((destination / "loadout" / "loadout.dll").is_file())
+            self.assertFalse((destination / "loadout" / "disabled").exists())
+            self.assertEqual(
+                {entry["id"] for entry in profile["plugins"]},
+                {"build", "contracts", "creative", "crew", "discord", "inspector",
+                 "loadout", "mining", "npc", "quantum", "spawn", "teleport"},
+            )
+            for excluded in profile["excluded"]:
+                self.assertFalse(any((destination / excluded).glob("*.dll")), excluded)
+
+    def test_candidate_loadout_conflicting_destination_refuses_to_stage(self):
+        profile = candidate_profile()
+        with tempfile.TemporaryDirectory() as tmp:
+            temp = Path(tmp)
+            artifacts = temp / "artifacts"
+            destination = temp / "package"
+            make_artifacts(artifacts, profile)
+            shutil.copytree(ROOT / "data" / "plugins", destination)
+            loadout_target = destination / "loadout"
+            loadout_target.mkdir(parents=True)
+            (loadout_target / "plugin.ini").write_text("id = another-plugin\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "conflicts with existing product data"):
+                stage.stage_profile(profile, artifacts, destination)
+
+    def test_candidate_loadout_disabled_marker_must_be_absent(self):
+        profile = candidate_profile()
+        with tempfile.TemporaryDirectory() as tmp:
+            temp = Path(tmp)
+            artifacts = temp / "artifacts"
+            destination = temp / "package"
+            make_artifacts(artifacts, profile)
+            shutil.copytree(ROOT / "data" / "plugins", destination)
+            (artifacts / "built-loadout" / "loadout" / "disabled").touch()
+
+            with self.assertRaisesRegex(ValueError, "loadout disabled marker must be absent"):
+                stage.stage_profile(profile, artifacts, destination)
+
+    def test_candidate_rejects_wrong_loadout_manifest_without_staging_modules(self):
+        profile = candidate_profile()
+        with tempfile.TemporaryDirectory() as tmp:
+            temp = Path(tmp)
+            artifacts = temp / "artifacts"
+            destination = temp / "package"
+            make_artifacts(artifacts, profile)
+            shutil.copytree(ROOT / "data" / "plugins", destination)
+            manifest = artifacts / "built-loadout" / "loadout" / "plugin.ini"
+            manifest.write_text(
+                manifest.read_text(encoding="utf-8").replace("id = loadout", "id = wrong"),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "identity, kind, or entry does not match"):
+                stage.stage_profile(profile, artifacts, destination)
+
+            for entry in profile["plugins"]:
+                self.assertFalse((destination / entry["id"] / entry["module"]).exists(), entry["id"])
+
     def test_every_plugin_folder_is_selected_or_has_a_reason(self):
         profile = offline_profile()
         selected = {entry["id"] for entry in profile["plugins"]}
@@ -93,7 +202,7 @@ class ReleasePluginProfile(unittest.TestCase):
             dirs = {p.name for p in destination.iterdir() if p.is_dir()}
             self.assertEqual(dirs, {
                 "build", "contracts", "creative", "crew", "discord", "inspector",
-                "mining", "npc", "picker_catalog", "quantum", "quantum_drive",
+                "build_catalog", "mining", "npc", "picker_catalog", "quantum", "quantum_drive",
                 "spawn", "teleport",
             })
 
