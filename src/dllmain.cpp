@@ -14,6 +14,7 @@
 #include "travel.h"
 #include "version.h"
 #include "native_activation_policy.h"
+#include "startup_gate_wait.h"
 #ifdef SCO_ASOP_HOST_COMPOSITION
 #include "asop_shell.h"
 #else
@@ -61,60 +62,149 @@ static const wchar_t* kTargetModule = L"StarCitizen.exe";
 // Startup gate. The offline patches must land before the game's own startup reaches its EAC
 // handshake (an unpatched game exits a fraction of a second after it starts). G1's Prepare may not
 // run under the loader lock, so it runs on ModThread; the game's main thread is held at the exe's
-// entry point until ModThread has finished StartOffline (admitted or refused), or kGateTimeoutMs.
+// entry point until ModThread has finished StartOffline (admitted or refused). If completion is not
+// confirmed, or restoring the original entry bytes fails, the waiting thread fail-stops the process.
 // The entry starts with a call rel32, which InstallDetour can't relocate, so the gate writes its own
 // 12-byte absolute jump and puts the original bytes back before the entry runs. Only the main thread
 // exists at the entry, so the restore can't race another thread.
 static HANDLE g_startupDone = nullptr;
+// ModThread pins this module before any refusal/unload path, so the gate and
+// reporter code remain backed even if its ordinary reference is dropped.
+static HMODULE g_startupGateModulePin = nullptr;
+static std::atomic<bool> g_startupGateInstalled{false};
 static uint8_t* g_entry = nullptr;
 static uint8_t g_entrySaved[12];
+static std::atomic<uint64_t> g_startupGateProgressMs{0};
 static constexpr DWORD kGateTimeoutMs = 60000;
+static constexpr DWORD kGateProgressIntervalMs = 5000;
 
 static void ReleaseStartupGate() {
     if (g_startupDone) SetEvent(g_startupDone);
 }
 
-extern "C" void StartupGateWait() {
-    const DWORD waited = WaitForSingleObject(g_startupDone, kGateTimeoutMs);
-    if (!sco::hook::WriteCode(g_entry, g_entrySaved, sizeof(g_entrySaved)))
-        TerminateProcess(GetCurrentProcess(), 0xC0DE0001);   // the entry would run our jump forever
-    if (waited != WAIT_OBJECT_0) Log("[!] startup gate: released after %lu ms without the mod finishing startup", kGateTimeoutMs);
+[[noreturn]] static void StartupGateFailStop(sc_offline::startup_gate_wait::Outcome outcome) {
+    DWORD exitCode = 0xC0DE0004;
+    switch (outcome) {
+    case sc_offline::startup_gate_wait::Outcome::TimedOut:
+        exitCode = 0xC0DE0001; break;
+    case sc_offline::startup_gate_wait::Outcome::WaitFailed:
+        exitCode = 0xC0DE0002; break;
+    case sc_offline::startup_gate_wait::Outcome::RestoreFailed:
+        exitCode = 0xC0DE0003; break;
+    case sc_offline::startup_gate_wait::Outcome::SetupFailed:
+    case sc_offline::startup_gate_wait::Outcome::Completed:
+        break;
+    }
+    TerminateProcess(GetCurrentProcess(), exitCode);
+    // TerminateProcess normally does not return on success. If it fails or returns,
+    // keep this thread parked at the entry stub so game startup cannot continue.
+    for (;;) Sleep(INFINITE);
 }
 
-static void InstallStartupGate() {
-    if (!offline_host::NativeActivationAvailable()) return;
-    if (!offline_host::ProductControlStopContractAvailable()) return;
+extern "C" void StartupGateWait() {
+    struct Operations {
+        uint64_t NowMs() const { return GetTickCount64(); }
+        sc_offline::startup_gate_wait::WaitResult Wait(uint64_t timeoutMs) const {
+            const DWORD timeout = timeoutMs > MAXDWORD ? MAXDWORD : static_cast<DWORD>(timeoutMs);
+            const DWORD result = WaitForSingleObject(g_startupDone, timeout);
+            if (result == WAIT_OBJECT_0) return sc_offline::startup_gate_wait::WaitResult::Signalled;
+            if (result == WAIT_TIMEOUT) return sc_offline::startup_gate_wait::WaitResult::TimedOut;
+            return sc_offline::startup_gate_wait::WaitResult::Failed;
+        }
+        bool Restore() const { return sco::hook::WriteCode(g_entry, g_entrySaved, sizeof(g_entrySaved)); }
+        void Progress(uint64_t elapsedMs, uint64_t) const {
+            g_startupGateProgressMs.store(elapsedMs, std::memory_order_relaxed);
+        }
+        void FailStop(sc_offline::startup_gate_wait::Outcome outcome) const { StartupGateFailStop(outcome); }
+    } operations;
+
+    const auto outcome = sc_offline::startup_gate_wait::WaitAndRestore(
+        operations, kGateTimeoutMs, kGateProgressIntervalMs);
+    if (outcome != sc_offline::startup_gate_wait::Outcome::Completed)
+        StartupGateFailStop(outcome);
+}
+
+static DWORD WINAPI StartupGateProgressThread(LPVOID) {
+    for (;;) {
+        const DWORD waited = WaitForSingleObject(g_startupDone, kGateProgressIntervalMs);
+        if (waited == WAIT_OBJECT_0) return 0;
+        if (waited != WAIT_TIMEOUT) return 0;
+        const auto elapsedMs = g_startupGateProgressMs.load(std::memory_order_relaxed);
+        Log("[app] startup gate: waiting for initialization (%llu/%lu ms)",
+            static_cast<unsigned long long>(elapsedMs), kGateTimeoutMs);
+    }
+}
+
+enum class StartupGateInstallResult { Refused, NotTarget, Installed };
+
+static StartupGateInstallResult InstallStartupGate() {
+    if (!offline_host::NativeActivationAvailable()) return StartupGateInstallResult::Refused;
+#ifndef SCO_OFFLINE_G1_HOST
+    return StartupGateInstallResult::Refused;
+#endif
+    if (!offline_host::ProductControlStopContractAvailable()) return StartupGateInstallResult::Refused;
     auto* base = reinterpret_cast<uint8_t*>(GetModuleHandleW(nullptr));
     wchar_t path[MAX_PATH];
     const DWORD length = GetModuleFileNameW(nullptr, path, MAX_PATH);
-    if (!base || !length || length >= MAX_PATH || _wcsicmp(PathFindFileNameW(path), kTargetModule) != 0) return;
+    if (!base || !length || length >= MAX_PATH || _wcsicmp(PathFindFileNameW(path), kTargetModule) != 0)
+        return StartupGateInstallResult::NotTarget;
     auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
-    if (dos->e_magic != IMAGE_DOS_SIGNATURE) return;
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) StartupGateFailStop(sc_offline::startup_gate_wait::Outcome::SetupFailed);
     auto* nt = reinterpret_cast<IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
-    if (nt->Signature != IMAGE_NT_SIGNATURE || !nt->OptionalHeader.AddressOfEntryPoint) return;
+    if (nt->Signature != IMAGE_NT_SIGNATURE || !nt->OptionalHeader.AddressOfEntryPoint)
+        StartupGateFailStop(sc_offline::startup_gate_wait::Outcome::SetupFailed);
     uint8_t* entry = base + nt->OptionalHeader.AddressOfEntryPoint;
-    uint8_t* stub = sco::hook::AllocateNear(entry, 64);
-    g_startupDone = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-    if (!stub || !g_startupDone) return;
-    // push rcx; sub rsp,0x20; mov rax,StartupGateWait; call rax; add rsp,0x20; pop rcx; mov rax,entry; jmp rax
-    // (rsp is 8 mod 16 at the entry; push makes it 16-aligned for the call; rcx carries the PEB argument.)
-    const uint64_t waitFn = reinterpret_cast<uint64_t>(&StartupGateWait), entryAddr = reinterpret_cast<uint64_t>(entry);
-    uint8_t code[36] = { 0x51, 0x48, 0x83, 0xEC, 0x20, 0x48, 0xB8 };
-    std::memcpy(code + 7, &waitFn, 8);
-    const uint8_t mid[] = { 0xFF, 0xD0, 0x48, 0x83, 0xC4, 0x20, 0x59, 0x48, 0xB8 };
-    std::memcpy(code + 15, mid, sizeof(mid));
-    std::memcpy(code + 24, &entryAddr, 8);
-    code[32] = 0xFF; code[33] = 0xE0;
-    std::memcpy(stub, code, 34);
-    FlushInstructionCache(GetCurrentProcess(), stub, 34);
-    uint8_t jump[12] = { 0x48, 0xB8 };   // mov rax, stub; jmp rax
-    const uint64_t stubAddr = reinterpret_cast<uint64_t>(stub);
-    std::memcpy(jump + 2, &stubAddr, 8);
-    jump[10] = 0xFF; jump[11] = 0xE0;
-    std::memcpy(g_entrySaved, entry, sizeof(g_entrySaved));
-    g_entry = entry;
-    if (!sco::hook::WriteCode(entry, jump, sizeof(jump))) { g_entry = nullptr; CloseHandle(g_startupDone); g_startupDone = nullptr; }
+    struct Operations {
+        uint8_t* entry;
+        uint8_t* stub = nullptr;
+        bool AllocateStub() {
+            stub = sco::hook::AllocateNear(entry, 64);
+            return stub != nullptr;
+        }
+        bool CreateCompletionEvent() {
+            g_startupDone = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+            return g_startupDone != nullptr;
+        }
+        bool WriteEntryJump() {
+            // push rcx; sub rsp,0x20; mov rax,StartupGateWait; call rax; add rsp,0x20; pop rcx; mov rax,entry; jmp rax
+            // (rsp is 8 mod 16 at the entry; push makes it 16-aligned for the call; rcx carries the PEB argument.)
+            const uint64_t waitFn = reinterpret_cast<uint64_t>(&StartupGateWait), entryAddr = reinterpret_cast<uint64_t>(entry);
+            uint8_t code[36] = { 0x51, 0x48, 0x83, 0xEC, 0x20, 0x48, 0xB8 };
+            std::memcpy(code + 7, &waitFn, 8);
+            const uint8_t mid[] = { 0xFF, 0xD0, 0x48, 0x83, 0xC4, 0x20, 0x59, 0x48, 0xB8 };
+            std::memcpy(code + 15, mid, sizeof(mid));
+            std::memcpy(code + 24, &entryAddr, 8);
+            code[32] = 0xFF; code[33] = 0xE0;
+            std::memcpy(stub, code, 34);
+            if (!FlushInstructionCache(GetCurrentProcess(), stub, 34)) return false;
+            uint8_t jump[12] = { 0x48, 0xB8 };   // mov rax, stub; jmp rax
+            const uint64_t stubAddr = reinterpret_cast<uint64_t>(stub);
+            std::memcpy(jump + 2, &stubAddr, 8);
+            jump[10] = 0xFF; jump[11] = 0xE0;
+            std::memcpy(g_entrySaved, entry, sizeof(g_entrySaved));
+            g_entry = entry;
+            return sco::hook::WriteCode(entry, jump, sizeof(jump));
+        }
+        void FailStop(sc_offline::startup_gate_wait::Outcome outcome) {
+            StartupGateFailStop(outcome);
+        }
+    } operations{entry};
+
+    if (sc_offline::startup_gate_wait::InstallGate(operations) !=
+        sc_offline::startup_gate_wait::InstallResult::Installed)
+        StartupGateFailStop(sc_offline::startup_gate_wait::Outcome::SetupFailed);
+    return StartupGateInstallResult::Installed;
 }
+
+static bool RetainStartupGateModule() {
+    if (!g_startupGateInstalled.load(std::memory_order_acquire)) return true;
+    return GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
+        reinterpret_cast<LPCWSTR>(&StartupGateWait), &g_startupGateModulePin) != FALSE;
+}
+
+// The process-lifetime pin is acquired at ModThread entry, avoiding a loader-lock
+// call from DllMain. An independent external unload before that pin is acquired
+// is outside this local lifetime guarantee.
 
 // Read-only anti-cheat inspection; no service/process/module state is modified.
 // Unknown is a refusal, including access-denied, partial enumeration and query errors.
@@ -715,6 +805,10 @@ static void RunMainThreadService() {
 
 static DWORD WINAPI ModThread(LPVOID param) {
     HMODULE self = static_cast<HMODULE>(param);
+#ifdef SCO_OFFLINE_G1_HOST
+    if (!RetainStartupGateModule())
+        StartupGateFailStop(sc_offline::startup_gate_wait::Outcome::SetupFailed);
+#endif
     OpenConsole();
     Log(SCO_TITLE " (" SCO_BASED_ON ")");
     Log("Bug reports: https://github.com/scuba-sc/sc-offline/issues");
@@ -746,8 +840,10 @@ static DWORD WINAPI ModThread(LPVOID param) {
             Log("[!] Hooks are already installed, so staying loaded (idle). Close the game.");
             for (;;) Sleep(1000);
         }
-        Log("[!] Launch Star Citizen offline with no EAC, then load this. Unloading in 5s.");
+        Log("[!] Launch Star Citizen offline with no EAC, then load this. Offline startup is refused; close the game.");
         ReleaseStartupGate();
+        // This delay leaves time to read the refusal; the gate module is pinned,
+        // so it is not used as proof that the waiter or reporter has exited.
         Sleep(5000);
         FreeLibraryAndExitThread(self, 0);
     }
@@ -791,8 +887,19 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
         InitLog();
-        InstallStartupGate();
-        if (!CreateThread(nullptr, 0, ModThread, hModule, 0, nullptr)) ReleaseStartupGate();
+        const auto gate = InstallStartupGate();
+        g_startupGateInstalled.store(gate == StartupGateInstallResult::Installed, std::memory_order_release);
+        if (gate == StartupGateInstallResult::Installed) {
+            HANDLE progress = CreateThread(nullptr, 0, StartupGateProgressThread, nullptr, 0, nullptr);
+            if (!progress) StartupGateFailStop(sc_offline::startup_gate_wait::Outcome::SetupFailed);
+            CloseHandle(progress);
+        }
+        if (gate != StartupGateInstallResult::NotTarget) {
+            HANDLE worker = CreateThread(nullptr, 0, ModThread, hModule, 0, nullptr);
+            // Do not signal completion if worker creation fails. An installed
+            // gate remains closed and its bounded wait will fail-stop.
+            if (worker) CloseHandle(worker);
+        }
     }
     return TRUE;
 }

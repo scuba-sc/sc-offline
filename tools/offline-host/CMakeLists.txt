@@ -13,6 +13,10 @@ add_library(sc_offline_host_composition STATIC ../../src/offline_host.cpp)
 target_link_libraries(sc_offline_host_composition PUBLIC sco_game_host)
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(startup_gate_wait_test startup_gate_wait_test.cpp)
+  target_include_directories(startup_gate_wait_test PRIVATE ../../src)
+  add_test(NAME startup_gate_wait_policy COMMAND startup_gate_wait_test)
+  set_tests_properties(startup_gate_wait_policy PROPERTIES TIMEOUT 15)
   # Standalone file adapter tests only: neither target builds offline_host.cpp
   # with ASOP enabled, or changes the product's native-activation refusal.
   if(WIN32 AND EXISTS "${SCO_HOST_SOURCE_DIR}/include/sco/game/asop_selection.h"
