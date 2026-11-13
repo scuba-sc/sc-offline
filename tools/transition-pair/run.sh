@@ -2,14 +2,19 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Qualify a private paired source candidate, never the published SDK archive.
 set -eu
-if [ "$#" -lt 4 ] || [ "$#" -gt 5 ]; then
-  echo "usage: $0 CORE_SOURCE EMPTY_BUILD_DIR OFFLINE_COMMIT OFFLINE_TREE [--verify-only|--product]" >&2
+if [ "$#" -lt 6 ] || [ "$#" -gt 7 ]; then
+  echo "usage: $0 CORE_SOURCE EMPTY_BUILD_DIR OFFLINE_COMMIT OFFLINE_TREE CORE_COMMIT CORE_TREE [--verify-only|--product]" >&2
   exit 2
 fi
-core=$1; build=$2; offline_commit=$3; offline_tree=$4; mode=${5:-}
+core=$1; build=$2; offline_commit=$3; offline_tree=$4; core_commit=$5; core_tree=$6; mode=${7:-}
 case "$mode" in ''|--verify-only|--product) ;; *) echo 'invalid mode' >&2; exit 2;; esac
-for hash in "$offline_commit" "$offline_tree"; do
-  if [[ ! "$hash" =~ ^[0-9a-f]{40}$ ]]; then echo 'expected full lowercase Git SHA-1' >&2; exit 2; fi
+for identity in "offline commit:$offline_commit" "offline tree:$offline_tree" \
+                "Core commit:$core_commit" "Core tree:$core_tree"; do
+  name=${identity%%:*}; hash=${identity#*:}
+  if [[ ! "$hash" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "expected full lowercase Git SHA-1 for $name" >&2
+    exit 2
+  fi
 done
 root=$(cd "$(dirname "$0")/../.." && pwd -P)
 core=$(cd "$core" && pwd -P)
@@ -40,6 +45,15 @@ check_no_ignored() {
     echo "ignored files present in source: $dir" >&2; return 1;
   }
 }
+check_core_identity() {
+  local repo=$1
+  [ "$(git -C "$repo" rev-parse HEAD)" = "$core_commit" ] || {
+    echo "Core commit mismatch: $repo" >&2; return 1;
+  }
+  [ "$(git -C "$repo" rev-parse 'HEAD^{tree}')" = "$core_tree" ] || {
+    echo "Core tree mismatch: $repo" >&2; return 1;
+  }
+}
 check_root "$root"; check_root "$core"
 check_clean "$root"; check_clean "$core"
 [ "$(git -C "$root" rev-parse HEAD)" = "$offline_commit" ] || { echo 'offline commit mismatch' >&2; exit 1; }
@@ -47,15 +61,14 @@ check_clean "$root"; check_clean "$core"
 git -C "$root" merge-base --is-ancestor 259ee6284d4c37f2eafa32f668ff29f4bc266844 HEAD || {
   echo 'offline candidate ancestry mismatch' >&2; exit 1;
 }
-[ "$(git -C "$root" rev-parse HEAD:external/sco-core)" = 4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd ] || {
+[ "$(git -C "$root" rev-parse HEAD:external/sco-core)" = "$core_commit" ] || {
   echo 'development offline gitlink mismatch' >&2; exit 1;
 }
-[ "$(git -C "$core" rev-parse HEAD)" = 4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd ] || { echo 'Core commit mismatch' >&2; exit 1; }
-[ "$(git -C "$core" rev-parse 'HEAD^{tree}')" = b80a97a9af8d19c447399922fa0664ecc22d4190 ] || { echo 'Core tree mismatch' >&2; exit 1; }
+check_core_identity "$core"
 # Ignored files could influence CMake. Offline is built in place, so reject them.
 check_no_ignored "$root"
-printf 'offline=%s tree=%s\ncore=%s tree=%s\ndevelopment_gitlink=4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd\n' \
-  "$offline_commit" "$offline_tree" 4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd b80a97a9af8d19c447399922fa0664ecc22d4190
+printf 'offline=%s tree=%s\ncore=%s tree=%s\ndevelopment_gitlink=%s\n' \
+  "$offline_commit" "$offline_tree" "$core_commit" "$core_tree" "$core_commit"
 # Convert explicitly instead of relying on MSYS argument conversion, which can
 # be disabled by the caller. Then resolve all paths in the same Python process
 # before any mkdir, including in verify-only mode.
@@ -144,14 +157,13 @@ build=$(cd "$build" && pwd -P)
 # Clone the verified object locally so ignored/generated files in the input Core
 # workspace cannot affect the build. This does not fetch from or publish to GitHub.
 git clone -q --no-hardlinks --no-checkout -c core.autocrlf=false "$core" "$build/core"
-git -C "$build/core" checkout -q --detach 4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd
-[ "$(git -C "$build/core" rev-parse 'HEAD^{tree}')" = b80a97a9af8d19c447399922fa0664ecc22d4190 ]
+git -C "$build/core" checkout -q --detach "$core_commit"
+check_core_identity "$build/core"
 [ -z "$(git -C "$build/core" status --porcelain --untracked-files=all)" ]
 mkdir -p "$build/fixture/.cmake/api/v1/query"
 touch "$build/fixture/.cmake/api/v1/query/codemodel-v2"
 cmake -S "$root/tools/offline-host" -B "$build/fixture" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON "-DSCO_HOST_SOURCE_DIR=$build/core"
-[ "$(git -C "$build/core" rev-parse HEAD)" = 4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd ]
-[ "$(git -C "$build/core" rev-parse 'HEAD^{tree}')" = b80a97a9af8d19c447399922fa0664ecc22d4190 ]
+check_core_identity "$build/core"
 check_clean "$build/core"; check_no_ignored "$build/core"
 check_clean "$root"; check_no_ignored "$root"
 python3 "$root/tools/transition-pair/verify_cmake.py" "$build/fixture" "$build/core" "$root" fixture
@@ -169,8 +181,7 @@ if [ "$mode" = --product ]; then
   mkdir -p "$build/product/.cmake/api/v1/query"
   touch "$build/product/.cmake/api/v1/query/codemodel-v2"
   cmake -S "$root" -B "$build/product" -DCMAKE_BUILD_TYPE=Release "-DSCO_HOST_SOURCE_DIR=$build/core"
-  [ "$(git -C "$build/core" rev-parse HEAD)" = 4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd ]
-  [ "$(git -C "$build/core" rev-parse 'HEAD^{tree}')" = b80a97a9af8d19c447399922fa0664ecc22d4190 ]
+  check_core_identity "$build/core"
   check_clean "$build/core"; check_no_ignored "$build/core"
   check_clean "$root"; check_no_ignored "$root"
   python3 "$root/tools/transition-pair/verify_cmake.py" "$build/product" "$build/core" "$root" product

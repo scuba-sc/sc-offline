@@ -1,57 +1,57 @@
 # Private paired-source qualification
 
-This development-only pairing checks the product's `external/sco-core` gitlink
-against the selected development Core source and selects that same source through
-the existing `SCO_HOST_SOURCE_DIR` mechanism. Core source is
-`4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd`, tree
-`b80a97a9af8d19c447399922fa0664ecc22d4190`. This local checkpoint combines the reviewed lifecycle/SDK stack with storage metadata, copied diagnostic source sections and additive widget event tags. Its unpublished `2.4.1-dev.3` archives have distinct identities recorded in [SDK coordinates](../../docs/sdk-candidate.md). The 197/200 signature scans are static only; hauling semantics and gameplay remain unverified. Earlier pairing results do not qualify this new commit. The offline branch includes
-`259ee6284d4c37f2eafa32f668ff29f4bc266844`; the caller must supply the exact
-paired offline commit and tree from the accompanying identity record.
-
-For a clean offline checkout and clean Core checkout, with a nonexistent build
-directory outside both source trees:
+This development-only check qualifies one exact Offline/Core source pair. Supply
+both commit and tree IDs for each repository from the separate reviewed pairing
+identity record:
 
 ```
-tools/transition-pair/run.sh CORE_SOURCE BUILD_DIR OFFLINE_COMMIT OFFLINE_TREE
+tools/transition-pair/run.sh CORE_SOURCE BUILD_DIR OFFLINE_COMMIT OFFLINE_TREE CORE_COMMIT CORE_TREE [--verify-only|--product]
 ```
 
-On Windows, run this with Git Bash and `cygpath` available. The runner refuses
-nonempty `MSYS_NO_PATHCONV` or `MSYS2_ARG_CONV_EXCL` because Git and CMake also
-receive shell paths. It converts all paths for the selected Python interpreter
-before comparing the build directory with both source roots.
+All four IDs must be full lowercase 40-character Git SHA-1 values. The runner
+checks the Offline checkout against its supplied commit and tree, retains the
+fixed Offline ancestry anchor, checks that the Offline gitlink equals the
+supplied Core commit, and checks the Core checkout against its supplied commit
+and tree. It prints all four identities and the verified gitlink. Do not derive
+the expected values from a moving ref, the checkout under test, or uncommitted
+work. Offline identities are caller-supplied because a tracked runner cannot
+contain the commit ID of the Offline tree that contains it.
 
-`--verify-only` checks identities, source cleanliness, and build-directory
-containment without building or creating the directory. It checks existing
-ancestors by file identity as well as by path, so differently cased
-spellings on case-insensitive filesystems cannot bypass either source root.
-The check is not a race-free sandbox against concurrent path replacement.
-The runner checks the CMake cache and file-API target sources and dependencies after each configure,
-including the selected Core's new app source and exact-profile selector. It
-requires fresh build directories, so no old library cache can be reused.
-`--product` also configures and builds the product with the same Core override;
-that extra step requires the Windows/MSVC x64 toolchain described in
-`docs/build.md`. The ordinary path builds and runs every registered synthetic
-`tools/offline-host` test, requiring key ownership, product refusal and Stop
-regressions to be registered. The runner clones verified Core objects locally
-into the new build directory to avoid ignored build artifacts in the input
-checkout affecting compilation. The clone uses `core.autocrlf=false` so checked-out source bytes retain the immutable Git content. Offline ignored files are rejected because that
-source is built in place. Both source checks reject tracked and untracked edits.
-It never changes the gitlink, fetches a remote, or changes release workflows.
-This Core commit is a private local candidate and is not fetchable from the
-public origin unless separately published. Use its verified bundle for transfer.
-The caller-supplied Offline hashes must come from the separate reviewed pairing
-identity record, not from an untrusted checkout; they avoid a self-referential
-commit hash in a tracked script.
+For a clean Offline checkout and clean Core checkout, with a nonexistent build
+directory outside both source trees, use `--verify-only` to check identities,
+source cleanliness, ancestry and path containment without building or creating
+the directory. On Windows, run with Git Bash and `cygpath`; automatic MSYS path
+conversion must remain enabled. The containment check compares normalized paths
+and existing ancestor file identities. It is not a race-free sandbox against
+concurrent path replacement.
 
-Core differs from the stable pin by more than the exact-build selector. Its
-C++ app Platform structure gained a default-false startup-snapshot field, so
-host and Core must be rebuilt together; existing frozen C plugin ABI and
-`game.build` 1.0 remain unchanged. This check does not certify a published SDK
-archive, native reader/worker exclusion, 5.0 mappings or game behavior. Product
-`NativeActivationAvailable()` remains hard false. Not run in game.
+Build mode requires a fresh directory. It clones the already verified local
+Core objects without hardlinks, checks out the exact supplied Core commit, and
+checks its tree and cleanliness before and after CMake configuration. It does
+not fetch a remote, change the gitlink, or alter release workflows. CMake's
+cache, file-API target sources and dependencies are checked after configuration.
+The fixture builds and runs all registered synthetic `tools/offline-host` tests;
+`--product` also configures and builds the product and requires the Windows/MSVC
+x64 toolchain described in `docs/build.md`.
 
-`tools/check.sh` and `tools/sdk-headers.py` default to the pinned submodule,
-not the override; verify its source before reporting their results. Published
-SDK archive checks remain separate historical qualification. Core's own tests
-are separate: the offline fixture sets
-`SCO_BUILD_TESTS=OFF`. Selector compilation is not product startup wiring.
+Run the identity and refusal suite with the same reviewed values:
+
+```
+python3 tools/transition-pair/test_runner.py CORE_SOURCE OFFLINE_COMMIT OFFLINE_TREE CORE_COMMIT CORE_TREE
+```
+
+The suite checks the supplied IDs against the selected immutable objects, then
+uses disposable local clones. Its labelled test-fixture commit contains the
+working runner only inside a temporary clone so the runner's clean-source gate
+stays active; it does not stage or commit the caller's worktree. The suite does
+not fetch when local history is incomplete and reports an unavailable ancestry
+anchor as an inability to test.
+
+This check qualifies source selection and synthetic behavior only. It does not
+certify a published SDK archive, native reader/worker exclusion, mappings or
+game behavior. Native activation remains refused; **not run in game**. The
+fixture sets `SCO_BUILD_TESTS=OFF`, so Core's own tests are separate. Selector
+compilation is not product startup wiring. `tools/check.sh` and
+`tools/sdk-headers.py` default to the pinned submodule, not the override; verify
+their source before reporting their results. Stable SDK archive checks remain
+separate historical qualification.
