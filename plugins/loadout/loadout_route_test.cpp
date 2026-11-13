@@ -35,7 +35,8 @@ std::string list_items, list_outfits;
 sco_content_v1 content{};
 sco_result Item(sco_plugin*,sco_content_kind,uint32_t ordinal,sco_content_item* item) {
     if(ordinal>=2) return SCO_NOT_FOUND;
-    *item={}; item->size=sizeof(*item); item->id=ordinal+1;
+    *item={}; item->size=sizeof(*item); item->kind=SCO_CONTENT_LIST; item->id=ordinal+1;
+    std::snprintf(item->pack,sizeof(item->pack),"loadout_route");
     std::snprintf(item->name,sizeof(item->name),"%s",ordinal ? "lists/outfits.txt" : "lists/items.txt"); return SCO_OK;
 }
 sco_result Read(sco_plugin*,uint64_t id,void* out,uint32_t* size) {

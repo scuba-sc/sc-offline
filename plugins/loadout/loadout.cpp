@@ -24,14 +24,28 @@ namespace {
 #define HAS(t, type, m) ((t) && (t)->size >= offsetof(type, m) + sizeof((t)->m) && (t)->m)
 struct Piece { std::string port, name; uint32_t slot = 0; };
 struct Outfit { std::string name; std::vector<Piece> pieces; };
-struct Lists { std::vector<Piece> items; std::vector<Outfit> outfits; };
+struct ContentSource {
+    bool present = false;
+    uint64_t id = 0;
+    std::string pack, name;
+};
+struct Lists {
+    std::vector<Piece> items;
+    std::vector<Outfit> outfits;
+    std::vector<std::string> buildables;
+    ContentSource items_source, outfits_source, buildables_source;
+    uint64_t generation = 0;
+};
 struct State {
     const sco_api* api = nullptr; sco_plugin* self = nullptr;
     Lists lists; bool lists_known = false, spoilers = false, clocked = false;
     uint32_t last_read = 0, page = 0; int32_t outfit = -1, ship = 0, build = -1;
+    uint64_t content_generation = 0, outfit_generation = 0;
     int cvars[4]{-1,-1,-1,-1};
-    std::string filter, outfit_filter, ship_filter, equip, visor, slots; std::vector<std::string> buildables;
-    std::vector<size_t> published_outfits, published_ships;
+    std::string filter, outfit_filter, ship_filter, equip, visor, slots;
+    std::vector<size_t> published_items, published_outfits, published_ships;
+    ContentSource published_items_source, published_outfits_source, published_buildables_source;
+    uint64_t player_content_generation = 0, sq_content_generation = 0;
     uint64_t job = 0; std::vector<Piece> job_pieces; bool job_poll_paused = false;
     char job_status[256] = "No retained loadout job.";
     std::shared_ptr<const catalogue::Data> curated, published_curated;
@@ -92,6 +106,24 @@ bool Same(std::string_view a,std::string_view b) {
     }
     return true;
 }
+bool SameSource(const ContentSource& a,const ContentSource& b) {
+    // pack/path is the deterministic source identity; id is only the SDK's
+    // process-local read handle for this copied item.
+    return a.present==b.present && (!a.present || (a.pack==b.pack && a.name==b.name));
+}
+bool ValidPackId(std::string_view pack) {
+    if (pack.empty() || pack.size()>31) return false;
+    for (unsigned char c:pack) if (!((c>='a' && c<='z') || (c>='0' && c<='9') || c=='_')) return false;
+    return true;
+}
+std::string SourceKey(const ContentSource& source) {
+    return source.present ? source.pack+"/"+source.name : "absent";
+}
+std::string ListsSummary() {
+    return "Loadout copied lists ready: items="+std::to_string(g.lists.items.size())+" from "+SourceKey(g.lists.items_source)+
+        "; outfits="+std::to_string(g.lists.outfits.size())+" from "+SourceKey(g.lists.outfits_source)+
+        "; buildables="+std::to_string(g.lists.buildables.size())+" from "+SourceKey(g.lists.buildables_source)+".";
+}
 bool Class(std::string_view name) {
     if (name.empty() || name.size()>=SC_LOADOUT_ITEM_NAME_BYTES) return false;
     for (unsigned char c:name) if (!((c>='a' && c<='z') || (c>='A' && c<='Z') || (c>='0' && c<='9') || c=='_')) return false;
@@ -112,7 +144,7 @@ uint32_t Slot(std::string_view name,bool outfit) {
 const char* ItemSupport(const Piece& p) {
     return p.slot==SC_LOADOUT_SLOT_PRIMARY || p.slot==SC_LOADOUT_SLOT_SIDEARM ? " [requires 1.1]" : p.slot ? "" : " [unsupported]";
 }
-sco_result Parse(std::string_view bytes,int kind,Lists& lists,std::vector<std::string>& buildables) {
+sco_result Parse(std::string_view bytes,int kind,Lists& lists) {
     if (bytes.find('\0')!=bytes.npos) return SCO_BAD_ARG;
     std::string section; Outfit* outfit=nullptr;
     while (!bytes.empty()) {
@@ -146,46 +178,91 @@ sco_result Parse(std::string_view bytes,int kind,Lists& lists,std::vector<std::s
         } else if (Same(section,"sq42")) {
             // buildables uses a separate retained list format; first name before a pipe is its command key.
             const auto name=Trim(std::string_view(line).substr(0,line.find('|')));
-            if (buildables.size()>=256) return SCO_TOO_MANY;
-            if (!name.empty()) buildables.push_back(name);
+            if (lists.buildables.size()>=256) return SCO_TOO_MANY;
+            if (!name.empty()) lists.buildables.push_back(name);
         }
     }
     return SCO_OK;
 }
-sco_result ReadLists() {
-    // A source replacement makes every previously published outfit index stale.
-    g.sq_events=false; g.published_outfits.clear(); g.published_ships.clear();
+sco_result ReadLists(std::string* failure=nullptr) {
+    auto fail=[&](sco_result result,const char* message) {
+        if (failure) *failure=message;
+        return result;
+    };
+    // A reload withdraws the old snapshot before reading. Callbacks and selections
+    // from that generation cannot act while a replacement is being assembled.
+    g.player_events=false; g.sq_events=false; g.lists_known=false;
+    g.lists={}; g.published_items.clear(); g.published_outfits.clear(); g.published_ships.clear();
+    g.published_items_source={}; g.published_outfits_source={}; g.published_buildables_source={};
+    g.player_content_generation=0; g.sq_content_generation=0; g.outfit_generation=0;
+    g.outfit=-1; g.build=-1; g.page=0; g.equip.clear();
+    if (failure) failure->clear();
+    if (g.content_generation==std::numeric_limits<uint64_t>::max())
+        return fail(SCO_TOO_MANY,"Loadout content generation limit reached; restart the host before reloading.");
+    const auto generation=++g.content_generation;
+
     const auto* content=Open<sco_content_v1>(SCO_CONTENT_NAME);
-    if (!HAS(content,sco_content_v1,item) || !HAS(content,sco_content_v1,read)) return SCO_UNAVAILABLE;
-    Lists lists; std::vector<std::string> buildables; uint32_t total=0; bool found=false;
+    if (!HAS(content,sco_content_v1,item) || !HAS(content,sco_content_v1,read))
+        return fail(SCO_UNAVAILABLE,"Public sco.content 1.0 is unavailable; no private-file fallback.");
+    Lists candidate; candidate.generation=generation;
+    std::vector<uint64_t> source_ids;
+    uint32_t total=0; bool found=false;
     for (uint32_t ordinal=0;ordinal<=SCO_CONTENT_MAX_ITEMS;++ordinal) {
         sco_content_item item{}; item.size=sizeof(item);
         const auto r=content->item(g.self,SCO_CONTENT_LIST,ordinal,&item);
         if (r==SCO_NOT_FOUND) {
-            if (!found) return SCO_NOT_FOUND;
-            g.lists=std::move(lists); g.buildables=std::move(buildables); g.lists_known=true;
-            g.outfit=-1; g.build=-1; g.page=0; return SCO_OK;
+            if (!found)
+                return fail(SCO_NOT_FOUND,"No supported copied list sources were present; no private-file fallback.");
+            g.lists=std::move(candidate); g.lists_known=true;
+            return SCO_OK;
         }
-        if (r!=SCO_OK) return r;
-        if (ordinal==SCO_CONTENT_MAX_ITEMS || !std::memchr(item.name,0,sizeof(item.name))) return SCO_FAILED;
-        const int kind=Same(item.name,"lists/items.txt") ? 0 : Same(item.name,"lists/outfits.txt") ? 1 : Same(item.name,"lists/buildables.txt") ? 2 : -1;
+        if (r!=SCO_OK) return fail(r,"The copied-content index could not be read completely.");
+        if (ordinal==SCO_CONTENT_MAX_ITEMS || item.size!=sizeof(item) ||
+            item.kind!=SCO_CONTENT_LIST || !std::memchr(item.name,0,sizeof(item.name)))
+            return fail(SCO_FAILED,"The content service returned an invalid list record; no snapshot was published.");
+        const std::string_view name(item.name);
+        const int kind=Same(name,"lists/items.txt") ? 0 : Same(name,"lists/outfits.txt") ? 1 :
+            Same(name,"lists/buildables.txt") ? 2 : -1;
         if (kind<0) continue;
+
+        const auto* pack_end=static_cast<const char*>(std::memchr(item.pack,0,sizeof(item.pack)));
+        if (!pack_end) return fail(SCO_FAILED,"The content service returned an unterminated pack identity.");
+        const std::string_view pack(item.pack,static_cast<size_t>(pack_end-item.pack));
+        if (!ValidPackId(pack))
+            return fail(SCO_FAILED,"The content service returned an invalid pack identity.");
+        ContentSource* source=kind==0 ? &candidate.items_source :
+            kind==1 ? &candidate.outfits_source : &candidate.buildables_source;
+        if (source->present)
+            return fail(SCO_BAD_ARG,"Ambiguous copied list source; enable exactly one pack for each supported list path.");
+        if (std::find(source_ids.begin(),source_ids.end(),item.id)!=source_ids.end())
+            return fail(SCO_FAILED,"The content service reused an item identity; no snapshot was published.");
+        source->present=true; source->id=item.id; source->pack.assign(pack); source->name.assign(name);
+        source_ids.push_back(item.id);
+
         uint32_t needed=0; const auto asked=content->read(g.self,item.id,nullptr,&needed);
-        if (asked!=SCO_TOO_MANY && !(asked==SCO_OK && needed==0)) return asked==SCO_OK ? SCO_FAILED : asked;
-        if (needed>SCO_CONTENT_MAX_FILE_BYTES || total>SCO_CONTENT_MAX_FILE_BYTES-needed) return SCO_TOO_MANY;
+        if (asked!=SCO_TOO_MANY && !(asked==SCO_OK && needed==0))
+            return fail(asked==SCO_OK ? SCO_FAILED : asked,"The copied list size could not be read.");
+        if (needed>SCO_CONTENT_MAX_FILE_BYTES || total>SCO_CONTENT_MAX_TOTAL_BYTES-needed)
+            return fail(SCO_TOO_MANY,"Copied lists exceed the public per-file or total-byte limit.");
         total+=needed;
         std::string bytes(needed,'\0'); uint32_t count=needed;
-        if (needed) { const auto read=content->read(g.self,item.id,bytes.data(),&count); if (read!=SCO_OK) return read; }
-        if (count!=needed) return SCO_FAILED;
-        const auto parsed=Parse(bytes,kind,lists,buildables); if (parsed!=SCO_OK) return parsed;
+        if (needed) {
+            const auto read=content->read(g.self,item.id,bytes.data(),&count);
+            if (read!=SCO_OK) return fail(read,"Copied list bytes could not be read completely.");
+        }
+        if (count!=needed) return fail(SCO_FAILED,"The copied list read returned an incomplete byte count.");
+        const auto parsed=Parse(bytes,kind,candidate);
+        if (parsed!=SCO_OK)
+            return fail(parsed,"A copied list is malformed or incomplete; the whole candidate snapshot was refused.");
         found=true;
     }
-    return SCO_TOO_MANY;
+    return fail(SCO_TOO_MANY,"Copied-content enumeration exceeded the public item limit.");
 }
 sco_result Ready(char* out,uint32_t size) {
     if (g.lists_known) return SCO_OK;
-    const auto r=ReadLists();
-    if (r!=SCO_OK) Answer(r,out,size,"Loadout lists unavailable/refused; install enabled packs with lists/items.txt and lists/outfits.txt. No private-file fallback.");
+    std::string failure;
+    const auto r=ReadLists(&failure);
+    if (r!=SCO_OK) Answer(r,out,size,failure.empty() ? "Loadout lists unavailable/refused; no private-file fallback." : failure.c_str());
     return r;
 }
 sco_result Validate(const sco_arg* args,uint32_t n,uint32_t expected,char* out,uint32_t size) {
@@ -411,6 +488,8 @@ sco_result EquipSelection(const sco_arg* args,uint32_t n,char* out,uint32_t size
     auto r=Validate(args,n,1,out,size); if (r!=SCO_OK) return r;
     if (!String(args[0],1023) || !*args[0].v.s) return SCO_BAD_ARG;
     r=Ready(out,size); if (r!=SCO_OK) return r;
+    if (!g.lists.items_source.present)
+        return Answer(SCO_NOT_FOUND,out,size,"No enabled data pack supplies lists/items.txt; no private-file fallback.");
     std::string_view names=args[0].v.s; std::vector<Piece> pieces;
     while (!names.empty()) {
         const auto start=names.find_first_not_of(" ,\t"); if (start==names.npos) break;
@@ -438,9 +517,11 @@ sco_result WearSelection(const sco_arg* args,uint32_t n,char* out,uint32_t size,
     if (!String(args[0],127) || !*args[0].v.s) return SCO_BAD_ARG;
     if (!g.spoilers) return Answer(SCO_UNAVAILABLE,out,size,"SQ42 spoiler confirmation required: loadout.spoilers true (session-only).");
     r=Ready(out,size); if (r!=SCO_OK) return r;
+    if (!g.lists.outfits_source.present)
+        return Answer(SCO_NOT_FOUND,out,size,"No enabled data pack supplies lists/outfits.txt; no private-file fallback.");
     const Outfit* found=nullptr;
     for (const auto& outfit:g.lists.outfits) if (Same(outfit.name,args[0].v.s)) {
-        if (found) return Answer(SCO_BAD_ARG,out,size,"Duplicate outfit name across packs; ambiguous selection refused.");
+        if (found) return Answer(SCO_BAD_ARG,out,size,("Duplicate outfit name in "+SourceKey(g.lists.outfits_source)+"; ambiguous selection refused.").c_str());
         found=&outfit;
     }
     if (!found) return Answer(SCO_NOT_FOUND,out,size,"Outfit not in copied outfits.txt.");
@@ -481,17 +562,19 @@ sco_result Refuse(const sco_arg*,uint32_t,void*,char* out,uint32_t size) {
 }
 sco_result Reload(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     const auto r=Validate(args,n,0,out,size); if (r!=SCO_OK) return r;
-    const auto read=ReadLists();
-    // Explicit failure invalidates old picker state: never pretend an old snapshot is a current read.
-    if (read!=SCO_OK) { g.lists={}; g.buildables.clear(); g.lists_known=false; g.outfit=-1; g.build=-1; }
-    const auto message=read==SCO_OK ? "Copied lists loaded: items="+std::to_string(g.lists.items.size())+", outfits="+std::to_string(g.lists.outfits.size()) : "Copied lists unavailable/refused; no private-file fallback.";
+    std::string failure;
+    const auto read=ReadLists(&failure);
+    std::string message=read==SCO_OK ? ListsSummary() :
+        failure.empty() ? "Copied lists unavailable/refused; no private-file fallback." : std::move(failure);
     return Answer(read,out,size,message.c_str());
 }
 sco_result Items(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     auto r=Validate(args,n,1,out,size); if (r!=SCO_OK) return r;
     if (!String(args[0],63)) return SCO_BAD_ARG;
     r=Ready(out,size); if (r!=SCO_OK) return r;
-    std::string message="Copied gear list (first 12 matches; use UI filter/pages)"; uint32_t count=0;
+    if (!g.lists.items_source.present)
+        return Answer(SCO_NOT_FOUND,out,size,"No enabled data pack supplies lists/items.txt; no private-file fallback.");
+    std::string message="Copied gear list from "+SourceKey(g.lists.items_source)+" (first 12 matches; use UI filter/pages)"; uint32_t count=0;
     for (const auto& p:g.lists.items) if (p.name.find(args[0].v.s)!=p.name.npos) {
         if (count++==12) break;
         message+="; "+p.port+":"+p.name+ItemSupport(p);
@@ -557,6 +640,16 @@ void Event(const char* panel,const sco_widget_event* e,void* context) {
     const bool sq=!std::strcmp(panel,"loadout.sq42");
     if(!sq&&(!g.player_events||reinterpret_cast<uintptr_t>(context)!=g.player_cookie))return;
     if(sq&&(!g.sq_events||reinterpret_cast<uintptr_t>(context)!=g.sq_cookie))return;
+    const bool current_content=g.lists_known && g.lists.generation==g.content_generation;
+    if(!sq && e->node_id>=2 && e->node_id<=4 &&
+       (!current_content || g.player_content_generation!=g.lists.generation ||
+        !SameSource(g.published_items_source,g.lists.items_source)))return;
+    if(sq && (e->node_id==101 || e->node_id==102 || e->node_id==106) &&
+       (!current_content || g.sq_content_generation!=g.lists.generation ||
+        !SameSource(g.published_outfits_source,g.lists.outfits_source)))return;
+    if(sq && (e->node_id==130 || e->node_id==132) &&
+       (!current_content || g.sq_content_generation!=g.lists.generation ||
+        !SameSource(g.published_buildables_source,g.lists.buildables_source)))return;
     if (sq && !g.spoilers && e->node_id!=100) return;
     auto string=[&](std::string& target,size_t limit) {
         if (e->kind==SCO_WIDGET_TEXT_INPUT && e->text && std::strlen(e->text)<=limit) target=e->text;
@@ -595,10 +688,10 @@ void Event(const char* panel,const sco_widget_event* e,void* context) {
                 if(valid){g.filter.assign(e->text,length);g.page=0;}
             }
             break;
-        case 2: if (e->kind==SCO_WIDGET_COMBO && e->index>=0 && e->index<64) {
-            const auto matches=Filtered(); const auto index=static_cast<size_t>(g.page)*64+static_cast<size_t>(e->index);
-            if (index<matches.size()) {
-                const auto& p=g.lists.items[matches[index]];
+        case 2: if (e->kind==SCO_WIDGET_COMBO && e->index>=0 && static_cast<size_t>(e->index)<g.published_items.size()) {
+            const auto index=g.published_items[static_cast<size_t>(e->index)];
+            if (index<g.lists.items.size()) {
+                const auto& p=g.lists.items[index];
                 if (g.equip.size()+p.name.size()+1<=1023) { if (!g.equip.empty()) g.equip+=','; g.equip+=p.name; }
             }
         } break;
@@ -629,14 +722,17 @@ void Event(const char* panel,const sco_widget_event* e,void* context) {
     else switch(e->node_id) {
         case 100: if (e->kind==SCO_WIDGET_BUTTON) { g.spoilers=true; ReadCvars(); } break;
         case 101: if (e->kind==SCO_WIDGET_COMBO) {
-            if (e->index==-1) g.outfit=-1;
-            else if (e->index>=0 && static_cast<size_t>(e->index)<g.published_outfits.size()) g.outfit=static_cast<int32_t>(g.published_outfits[static_cast<size_t>(e->index)]);
+            if (e->index==-1) { g.outfit=-1; g.outfit_generation=0; }
+            else if (e->index>=0 && static_cast<size_t>(e->index)<g.published_outfits.size()) {
+                g.outfit=static_cast<int32_t>(g.published_outfits[static_cast<size_t>(e->index)]);
+                g.outfit_generation=g.sq_content_generation;
+            }
         } break;
         case 135: (void)PickerText(e,g.outfit_filter); break;
-        case 102: if (e->kind==SCO_WIDGET_BUTTON && g.outfit>=0 && static_cast<size_t>(g.outfit)<g.lists.outfits.size() && std::find(g.published_outfits.begin(),g.published_outfits.end(),static_cast<size_t>(g.outfit))!=g.published_outfits.end()) {
+        case 102: if (e->kind==SCO_WIDGET_BUTTON && g.outfit_generation==g.lists.generation && g.outfit>=0 && static_cast<size_t>(g.outfit)<g.lists.outfits.size() && std::find(g.published_outfits.begin(),g.published_outfits.end(),static_cast<size_t>(g.outfit))!=g.published_outfits.end()) {
             auto a=Text(g.lists.outfits[static_cast<size_t>(g.outfit)].name.c_str()); Wear(&a,1,nullptr,nullptr,0);
         } break;
-        case 106: if (e->kind==SCO_WIDGET_BUTTON && g.outfit>=0 && static_cast<size_t>(g.outfit)<g.lists.outfits.size() && std::find(g.published_outfits.begin(),g.published_outfits.end(),static_cast<size_t>(g.outfit))!=g.published_outfits.end()) {
+        case 106: if (e->kind==SCO_WIDGET_BUTTON && g.outfit_generation==g.lists.generation && g.outfit>=0 && static_cast<size_t>(g.outfit)<g.lists.outfits.size() && std::find(g.published_outfits.begin(),g.published_outfits.end(),static_cast<size_t>(g.outfit))!=g.published_outfits.end()) {
             auto a=Text(g.lists.outfits[static_cast<size_t>(g.outfit)].name.c_str()); SubmitOutfit(&a,1,nullptr,nullptr,0);
         } break;
         case 107: if (e->kind==SCO_WIDGET_BUTTON) Progress(nullptr,0,nullptr,nullptr,0); break;
@@ -657,10 +753,10 @@ void Event(const char* panel,const sco_widget_event* e,void* context) {
             sco_arg a[]{Text(ship.cls),Number(ship.board ? g.height : ship.height),Text(sit ? "pilot" : "none"),Boolean(sit)};
             Spawn(a,4,nullptr,nullptr,0);
         } break;
-        case 130: if (e->kind==SCO_WIDGET_COMBO && e->index>=0 && static_cast<size_t>(e->index)<g.buildables.size()) g.build=e->index; break;
+        case 130: if (e->kind==SCO_WIDGET_COMBO && e->index>=0 && static_cast<size_t>(e->index)<g.lists.buildables.size()) g.build=e->index; break;
         case 131: if (e->kind==SCO_WIDGET_SLIDER && std::isfinite(e->value) && e->value>=0 && e->value<=100) g.ahead=e->value; break;
-        case 132: if (e->kind==SCO_WIDGET_BUTTON && g.build>=0 && static_cast<size_t>(g.build)<g.buildables.size()) {
-            sco_arg a[]{Text(g.buildables[static_cast<size_t>(g.build)].c_str()),Number(g.ahead)}; Build(a,2,nullptr,nullptr,0);
+        case 132: if (e->kind==SCO_WIDGET_BUTTON && g.build>=0 && static_cast<size_t>(g.build)<g.lists.buildables.size()) {
+            sco_arg a[]{Text(g.lists.buildables[static_cast<size_t>(g.build)].c_str()),Number(g.ahead)}; Build(a,2,nullptr,nullptr,0);
         } break;
         default: break;
     }
@@ -678,6 +774,10 @@ bool AsyncAvailable() {
 void Publish() {
     g.player_events=false; g.sq_events=false;
     const auto* api=g.api; auto* owner=g.self; const auto revision=job_revision;
+    const auto content_generation=g.lists.generation;
+    const auto items_source=g.lists.items_source;
+    const auto outfits_source=g.lists.outfits_source;
+    const auto buildables_source=g.lists.buildables_source;
     const bool async_available=AsyncAvailable();
     if (g.api!=api || g.self!=owner || job_revision!=revision) return;
     const auto* w=Open<sco_widgets_v1>(SCO_WIDGETS_NAME);
@@ -689,8 +789,11 @@ void Publish() {
     };
     const auto matches=Filtered(); if (g.page*64>=matches.size()) g.page=0;
     std::vector<const char*> options;
+    std::vector<size_t> item_rows;
     for (size_t i=static_cast<size_t>(g.page)*64;i<matches.size() && options.size()<64;++i) {
-        const auto& p=g.lists.items[matches[i]]; text.push_back(p.port+": "+p.name+ItemSupport(p)); options.push_back(text.back().c_str());
+        const auto row=matches[i];
+        const auto& p=g.lists.items[row]; text.push_back(p.port+": "+p.name+ItemSupport(p));
+        options.push_back(text.back().c_str()); item_rows.push_back(row);
     }
     add(SCO_WIDGET_TEXT_INPUT,1,"Search gear/curated names or classes (63 ASCII characters)").text=g.filter.c_str();
     auto& picker=add(SCO_WIDGET_COMBO,2,"Gear list (64 per page)"); picker.items=options.empty() ? nullptr : options.data(); picker.item_count=static_cast<uint32_t>(options.size()); picker.index=-1;
@@ -773,7 +876,9 @@ void Publish() {
     if(next_player_cookie<std::numeric_limits<uintptr_t>::max()) {
         const auto cookie=++next_player_cookie;
         if(w->set_panel(g.self,"loadout.player","Player",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(sco_widget_node),Event,reinterpret_cast<void*>(cookie))==SCO_OK) {
-            g.published_curated=g.curated;g.published_rows=std::move(curated_rows);g.published_types=std::move(type_rows);g.player_cookie=cookie;g.player_events=true;
+            g.published_curated=g.curated;g.published_rows=std::move(curated_rows);g.published_types=std::move(type_rows);
+            g.published_items=std::move(item_rows); g.published_items_source=items_source;
+            g.player_content_generation=content_generation; g.player_cookie=cookie;g.player_events=true;
         }
     }
     nodes.clear(); options.clear(); text.clear();
@@ -781,7 +886,11 @@ void Publish() {
     const auto publish_sq=[&] {
         if(next_sq_cookie<std::numeric_limits<uintptr_t>::max()) {
             const auto cookie=++next_sq_cookie;
-            if(w->set_panel(g.self,"loadout.sq42","Squadron 42",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(sco_widget_node),Event,reinterpret_cast<void*>(cookie))==SCO_OK) { g.published_outfits=std::move(outfit_rows); g.published_ships=std::move(ship_rows); g.sq_cookie=cookie; g.sq_events=true; }
+            if(w->set_panel(g.self,"loadout.sq42","Squadron 42",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(sco_widget_node),Event,reinterpret_cast<void*>(cookie))==SCO_OK) {
+                g.published_outfits=std::move(outfit_rows); g.published_ships=std::move(ship_rows);
+                g.published_outfits_source=outfits_source; g.published_buildables_source=buildables_source;
+                g.sq_content_generation=content_generation; g.sq_cookie=cookie; g.sq_events=true;
+            }
         }
     };
     if (!g.spoilers) { add(SCO_WIDGET_LABEL,99,"This tab may contain Squadron 42 spoilers. Confirmation is session-only."); add(SCO_WIDGET_BUTTON,100,"OK: show SQ42 spoilers"); }
@@ -815,7 +924,7 @@ void Publish() {
         auto& height=add(SCO_WIDGET_SLIDER,121,"Height above me (m)"); height.value=g.height; height.minimum=0; height.maximum=500;
         add(SCO_WIDGET_TOGGLE,122,"Pilot seat and Flight Ready").value=g.sit ? 1 : 0;
         add(SCO_WIDGET_BUTTON,123,"Spawn via external spawn.ship_options",ship_row>=0 ? 0u : SCO_WIDGET_DISABLED);
-        std::vector<const char*> builds; for (const auto& name:g.buildables) builds.push_back(name.c_str());
+        std::vector<const char*> builds; for (const auto& name:g.lists.buildables) builds.push_back(name.c_str());
         auto& build=add(SCO_WIDGET_COMBO,130,"SQ42 buildables"); build.items=builds.empty() ? nullptr : builds.data(); build.item_count=static_cast<uint32_t>(builds.size()); build.index=g.build;
         auto& ahead=add(SCO_WIDGET_SLIDER,131,"Metres ahead (0 = feet)"); ahead.value=g.ahead; ahead.minimum=0; ahead.maximum=100;
         add(SCO_WIDGET_BUTTON,132,"Place via build.place",g.build>=0 ? 0u : SCO_WIDGET_DISABLED);
@@ -872,9 +981,12 @@ sco_result Load(const sco_api* api,sco_plugin* self) {
         {"loadout.spawn",Spawn,spawn,4},{"loadout.build",Build,build,2} };
     for (const auto& c:commands) { const auto r=Command(c.name,c.fn,c.args,c.count); if (r!=SCO_OK) { g=State{}; return r; } }
     const auto r=api->subscribe(self,"tick",Tick,nullptr); if (r!=SCO_OK) { g=State{}; return r; }
-    const auto lists=ReadLists();
+    std::string list_status;
+    const auto lists=ReadLists(&list_status);
     (void)ReadSlots();
-    Answer(lists==SCO_OK ? SCO_OK : SCO_UNAVAILABLE,nullptr,0,lists==SCO_OK ? "Loadout copied lists ready; typed equip availability is independent." : "Loadout copied lists unavailable; no private fallback. Use loadout.reload_lists after installing packs and restarting.");
+    const auto summary=lists==SCO_OK ? ListsSummary() : list_status;
+    Answer(lists==SCO_OK ? SCO_OK : SCO_UNAVAILABLE,nullptr,0,lists==SCO_OK ? summary.c_str() :
+        list_status.empty() ? "Loadout copied lists unavailable; no private fallback. Use loadout.reload_lists after installing packs and restarting." : list_status.c_str());
     Publish(); return SCO_OK;
 }
 void Unload() {

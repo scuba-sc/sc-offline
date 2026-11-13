@@ -328,9 +328,16 @@ the remaining cleanup boundary. No confirmed equipment is removed on unload.
 Read only `SCO_CONTENT_LIST` entries named `lists/items.txt`, `lists/outfits.txt`
 and optional `lists/buildables.txt`, in public discovery order. Legacy top-level
 base files are not read privately; stage them into data packs or supply an
-enabled data pack. Use exactly one enabled `lists/buildables.txt` source for Build. Duplicate packs remain ordered, but ambiguous item-slot or
-outfit-name selections refuse. No item-existence guess is made while parsing;
-the typed provider reports missing items at apply time.
+enabled data pack. Each copied source identity is the data-pack ID plus its
+pack-relative list path; the SDK's opaque item ID is kept only as the
+process-local read handle. Supply at most one enabled source for each exact
+list path. Duplicate `lists/items.txt`, `lists/outfits.txt` or
+`lists/buildables.txt` paths across packs refuse the whole snapshot, rather
+than merging by discovery order. The three paths can live in different packs.
+An absent path stays absent and its feature command reports that explicitly;
+there is no fallback to private files. Reload status names the copied source
+for each section. No item-existence guess is made while parsing; the typed
+provider reports missing items at apply time.
 
 - Items retain `[slot]` sections, comments introduced by `#`, and one ASCII
   `[A-Za-z0-9_]` class per line, 1–95 bytes. Bounds: 3000 items.
@@ -338,9 +345,16 @@ the typed provider reports missing items at apply time.
   all pieces (including unsupported ports). The historical preview holds at
   most 256 outfits and 32 accepted pieces per section.
 - Build shortcuts retain the `[sq42]` group from the copied buildables list.
-- Reject malformed sections/classes, embedded NULs, oversized lines/records and
-  snapshots beyond 1 MiB combined. Parsing is atomic; failed explicit reload
-  invalidates old picks rather than displaying them as a current read.
+- Reject malformed sections/classes, embedded NULs, oversized lines/records,
+  files over 1 MiB and snapshots over the public 16 MiB total limit. Each
+  candidate list is copied and parsed before one snapshot replacement. If any
+  source is ambiguous, unreadable, malformed or incomplete, the whole snapshot
+  is refused and no earlier section from that attempt is exposed.
+- Explicit reload invalidates prior selections and panel callbacks before it
+  reads. A successful reload publishes one new selection generation; a failed
+  reload leaves every copied picker empty. Old widget callbacks cannot select
+  or apply rows from a later generation. Changing files still requires a host
+  restart; `loadout.reload_lists` re-reads the startup content snapshot only.
 
 Consumer mappings select logical UNDERSUIT, HEAD (helmet), TORSO, ARMS, LEGS,
 BACKPACK and VISOR. These are **not certified engine port mappings**. Unknown

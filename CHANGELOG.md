@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Identify copied Loadout lists by data-pack ID and relative path, refuse duplicate, malformed or unreadable sources, and invalidate selections atomically on reload. Synthetic multi-pack tests only; full outfit parity remains open; **not run in game**.
+
 - Restore a copied first admissible Build catalogue selection before camera acquisition while preserving explicit selections and safe refusal. Synthetic tests only; G5 and the focus issue remain open; **not run in game**.
 
 - Submit copied Player gear and confirmed SQ42 outfits as retained public loadout 1.2 jobs, with progress and cancellation; unsupported mappings refuse. Synthetic tests only; **not run in game**.
