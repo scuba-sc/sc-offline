@@ -307,10 +307,16 @@ acceptance remain separate from the gear selectors.
 
 ## Evidence and pending acceptance
 
+The internal outfit importer and recipe model preserve the reviewed 0.7.7
+file parsing and preparation semantics. Their two standalone synthetic tests
+run with `SCO_WORKFLOW_TESTS=ON`. This model is not connected to player actions,
+the product module, or a native SDK provider; passing these tests does not
+establish game behavior or native outfit support.
+
 The consumer proof uses the checksum-verified published stable `sdk-v2.4.0` combined
 archive (`sco-sdk-2.4.0.zip`, SHA-256
 `0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc`).
-Enable the three development workflows with `-DSCO_WORKFLOW_TESTS=ON`, then run:
+Enable the six development tests with `-DSCO_WORKFLOW_TESTS=ON`, then run:
 
 ```sh
 cmake --build <plugin-build> --config Release
