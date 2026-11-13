@@ -14,7 +14,7 @@ out=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$out")
 for source in "$root" "$core"; do case "$out/" in "$source/"*) echo 'output must be outside source trees' >&2; exit 1;; esac; done
 mkdir -p "$out"
 # Local clone eliminates ignored/generated artifacts in the selected checkout.
-git clone -q --no-hardlinks --no-checkout "$core" "$out/core"
+git clone -q --no-hardlinks --no-checkout -c core.autocrlf=false "$core" "$out/core"
 git -C "$out/core" checkout -q --detach "$expected"
 [ "$(git -C "$out/core" rev-parse HEAD)" = "$expected" ]
 [ "$(git -C "$out/core" rev-parse 'HEAD^{tree}')" = "$(git -C "$core" rev-parse 'HEAD^{tree}')" ]
@@ -29,7 +29,7 @@ archive="sco-sdk-$version.zip"
 cmp "$out/first/$archive" "$out/second/$archive" || { echo 'development archive is not reproducible' >&2; exit 1; }
 python3 "$out/core/tools/ip_audit.py" zip --development --profile legacy "$out/first/$archive"
 (cd "$out/first" && sha256sum "$archive" > SHA256SUMS)
-digest=$(sha256sum "$out/first/$archive" | cut -d' ' -f1)
+digest=$(cd "$out/first" && sha256sum "$archive" | cut -d' ' -f1)
 # Verify archive inventory and all source/profile metadata using the same strict
 # candidate path that individual isolated consumer proofs use.
 python3 - "$root" "$out/first/$archive" "$out/first/SHA256SUMS" "$out/extracted" "$version" "$digest" "$expected" <<'PY'
