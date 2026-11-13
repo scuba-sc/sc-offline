@@ -117,3 +117,13 @@ Every action is pinned to a commit SHA. The workflow defaults to `contents: read
 - If a promoted build turns out broken, re-mark an earlier release as Latest (`gh release edit <tag> --latest`).
 
 To see the current state, check [Releases](https://github.com/scuba-sc/sc-offline/releases). This file deliberately doesn't name the current release, so that it can't go stale.
+
+## Synthetic Loadout content host proof
+
+On Windows x64, `tools/test_loadout_content_host.ps1` accepts `-SdkArchive`,
+`-CoreSourceDir`, `-CMakeExe`, and `-GeneratorInstance`. It verifies the pinned
+SDK archive and Core source commit, builds the external Loadout module against
+the extracted public SDK, and runs it with real Core content discovery in a
+fresh synthetic host. It creates a unique temporary build and fixture directory
+and leaves it for inspection. The fixture uses synthetic lists and does not
+exercise a game, game providers, the launcher, or updater.
