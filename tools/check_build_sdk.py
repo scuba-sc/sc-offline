@@ -69,14 +69,16 @@ def main(args):
     run(configure, work)
     run(['cmake', '--build', checker_build, '--config', 'Release', '--target', 'sco-plugin-check'], work)
     checker = checker_build / ('Release/sco-plugin-check.exe' if os.name == 'nt' else 'sco-plugin-check')
-    # The checker runs every argument-free command itself; place is invoked explicitly.
+    # The checker has no public content provider: the zero-argument toggle must
+    # refuse for lack of a catalogue. Status independently reports the G5 boundary.
     checked = run([checker, folder, '--invoke', 'build.place', 'PlayerDeco_Flair_Heart_Table_1_a', '5'], work).stdout
     print(checked)
     for token in ('build.place -> unavailable', 'game.world missing/disabled; no private fallback',
-                  'build.toggle -> unavailable', 'G5 has no production adapter; no private fallback',
+                  'build.toggle -> unavailable', 'No admissible row in the loaded unique build catalogue',
                   'build.aim -> unavailable', 'build.drop -> unavailable',
                   'build.undo -> ok "Nothing retained to undo"', 'build.clear -> ok',
                   'G5 aim/freecam unavailable (no production adapter)', 'no across-reload persistence',
+                  'Unavailable: public sco.content 1.0 required',
                   'OK: 0 failure(s)'):
         if token not in checked:
             raise AssertionError('Missing-service checker reply missing: ' + token)
