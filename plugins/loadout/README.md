@@ -63,9 +63,9 @@ defaults off until release staging is approved (the pinned sdk-v2.4.0 ships
    is stopped; enable `plugins = on`. macOS/Linux modules are development
    artifacts, not Windows-loadable game DLLs. No tag/release is authorized here.
 
-The copied-list routes use `game.loadout` 1.0, `game.cvars` 1.0 and `sco.content`
-1.0. Explicit weapon/tool slots require loadout 1.1 for synchronous apply or 1.2
-for jobs. Missing/unready services leave commands available with explicit refusal.
+Copied armor and outfit apply use `game.loadout` 1.0; copied primary/sidearm
+gear and explicit weapon/tool slots require 1.1 for synchronous apply. Jobs require
+1.2. Lists and shortcuts also use `game.cvars` 1.0 and `sco.content` 1.0. Missing/unready services leave commands available with explicit refusal.
 Optional `sco.widgets` 1.0 adds renderer-neutral Player/SQ42 panels; without it
 use commands. Actual product renderer integration remains a separate dependency.
 Native code is trusted, not sandboxed. Commands/tick/widget callbacks use only the
@@ -225,7 +225,7 @@ successful publication. The latest observation cannot be shown until then.
 
 Job submit controls are disabled when the public 1.2 lifecycle or async capability
 is unavailable; callbacks recheck admission when invoked. Copied primary and sidearm
-choices are labelled async-only because synchronous copied-list mapping is unchanged.
+choices are labelled as requiring 1.1 for synchronous apply; jobs require 1.2.
 
 One job is retained until explicit cancellation/release, including after terminal
 status. While retained, another submit or synchronous equip refuses. Progress
@@ -258,17 +258,18 @@ Consumer mappings select logical UNDERSUIT, HEAD (helmet), TORSO, ARMS, LEGS,
 BACKPACK and VISOR. These are **not certified engine port mappings**. Unknown
 legacy sections/ports remain visible; any selected unknown port refuses the
 whole request before mutation. Duplicate logical slots or more than 16 pieces
-also refuse before mutation; batches are never silently split. Legacy weapon, ammo,
+also refuse before mutation; batches are never silently split. Other legacy weapon slots, ammo,
 grenades, clothing, body/head/eyes/hair/accessories/material variants, implicit
 magazine/default face/undersuit/medpen synthesis and old empty-slot clearing need
 separate consumer mappings, additional public contract coverage where absent,
-and validation. The existing synchronous copied-list/outfit actions continue to query 1.0 and use the
-armor/visor subset. The Player and SQ42 panels also offer explicit 1.2 job submission
+and validation. Synchronous copied armor/visor and outfit actions query 1.0.
+A copied gear selection containing primary or sidearm queries 1.1 and requires
+`game.loadout.apply` and `game.loadout.weapons`; it may also include armor. The Player and SQ42 panels also offer explicit 1.2 job submission
 for the selected copied gear and confirmed outfit, respectively. Commands
 `loadout.submit_gear` and `loadout.submit_outfit` use the same selections and
 one retained job; progress and cancel are available on both panels. The async
-gear route additionally maps the copied `primary` and `sidearm` sections to the
-matching public logical weapon slots. Outfit ports receive no new mapping.
+gear routes map the copied `primary` and `sidearm` sections to the matching
+public logical weapon slots. Outfit ports receive no new mapping.
 Unknown ports, duplicate slots, `None`/`Default`, and batches exceeding 16 items
 refuse before submission. The separate manual and curated-selector routes use the published
 1.1/1.2 contracts without assigning meanings to old catalogue ports. Public

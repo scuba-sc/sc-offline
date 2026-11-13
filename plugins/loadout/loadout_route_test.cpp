@@ -247,9 +247,9 @@ void ManualRefusals(const char* command,uint32_t button,bool command_only=false)
 }
 void CopiedAsync() {
     Reset();
-    Require(Call("loadout.items","")==SCO_OK && std::strstr(reply,"primary:WeaponA [async only]") &&
-            std::strstr(reply,"sidearm:SidearmA [async only]") && std::strstr(reply,"ammo:AmmoA [unsupported]") &&
-            std::strstr(reply,"helmet:HelmetA;") && !std::strstr(reply,"primary:WeaponA [unsupported]"),"list command labels synchronous, async-only and unsupported selections");
+    Require(Call("loadout.items","")==SCO_OK && std::strstr(reply,"primary:WeaponA [requires 1.1]") &&
+            std::strstr(reply,"sidearm:SidearmA [requires 1.1]") && std::strstr(reply,"ammo:AmmoA [unsupported]") &&
+            std::strstr(reply,"helmet:HelmetA;") && !std::strstr(reply,"primary:WeaponA [unsupported]"),"list command labels armor, weapon version and unsupported selections");
     Require(Call("loadout.submit_gear","TorsoA")==SCO_OK && Call("loadout.cancel")==SCO_OK,"fixture valid");
     Require(Call("loadout.submit_gear","HelmetA")==SCO_BAD_ARG,"ambiguous item refused");
     list_items="[helmet]\nHelmetA\nDefault\nNone\n[torso]\nTorsoA\n[ammo]\nAmmoA\n[primary]\nWeaponA\n[sidearm]\nSidearmA\n";
@@ -261,7 +261,40 @@ void CopiedAsync() {
     Require(Call("loadout.cancel")==SCO_OK,"release copied job");
     Require(Call("loadout.submit_gear","WeaponA,SidearmA")==SCO_OK && captured[0].slot==SC_LOADOUT_SLOT_PRIMARY && captured[1].slot==SC_LOADOUT_SLOT_SIDEARM,"copied public weapon slots");
     Require(Call("loadout.cancel")==SCO_OK,"release weapon job");
-    Require(Call("loadout.equip","WeaponA")==SCO_UNAVAILABLE,"legacy synchronous weapon mapping unchanged");
+    Require(Call("loadout.equip","HelmetA")==SCO_OK && queried==SC_LOADOUT_VERSION_1_0 && captured[0].slot==SC_LOADOUT_SLOT_HEAD,"armor uses 1.0");
+    Require(Call("loadout.equip","HelmetA,WeaponA,SidearmA")==SCO_OK && queried==SC_LOADOUT_VERSION_1_1 && captured.size()==3 && captured[0].slot==SC_LOADOUT_SLOT_HEAD && captured[1].slot==SC_LOADOUT_SLOT_PRIMARY && captured[2].slot==SC_LOADOUT_SLOT_SIDEARM,"mixed copied gear uses 1.1 in selection order");
+    const auto before_clear=applies;
+    for (const char* selection:{"None", "dEfAuLt", "WeaponA,nOnE", "HelmetA,WeaponA,DEFAULT"})
+        Require(Call("loadout.equip",selection)==SCO_BAD_ARG,"armor-only and mixed clear/default refused case-insensitively");
+    Require(applies==before_clear,"clear/default selections make no mutation calls");
+    const auto prior_applies=applies;
+    supported=SC_LOADOUT_VERSION_1_0;
+    Require(Call("loadout.equip","HelmetA,WeaponA")==SCO_UNAVAILABLE && queried==SC_LOADOUT_VERSION_1_1,"mixed selection refuses old provider");
+    Require(Call("loadout.equip","HelmetA")==SCO_OK && queried==SC_LOADOUT_VERSION_1_0,"armor remains available on 1.0");
+    supported=SC_LOADOUT_VERSION_1_2;
+    const auto after_armor=applies;
+    for (int capability=0;capability<2;++capability) {
+        apply_cap=capability!=0; weapons_cap=capability==0;
+        Require(Call("loadout.equip","HelmetA,WeaponA")==SCO_UNAVAILABLE,"mixed selection requires both capabilities");
+    }
+    apply_cap=weapons_cap=true; present=false;
+    Require(Call("loadout.equip","HelmetA,WeaponA")==SCO_UNAVAILABLE,"mixed selection provider absent"); present=true;
+    for (uint32_t bytes=4;bytes<offsetof(sc_loadout_v1,apply)+sizeof(service.apply);++bytes) {
+        auto short_table=std::make_unique<unsigned char[]>(bytes);
+        std::memcpy(short_table.get(),&service,bytes); std::memcpy(short_table.get(),&bytes,4); publication=short_table.get();
+        Require(Call("loadout.equip","HelmetA,WeaponA")==SCO_UNAVAILABLE,"mixed selection refuses short apply extent");
+    }
+    publication=&service; service.apply=nullptr;
+    Require(Call("loadout.equip","HelmetA,WeaponA")==SCO_UNAVAILABLE,"mixed selection refuses null apply"); service.apply=Apply;
+    Require(Call("loadout.equip","WeaponA,WeaponA")==SCO_BAD_ARG && Call("loadout.equip","HelmetA,AmmoA")==SCO_UNAVAILABLE,"mixed duplicate and unsupported refuse");
+    Require(applies==after_armor && after_armor==prior_applies+1,"mixed refusals make no mutation calls");
+    apply_result=SCO_FAILED;
+    Require(Call("loadout.equip","HelmetA,WeaponA")==SCO_FAILED && std::strstr(reply,"helmet=unavailable") && std::strstr(reply,"primary=applied"),"mixed partial results preserve input labels");
+    apply_result=SCO_OK;
+    Require(Call("loadout.submit_gear","WeaponA")==SCO_OK,"retain copied weapon job");
+    const auto busy_applies=applies;
+    Require(Call("loadout.equip","HelmetA,WeaponA")==SCO_UNAVAILABLE && applies==busy_applies,"retained job blocks mixed apply");
+    Require(Call("loadout.cancel")==SCO_OK,"release job after busy check");
     const auto before=submits;
     Require(Call("loadout.submit_gear","HelmetA,HelmetA")==SCO_BAD_ARG,"duplicate gear refused");
     Require(Call("loadout.submit_gear","AmmoA")==SCO_UNAVAILABLE,"unsupported gear refused");

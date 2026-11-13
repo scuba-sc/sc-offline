@@ -105,11 +105,12 @@ uint32_t Slot(std::string_view name,bool outfit) {
         {"arms","Armor_Arms",SC_LOADOUT_SLOT_ARMS},{"legs","Armor_Legs",SC_LOADOUT_SLOT_LEGS},
         {"backpack","backpack",SC_LOADOUT_SLOT_BACKPACK},{"visor","Lens_ItemPort",SC_LOADOUT_SLOT_VISOR} };
     for (const auto& m:map) if (Same(name,outfit ? m.port : m.item)) return m.slot;
-    // This consumer retains its 1.0 armor/visor mapping; newer slot families are not selected here.
+    if (!outfit && Same(name,"primary")) return SC_LOADOUT_SLOT_PRIMARY;
+    if (!outfit && Same(name,"sidearm")) return SC_LOADOUT_SLOT_SIDEARM;
     return 0;
 }
 const char* ItemSupport(const Piece& p) {
-    return p.slot ? "" : (Same(p.port,"primary") || Same(p.port,"sidearm")) ? " [async only]" : " [unsupported]";
+    return p.slot==SC_LOADOUT_SLOT_PRIMARY || p.slot==SC_LOADOUT_SLOT_SIDEARM ? " [requires 1.1]" : p.slot ? "" : " [unsupported]";
 }
 sco_result Parse(std::string_view bytes,int kind,Lists& lists,std::vector<std::string>& buildables) {
     if (bytes.find('\0')!=bytes.npos) return SCO_BAD_ARG;
@@ -209,7 +210,8 @@ sco_result Apply(const std::vector<Piece>& pieces,char* out,uint32_t size,uint32
             const auto message="Unsupported legacy slot/port '"+p.port+"': whole selection refused; this consumer does not map that slot.";
             return Answer(SCO_UNAVAILABLE,out,size,message.c_str());
         }
-        if (!Class(p.name)) return SCO_BAD_ARG;
+        if (!Class(p.name) || Same(p.name,"none") || Same(p.name,"default"))
+            return Answer(SCO_BAD_ARG,out,size,"Invalid or clear/default class; entire selection refused.");
         for (size_t j=0;j<i;++j) if (pieces[j].slot==p.slot) return Answer(SCO_BAD_ARG,out,size,"Duplicate logical slot: entire selection refused before equip.");
         items[i].slot=p.slot; std::memcpy(items[i].item_class,p.name.c_str(),p.name.size()+1);
     }
@@ -422,14 +424,12 @@ sco_result EquipSelection(const sco_arg* args,uint32_t n,char* out,uint32_t size
         if (!match) return Answer(SCO_NOT_FOUND,out,size,("Item not in copied items.txt: "+std::string(name)).c_str());
         if (pieces.size()==SC_LOADOUT_MAX_ITEMS) return Answer(SCO_TOO_MANY,out,size,"Too many selected items; no equip requested.");
         pieces.push_back(*match);
-        // Copied item sections name the same public logical weapon slots; this
-        // applies only to the 1.2 route, not legacy synchronous equip.
-        if (async && !pieces.back().slot) {
-            if (Same(match->port,"primary")) pieces.back().slot=SC_LOADOUT_SLOT_PRIMARY;
-            else if (Same(match->port,"sidearm")) pieces.back().slot=SC_LOADOUT_SLOT_SIDEARM;
-        }
     }
-    return async ? SubmitPieces(std::move(pieces),out,size) : Apply(pieces,out,size);
+    const bool weapons=std::any_of(pieces.begin(),pieces.end(),[](const Piece& p) {
+        return p.slot==SC_LOADOUT_SLOT_PRIMARY || p.slot==SC_LOADOUT_SLOT_SIDEARM;
+    });
+    return async ? SubmitPieces(std::move(pieces),out,size) :
+        Apply(pieces,out,size,weapons ? SC_LOADOUT_VERSION_1_1 : SC_LOADOUT_VERSION_1_0);
 }
 sco_result Equip(const sco_arg* a,uint32_t n,void*,char* o,uint32_t z) { return EquipSelection(a,n,o,z,false); }
 sco_result SubmitGear(const sco_arg* a,uint32_t n,void*,char* o,uint32_t z) { return EquipSelection(a,n,o,z,true); }

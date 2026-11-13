@@ -122,7 +122,7 @@ void Workflow(bool populated) {
     Require(sco::features::loadout::Load(&api,self)==SCO_OK,"load failed");
     Require(!rejected && player.accepted==1 && sq42.accepted==1,"initial panels rejected");
     Require(player.combos.at(2)==2 && sq42.combos.empty(),"initial picker/confirmation mismatch");
-    Require(player.gear_labels.size()==2 && player.gear_labels[1].find("[async only]")!=std::string::npos,"weapon label reflects async mapping");
+    Require(player.gear_labels.size()==2 && player.gear_labels[1].find("[requires 1.1]")!=std::string::npos,"weapon label reflects synchronous version requirement");
     async_cap=false; Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"");
     Require(player.flags.at(27)&SCO_WIDGET_DISABLED,"capability disables submission");
     Send("loadout.player",player,27,SCO_WIDGET_BUTTON); Require(submits==0,"forged unavailable submission refused");
