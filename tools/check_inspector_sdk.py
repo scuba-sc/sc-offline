@@ -6,6 +6,7 @@ Pass the release zip and its adjacent release SHA256SUMS. Windows uses MSVC;
 POSIX also proves compiler dependency traces and source-mutation controls.
 """
 import argparse
+from collections import Counter
 import hashlib
 import json
 import os
@@ -17,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent.parent
 # Published stable SDK 2.4.0; gameplay acceptance remains separate.
@@ -24,6 +26,16 @@ SDK_VERSION = '2.4.0'
 SDK_ROOT = 'sco-sdk-' + SDK_VERSION
 SDK_ARCHIVE = SDK_ROOT + '.zip'
 SDK_SHA256 = '0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc'
+
+
+def _unique_json_object(pairs):
+    """Build a JSON object while rejecting duplicate keys at every nesting level."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('Duplicate JSON object key: ' + key)
+        result[key] = value
+    return result
 
 
 def add_windows_toolchain_options(parser):
@@ -167,7 +179,7 @@ def verify_extract(archive, sums, destination, pin=None):
             if path not in listed:
                 raise AssertionError('Candidate identity metadata missing from inventory: ' + name)
             try:
-                data = json.loads(path.read_text(encoding='utf-8'))
+                data = json.loads(path.read_text(encoding='utf-8'), object_pairs_hook=_unique_json_object)
             except (ValueError, OSError) as error:
                 raise AssertionError('Invalid candidate identity metadata: ' + name) from error
             if not isinstance(data, dict):
@@ -211,7 +223,8 @@ def own_source(p, source, feature, shared):
 
 
 def trace_posix(build, source, sdk, public, feature="inspector", shared=()):
-    commands = json.loads((build / 'compile_commands.json').read_text())
+    commands = json.loads((build / 'compile_commands.json').read_text(),
+                          object_pairs_hook=_unique_json_object)
     commands = [c for c in commands if any(t in c['command'] for t in
                 (f'CMakeFiles/sco-feature-{feature}.dir/', f'CMakeFiles/sc-offline-{feature}.dir/'))]
     if len(commands) != 2:
@@ -274,36 +287,200 @@ def trace_posix(build, source, sdk, public, feature="inspector", shared=()):
 
 
 def trace_windows(build, source, sdk, public, feature="inspector", shared=()):
-    count = 0
+    total = 0
     for target in (f"sco-feature-{feature}", f"sc-offline-{feature}"):
         directory = build / "dependencies" / target
         roots = [Path(p.strip()).resolve() for p in
                  (directory / "toolchain.txt").read_text(encoding="utf-8-sig").splitlines() if p.strip()]
         if not roots:
             raise AssertionError("Empty evaluated MSVC IncludePath")
-        traces = list(directory.glob("*.json"))
-        if len(traces) != 1:
-            raise AssertionError(f"Expected one MSVC trace per {feature} target")
-        data = json.loads(traces[0].read_text(encoding="utf-8-sig"))["Data"]
-        dependencies = [data["Source"]] + data["Includes"]
-        if not data["Includes"]:
-            raise AssertionError("Empty MSVC include trace")
-        for dependency in dependencies:
-            p = Path(dependency).resolve()
-            if contained(p, sdk):
-                ok = p in public
-            elif contained(p, ROOT):
-                ok = False
-            elif contained(p, source):
-                ok = own_source(p, source, feature, shared)
-            else:
-                ok = any(contained(p, d) for d in roots)
-            if not ok:
-                raise AssertionError(f"Non-public {feature} dependency: " + p.name)
-        count += 1
-    if count != 2:
-        raise AssertionError(f"Missing MSVC {feature} traces")
-    print(f"{feature}: two full MSVC compiler dependency traces clean")
+        expected_sources = _msvc_target_sources(build, target)
+        expected = Counter(_source_key(p) for p in expected_sources)
+        expected_paths = {_source_key(p): p for p in expected_sources}
+        traces = sorted(directory.rglob("*.json"))
+        if not traces:
+            raise AssertionError(f"Missing MSVC {feature} traces for {target}")
+        seen = Counter()
+        for trace in traces:
+            resolved_trace = trace.resolve()
+            if resolved_trace.parent != directory.resolve():
+                raise AssertionError(f"Unexpected MSVC {feature} trace path: {trace.name}")
+            try:
+                document = json.loads(trace.read_text(encoding="utf-8-sig"),
+                                      object_pairs_hook=_unique_json_object)
+            except (OSError, UnicodeError, ValueError) as error:
+                raise AssertionError(f"Malformed MSVC {feature} trace: {trace.name}") from error
+            if not isinstance(document, dict):
+                raise AssertionError(f"Malformed MSVC {feature} trace document: {trace.name}")
+            misplaced = {"ImportedHeaderUnits", "ImportedModules"}.intersection(document)
+            if misplaced:
+                fields = ", ".join(sorted(misplaced))
+                raise AssertionError(f"Misplaced MSVC {feature} dependency fields outside Data: {fields}")
+            if set(document) != {"Version", "Data"}:
+                raise AssertionError(f"Malformed MSVC {feature} trace top-level fields: {trace.name}")
+            if document["Version"] != "1.2":
+                raise AssertionError(f"Unsupported MSVC {feature} sourceDependencies version: {document['Version']!r}")
+            data = document["Data"]
+            if not isinstance(data, dict):
+                raise AssertionError(f"Malformed MSVC {feature} v1.2 trace Data: {trace.name}")
+            required_data = {"Source", "ProvidedModule", "Includes", "ImportedHeaderUnits", "ImportedModules"}
+            if set(data) != required_data:
+                missing_data = required_data - set(data)
+                extra_data = set(data) - required_data
+                if missing_data:
+                    fields = ", ".join(sorted(missing_data))
+                    raise AssertionError(f"Malformed MSVC {feature} v1.2 trace missing Data fields: {fields}")
+                fields = ", ".join(sorted(extra_data))
+                raise AssertionError(f"Malformed MSVC {feature} v1.2 trace has unknown Data fields: {fields}")
+            if not isinstance(data["Source"], str):
+                raise AssertionError(f"Malformed MSVC {feature} trace Source: {trace.name}")
+            provided_module = data["ProvidedModule"]
+            if provided_module is not None and not isinstance(provided_module, str):
+                raise AssertionError(f"Malformed MSVC {feature} ProvidedModule: {trace.name}")
+            if isinstance(provided_module, str) and provided_module != provided_module.strip():
+                raise AssertionError(f"Malformed MSVC {feature} ProvidedModule: {trace.name}")
+            if provided_module:
+                raise AssertionError(f"Unsupported MSVC {feature} provided module: {trace.name}")
+            for field in ("ImportedHeaderUnits", "ImportedModules"):
+                imported = data[field]
+                if not isinstance(imported, list):
+                    raise AssertionError(f"Malformed MSVC {feature} {field} trace: {trace.name}")
+                if imported:
+                    raise AssertionError(f"Unsupported MSVC {feature} {field} dependencies: {trace.name}")
+            includes = data.get("Includes")
+            if not isinstance(includes, list) or not includes or any(not isinstance(p, str) for p in includes):
+                raise AssertionError(f"Empty or malformed MSVC include trace: {trace.name}")
+            traced_source = _msvc_trace_file(data["Source"], feature, "source")
+            source_key = _source_key(traced_source)
+            if source_key not in expected:
+                raise AssertionError(f"Unexpected MSVC {feature} trace source: {traced_source.name}")
+            seen[source_key] += 1
+            if seen[source_key] > expected[source_key]:
+                raise AssertionError(f"Duplicate MSVC {feature} trace source: {traced_source.name}")
+            for p in [traced_source, *(_msvc_trace_file(path, feature, "include") for path in includes)]:
+                if contained(p, sdk):
+                    ok = p in public
+                elif contained(p, ROOT):
+                    ok = False
+                elif contained(p, source):
+                    ok = own_source(p, source, feature, shared)
+                else:
+                    ok = any(contained(p, d) for d in roots)
+                if not ok:
+                    raise AssertionError(f"Non-public {feature} dependency: " + p.name)
+        missing = {key: count - seen[key] for key, count in expected.items() if seen[key] < count}
+        if missing:
+            names = ", ".join(sorted(f"{expected_paths[key].name} ({count} missing)"
+                                     for key, count in missing.items()))
+            raise AssertionError(f"Missing MSVC {feature} traces for {target}: {names}")
+        total += sum(seen.values())
+    print(f"{feature}: {total} full MSVC compiler dependency traces clean")
+
+
+def _source_key(path):
+    """Canonical comparison key for compiler paths, including Windows case folding."""
+    return os.path.normcase(os.path.abspath(str(Path(path).resolve())))
+
+
+def _msvc_trace_file(value, feature, label):
+    """Resolve one file path emitted by MSVC, rejecting blank and incomplete entries."""
+    if not isinstance(value, str) or not value.strip() or value != value.strip():
+        raise AssertionError(f"Malformed MSVC {feature} {label} path")
+    path = Path(value)
+    if not path.is_absolute():
+        raise AssertionError(f"Non-absolute MSVC {feature} {label} path: {path.name}")
+    try:
+        resolved = path.resolve(strict=True)
+    except (OSError, RuntimeError, ValueError) as error:
+        raise AssertionError(f"Missing MSVC {feature} {label} file: {path.name}") from error
+    if not resolved.is_file():
+        raise AssertionError(f"Non-file MSVC {feature} {label} path: {path.name}")
+    return resolved
+
+
+def _inventory_source(path, base, target):
+    if not isinstance(path, str) or not path.strip() or path != path.strip():
+        raise AssertionError(f"Malformed MSVC target source path: {target}")
+    if "$(" in path or "%(" in path:
+        raise AssertionError(f"Unresolved MSVC target source path: {path}")
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        if not base.is_absolute():
+            raise AssertionError(f"Non-absolute MSVC source inventory base: {target}")
+        candidate = base / candidate
+    try:
+        resolved = candidate.resolve(strict=True)
+    except (OSError, RuntimeError, ValueError) as error:
+        raise AssertionError(f"Missing MSVC target source: {candidate.name}") from error
+    if not resolved.is_file():
+        raise AssertionError(f"Non-file MSVC target source: {candidate.name}")
+    return resolved
+
+
+def _msvc_target_sources(build, target):
+    """Read a target's source inventory from generated CMake metadata.
+
+    Visual Studio generators do not consistently emit compile_commands.json, so
+    prefer their target project when present. Ninja and Makefile generators expose
+    the same inventory through compile_commands.json.
+    """
+    project = build / (target + ".vcxproj")
+    sources = []
+    if project.is_file():
+        try:
+            document = ET.parse(project)
+        except (OSError, ET.ParseError) as error:
+            raise AssertionError(f"Malformed MSVC target source inventory: {project.name}") from error
+        for item in document.iter():
+            if item.tag.rsplit("}", 1)[-1] != "ClCompile":
+                continue
+            include = item.attrib.get("Include")
+            if not include:
+                continue
+            if "$(" in include or "%(" in include:
+                raise AssertionError(f"Unresolved MSVC target source path: {include}")
+            sources.append(_inventory_source(include, project.parent.resolve(), target))
+    else:
+        compile_commands = build / "compile_commands.json"
+        if not compile_commands.is_file():
+            raise AssertionError(f"Missing MSVC target source inventory: {target}")
+        try:
+            commands = json.loads(compile_commands.read_text(encoding="utf-8-sig"),
+                                  object_pairs_hook=_unique_json_object)
+        except (OSError, UnicodeError, ValueError) as error:
+            raise AssertionError("Malformed MSVC compile_commands.json") from error
+        if not isinstance(commands, list):
+            raise AssertionError("Malformed MSVC compile_commands.json")
+        marker = re.compile(r"CMakeFiles[/\\]" + re.escape(target) + r"\.dir[/\\]", re.I)
+        config_marker = re.compile(r"CMakeFiles[/\\]" + re.escape(target) +
+                                   r"\.dir[/\\](Debug|Release|RelWithDebInfo|MinSizeRel)[/\\]", re.I)
+        config_definition = re.compile(
+            r"(?:CMAKE_INTDIR|CMAKE_BUILD_TYPE)(?:=|:STRING=)[\"\\]*(Debug|Release|RelWithDebInfo|MinSizeRel)", re.I)
+        for command in commands:
+            if not isinstance(command, dict):
+                raise AssertionError("Malformed MSVC compile_commands.json entry")
+            text = command.get("command", "")
+            if not isinstance(text, str):
+                text = ""
+            arguments = command.get("arguments", [])
+            if not isinstance(arguments, list):
+                raise AssertionError("Malformed MSVC compile_commands.json arguments")
+            text += " " + " ".join(str(arg) for arg in arguments)
+            if not marker.search(text):
+                continue
+            config = config_marker.search(text) or config_definition.search(text)
+            if config and config.group(1).lower() != "release":
+                continue
+            filename = command.get("file")
+            if not isinstance(filename, str):
+                raise AssertionError(f"Missing source in MSVC compile command for {target}")
+            directory = command.get("directory")
+            if not isinstance(directory, str) or not Path(directory).is_absolute():
+                raise AssertionError(f"Missing absolute directory in MSVC compile command for {target}")
+            sources.append(_inventory_source(filename, Path(directory), target))
+    if not sources:
+        raise AssertionError(f"Empty MSVC target source inventory: {target}")
+    return sources
 
 
 def main(args):

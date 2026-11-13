@@ -85,6 +85,440 @@ class WindowsGeneratorProofs(unittest.TestCase):
             with patch.object(tempfile, 'TemporaryDirectory', return_value=contextlib.nullcontext(str(alias))):
                 self.test_titanlink_rejects_an_empty_individual_msvc_include_trace()
 
+    def test_shared_msvc_trace_checker_accepts_single_and_multiple_translation_units(self):
+        module = load('check_inspector_sdk.py')
+        inventories = (
+            {
+                'sco-feature-loadout': ['loadout.cpp'],
+                'sc-offline-loadout': ['external.cpp'],
+            },
+            {
+                'sco-feature-loadout': ['loadout.cpp', 'outfit_import.cpp', 'outfit_recipe.cpp'],
+                'sc-offline-loadout': ['external.cpp'],
+            },
+        )
+        for sources_by_target in inventories:
+            with self.subTest(feature_sources=len(sources_by_target['sco-feature-loadout'])), \
+                 tempfile.TemporaryDirectory() as temp:
+                root = Path(temp).resolve()
+                build, source, sdk, public, _ = make_msvc_trace_fixture(root, sources_by_target)
+                with patch.object(module, 'ROOT', root / 'checkout'), contextlib.redirect_stdout(io.StringIO()):
+                    module.trace_windows(build, source, sdk, public, feature='loadout')
+
+    def test_shared_msvc_trace_checker_uses_compile_commands_without_visual_studio_projects(self):
+        module = load('check_inspector_sdk.py')
+        sources_by_target = {
+            'sco-feature-loadout': ['loadout.cpp', 'outfit_import.ixx', 'outfit_recipe.cppm', 'generated.unit'],
+            'sc-offline-loadout': ['external.cpp'],
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            build, source, sdk, public, _ = make_msvc_trace_fixture(root, sources_by_target)
+            commands = []
+            for target, names in sources_by_target.items():
+                (build / (target + '.vcxproj')).unlink()
+                for name in names:
+                    path = source / 'plugins/loadout' / name
+                    commands.append({
+                        'directory': str(build),
+                        'file': str(path.resolve()),
+                        'command': f'cl /FoCMakeFiles/{target}.dir/Release/{Path(name).stem}.obj /c {path}',
+                    })
+                    if name == names[0]:
+                        commands.append({
+                            'directory': str(build),
+                            'file': str(path.resolve()),
+                            'command': f'cl /FoCMakeFiles/{target}.dir/Debug/{Path(name).stem}.obj '
+                                       f'/DCMAKE_INTDIR="Debug" /c {path}',
+                        })
+            (build / 'compile_commands.json').write_text(json.dumps(commands))
+            with patch.object(module, 'ROOT', root / 'checkout'), contextlib.redirect_stdout(io.StringIO()):
+                module.trace_windows(build, source, sdk, public, feature='loadout')
+
+    def test_shared_msvc_trace_checker_rejects_a_missing_expected_source_trace(self):
+        module = load('check_inspector_sdk.py')
+        sources_by_target = {
+            'sco-feature-loadout': ['loadout.cpp', 'outfit_import.cpp', 'outfit_recipe.cpp'],
+            'sc-offline-loadout': ['external.cpp'],
+        }
+        emitted = {
+            'sco-feature-loadout': ['loadout.cpp', 'outfit_import.cpp'],
+            'sc-offline-loadout': ['external.cpp'],
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            build, source, sdk, public, _ = make_msvc_trace_fixture(root, sources_by_target, emitted)
+            with patch.object(module, 'ROOT', root / 'checkout'), contextlib.redirect_stdout(io.StringIO()), \
+                 self.assertRaisesRegex(AssertionError, 'Missing MSVC loadout traces.*outfit_recipe.cpp'):
+                module.trace_windows(build, source, sdk, public, feature='loadout')
+
+    def test_shared_msvc_trace_checker_rejects_unexpected_and_duplicate_sources(self):
+        module = load('check_inspector_sdk.py')
+        sources_by_target = {
+            'sco-feature-loadout': ['loadout.cpp', 'outfit_import.cpp', 'outfit_recipe.cpp'],
+            'sc-offline-loadout': ['external.cpp'],
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            build, source, sdk, public, trace_dirs = make_msvc_trace_fixture(root, sources_by_target)
+            rogue = root / 'unexpected.cpp'
+            rogue.touch()
+            trace = trace_dirs['sco-feature-loadout'] / 'extra.json'
+            unexpected = json.loads((trace_dirs['sco-feature-loadout'] / 'trace-0.json').read_text())
+            unexpected['Data']['Source'] = str(rogue)
+            trace.write_text(json.dumps(unexpected))
+            with patch.object(module, 'ROOT', root / 'checkout'), contextlib.redirect_stdout(io.StringIO()), \
+                 self.assertRaisesRegex(AssertionError, 'Unexpected MSVC loadout trace source'):
+                module.trace_windows(build, source, sdk, public, feature='loadout')
+            trace.unlink()
+            duplicate = trace_dirs['sco-feature-loadout'] / 'duplicate.json'
+            original = trace_dirs['sco-feature-loadout'] / 'trace-0.json'
+            duplicate.write_text(original.read_text())
+            with patch.object(module, 'ROOT', root / 'checkout'), contextlib.redirect_stdout(io.StringIO()), \
+                 self.assertRaisesRegex(AssertionError, 'Duplicate MSVC loadout trace source'):
+                module.trace_windows(build, source, sdk, public, feature='loadout')
+
+    def test_shared_msvc_trace_checker_counts_duplicate_inventory_entries_and_same_basenames(self):
+        module = load('check_inspector_sdk.py')
+        sources_by_target = {
+            'sco-feature-loadout': ['same.cpp', 'same.cpp', 'left/same.cpp', 'right/same.cpp'],
+            'sc-offline-loadout': ['external.cpp'],
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            build, source, sdk, public, trace_dirs = make_msvc_trace_fixture(root, sources_by_target)
+            trace_dir = trace_dirs['sco-feature-loadout']
+            with patch.object(module, 'ROOT', root / 'checkout'), contextlib.redirect_stdout(io.StringIO()):
+                module.trace_windows(build, source, sdk, public, feature='loadout')
+            repeated_source = str((source / 'plugins/loadout/same.cpp').resolve())
+            matching = []
+            for trace in trace_dir.glob('*.json'):
+                if json.loads(trace.read_text())['Data']['Source'] == repeated_source:
+                    matching.append(trace)
+            self.assertEqual(len(matching), 2)
+            missing_path = matching.pop()
+            missing_data = missing_path.read_text()
+            missing_path.unlink()
+            with patch.object(module, 'ROOT', root / 'checkout'), contextlib.redirect_stdout(io.StringIO()), \
+                 self.assertRaisesRegex(AssertionError, r'same.cpp \(1 missing\)'):
+                module.trace_windows(build, source, sdk, public, feature='loadout')
+            missing_path.write_text(missing_data)
+            extra = trace_dir / 'extra-duplicate.json'
+            extra.write_text(missing_data)
+            with patch.object(module, 'ROOT', root / 'checkout'), contextlib.redirect_stdout(io.StringIO()), \
+                 self.assertRaisesRegex(AssertionError, 'Duplicate MSVC loadout trace source: same.cpp'):
+                module.trace_windows(build, source, sdk, public, feature='loadout')
+
+    def test_shared_msvc_trace_checker_rejects_malformed_and_nested_trace_paths(self):
+        module = load('check_inspector_sdk.py')
+        sources_by_target = {
+            'sco-feature-loadout': ['loadout.cpp'],
+            'sc-offline-loadout': ['external.cpp'],
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            build, source, sdk, public, trace_dirs = make_msvc_trace_fixture(root, sources_by_target)
+            trace = trace_dirs['sco-feature-loadout'] / 'trace-0.json'
+            original = json.loads(trace.read_text())
+            trace.write_text('{ invalid json')
+            with patch.object(module, 'ROOT', root / 'checkout'), contextlib.redirect_stdout(io.StringIO()), \
+                 self.assertRaisesRegex(AssertionError, 'Malformed MSVC loadout trace'):
+                module.trace_windows(build, source, sdk, public, feature='loadout')
+            empty_includes = json.loads(json.dumps(original))
+            empty_includes['Data']['Includes'] = []
+            trace.write_text(json.dumps(empty_includes))
+            with patch.object(module, 'ROOT', root / 'checkout'), contextlib.redirect_stdout(io.StringIO()), \
+                 self.assertRaisesRegex(AssertionError, 'Empty or malformed MSVC include trace'):
+                module.trace_windows(build, source, sdk, public, feature='loadout')
+            trace.write_text(json.dumps(original))
+            nested = trace_dirs['sco-feature-loadout'] / 'nested'
+            nested.mkdir()
+            (nested / 'extra.json').write_text(trace.read_text())
+            with patch.object(module, 'ROOT', root / 'checkout'), contextlib.redirect_stdout(io.StringIO()), \
+                 self.assertRaisesRegex(AssertionError, 'Unexpected MSVC loadout trace path'):
+                module.trace_windows(build, source, sdk, public, feature='loadout')
+
+    def test_shared_msvc_trace_checker_rejects_duplicate_json_keys_recursively(self):
+        module = load('check_inspector_sdk.py')
+        sources_by_target = {
+            'sco-feature-loadout': ['loadout.cpp'],
+            'sc-offline-loadout': ['external.cpp'],
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            build, source, sdk, public, trace_dirs = make_msvc_trace_fixture(root, sources_by_target)
+            private_root = root / 'checkout'
+            private_header = private_root / 'src/private.h'
+            private_header.parent.mkdir(parents=True)
+            private_header.write_text('// synthetic private header\n')
+            trace = trace_dirs['sco-feature-loadout'] / 'trace-0.json'
+            original = trace.read_text()
+            original_data = json.loads(original)
+
+            def duplicate(raw, key, hidden_value):
+                marker = json.dumps(key) + ':'
+                offset = raw.find(marker)
+                self.assertGreaterEqual(offset, 0, f'missing JSON member {key}')
+                return raw[:offset] + marker + json.dumps(hidden_value) + ', ' + raw[offset:]
+
+            hidden_data = json.loads(json.dumps(original_data['Data']))
+            hidden_data['Includes'] = [str(private_header)]
+            hidden_data['ImportedModules'] = [{'Name': 'private::host_api', 'BMI': str(root / 'private.ifc')}]
+            cases = (
+                ('root Data', duplicate(original, 'Data', hidden_data)),
+                ('root Version', duplicate(original, 'Version', '1.1')),
+                ('Data Includes', duplicate(original, 'Includes', [str(private_header)])),
+                ('Data ImportedModules', duplicate(original, 'ImportedModules', hidden_data['ImportedModules'])),
+                ('Data ImportedHeaderUnits', duplicate(original, 'ImportedHeaderUnits',
+                                                        [{'Header': str(private_header), 'BMI': str(root / 'private.ifc')}])),
+            )
+            for label, raw in cases:
+                trace.write_text(raw)
+                with self.subTest(duplicate=label), patch.object(module, 'ROOT', private_root), \
+                     contextlib.redirect_stdout(io.StringIO()), \
+                     self.assertRaisesRegex(AssertionError, 'Malformed MSVC loadout trace'):
+                    module.trace_windows(build, source, sdk, public, feature='loadout')
+
+            (build / 'sco-feature-loadout.vcxproj').unlink()
+            (build / 'sc-offline-loadout.vcxproj').unlink()
+            commands = []
+            for target, names in sources_by_target.items():
+                for name in names:
+                    path = source / 'plugins/loadout' / name
+                    commands.append({
+                        'directory': str(build),
+                        'file': str(path.resolve()),
+                        'command': f'cl /FoCMakeFiles/{target}.dir/Release/{Path(name).stem}.obj /c {path}',
+                    })
+            compile_path = build / 'compile_commands.json'
+            raw = json.dumps(commands)
+            valid_compile_command = json.loads(raw)[0]
+            invalid_compile_command = json.loads(json.dumps(valid_compile_command))
+            invalid_compile_command['file'] = str(private_root / 'missing.cpp')
+            target_marker = json.dumps(valid_compile_command)
+            raw = raw.replace(target_marker, duplicate(target_marker, 'file', invalid_compile_command['file']), 1)
+            compile_path.write_text(raw)
+            trace.write_text(original)
+            with patch.object(module, 'ROOT', private_root), contextlib.redirect_stdout(io.StringIO()), \
+                 self.assertRaisesRegex(AssertionError, 'Malformed MSVC compile_commands.json'):
+                module.trace_windows(build, source, sdk, public, feature='loadout')
+
+    def test_shared_msvc_trace_checker_preserves_private_and_outside_toolchain_guards(self):
+        module = load('check_inspector_sdk.py')
+        sources_by_target = {
+            'sco-feature-loadout': ['loadout.cpp'],
+            'sc-offline-loadout': ['external.cpp'],
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            build, source, sdk, public, trace_dirs = make_msvc_trace_fixture(root, sources_by_target)
+            private_checkout = root / 'checkout'
+            private_checkout.mkdir()
+            private_header = private_checkout / 'src/private.h'
+            private_header.parent.mkdir()
+            private_header.write_text('// private host fixture\n')
+            trace = trace_dirs['sco-feature-loadout'] / 'trace-0.json'
+            data = json.loads(trace.read_text())
+            data['Data']['Includes'] = [str(private_header)]
+            trace.write_text(json.dumps(data))
+            with patch.object(module, 'ROOT', private_checkout), contextlib.redirect_stdout(io.StringIO()), \
+                 self.assertRaisesRegex(AssertionError, 'Non-public loadout dependency'):
+                module.trace_windows(build, source, sdk, public, feature='loadout')
+            outside = root / 'foreign/private.h'
+            outside.parent.mkdir()
+            outside.write_text('// outside toolchain fixture\n')
+            data['Data']['Includes'] = [str(outside)]
+            trace.write_text(json.dumps(data))
+            with patch.object(module, 'ROOT', private_checkout), contextlib.redirect_stdout(io.StringIO()), \
+                 self.assertRaisesRegex(AssertionError, 'Non-public loadout dependency'):
+                module.trace_windows(build, source, sdk, public, feature='loadout')
+
+    def test_shared_msvc_trace_checker_accepts_v12_empty_import_fields_and_null_provider(self):
+        module = load('check_inspector_sdk.py')
+        sources_by_target = {
+            'sco-feature-loadout': ['loadout.cpp'],
+            'sc-offline-loadout': ['external.cpp'],
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            build, source, sdk, public, trace_dirs = make_msvc_trace_fixture(root, sources_by_target)
+            # The documented v1.2 schema includes both arrays and an empty provider name.
+            with patch.object(module, 'ROOT', root / 'checkout'), contextlib.redirect_stdout(io.StringIO()):
+                module.trace_windows(build, source, sdk, public, feature='loadout')
+            for trace_dir in trace_dirs.values():
+                trace = trace_dir / 'trace-0.json'
+                document = json.loads(trace.read_text())
+                document['Data']['ProvidedModule'] = None
+                trace.write_text(json.dumps(document))
+            # Null is also accepted for the provider field; no modules are imported.
+            with patch.object(module, 'ROOT', root / 'checkout'), contextlib.redirect_stdout(io.StringIO()):
+                module.trace_windows(build, source, sdk, public, feature='loadout')
+
+    def test_shared_msvc_trace_checker_rejects_missing_v12_fields(self):
+        module = load('check_inspector_sdk.py')
+        sources_by_target = {
+            'sco-feature-loadout': ['loadout.cpp'],
+            'sc-offline-loadout': ['external.cpp'],
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            build, source, sdk, public, trace_dirs = make_msvc_trace_fixture(root, sources_by_target)
+            trace = trace_dirs['sco-feature-loadout'] / 'trace-0.json'
+            original = json.loads(trace.read_text())
+            for field in ('Source', 'ProvidedModule', 'Includes', 'ImportedHeaderUnits', 'ImportedModules'):
+                document = json.loads(json.dumps(original))
+                del document['Data'][field]
+                trace.write_text(json.dumps(document))
+                with self.subTest(field=field), patch.object(module, 'ROOT', root / 'checkout'), \
+                     contextlib.redirect_stdout(io.StringIO()), \
+                     self.assertRaisesRegex(AssertionError, 'Malformed MSVC loadout v1.2 trace missing Data fields'):
+                    module.trace_windows(build, source, sdk, public, feature='loadout')
+
+    def test_shared_msvc_trace_checker_rejects_unknown_versions_and_misplaced_fields(self):
+        module = load('check_inspector_sdk.py')
+        sources_by_target = {
+            'sco-feature-loadout': ['loadout.cpp'],
+            'sc-offline-loadout': ['external.cpp'],
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            build, source, sdk, public, trace_dirs = make_msvc_trace_fixture(root, sources_by_target)
+            trace = trace_dirs['sco-feature-loadout'] / 'trace-0.json'
+            original = json.loads(trace.read_text())
+            for version in (None, 1.2, '', '1.0', '1.1', '2.0'):
+                document = json.loads(json.dumps(original))
+                if version is None:
+                    del document['Version']
+                    message = 'Malformed MSVC loadout trace top-level fields'
+                else:
+                    document['Version'] = version
+                    message = 'Unsupported MSVC loadout sourceDependencies version'
+                trace.write_text(json.dumps(document))
+                with self.subTest(version=version), patch.object(module, 'ROOT', root / 'checkout'), \
+                     contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(AssertionError, message):
+                    module.trace_windows(build, source, sdk, public, feature='loadout')
+            for field in ('ImportedHeaderUnits', 'ImportedModules'):
+                document = json.loads(json.dumps(original))
+                document[field] = [{'Name': 'private::host_api', 'BMI': str(root / 'private.ifc')}]
+                trace.write_text(json.dumps(document))
+                with self.subTest(misplaced=field), patch.object(module, 'ROOT', root / 'checkout'), \
+                     contextlib.redirect_stdout(io.StringIO()), \
+                     self.assertRaisesRegex(AssertionError, 'Misplaced MSVC loadout dependency fields outside Data'):
+                    module.trace_windows(build, source, sdk, public, feature='loadout')
+            document = json.loads(json.dumps(original))
+            document['Other'] = 'unknown top-level field'
+            trace.write_text(json.dumps(document))
+            with patch.object(module, 'ROOT', root / 'checkout'), contextlib.redirect_stdout(io.StringIO()), \
+                 self.assertRaisesRegex(AssertionError, 'Malformed MSVC loadout trace top-level fields'):
+                module.trace_windows(build, source, sdk, public, feature='loadout')
+            document = json.loads(json.dumps(original))
+            document['Data']['UnrecognizedDependencyField'] = []
+            trace.write_text(json.dumps(document))
+            with patch.object(module, 'ROOT', root / 'checkout'), contextlib.redirect_stdout(io.StringIO()), \
+                 self.assertRaisesRegex(AssertionError, 'Malformed MSVC loadout v1.2 trace has unknown Data fields'):
+                module.trace_windows(build, source, sdk, public, feature='loadout')
+
+    def test_shared_msvc_trace_checker_rejects_unsupported_or_malformed_provider(self):
+        module = load('check_inspector_sdk.py')
+        sources_by_target = {
+            'sco-feature-loadout': ['loadout.cpp'],
+            'sc-offline-loadout': ['external.cpp'],
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            build, source, sdk, public, trace_dirs = make_msvc_trace_fixture(root, sources_by_target)
+            trace = trace_dirs['sco-feature-loadout'] / 'trace-0.json'
+            original = json.loads(trace.read_text())
+            for provider in ('private::host_api', '  ', 7, {}):
+                document = json.loads(json.dumps(original))
+                document['Data']['ProvidedModule'] = provider
+                trace.write_text(json.dumps(document))
+                message = ('Unsupported MSVC loadout provided module' if isinstance(provider, str) and provider.strip()
+                           else 'Malformed MSVC loadout ProvidedModule')
+                with self.subTest(provider=provider), patch.object(module, 'ROOT', root / 'checkout'), \
+                     contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(AssertionError, message):
+                    module.trace_windows(build, source, sdk, public, feature='loadout')
+
+    def test_shared_msvc_trace_checker_rejects_imported_host_header_units_and_modules(self):
+        module = load('check_inspector_sdk.py')
+        sources_by_target = {
+            'sco-feature-loadout': ['loadout.cpp'],
+            'sc-offline-loadout': ['external.cpp'],
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            build, source, sdk, public, trace_dirs = make_msvc_trace_fixture(root, sources_by_target)
+            private_root = root / 'checkout'
+            private_header = private_root / 'src/private_api.h'
+            private_header.parent.mkdir(parents=True)
+            private_header.write_text('// synthetic private host header unit\n')
+            private_bmi = private_root / 'ifc/private_host.ifc'
+            private_bmi.parent.mkdir(parents=True)
+            private_bmi.write_text('synthetic IFC fixture\n')
+            trace = trace_dirs['sco-feature-loadout'] / 'trace-0.json'
+            original = json.loads(trace.read_text())
+            payloads = {
+                'ImportedHeaderUnits': [{'Header': str(private_header), 'BMI': str(private_bmi)}],
+                'ImportedModules': [{'Name': 'private::host_api', 'BMI': str(private_bmi)}],
+            }
+            for field, payload in payloads.items():
+                document = json.loads(json.dumps(original))
+                document['Data'][field] = payload
+                trace.write_text(json.dumps(document))
+                with self.subTest(field=field), patch.object(module, 'ROOT', private_root), \
+                     contextlib.redirect_stdout(io.StringIO()), \
+                     self.assertRaisesRegex(AssertionError, f'Unsupported MSVC loadout {field} dependencies'):
+                    module.trace_windows(build, source, sdk, public, feature='loadout')
+
+    def test_shared_msvc_trace_checker_rejects_malformed_import_fields(self):
+        module = load('check_inspector_sdk.py')
+        sources_by_target = {
+            'sco-feature-loadout': ['loadout.cpp'],
+            'sc-offline-loadout': ['external.cpp'],
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            build, source, sdk, public, trace_dirs = make_msvc_trace_fixture(root, sources_by_target)
+            trace = trace_dirs['sco-feature-loadout'] / 'trace-0.json'
+            original = json.loads(trace.read_text())
+            for field in ('ImportedHeaderUnits', 'ImportedModules'):
+                for value in (None, '', {}, 'private::host_api'):
+                    document = json.loads(json.dumps(original))
+                    document['Data'][field] = value
+                    trace.write_text(json.dumps(document))
+                    with self.subTest(field=field, value=value), patch.object(module, 'ROOT', root / 'checkout'), \
+                         contextlib.redirect_stdout(io.StringIO()), \
+                         self.assertRaisesRegex(AssertionError, f'Malformed MSVC loadout {field} trace'):
+                        module.trace_windows(build, source, sdk, public, feature='loadout')
+
+    def test_shared_msvc_trace_checker_rejects_blank_relative_and_missing_paths(self):
+        module = load('check_inspector_sdk.py')
+        sources_by_target = {
+            'sco-feature-loadout': ['loadout.cpp'],
+            'sc-offline-loadout': ['external.cpp'],
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            build, source, sdk, public, trace_dirs = make_msvc_trace_fixture(root, sources_by_target)
+            trace = trace_dirs['sco-feature-loadout'] / 'trace-0.json'
+            original = json.loads(trace.read_text())
+            invalid_includes = ['', '   ', 'relative.h', str(root / 'missing.h'), str(root / 'compiler')]
+            for dependency in invalid_includes:
+                data = json.loads(json.dumps(original))
+                data['Data']['Includes'] = [dependency]
+                trace.write_text(json.dumps(data))
+                with self.subTest(include=dependency), patch.object(module, 'ROOT', root / 'checkout'), \
+                     contextlib.redirect_stdout(io.StringIO()), self.assertRaises(AssertionError):
+                    module.trace_windows(build, source, sdk, public, feature='loadout')
+            invalid_sources = ['', '   ', 'relative.cpp', str(root / 'missing.cpp')]
+            for traced_source in invalid_sources:
+                data = json.loads(json.dumps(original))
+                data['Data']['Source'] = traced_source
+                trace.write_text(json.dumps(data))
+                with self.subTest(source=traced_source), patch.object(module, 'ROOT', root / 'checkout'), \
+                     contextlib.redirect_stdout(io.StringIO()), self.assertRaises(AssertionError):
+                    module.trace_windows(build, source, sdk, public, feature='loadout')
+
     def test_plugin_and_checker_receive_explicit_or_default_settings(self):
         files = ['check_' + n + '_sdk.py' for n in
                  ('build', 'creative', 'crew', 'discord', 'inspector', 'loadout',
@@ -206,6 +640,54 @@ class WindowsGeneratorProofs(unittest.TestCase):
                 self.assertEqual(command[command.index('--generator') + 1], 'Visual Studio 17 2022')
                 self.assertEqual(command[command.index('--toolset') + 1], 'v143,host=x64')
                 self.assertEqual(command[command.index('--try-compile-config') + 1], 'Release')
+
+
+def make_msvc_trace_fixture(root, sources_by_target, emitted_sources=None):
+    """Write target-project inventories and representative MSVC sourceDependencies JSONs."""
+    module = load('check_inspector_sdk.py')
+    build, source, sdk, compiler = (root / name for name in ('build', 'source', 'sdk', 'compiler'))
+    public_dir = sdk / 'include'
+    public_dir.mkdir(parents=True)
+    compiler.mkdir()
+    public_header = public_dir / 'sco_api.h'
+    public_header.write_text('// SDK public fixture\n')
+    compiler_header = compiler / 'stddef.h'
+    compiler_header.write_text('// compiler root fixture\n')
+    source_dir = source / 'plugins/loadout'
+    source_dir.mkdir(parents=True)
+    trace_dirs = {}
+    ns = '{http://schemas.microsoft.com/developer/msbuild/2003}'
+    for target, names in sources_by_target.items():
+        paths = []
+        for name in names:
+            path = source_dir / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('// consumer fixture\n')
+            paths.append(path.resolve())
+        project = module.ET.Element(ns + 'Project')
+        group = module.ET.SubElement(project, ns + 'ItemGroup')
+        for path in paths:
+            module.ET.SubElement(group, ns + 'ClCompile', Include=str(path))
+        build.mkdir(exist_ok=True)
+        module.ET.ElementTree(project).write(build / (target + '.vcxproj'), encoding='utf-8')
+        trace_dir = build / 'dependencies' / target
+        trace_dir.mkdir(parents=True)
+        (trace_dir / 'toolchain.txt').write_text(str(compiler) + '\n')
+        trace_dirs[target] = trace_dir
+        selected = names if emitted_sources is None else emitted_sources.get(target, [])
+        for index, name in enumerate(selected):
+            trace = {
+                'Version': '1.2',
+                'Data': {
+                    'Source': str((source_dir / name).resolve()),
+                    'ProvidedModule': '',
+                    'Includes': [str(public_header.resolve()), str(compiler_header.resolve())],
+                    'ImportedHeaderUnits': [],
+                    'ImportedModules': [],
+                },
+            }
+            (trace_dir / f'trace-{index}.json').write_text(json.dumps(trace))
+    return build, source, sdk, {public_header.resolve()}, trace_dirs
 
 
 if __name__ == '__main__':
