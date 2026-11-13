@@ -19,11 +19,13 @@ struct Panel {
     void* context = nullptr;
     unsigned accepted = 0;
     std::map<uint32_t,uint32_t> combos, flags;
-    std::vector<std::string> gear_labels;
+    std::vector<std::string> gear_labels, outfit_labels;
+    int outfit_index=-1; std::string outfit_filter;
 };
 std::vector<File> files;
 Panel player, sq42;
 unsigned rejected = 0, removed = 0, unsubscribed = 0;
+bool fail_sq=false; sco_command_fn reload_command=nullptr;
 sco_content_v1 content{};
 sco_widgets_v1 widgets{};
 sc_loadout_v1_2 loadout{};
@@ -58,11 +60,14 @@ sco_result Read(sco_plugin*,uint64_t id,void* out,uint32_t* size) {
 sco_result SetPanel(sco_plugin*,const char* id,const char*,const sco_widget_node* nodes,
                     uint32_t count,uint32_t stride,sco_widget_event_fn event,void* context) {
     Require(nodes && count && stride==sizeof(sco_widget_node),"invalid panel extent");
-    std::map<uint32_t,uint32_t> combos, flags; std::vector<std::string> gear_labels;
+    std::map<uint32_t,uint32_t> combos, flags; std::vector<std::string> gear_labels, outfit_labels;
+    int outfit_index=-1; std::string outfit_filter;
     for (uint32_t i=0;i<count;++i) {
         const auto& node=nodes[i];
         Require(node.size==sizeof(node),"invalid node extent");
         flags[node.id]=node.flags;
+        if(node.id==101) { outfit_index=node.index; for(uint32_t j=0;j<node.item_count;++j) outfit_labels.emplace_back(node.items[j]); }
+        if(node.id==135 && node.text) outfit_filter=node.text;
         if(node.id==2) for(uint32_t j=0;j<node.item_count;++j) gear_labels.emplace_back(node.items[j]);
         // sco.widgets requires a NULL array exactly when the item count is zero.
         // A rejected replacement must preserve the previous panel and callback.
@@ -76,8 +81,9 @@ sco_result SetPanel(sco_plugin*,const char* id,const char*,const sco_widget_node
         }
     }
     Require(!std::strcmp(id,"loadout.player") || !std::strcmp(id,"loadout.sq42"),"unexpected panel id");
+    if(fail_sq && !std::strcmp(id,"loadout.sq42")) return SCO_FAILED;
     auto& panel=!std::strcmp(id,"loadout.player") ? player : sq42;
-    panel.event=event; panel.context=context; ++panel.accepted; panel.combos=std::move(combos); panel.flags=std::move(flags); panel.gear_labels=std::move(gear_labels);
+    panel.event=event; panel.context=context; ++panel.accepted; panel.combos=std::move(combos); panel.flags=std::move(flags); panel.gear_labels=std::move(gear_labels); panel.outfit_labels=std::move(outfit_labels); panel.outfit_index=outfit_index; panel.outfit_filter=std::move(outfit_filter);
     return SCO_OK;
 }
 sco_result RemovePanel(sco_plugin*,const char*) { ++removed; return SCO_OK; }
@@ -89,7 +95,7 @@ sco_result Query(const char* name,uint32_t version,const void** out) {
     if (!std::strcmp(name,SCO_WIDGETS_NAME)) *out=&widgets;
     return *out ? SCO_OK : SCO_NOT_FOUND;
 }
-sco_result Register(sco_plugin*,const sco_command*) { return SCO_OK; }
+sco_result Register(sco_plugin*,const sco_command* command) { if (!std::strcmp(command->name,"loadout.reload_lists")) reload_command=command->fn; return SCO_OK; }
 sco_result Subscribe(sco_plugin*,const char*,sco_event_fn,void*) { return SCO_OK; }
 sco_result Unsubscribe(sco_plugin*,const char*,sco_event_fn) { ++unsubscribed; return SCO_OK; }
 int Has(const char* name) { return async_cap && !std::strcmp(name,"game.loadout.async"); }
@@ -105,10 +111,10 @@ void Select(const char* id,Panel& panel,uint32_t node,int index) {
 void Workflow(bool populated) {
     files={{"lists/items.txt","[helmet]\nFixtureHelmet\n[primary]\nFixtureGun\n"}};
     if (populated) {
-        files.push_back({"lists/outfits.txt","[Fixture outfit]\nArmor_Helmet FixtureHelmet\n"});
+        files.push_back({"lists/outfits.txt","[Fixture outfit]\nArmor_Helmet FixtureHelmet\n[Other FLIGHT]\nArmor_Helmet OtherHelmet\n[Flight suit]\nArmor_Helmet FlightHelmet\n"});
         files.push_back({"lists/buildables.txt","[sq42]\nFixtureObject\n"});
     }
-    player={}; sq42={}; rejected=0; removed=0; unsubscribed=0; submits=0; cancels=0; captured.clear(); async_cap=provider=true; supported=SC_LOADOUT_VERSION_1_2; loadout.size=sizeof(loadout); loadout.submit=Submit; loadout.status=Status; loadout.cancel=Cancel;
+    player={}; sq42={}; rejected=0; removed=0; unsubscribed=0; fail_sq=false; reload_command=nullptr; submits=0; cancels=0; captured.clear(); async_cap=provider=true; supported=SC_LOADOUT_VERSION_1_2; loadout.size=sizeof(loadout); loadout.submit=Submit; loadout.status=Status; loadout.cancel=Cancel;
     sco_api api{}; api.size=sizeof(api); api.major=SCO_API_MAJOR; api.minor=SCO_API_MINOR;
     api.has=Has; api.register_command=Register; api.query_service=Query;
     api.subscribe=Subscribe; api.unsubscribe=Unsubscribe;
@@ -136,7 +142,7 @@ void Workflow(bool populated) {
     Send("loadout.sq42",old,100,SCO_WIDGET_BUTTON);
     Require(sq42.accepted==old.accepted+1,"stale SQ42 callback ignored");
     Require(!rejected && sq42.accepted==old.accepted+1,"SQ42 panel rejected after spoiler confirmation");
-    Require(sq42.combos.at(101)==(populated ? 1u : 0u),"outfit picker count mismatch");
+    Require(sq42.combos.at(101)==(populated ? 3u : 0u),"outfit picker count mismatch");
     Require(sq42.combos.at(130)==(populated ? 1u : 0u),"build picker count mismatch");
     Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"no matching gear");
     Require(!rejected && player.combos.at(2)==0,"empty filtered picker rejected");
@@ -151,15 +157,63 @@ void Workflow(bool populated) {
     Send("loadout.player",player,24,SCO_WIDGET_BUTTON);
     Require(cancels==1,"player releases job");
     if(populated) {
+        Send("loadout.sq42",sq42,135,SCO_WIDGET_TEXT_INPUT,"fLiGhT");
+        Require(sq42.outfit_labels==std::vector<std::string>({"Other FLIGHT","Flight suit"}),"case-insensitive outfit filter");
+        auto stale=sq42; Select("loadout.sq42",sq42,101,1);
+        Require(sq42.outfit_index==1,"filtered source selection retained");
+        Select("loadout.sq42",sq42,101,-1);
+        Require(sq42.outfit_index==-1 && (sq42.flags.at(102)&SCO_WIDGET_DISABLED) && (sq42.flags.at(106)&SCO_WIDGET_DISABLED),"deselection disables outfit actions");
+        Send("loadout.sq42",sq42,102,SCO_WIDGET_BUTTON); Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON);
+        Require(submits==1,"forged deselected actions refused");
+        Select("loadout.sq42",sq42,101,1);
+        Select("loadout.sq42",stale,101,0);
+        Require(sq42.outfit_index==1,"stale filtered callback ignored");
+        Send("loadout.sq42",sq42,135,SCO_WIDGET_TEXT_INPUT,"none");
+        Require(sq42.combos.at(101)==0 && sq42.outfit_index==-1 && (sq42.flags.at(102)&SCO_WIDGET_DISABLED) && (sq42.flags.at(106)&SCO_WIDGET_DISABLED),"hidden selection disables apply");
+        Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON); Send("loadout.sq42",sq42,102,SCO_WIDGET_BUTTON);
+        Require(submits==1,"forged hidden selection refused");
+        Send("loadout.sq42",sq42,135,SCO_WIDGET_TEXT_INPUT,"FLIGHT");
+        Require(sq42.outfit_index==1,"source selection survives filter changes");
+        std::string oversized(64,'x'); Send("loadout.sq42",sq42,135,SCO_WIDGET_TEXT_INPUT,oversized.c_str());
+        Send("loadout.sq42",sq42,135,SCO_WIDGET_TEXT_INPUT,"bad\ntext");
+        Require(sq42.outfit_filter=="FLIGHT" && sq42.outfit_index==1,"invalid search rejected");
+        Send("loadout.sq42",sq42,135,SCO_WIDGET_TEXT_INPUT,std::string(63,'x').c_str());
+        Require(sq42.outfit_filter.size()==63 && sq42.combos.at(101)==0,"63 character search accepted");
+        Send("loadout.sq42",sq42,135,SCO_WIDGET_TEXT_INPUT,"flight");
+        auto before_failure=sq42; fail_sq=true;
+        Send("loadout.sq42",sq42,135,SCO_WIDGET_TEXT_INPUT,"other");
+        Select("loadout.sq42",before_failure,101,0); Send("loadout.sq42",before_failure,106,SCO_WIDGET_BUTTON);
+        Require(submits==1 && sq42.accepted==before_failure.accepted,"failed replacement invalidates old callbacks");
+        fail_sq=false; Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"");
+        Require(sq42.outfit_labels==std::vector<std::string>({"Other FLIGHT"}) && sq42.outfit_index==-1,"failed replacement does not publish mapping");
+        Send("loadout.sq42",sq42,135,SCO_WIDGET_TEXT_INPUT,"flight");
+        Require(sq42.outfit_index==1,"failed replacement preserves source selection");
+        Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON);
+        Require(submits==2 && captured.size()==1 && !std::strcmp(captured[0].item_class,"FlightHelmet"),"filtered non-first source submitted");
+        Send("loadout.sq42",sq42,108,SCO_WIDGET_BUTTON); Require(cancels==2,"filtered job released");
+        Require(reload_command!=nullptr,"reload command registered");
+        auto before_reload=sq42;
+        files[1].bytes="[New flight]\nArmor_Helmet NewHelmet\n";
+        Require(reload_command(nullptr,0,nullptr,nullptr,0)==SCO_OK,"reload succeeded");
+        Select("loadout.sq42",before_reload,101,0); Send("loadout.sq42",before_reload,106,SCO_WIDGET_BUTTON);
+        Require(submits==2,"reload invalidates published callbacks");
+        Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"");
+        Require(sq42.outfit_labels==std::vector<std::string>({"New flight"}) && sq42.outfit_index==-1,"reload clears source selection");
         Select("loadout.sq42",sq42,101,0);
         async_cap=false; Send("loadout.sq42",sq42,105,SCO_WIDGET_BUTTON);
         Require(sq42.flags.at(106)&SCO_WIDGET_DISABLED,"outfit submission disabled without capability");
-        Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON); Require(submits==1,"forged unavailable outfit refused");
+        Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON); Require(submits==2,"forged unavailable outfit refused");
         async_cap=true; Send("loadout.sq42",sq42,105,SCO_WIDGET_BUTTON); Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON);
-        Require(submits==2 && captured.size()==1 && captured[0].slot==SC_LOADOUT_SLOT_HEAD,"selected outfit submitted");
-        Send("loadout.sq42",sq42,108,SCO_WIDGET_BUTTON); Require(cancels==2,"SQ42 releases job");
+        Require(submits==3 && captured.size()==1 && captured[0].slot==SC_LOADOUT_SLOT_HEAD && !std::strcmp(captured[0].item_class,"NewHelmet"),"selected outfit submitted");
+        Send("loadout.sq42",sq42,108,SCO_WIDGET_BUTTON); Require(cancels==3,"SQ42 releases job");
+        auto before_bad_reload=sq42; files[1].bytes="[broken]\nnot a valid piece\n";
+        Require(reload_command(nullptr,0,nullptr,nullptr,0)!=SCO_OK,"malformed reload refused");
+        Send("loadout.sq42",before_bad_reload,106,SCO_WIDGET_BUTTON); Require(submits==3,"failed reload invalidates callbacks");
+        Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"");
+        Require(sq42.combos.at(101)==0 && (sq42.flags.at(106)&SCO_WIDGET_DISABLED),"failed reload clears picker");
     }
-    sco::features::loadout::Unload(); sco::features::loadout::Unload();
+    auto before_unload=sq42; sco::features::loadout::Unload(); sco::features::loadout::Unload();
+    Send("loadout.sq42",before_unload,106,SCO_WIDGET_BUTTON); Require(submits==(populated ? 3u : 1u),"unloaded callback ignored");
     Require(removed==2 && unsubscribed==1,"unload cleanup mismatch");
 }
 }

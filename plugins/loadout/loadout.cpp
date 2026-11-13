@@ -30,7 +30,8 @@ struct State {
     Lists lists; bool lists_known = false, spoilers = false, clocked = false;
     uint32_t last_read = 0, page = 0; int32_t outfit = -1, ship = 0, build = -1;
     int cvars[4]{-1,-1,-1,-1};
-    std::string filter, equip, visor, slots; std::vector<std::string> buildables;
+    std::string filter, outfit_filter, equip, visor, slots; std::vector<std::string> buildables;
+    std::vector<size_t> published_outfits;
     uint64_t job = 0; std::vector<Piece> job_pieces; bool job_poll_paused = false;
     char job_status[256] = "No retained loadout job.";
     std::shared_ptr<const catalogue::Data> curated, published_curated;
@@ -151,6 +152,8 @@ sco_result Parse(std::string_view bytes,int kind,Lists& lists,std::vector<std::s
     return SCO_OK;
 }
 sco_result ReadLists() {
+    // A source replacement makes every previously published outfit index stale.
+    g.sq_events=false; g.published_outfits.clear();
     const auto* content=Open<sco_content_v1>(SCO_CONTENT_NAME);
     if (!HAS(content,sco_content_v1,item) || !HAS(content,sco_content_v1,read)) return SCO_UNAVAILABLE;
     Lists lists; std::vector<std::string> buildables; uint32_t total=0; bool found=false;
@@ -625,11 +628,15 @@ void Event(const char* panel,const sco_widget_event* e,void* context) {
     }
     else switch(e->node_id) {
         case 100: if (e->kind==SCO_WIDGET_BUTTON) { g.spoilers=true; ReadCvars(); } break;
-        case 101: if (e->kind==SCO_WIDGET_COMBO && e->index>=0 && static_cast<size_t>(e->index)<g.lists.outfits.size()) g.outfit=e->index; break;
-        case 102: if (e->kind==SCO_WIDGET_BUTTON && g.outfit>=0 && static_cast<size_t>(g.outfit)<g.lists.outfits.size()) {
+        case 101: if (e->kind==SCO_WIDGET_COMBO) {
+            if (e->index==-1) g.outfit=-1;
+            else if (e->index>=0 && static_cast<size_t>(e->index)<g.published_outfits.size()) g.outfit=static_cast<int32_t>(g.published_outfits[static_cast<size_t>(e->index)]);
+        } break;
+        case 135: (void)PickerText(e,g.outfit_filter); break;
+        case 102: if (e->kind==SCO_WIDGET_BUTTON && g.outfit>=0 && static_cast<size_t>(g.outfit)<g.lists.outfits.size() && std::find(g.published_outfits.begin(),g.published_outfits.end(),static_cast<size_t>(g.outfit))!=g.published_outfits.end()) {
             auto a=Text(g.lists.outfits[static_cast<size_t>(g.outfit)].name.c_str()); Wear(&a,1,nullptr,nullptr,0);
         } break;
-        case 106: if (e->kind==SCO_WIDGET_BUTTON && g.outfit>=0 && static_cast<size_t>(g.outfit)<g.lists.outfits.size()) {
+        case 106: if (e->kind==SCO_WIDGET_BUTTON && g.outfit>=0 && static_cast<size_t>(g.outfit)<g.lists.outfits.size() && std::find(g.published_outfits.begin(),g.published_outfits.end(),static_cast<size_t>(g.outfit))!=g.published_outfits.end()) {
             auto a=Text(g.lists.outfits[static_cast<size_t>(g.outfit)].name.c_str()); SubmitOutfit(&a,1,nullptr,nullptr,0);
         } break;
         case 107: if (e->kind==SCO_WIDGET_BUTTON) Progress(nullptr,0,nullptr,nullptr,0); break;
@@ -766,18 +773,24 @@ void Publish() {
         }
     }
     nodes.clear(); options.clear(); text.clear();
+    std::vector<size_t> outfit_rows;
     const auto publish_sq=[&] {
         if(next_sq_cookie<std::numeric_limits<uintptr_t>::max()) {
             const auto cookie=++next_sq_cookie;
-            if(w->set_panel(g.self,"loadout.sq42","Squadron 42",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(sco_widget_node),Event,reinterpret_cast<void*>(cookie))==SCO_OK) { g.sq_cookie=cookie; g.sq_events=true; }
+            if(w->set_panel(g.self,"loadout.sq42","Squadron 42",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(sco_widget_node),Event,reinterpret_cast<void*>(cookie))==SCO_OK) { g.published_outfits=std::move(outfit_rows); g.sq_cookie=cookie; g.sq_events=true; }
         }
     };
     if (!g.spoilers) { add(SCO_WIDGET_LABEL,99,"This tab may contain Squadron 42 spoilers. Confirmation is session-only."); add(SCO_WIDGET_BUTTON,100,"OK: show SQ42 spoilers"); }
     else {
-        for (const auto& o:g.lists.outfits) options.push_back(o.name.c_str());
-        auto& outfit=add(SCO_WIDGET_COMBO,101,"SQ42 outfit"); outfit.items=options.empty() ? nullptr : options.data(); outfit.item_count=static_cast<uint32_t>(options.size()); outfit.index=g.outfit;
-        add(SCO_WIDGET_BUTTON,102,"Wear SQ42 outfit",g.outfit>=0 && !g.job ? 0u : SCO_WIDGET_DISABLED);
-        add(SCO_WIDGET_BUTTON,106,"Submit selected outfit job (1.2)",g.outfit>=0 && !g.job && async_available ? 0u : SCO_WIDGET_DISABLED);
+        add(SCO_WIDGET_TEXT_INPUT,135,"Search SQ42 outfits (63 ASCII characters)").text=g.outfit_filter.c_str();
+        int32_t selected_row=-1;
+        for (size_t i=0;i<g.lists.outfits.size();++i) if (catalogue::Contains(g.lists.outfits[i].name,g.outfit_filter)) {
+            if (g.outfit>=0 && static_cast<size_t>(g.outfit)==i) selected_row=static_cast<int32_t>(outfit_rows.size());
+            outfit_rows.push_back(i); options.push_back(g.lists.outfits[i].name.c_str());
+        }
+        auto& outfit=add(SCO_WIDGET_COMBO,101,"SQ42 outfit"); outfit.items=options.empty() ? nullptr : options.data(); outfit.item_count=static_cast<uint32_t>(options.size()); outfit.index=selected_row;
+        add(SCO_WIDGET_BUTTON,102,"Wear SQ42 outfit",selected_row>=0 && !g.job ? 0u : SCO_WIDGET_DISABLED);
+        add(SCO_WIDGET_BUTTON,106,"Submit selected outfit job (1.2)",selected_row>=0 && !g.job && async_available ? 0u : SCO_WIDGET_DISABLED);
         add(SCO_WIDGET_BUTTON,107,"Inspect loadout job",g.job ? 0u : SCO_WIDGET_DISABLED);
         add(SCO_WIDGET_BUTTON,108,"Cancel/release loadout job",g.job ? 0u : SCO_WIDGET_DISABLED);
         add(SCO_WIDGET_LABEL,109,g.job_status);
