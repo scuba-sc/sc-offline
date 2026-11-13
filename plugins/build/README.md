@@ -25,7 +25,8 @@ The same external owner publishes `build.picker` through public `sco.widgets`
 1.0. It supplies categories, case-insensitive word search across all groups,
 64-row pages, selection, reach, preview/start/stop, near-player placement,
 Undo/Clear, and an SQ42 shortcut with in-front/ahead controls. Search labels
-include their group. Changing category, search or page clears selection. Labels
+include their group. Changing category, search or page clears the highlight, not the effective selection.
+The panel displays both independently. Labels
 are shortened only for display; commands receive the complete original value,
 including duplicate rows and any pipe characters. Build lists do not use the
 Loadout catalogue's pipe-field format.
@@ -44,6 +45,13 @@ bytes per input line. Identifiers and categories use printable ASCII. Missing,
 ambiguous, oversized or malformed lists produce an explicit panel/status
 message and no partial catalogue. An empty list is valid. Search is limited to
 63 printable ASCII bytes. Row ordering and duplicate identifiers are retained.
+
+On start, absent a successful explicit `build.select`, the module copies the first
+row admissible under the same selection rules from the loaded unique catalogue.
+Missing, empty, ambiguous, malformed, or all-inadmissible catalogues refuse before
+camera acquisition. An explicit successful selection and reach work without a
+catalogue. Stop remains available for an active or retained camera lease. A first
+NPC is not skipped; NPC preview may still refuse under the public ownership rules.
 
 Only successful panel replacement installs its row mapping and callback cookie.
 Failed publication pauses actions until a successful retry; callbacks from an
@@ -99,8 +107,9 @@ Windows/MSVC validation is recorded separately by the source review. Streamed
 prefab cleanup, collision, filtered rays, camera restore, rendering and default
 release staging remain unverified. The release workflow downloads
 sdk-v2.4.0, which ships these headers, but does not stage this module:
-release-folder wiring is required before shipping. This change enables no native
-backend or default and changes no SDK pin.
+release-folder wiring is required before shipping. This change enables no native backend and changes no SDK pin. The existing
+Windows input focus issue remains open; process focus alone does not establish that
+the Build controls are safe while interacting with other UI.
 
 For a connected no-game preflight, build the actual module against an extracted
 checksum-verified SDK and build the matching Core source's `sco_host`,

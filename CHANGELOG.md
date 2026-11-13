@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Restore a copied first admissible Build catalogue selection before camera acquisition while preserving explicit selections and safe refusal. Synthetic tests only; G5 and the focus issue remain open; **not run in game**.
+
 - Submit copied Player gear and confirmed SQ42 outfits as retained public loadout 1.2 jobs, with progress and cancellation; unsupported mappings refuse. Synthetic tests only; **not run in game**.
 
 - **Pair the build-200 development SDK.** Advance the local Core gitlink to `4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd` and record the matching unpublished `2.4.1-dev.3` archive identities. Static signature scans and synthetic checks do not establish gameplay or native activation.

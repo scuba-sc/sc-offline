@@ -17,14 +17,14 @@ namespace sco::features::build::picker {
 #define PICKER_HAS(t, type, m) ((t) && (t)->size >= offsetof(type, m) + sizeof((t)->m) && (t)->m)
 constexpr uint32_t kPage=64, kRows=4096, kGroups=24;
 struct Row { std::string name; uint32_t group; };
-struct Observation { double reach=50; bool active=false; uint32_t retained=0, removing=0; };
+struct Observation { double reach=50; bool active=false; uint32_t retained=0, removing=0; const char* effective=""; };
 using Observe=Observation(*)();
 struct State {
     const sco_api* api=nullptr; sco_plugin* self=nullptr; Observe observe=nullptr;
     std::vector<std::string> groups; std::vector<Row> rows; std::vector<uint32_t> published;
     std::string filter; uint32_t group=0,page=0; int32_t selected=-1; double ahead=8;
     bool inFront=true,dirty=true,events=false; uintptr_t cookie=0;
-    Observation shown{}; char source[192]{},message[256]{};
+    Observation shown{}; std::string shownEffective; char source[192]{},message[256]{};
 } state;
 // Opaque callback identities survive state resets; no callback dereferences ctx.
 inline uintptr_t nextCookie=0;
@@ -121,11 +121,14 @@ inline void Publish() {
         std::vector<std::string> labels;for(auto i:map){const auto& row=state.rows[i];std::string label=state.filter.find_first_not_of(" _")==std::string::npos?row.name:"["+state.groups[row.group]+"] "+row.name;label.resize(std::min<size_t>(label.size(),SCO_WIDGETS_MAX_TEXT));labels.push_back(std::move(label));}
         std::vector<const char*> rows,groups;for(const auto& s:labels)rows.push_back(s.c_str());for(const auto& s:state.groups)groups.push_back(s.c_str());
         const auto obs=state.observe();
+        const std::string effectiveSnapshot=obs.effective?obs.effective:"";
         char page[96],native[192];std::snprintf(page,sizeof(page),"Page %u / %u (%u matching rows)",state.page+1,pages,static_cast<unsigned>(filtered.size()));
         std::snprintf(native,sizeof(native),"Retained %u; removal-requested %u. Streaming/disappearance unconfirmed.",obs.retained,obs.removing);
         const bool selected=state.selected>=0 && static_cast<size_t>(state.selected)<state.rows.size();
         const bool sq42=selected && Equal(state.groups[state.rows[static_cast<size_t>(state.selected)].group],"sq42");
-        std::string selection=selected?state.rows[static_cast<size_t>(state.selected)].name:"No picker row selected";selection.resize(std::min<size_t>(selection.size(),255));
+        std::string effective=obs.effective && *obs.effective?obs.effective:"none"; effective.resize(std::min<size_t>(effective.size(),100));
+        std::string highlight=selected?state.rows[static_cast<size_t>(state.selected)].name:"none"; highlight.resize(std::min<size_t>(highlight.size(),100));
+        std::string selection="Effective selection: "+effective+" | Highlight: "+highlight;
         std::vector<sco_widget_node> nodes;
         auto node=[&](uint32_t id,uint32_t kind,const char* label,bool disabled=false)->sco_widget_node&{sco_widget_node n{};n.size=sizeof(n);n.id=id;n.kind=kind;n.index=-1;n.label=label;n.flags=disabled?SCO_WIDGET_DISABLED:0;nodes.push_back(n);return nodes.back();};
         auto& cat=node(1,SCO_WIDGET_COMBO,"Category",groups.empty());cat.items=groups.empty()?nullptr:groups.data();cat.item_count=static_cast<uint32_t>(groups.size());cat.index=groups.empty()?-1:static_cast<int32_t>(state.group);
@@ -135,7 +138,7 @@ inline void Publish() {
         node(4,SCO_WIDGET_BUTTON,"Previous page",!state.page);node(5,SCO_WIDGET_BUTTON,"Next page",state.page+1==pages);
         node(6,SCO_WIDGET_LABEL,page);node(7,SCO_WIDGET_LABEL,selection.c_str());
         auto& reach=node(8,SCO_WIDGET_SLIDER,"Build reach (metres)");reach.value=obs.reach;reach.minimum=5;reach.maximum=300;
-        node(9,SCO_WIDGET_BUTTON,"Select preview",!selected);node(10,SCO_WIDGET_BUTTON,obs.active?"Stop building":"Start building",!obs.active&&!selected);
+        node(9,SCO_WIDGET_BUTTON,"Select preview",!selected);node(10,SCO_WIDGET_BUTTON,obs.active?"Stop building":"Start building",false);
         node(11,SCO_WIDGET_BUTTON,"Place near player",!selected);node(12,SCO_WIDGET_BUTTON,"Undo last retained");node(13,SCO_WIDGET_BUTTON,"Clear retained");
         bool hasSq42=false;for(const auto& group:state.groups)if(Equal(group,"sq42"))hasSq42=true;
         node(14,SCO_WIDGET_BUTTON,"Browse SQ42",!hasSq42);
@@ -146,7 +149,7 @@ inline void Publish() {
         if(nextCookie==std::numeric_limits<uintptr_t>::max())return;
         const auto cookie=++nextCookie;
         const auto result=widgets->set_panel(state.self,"build.picker","Build",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(sco_widget_node),Event,reinterpret_cast<void*>(cookie));
-        if(result==SCO_OK){state.cookie=cookie;state.published=std::move(map);state.shown=obs;state.dirty=false;state.events=true;}
+        if(result==SCO_OK){state.cookie=cookie;state.published=std::move(map);state.shown=obs;state.shown.effective=nullptr;state.shownEffective=effectiveSnapshot;state.dirty=false;state.events=true;}
     } catch(...) {Message("Picker publication failed; actions paused until a successful retry");}
 }
 struct Completion { bool done=false; sco_result result=SCO_FAILED; };
@@ -155,7 +158,7 @@ inline sco_result Invoke(const char* name,const sco_arg* args=nullptr,uint32_t c
     if(!PICKER_HAS(state.api,sco_api,invoke)){Message("Unavailable: public command invocation required");return SCO_UNAVAILABLE;}
     Completion c;const auto r=state.api->invoke(state.self,name,args,count,Done,&c);
     if (!c.done) Message("Public command invocation refused without a reply");
-    return c.done ? c.result : r;
+    return c.done ? c.result : (r==SCO_OK?SCO_FAILED:r);
 }
 inline void Event(const char* panel,const sco_widget_event* e,void* ctx) {
     if(!state.api || !state.self || !state.events || reinterpret_cast<uintptr_t>(ctx)!=state.cookie || !panel || std::strcmp(panel,"build.picker") || !e || e->size<sizeof(*e))return;
@@ -183,6 +186,7 @@ inline void Event(const char* panel,const sco_widget_event* e,void* ctx) {
             if(e->node_id==12)(void)Invoke("build.undo");
             else if(e->node_id==13)(void)Invoke("build.clear");
             else if(e->node_id==10 && state.observe().active)(void)Invoke("build.toggle");
+            else if(e->node_id==10 && !selected())(void)Invoke("build.toggle");
             else if(selected()) {
                 if(e->node_id==9 || e->node_id==10){const auto a=args(state.observe().reach);if(Invoke("build.select",a.data(),2)==SCO_OK && e->node_id==10)(void)Invoke("build.toggle");}
                 else if(e->node_id==11){const auto a=args(std::min(state.observe().reach,100.0));(void)Invoke("build.place",a.data(),2);}
@@ -195,7 +199,7 @@ inline void Event(const char* panel,const sco_widget_event* e,void* ctx) {
 inline void Tick() {
     if (!state.api) return;
     const auto now = state.observe();
-    if(now.reach!=state.shown.reach || now.active!=state.shown.active || now.retained!=state.shown.retained || now.removing!=state.shown.removing)state.dirty=true;
+    if(now.reach!=state.shown.reach || now.active!=state.shown.active || now.retained!=state.shown.retained || now.removing!=state.shown.removing || state.shownEffective!=(now.effective?now.effective:""))state.dirty=true;
     Publish();
 }
 inline void Load(const sco_api* api,sco_plugin* self,Observe observe) {

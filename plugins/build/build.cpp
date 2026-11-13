@@ -38,6 +38,8 @@ struct State {
     char selected[SC_PREFABS_MAX_PATH + 1]{};
     double reach = 50, yaw = 0, lastPos[3]{}, lastRot[4]{}, lastCamera[3]{}, lastCameraRot[4]{};
 } g;
+// These survive ResetState, so a reentrant unload cannot revive a startup call.
+uint64_t lifecycle=0; bool starting=false;
 const sco_plugin_info kInfo{sizeof(sco_plugin_info), SCO_API_MAJOR, SCO_API_MINOR, "build", "1.0.0", "sc-offline"};
 template<class T> const T* Open(const char* name) {
     const void* out = nullptr;
@@ -84,6 +86,9 @@ bool Path(const char* name) {
             component=p+1;
         } else if(!((c>='a'&&c<='z') || (c>='A'&&c<='Z') || (c>='0'&&c<='9') || c=='_' || c=='-' || c=='.' || c=='{' || c=='}')) return false;
     }
+}
+bool ValidSelection(const char* name) {
+    return name && *name && std::strlen(name)<=SC_PREFABS_MAX_PATH && (!Prefab(name) || Path(name));
 }
 bool Npc(const char* name) {
     for(const auto* prefix:{"NPC_","AIShip_CrewProfiles","PU_Pilots","PU_Human","Vanduul_Pilot"})
@@ -220,18 +225,50 @@ bool ControlReady() {
 sco_result Toggle(const sco_arg*,uint32_t n,void*,char* out,uint32_t size) {
     if(n || (!out&&size))return SCO_BAD_ARG;
     if(g.active || g.lease)return Reply(Stop(),out,size,"Build stopped; preview cleanup/camera restore requested");
-    if(!ControlReady())return Reply(SCO_UNAVAILABLE,out,size,"Build aim/freecam unavailable: G5 has no production adapter; no private fallback");
-    const auto* ctl=Open<sc_world_control_v1>(SC_WORLD_CONTROL_NAME);
-    if(!HAS(ctl,sc_world_control_v1,camera_acquire))return SCO_UNAVAILABLE;
-    uint64_t lease=0;const auto r=ctl->camera_acquire(g.self,&lease);
+    if(!g.selected[0]) {
+        const char* candidate=nullptr;
+        for(const auto& row:picker::state.rows) if(ValidSelection(row.name.c_str())) { candidate=row.name.c_str(); break; }
+        if(!candidate)return Reply(SCO_UNAVAILABLE,out,size,"No admissible row in the loaded unique build catalogue; select explicitly or load a valid catalogue");
+        std::snprintf(g.selected,sizeof(g.selected),"%s",candidate);
+        g.clocked=false;g.suppressed=false;
+    }
+    if(starting)return SCO_UNAVAILABLE;
+    struct StartGuard { StartGuard(){starting=true;} ~StartGuard(){starting=false;} } guard;
+    const auto epoch=lifecycle;
+    const auto* api=g.api; auto* self=g.self;
+    auto live=[&](){return lifecycle==epoch && g.api==api && g.self==self;};
+    auto query=[&](const char* name)->const void* {
+        const void* table=nullptr;
+        if(!live() || !HAS(api,sco_api,query_service))return nullptr;
+        const auto result=api->query_service(name,0x10000u,&table);
+        return live() && result==SCO_OK?table:nullptr;
+    };
+    auto capability=[&](const char* name)->bool {
+        if(!live() || !HAS(api,sco_api,has))return false;
+        const int result=api->has(name);return live() && result;
+    };
+    const auto* ctl=static_cast<const sc_world_control_v1*>(query(SC_WORLD_CONTROL_NAME));
+    const auto* world=static_cast<const sc_world_v1*>(query(SC_WORLD_NAME));
+    const auto* sp=static_cast<const sc_spatial_v1*>(query(SC_SPATIAL_SERVICE_NAME));
+    if(!live())return SCO_UNAVAILABLE;
+    if(!HAS(ctl,sc_world_control_v1,raycast_filtered) || !HAS(ctl,sc_world_control_v1,camera_acquire) ||
+       !HAS(ctl,sc_world_control_v1,camera_step) || !HAS(ctl,sc_world_control_v1,camera_release) ||
+       !HAS(world,sc_world_v1,raycast) || !HAS(world,sc_world_v1,camera) ||
+       !HAS(sp,sc_spatial_v1,world_to_local) || !HAS(sp,sc_spatial_v1,local_to_world) ||
+       !capability("game.world.free_camera") || !capability("game.world.raycast_filtered") || !capability("game.world.raycast")) {
+        if(!live())return SCO_UNAVAILABLE;
+        return Reply(SCO_UNAVAILABLE,out,size,"Build aim/freecam unavailable: G5 has no production adapter; no private fallback");
+    }
+    if(!live())return SCO_UNAVAILABLE;
+    uint64_t lease=0;const auto r=ctl->camera_acquire(self,&lease);
+    if(!live())return SCO_UNAVAILABLE; // Never use stale self/table; in-flight owner-release ordering is not established here.
     if(r!=SCO_OK || !lease)return Reply(r==SCO_OK?SCO_FAILED:r,out,size,"Public free-camera lease refused; no fallback");
     g.lease=lease;g.active=true;g.clocked=false;
     return Reply(SCO_OK,out,size,"Build camera lease acquired; use build.select/aim/drop/rotate/reach");
 }
 sco_result Select(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
-    if(!args || n!=2 || args[0].type!=SCO_ARG_STRING || args[1].type!=SCO_ARG_FLOAT || !args[0].v.s || !*args[0].v.s ||
-       std::strlen(args[0].v.s)>SC_PREFABS_MAX_PATH || !std::isfinite(args[1].v.f) || args[1].v.f<5 || args[1].v.f>300 ||
-       (Prefab(args[0].v.s)&&!Path(args[0].v.s)))return SCO_BAD_ARG;
+    if(!args || n!=2 || args[0].type!=SCO_ARG_STRING || args[1].type!=SCO_ARG_FLOAT || !ValidSelection(args[0].v.s) ||
+       !std::isfinite(args[1].v.f) || args[1].v.f<5 || args[1].v.f>300)return SCO_BAD_ARG;
     const auto r=RemovePreviews();if(r!=SCO_OK&&r!=SCO_NOT_FOUND)return Reply(r,out,size,"Preview removal refused; selection unchanged");
     std::snprintf(g.selected,sizeof(g.selected),"%s",args[0].v.s);g.reach=args[1].v.f;g.clocked=false;g.suppressed=false;
     return Reply(SCO_OK,out,size,"Selection copied; aim/freecam still requires enabled public G5");
@@ -313,7 +350,7 @@ sco_result Camera(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) 
 }
 uint32_t Count() {uint32_t count=0;for(uint32_t i=0;i<g.count;++i)if(!g.placed[i].removing)++count;return count;}
 int Active(){return g.active;}
-picker::Observation ObservePicker(){return {g.reach,g.active,Count(),g.count-Count()};}
+picker::Observation ObservePicker(){return {g.reach,g.active || g.lease!=0,Count(),g.count-Count(),g.selected};}
 const sc_offline_build_state_v1 kState{sizeof(sc_offline_build_state_v1),Count,Active};
 sco_result Status(const sco_arg*,uint32_t n,void*,char* out,uint32_t size) {
     if(n||(!out&&size))return SCO_BAD_ARG;
@@ -380,7 +417,7 @@ void Tick(const char*,const void* data,void*) {
 } // namespace
 const sco_plugin_info* Query(){return &kInfo;}
 sco_result Load(const sco_api* api,sco_plugin* self) {
-    if(!api||!self||g.api)return SCO_BAD_ARG;
+    if(!api||!self||g.api || starting)return SCO_BAD_ARG;
     if(!HAS(api,sco_api,log) || !HAS(api,sco_api,has) ||
        !HAS(api,sco_api,query_service) || !HAS(api,sco_api,register_command) || !HAS(api,sco_api,provide_service) || !HAS(api,sco_api,subscribe) || api->major!=SCO_API_MAJOR || api->minor<SCO_API_MINOR)return SCO_UNAVAILABLE;
     g.api=api;g.self=self;
@@ -421,6 +458,7 @@ void ResetState() {
 }
 void Unload() {
     if(!g.api)return;
+    ++lifecycle;
     if(Stop()!=SCO_OK)g.api->log(g.self,SCO_LOG_WARN,"Build preview/camera cleanup refused; public host owner-release required");
     char reply[192];if(Clear(nullptr,0,nullptr,reply,sizeof(reply))!=SCO_OK)g.api->log(g.self,SCO_LOG_WARN,"Build removal refused; host owner-release required (no private deletion)");
     picker::Unload();

@@ -3,6 +3,10 @@
 #include "workflow_module.h"
 #include <sco_content.h>
 #include <sco_widgets.h>
+#include <sco_ui.h>
+#include <sc_world_control.h>
+#include <sc_world.h>
+#include <sc_spatial.h>
 #include <cmath>
 #include <cstddef>
 #include <cstring>
@@ -21,6 +25,17 @@ std::vector<File> files={{"lists/buildables.txt","[objects]\nFixtureBox\n[sq42]\
 struct Node { uint32_t kind=0,flags=0; int32_t index=-1; double value=0; std::string label,text; std::vector<std::string> items; };
 struct Panel { std::map<uint32_t,Node> nodes; sco_widget_event_fn fn=nullptr; void* ctx=nullptr; } panel;
 sco_widgets_v1 widgets{}; sco_content_v1 content{};
+sc_world_control_v1 control{}; sc_world_v1 world{}; sc_spatial_v1 spatial{};
+bool g5=false, failRelease=false; int reenter=0; sco_result nested=SCO_OK; const sco_api* testApi=nullptr; unsigned acquires=0, releases=0; std::string hotkeyCommand; sco_ui_v1 ui{};
+sco_result Bind(sco_plugin*,const char* key,const char* command,const sco_arg*,uint32_t){Check(!std::strcmp(key,"f6"),"F6 hotkey");hotkeyCommand=command;return SCO_OK;}
+sco_result Acquire(sco_plugin*,uint64_t* lease){++acquires; if(reenter==1){reenter=0;char text[64]{};nested=commands.at("build.toggle").fn(nullptr,0,nullptr,text,sizeof(text));} else if(reenter==2){reenter=0;test_module::Unload();nested=test_module::Load(testApi,owner);} *lease=42;return SCO_OK;}
+sco_result Release(sco_plugin*,uint64_t){++releases;return failRelease?SCO_FAILED:SCO_OK;}
+sco_result Step(sco_plugin*,uint64_t,const sc_world_camera_step*){return SCO_OK;}
+sco_result RayFiltered(sco_plugin*,uint64_t,const double*,const double*,double,const uint64_t*,uint32_t,sc_world_hit*){return SCO_NOT_FOUND;}
+sco_result Ray(uint64_t,const double*,const double*,double,sc_world_hit*){return SCO_NOT_FOUND;}
+sco_result Camera(double*,double*,uint64_t*){return SCO_OK;}
+int Pose(double*,double*,uint64_t*){return 0;}
+int Convert(uint64_t,const double*,double*){return 0;}
 const void* contentTable=nullptr;const void* widgetsTable=nullptr;
 bool contentPresent=true,widgetsPresent=true,endless=false;
 int badMetadata=0,badRead=0;
@@ -29,7 +44,7 @@ std::vector<std::string> invoked,names;
 std::vector<double> distances;
 sco_event_fn tick=nullptr;void* tickCtx=nullptr;
 void Log(sco_plugin*,sco_log_level,const char*) {}
-int Has(const char*) {return 0;}
+int Has(const char*) {return g5?1:0;}
 sco_result Register(sco_plugin* self,const sco_command* c){Check(self==owner,"command owner");commands[c->name]=*c;return SCO_OK;}
 sco_result Provide(sco_plugin*,const char*,uint32_t,const void*){return SCO_OK;}
 sco_result Subscribe(sco_plugin*,const char*,sco_event_fn fn,void* ctx){tick=fn;tickCtx=ctx;return SCO_OK;}
@@ -64,7 +79,7 @@ sco_result SetPanel(sco_plugin* self,const char* id,const char* title,const sco_
     panel=std::move(next);return SCO_OK;
 }
 sco_result Remove(sco_plugin* self,const char* id){Check(self==owner && !std::strcmp(id,"build.picker"),"owned panel removal");++removeCalls;return SCO_OK;}
-sco_result Query(const char* name,uint32_t version,const void** out){Check(version==0x10000u,"public v1 query");*out=nullptr;if(!std::strcmp(name,SCO_WIDGETS_NAME)&&widgetsPresent)*out=widgetsTable;if(!std::strcmp(name,SCO_CONTENT_NAME)&&contentPresent){*out=contentTable;return contentResult;}return *out?SCO_OK:SCO_NOT_FOUND;}
+sco_result Query(const char* name,uint32_t version,const void** out){Check(version==0x10000u,"public v1 query");*out=nullptr;if(reenter==3 && !std::strcmp(name,SC_WORLD_CONTROL_NAME)){reenter=0;test_module::Unload();return SCO_NOT_FOUND;} if(!std::strcmp(name,SCO_UI_NAME))*out=&ui; if(g5 && !std::strcmp(name,SC_WORLD_CONTROL_NAME))*out=&control; if(g5 && !std::strcmp(name,SC_WORLD_NAME))*out=&world; if(g5 && !std::strcmp(name,SC_SPATIAL_SERVICE_NAME))*out=&spatial; if(!std::strcmp(name,SCO_WIDGETS_NAME)&&widgetsPresent)*out=widgetsTable;if(!std::strcmp(name,SCO_CONTENT_NAME)&&contentPresent){*out=contentTable;return contentResult;}return *out?SCO_OK:SCO_NOT_FOUND;}
 sco_result Invoke(sco_plugin* self,const char* name,const sco_arg* args,uint32_t n,sco_invoke_done done,void* ctx){
     Check(self==owner && commands.count(name),"public owner command route");invoked.emplace_back(name);
     if(n==2){Check(args[0].type==SCO_ARG_STRING && args[1].type==SCO_ARG_FLOAT,"typed placement arguments");names.emplace_back(args[0].v.s);distances.push_back(args[1].v.f);}
@@ -80,7 +95,7 @@ void Tick(){Check(tick!=nullptr,"tick subscription");tick("game.tick",nullptr,ti
 int main(int argc,char** argv){
     test_module::Open(argc,argv);int token=0;owner=reinterpret_cast<sco_plugin*>(&token);
     sco_api api{};api.size=sizeof(api);api.major=SCO_API_MAJOR;api.minor=SCO_API_MINOR;api.log=Log;api.has=Has;api.register_command=Register;api.provide_service=Provide;api.subscribe=Subscribe;api.query_service=Query;api.invoke=Invoke;
-    widgets.size=sizeof(widgets);widgets.set_panel=SetPanel;widgets.remove_panel=Remove;content.size=sizeof(content);content.item=Item;content.read=Read;contentTable=&content;widgetsTable=&widgets;
+    testApi=&api;ui.size=sizeof(ui);ui.bind_hotkey=Bind;widgets.size=sizeof(widgets);widgets.set_panel=SetPanel;widgets.remove_panel=Remove;content.size=sizeof(content);content.item=Item;content.read=Read;contentTable=&content;widgetsTable=&widgets;
     Check(test_module::Load(&api,owner)==SCO_OK,"load");
     Check(!panel.nodes.empty(),"existing Build owner publishes grouped picker");
     Check(panel.nodes[1].items==std::vector<std::string>{"objects","sq42"},"copied ordered categories");Check(panel.nodes[3].items==std::vector<std::string>{"FixtureBox"},"copied first-category row");
@@ -125,5 +140,38 @@ int main(int argc,char** argv){
     widgets.set_panel=nullptr;reload();Check(panel.nodes.empty(),"null panel callback");widgets.set_panel=SetPanel;widgets.remove_panel=nullptr;reload();Check(panel.nodes.empty(),"null remove callback");widgets.remove_panel=Remove;reload();
     Send(3,SCO_WIDGET_LIST,0);stale=panel;const auto beforeUnload=invoked.size();const auto beforeRemove=removeCalls;test_module::Unload();Check(removeCalls==beforeRemove+1,"unload removes owned panel");Send(stale,11,SCO_WIDGET_BUTTON);Check(invoked.size()==beforeUnload,"old callback after unload inert");Check(test_module::Load(&api,owner)==SCO_OK,"reload after unload");Send(stale,11,SCO_WIDGET_BUTTON);Check(invoked.size()==beforeUnload,"old callback cannot target new owner session");test_module::Unload();
     for(uint32_t size=4;size<offsetof(sco_api,subscribe)+sizeof(api.subscribe);++size){auto table=std::make_unique<unsigned char[]>(size);std::memcpy(table.get(),&api,size);std::memcpy(table.get(),&size,4);Check(test_module::Load(reinterpret_cast<const sco_api*>(table.get()),owner)==SCO_UNAVAILABLE,"physically short API refused before access");}
-    test_module::Close();std::printf("build public picker: %u checks PASS; actual module, synthetic providers only\n",checks);
+    control.size=sizeof(control);control.camera_acquire=Acquire;control.camera_release=Release;control.camera_step=Step;control.raycast_filtered=RayFiltered;
+    world.size=sizeof(world);world.raycast=Ray;world.camera=Camera;
+    spatial.size=sizeof(spatial);spatial.player_pose=Pose;spatial.world_to_local=Convert;spatial.local_to_world=Convert;g5=true;
+    auto toggle=[&](){return Invoke(owner,"build.toggle",nullptr,0,nullptr,nullptr);};
+    files={{"lists/buildables.txt","[one]\ninvalid.socpak\nNPC_First\nFixture\n"}};reload();
+    Check(hotkeyCommand=="build.toggle" && Invoke(owner,hotkeyCommand.c_str(),nullptr,0,nullptr,nullptr)==SCO_OK && acquires==1,"F6 route selects first admissible default and acquires once");Tick();Check(panel.nodes[7].label.find("Effective selection: NPC_First")!=std::string::npos,"default preserves first NPC without native assumptions");
+    Send(3,SCO_WIDGET_LIST,2);Check(panel.nodes[7].label.find("Effective selection: NPC_First | Highlight: Fixture")!=std::string::npos,"highlight does not commit selection");
+    Search("absent");Check(panel.nodes[7].label.find("Effective selection: NPC_First | Highlight: none")!=std::string::npos,"filter preserves effective selection");
+    failRelease=true;Check(toggle()==SCO_FAILED && releases==1,"failed release retains lease");Tick();Check(panel.nodes[10].label=="Stop building","retained lease keeps stop action");failRelease=false;Button(10);Check(releases==2,"picker retries retained lease stop");
+    files.clear();reload();auto before=acquires;Check(toggle()==SCO_UNAVAILABLE && acquires==before,"missing catalogue refuses before acquisition");
+    sco_arg explicitArgs[2]{};explicitArgs[0].type=SCO_ARG_STRING;explicitArgs[0].v.s="Manual";explicitArgs[1].type=SCO_ARG_FLOAT;explicitArgs[1].v.f=123;
+    Check(Invoke(owner,"build.select",explicitArgs,2,nullptr,nullptr)==SCO_OK && toggle()==SCO_OK && acquires==before+1,"explicit selection works without catalogue");Tick();Check(panel.nodes[7].label.find("Manual")!=std::string::npos && panel.nodes[8].value==123,"explicit selection and reach preserved");Check(toggle()==SCO_OK,"explicit stop");
+    for(const auto& bytes:std::vector<std::string>{"", "[one]\ninvalid.socpak\n", "[one]\nGood\n[ONE]\nBad\n"}){files={{"lists/buildables.txt",bytes}};reload();before=acquires;Check(toggle()==SCO_UNAVAILABLE && acquires==before,"empty invalid or all-invalid catalogue refuses before acquisition");}
+    files={{"lists/buildables.txt","[one]\nGood\n"},{"lists/buildables.txt","[two]\nOther\n"}};reload();before=acquires;Check(toggle()==SCO_UNAVAILABLE && acquires==before,"ambiguous sources refuse before acquisition");
+    files.resize(1);badRead=3;reload();before=acquires;Check(toggle()==SCO_UNAVAILABLE && acquires==before,"content read error refuses before acquisition");badRead=0;
+    // Camera admission retains its original prerequisites: player_pose is used by
+    // later pose/placement operations, not by toggle admission.
+    files={{"lists/buildables.txt","[one]\nFixture\n"}};reload();spatial.player_pose=nullptr;
+    explicitArgs[0].v.s="ManualNoPose";explicitArgs[1].v.f=123;
+    before=acquires;Check(Invoke(owner,"build.select",explicitArgs,2,nullptr,nullptr)==SCO_OK && toggle()==SCO_OK && acquires==before+1,"explicit selection and toggle do not require player_pose");
+    Check(toggle()==SCO_OK,"stop without player_pose");spatial.player_pose=Pose;
+    // Direct command changes effective bytes without changing reach; failed publication retries.
+    files={{"lists/buildables.txt","[one]\nFixture\n"}};reload();
+    auto oldPanel=panel;explicitArgs[0].v.s="Direct";explicitArgs[1].v.f=50;
+    Check(Invoke(owner,"build.select",explicitArgs,2,nullptr,nullptr)==SCO_OK,"direct selection");
+    panelResult=SCO_FAILED;Tick();Check(panel.nodes[7].label.find("Direct")==std::string::npos,"failed publication preserves old snapshot");
+    before=static_cast<unsigned>(invoked.size());Send(oldPanel,9,SCO_WIDGET_BUTTON);Check(invoked.size()==before,"failed publication revokes callback");
+    panelResult=SCO_OK;Tick();Check(panel.nodes[7].label.find("Effective selection: Direct")!=std::string::npos,"retry publishes direct selection");
+    reenter=1;before=acquires;Check(toggle()==SCO_OK && nested==SCO_UNAVAILABLE && acquires==before+1,"nested toggle refused during acquisition");Check(toggle()==SCO_OK,"nested acquisition remains stoppable");
+    reenter=3;before=acquires;Check(toggle()==SCO_UNAVAILABLE && acquires==before,"query unload stops startup before acquire");
+    Check(test_module::Load(&api,owner)==SCO_OK,"reload after query unload");
+    reenter=2;before=acquires;Check(toggle()==SCO_UNAVAILABLE && acquires==before+1 && nested!=SCO_OK,"acquire unload rejects reentrant reload and does not reuse stale owner or table");
+    Check(test_module::Load(&api,owner)==SCO_OK,"reload after acquire unload");
+    test_module::Unload();test_module::Close();std::printf("build public picker: %u checks PASS; actual module, synthetic providers only\n",checks);
 }
