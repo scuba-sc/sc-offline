@@ -54,9 +54,24 @@ assert worker.index('return 0;', worker.index('if (!offline_host::NativeActivati
 assert 'StartOffline();\n    ReleaseStartupGate();' in worker
 dllmain = source.split('BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {', 1)[1]
 assert 'ReleaseStartupGate();' not in dllmain, 'worker creation failure must leave an installed gate unsignalled'
-assert 'gate != StartupGateInstallResult::NotTarget' in dllmain
 assert 'g_startupGateInstalled.store(gate == StartupGateInstallResult::Installed' in dllmain
-assert 'CloseHandle(progress)' in dllmain and 'StartupGateProgressThread' in dllmain
+dispatch = dllmain.split('switch (gate) {', 1)[1].split('\n        }', 1)[0]
+refused = dispatch.split('case StartupGateInstallResult::Refused:', 1)[1].split(
+    'case StartupGateInstallResult::NotTarget:', 1)[0]
+not_target = dispatch.split('case StartupGateInstallResult::NotTarget:', 1)[1].split(
+    'case StartupGateInstallResult::Installed:', 1)[0]
+installed = dispatch.split('case StartupGateInstallResult::Installed:', 1)[1]
+assert 'OutputDebugStringA(' in refused and 'no worker started' in refused
+assert 'CreateThread(' not in refused and 'Log(' not in refused, \
+    'refusal diagnostics under the loader lock must not schedule DLL code or enter the logger'
+assert 'return TRUE;' in refused and 'return TRUE;' in not_target
+assert 'CreateThread(' not in not_target and 'CreateThread(' not in installed
+assert 'break;' in installed, 'only the installed gate may continue to thread creation'
+after_dispatch = dllmain.split('\n        }', 1)[1]
+assert 'CloseHandle(progress)' in after_dispatch and 'StartupGateProgressThread' in after_dispatch
+assert after_dispatch.index('StartupGateProgressThread') < after_dispatch.index('CreateThread(nullptr, 0, ModThread')
+assert 'if (gate != StartupGateInstallResult::NotTarget)' not in dllmain, \
+    'only an installed gate may reach asynchronous worker creation'
 # The core logger stores an atomic borrowed function pointer and has no in-flight
 # callback drain. Do not publish the DLL callback in DllMain or before ModThread's
 # fail-closed and early-unload paths.

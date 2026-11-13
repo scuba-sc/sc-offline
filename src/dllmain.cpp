@@ -889,17 +889,26 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
         InitLog();
         const auto gate = InstallStartupGate();
         g_startupGateInstalled.store(gate == StartupGateInstallResult::Installed, std::memory_order_release);
-        if (gate == StartupGateInstallResult::Installed) {
-            HANDLE progress = CreateThread(nullptr, 0, StartupGateProgressThread, nullptr, 0, nullptr);
-            if (!progress) StartupGateFailStop(sc_offline::startup_gate_wait::Outcome::SetupFailed);
-            CloseHandle(progress);
+        switch (gate) {
+        case StartupGateInstallResult::Refused:
+            // DllMain runs under the loader lock. Keep refusal reporting synchronous
+            // and minimal; do not enter the logger or start DLL-owned code that could
+            // outlive an unpinned module.
+            OutputDebugStringA("[sc-offline] offline startup unavailable: native reader and worker exclusion and drain are not proven; no worker started\r\n");
+            return TRUE;
+        case StartupGateInstallResult::NotTarget:
+            return TRUE;
+        case StartupGateInstallResult::Installed:
+            break;
         }
-        if (gate != StartupGateInstallResult::NotTarget) {
-            HANDLE worker = CreateThread(nullptr, 0, ModThread, hModule, 0, nullptr);
-            // Do not signal completion if worker creation fails. An installed
-            // gate remains closed and its bounded wait will fail-stop.
-            if (worker) CloseHandle(worker);
-        }
+
+        HANDLE progress = CreateThread(nullptr, 0, StartupGateProgressThread, nullptr, 0, nullptr);
+        if (!progress) StartupGateFailStop(sc_offline::startup_gate_wait::Outcome::SetupFailed);
+        CloseHandle(progress);
+        HANDLE worker = CreateThread(nullptr, 0, ModThread, hModule, 0, nullptr);
+        // Do not signal completion if worker creation fails. An installed gate
+        // remains closed and its bounded wait will fail-stop.
+        if (worker) CloseHandle(worker);
     }
     return TRUE;
 }
