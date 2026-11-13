@@ -17,8 +17,9 @@ import hashlib
 import importlib.util
 import io
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import stat
+import subprocess
 import sys
 import tempfile
 from typing import Any
@@ -34,6 +35,11 @@ EXPECTED_PLUGIN_COUNT = 12
 EXPECTED_LOADOUT_ARTIFACT = "built-loadout/loadout"
 EXPECTED_LOADOUT_MODULE = "loadout.dll"
 REPARSE_POINT = 0x400
+CATALOG_INPUTS = (
+    (Path("buildables.txt"), Path("build_catalog") / "lists" / "buildables.txt"),
+    (Path("ships.txt"), Path("picker_catalog") / "lists" / "ships.txt"),
+    (Path("npcs.txt"), Path("picker_catalog") / "lists" / "npcs.txt"),
+)
 
 
 def _load_module(name: str, path: Path):
@@ -125,8 +131,102 @@ def _optional_lstat(path: Path):
         return None
 
 
-def _snapshot_tree(root: Path) -> tuple[set[Path], dict[Path, bytes]]:
+def _git_tree_oids(pathspecs: tuple[str, ...]) -> dict[Path, str]:
+    command = ["git", "-C", str(ROOT), "ls-tree", "-r", "-z", "HEAD", "--", *pathspecs]
+    result = subprocess.run(command, capture_output=True, check=False)
+    if result.returncode:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError(f"cannot read tracked HEAD inventory for {', '.join(pathspecs)}: {detail}")
+    objects: dict[Path, str] = {}
+    for record in result.stdout.split(b"\0"):
+        if not record:
+            continue
+        try:
+            metadata, raw_path = record.split(b"\t", 1)
+            mode, kind, oid = metadata.decode("ascii").split()
+            repo_path = PurePosixPath(os.fsdecode(raw_path))
+        except (ValueError, UnicodeError) as exc:
+            raise ValueError("Git returned an invalid tracked-file inventory") from exc
+        if kind != "blob" or repo_path.is_absolute() or any(part in ("", ".", "..") for part in repo_path.parts):
+            raise ValueError(f"tracked product path is not a regular Git blob: {repo_path}")
+        if mode not in ("100644", "100755"):
+            raise ValueError(f"tracked product path has unsupported mode {mode}: {repo_path}")
+        objects[Path(*repo_path.parts)] = oid
+    return objects
+
+
+def _require_tracked_clean(pathspecs: tuple[str, ...]) -> None:
+    for cached in (True, False):
+        command = ["git", "-C", str(ROOT), "diff"]
+        if cached:
+            command.append("--cached")
+        command += ["--quiet", "HEAD", "--", *pathspecs]
+        result = subprocess.run(command, capture_output=True, check=False)
+        if result.returncode == 1:
+            scope = "index" if cached else "working tree"
+            raise ValueError(f"tracked {scope} inputs differ from HEAD: {', '.join(pathspecs)}")
+        if result.returncode:
+            detail = result.stderr.decode("utf-8", errors="replace").strip()
+            raise ValueError(f"cannot verify tracked inputs against HEAD: {detail}")
+
+
+def _git_working_blob_oid(repo_path: Path, data: bytes) -> str:
+    """Hash checkout bytes as Git would clean them at this tracked path."""
+    argument = f"--path={repo_path.as_posix()}"
+    result = subprocess.run(
+        ["git", "-C", str(ROOT), "hash-object", argument, "--stdin"],
+        input=data,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode:
+        detail = result.stderr.decode("utf-8", errors="replace").strip()
+        raise ValueError(f"cannot verify tracked bytes for {repo_path}: {detail}")
+    return result.stdout.decode("ascii").strip()
+
+
+def _verify_git_blob(repo_path: Path, data: bytes, expected_oid: str) -> None:
+    if _git_working_blob_oid(repo_path, data) != expected_oid:
+        raise ValueError(f"tracked checkout bytes differ from HEAD: {repo_path}")
+
+
+def _is_build_list_provider(path: Path) -> bool:
+    parts = tuple(part.casefold() for part in path.parts)
+    return len(parts) >= 3 and parts[-2:] == ("lists", "buildables.txt")
+
+
+def _validate_build_list_providers(tracked_files: set[Path]) -> None:
+    expected = Path("build_catalog") / "lists" / "buildables.txt"
+    providers = {
+        path for path in tracked_files if _is_build_list_provider(path)
+    }
+    # Require the canonical spelling too: a differently-cased path is distinct
+    # on some filesystems but aliases this provider on Windows.
+    canonical = expected.as_posix()
+    unexpected = {path for path in providers if path.as_posix() != canonical}
+    if unexpected:
+        names = ", ".join(path.as_posix() for path in sorted(unexpected))
+        raise ValueError(f"unexpected tracked Build-list provider(s): {names}")
+
+
+def _snapshot_tree(root: Path, tracked_oids: dict[Path, str]) -> tuple[set[Path], dict[Path, bytes]]:
+    """Snapshot only a supplied tracked-file inventory, rejecting extra paths.
+
+    Files outside ``tracked_oids`` are detected by path metadata and never
+    opened. Production callers obtain this inventory from committed HEAD.
+    """
     root = _resolve_directory(root, "tracked product plugin defaults")
+    tracked_files = set(tracked_oids)
+    if not tracked_files:
+        raise ValueError("tracked product file inventory is empty")
+    expected_directories: set[Path] = set()
+    for relative in tracked_files:
+        if relative.is_absolute() or any(part in ("", ".", "..") for part in relative.parts):
+            raise ValueError(f"unsafe tracked product relative path: {relative}")
+        parent = relative.parent
+        while parent != Path("."):
+            expected_directories.add(parent)
+            parent = parent.parent
     directories: set[Path] = set()
     files: dict[Path, bytes] = {}
 
@@ -138,6 +238,9 @@ def _snapshot_tree(root: Path) -> tuple[set[Path], dict[Path, bytes]]:
         checked_dirs: list[str] = []
         for name in names:
             path = current_path / name
+            relative = path.relative_to(root)
+            if relative not in expected_directories:
+                raise ValueError(f"unexpected untracked or ignored product default directory: {relative.as_posix()}")
             _reject_redirects(path, require_exists=True)
             try:
                 info = path.lstat()
@@ -151,8 +254,115 @@ def _snapshot_tree(root: Path) -> tuple[set[Path], dict[Path, bytes]]:
         for name in filenames:
             path = current_path / name
             relative = path.relative_to(root)
+            if relative not in tracked_files:
+                if _is_build_list_provider(relative):
+                    raise ValueError(f"unexpected untracked or ignored Build-list provider: {relative.as_posix()}")
+                raise ValueError(f"unexpected untracked or ignored product default file: {relative.as_posix()}")
             files[relative] = _snapshot_regular_file(path, f"tracked default {relative.as_posix()}")
+    missing = tracked_files - set(files)
+    if missing:
+        names = ", ".join(path.as_posix() for path in sorted(missing))
+        raise ValueError(f"tracked product default file(s) are missing: {names}")
     return directories, files
+
+
+def _relative_product_inventory(repo_oids: dict[Path, str]) -> dict[Path, str]:
+    prefix = Path("data") / "plugins"
+    inventory: dict[Path, str] = {}
+    for repo_path, oid in repo_oids.items():
+        try:
+            relative = repo_path.relative_to(prefix)
+        except ValueError as exc:
+            raise ValueError(f"Git returned a path outside data/plugins: {repo_path}") from exc
+        inventory[relative] = oid
+    if not inventory:
+        raise ValueError("HEAD contains no tracked data/plugins defaults")
+    return inventory
+
+
+def _snapshot_product_defaults() -> tuple[dict[Path, str], set[Path], dict[Path, bytes]]:
+    """Read only clean files committed under data/plugins at HEAD."""
+    pathspecs = ("data/plugins",)
+    _require_tracked_clean(pathspecs)
+    repo_oids = _git_tree_oids(pathspecs)
+    tracked_oids = _relative_product_inventory(repo_oids)
+    _validate_build_list_providers(set(tracked_oids))
+    root = _resolve_directory(ROOT / "data" / "plugins", "tracked product plugin defaults")
+    directories, files = _snapshot_tree(root, tracked_oids)
+    for relative, data in files.items():
+        _verify_git_blob(Path("data") / "plugins" / relative, data, tracked_oids[relative])
+    return tracked_oids, directories, files
+
+
+def _verify_product_defaults(
+    tracked_oids: dict[Path, str], expected_directories: set[Path], expected_files: dict[Path, bytes],
+) -> None:
+    pathspecs = ("data/plugins",)
+    _require_tracked_clean(pathspecs)
+    current = _relative_product_inventory(_git_tree_oids(pathspecs))
+    _validate_build_list_providers(set(current))
+    if current != tracked_oids:
+        raise ValueError("tracked product-default inventory changed after snapshot")
+    root = _resolve_directory(ROOT / "data" / "plugins", "tracked product plugin defaults")
+    directories, files = _snapshot_tree(root, current)
+    for relative, data in files.items():
+        _verify_git_blob(Path("data") / "plugins" / relative, data, current[relative])
+    if directories != expected_directories or files != expected_files:
+        raise ValueError("tracked product defaults changed after snapshot")
+
+
+def _snapshot_catalog_paths(source_root: Path) -> tuple[dict[Path, bytes], dict[Path, tuple[str, bytes]]]:
+    """Snapshot the three fixed catalogue paths beneath a validated test/source root."""
+    source_root = _resolve_directory(source_root, "tracked catalogue source root")
+    staged: dict[Path, bytes] = {}
+    sources: dict[Path, tuple[str, bytes]] = {}
+    for source_relative, destination_relative in CATALOG_INPUTS:
+        source = source_root / source_relative
+        label = f"tracked data/{source_relative.as_posix()}"
+        data = _snapshot_regular_file(source, label)
+        staged[destination_relative] = data
+        sources[source] = (label, data)
+    return staged, sources
+
+
+def _snapshot_catalog_data(
+) -> tuple[dict[Path, bytes], dict[Path, tuple[str, bytes]], dict[Path, str]]:
+    """Snapshot only the exact tracked catalogue inputs and verify them against HEAD."""
+    repo_paths = tuple((Path("data") / source_relative).as_posix() for source_relative, _ in CATALOG_INPUTS)
+    _require_tracked_clean(repo_paths)
+    repo_oids = _git_tree_oids(repo_paths)
+    expected_repo_paths = {Path(path) for path in repo_paths}
+    if set(repo_oids) != expected_repo_paths:
+        missing = expected_repo_paths - set(repo_oids)
+        names = ", ".join(path.as_posix() for path in sorted(missing))
+        raise ValueError(f"catalogue source(s) are not tracked at HEAD: {names}")
+    staged, sources = _snapshot_catalog_paths(ROOT / "data")
+    for source, (_, data) in sources.items():
+        repo_path = source.relative_to(ROOT)
+        _verify_git_blob(repo_path, data, repo_oids[repo_path])
+    return staged, sources, repo_oids
+
+
+def _verify_catalog_sources(sources: dict[Path, tuple[str, bytes]]) -> None:
+    """Refuse to publish if tracked list sources changed after their snapshot."""
+    for source, (label, expected) in sources.items():
+        current = _snapshot_regular_file(source, label)
+        if current != expected:
+            raise ValueError(f"catalog source changed after snapshot: {source}")
+
+
+def _verify_catalog_head(
+    sources: dict[Path, tuple[str, bytes]], expected_oids: dict[Path, str],
+) -> None:
+    pathspecs = tuple(path.as_posix() for path in expected_oids)
+    _require_tracked_clean(pathspecs)
+    current_oids = _git_tree_oids(pathspecs)
+    if current_oids != expected_oids:
+        raise ValueError("tracked catalogue source inventory changed after snapshot")
+    _verify_catalog_sources(sources)
+    for source, (_, data) in sources.items():
+        repo_path = source.relative_to(ROOT)
+        _verify_git_blob(repo_path, data, expected_oids[repo_path])
 
 
 def _candidate_profile(stage_plugins: Any) -> dict[str, Any]:
@@ -220,6 +430,7 @@ def _compose_plugin_tree(
     artifact_files: dict[str, dict[str, bytes]],
     default_directories: set[Path],
     default_files: dict[Path, bytes],
+    catalog_files: dict[Path, bytes] | None = None,
 ) -> tuple[set[Path], dict[Path, bytes]]:
     directories = {Path("data") / "plugins" / relative for relative in default_directories}
     files = {Path("data") / "plugins" / relative: data for relative, data in default_files.items()}
@@ -259,6 +470,24 @@ def _compose_plugin_tree(
             while parent != Path("."):
                 directories.add(parent)
                 parent = parent.parent
+
+    for relative, data in (catalog_files or {}).items():
+        if relative.is_absolute() or any(part in ("", ".", "..") for part in relative.parts):
+            raise ValueError(f"unsafe catalogue pack path: {relative}")
+        target = plugin_root / relative
+        if target in directories:
+            raise ValueError(f"catalogue pack file conflicts with a product data directory: {target}")
+        if target in files:
+            if files[target] != data:
+                raise ValueError(f"catalogue pack conflicts with existing product data: {target}")
+            continue
+        files[target] = data
+        parent = target.parent
+        while parent != Path("."):
+            if parent in files:
+                raise ValueError(f"catalogue pack directory conflicts with product data: {parent}")
+            directories.add(parent)
+            parent = parent.parent
 
     for file_path in files:
         parent = file_path.parent
@@ -423,13 +652,17 @@ def stage_candidate(
         if _overlaps(staging_parent, path):
             raise ValueError(f"staging parent must be disjoint from protected input: {path}")
 
-    default_root = _resolve_directory(ROOT / "data" / "plugins", "tracked product plugin defaults")
-    default_directories, default_files = _snapshot_tree(default_root)
+    default_oids, default_directories, default_files = _snapshot_product_defaults()
     artifact_snapshots, module_hashes = _snapshot_artifacts(profile, artifact_root, stage_plugins)
-    directories, files = _compose_plugin_tree(profile, artifact_snapshots, default_directories, default_files)
+    catalog_files, catalog_sources, catalog_oids = _snapshot_catalog_data()
+    directories, files = _compose_plugin_tree(
+        profile, artifact_snapshots, default_directories, default_files, catalog_files
+    )
 
-    if default_root not in protected:
-        protected.append(default_root)
+    # Recheck HEAD, index and checkout bytes immediately before output creation.
+    # A concurrent edit after this point is covered by the caller's path-owner assumption.
+    _verify_product_defaults(default_oids, default_directories, default_files)
+    _verify_catalog_head(catalog_sources, catalog_oids)
     if on_staging_parent_validated is not None:
         on_staging_parent_validated(staging_parent)
     output = _create_private_staging_root(staging_parent, protected)
@@ -459,6 +692,14 @@ def stage_candidate(
                 "disabled": entry["disabled"],
             }
             for entry in profile["plugins"]
+        ],
+        "catalogs": [
+            {
+                "source": ROOT / "data" / source_relative,
+                "destination": output / "data" / "plugins" / destination_relative,
+                "sha256": hashlib.sha256(catalog_files[destination_relative]).hexdigest(),
+            }
+            for source_relative, destination_relative in CATALOG_INPUTS
         ],
         "lists": list_snapshots is not None,
         "buildables": False,
@@ -498,6 +739,9 @@ def main(argv: list[str] | None = None) -> int:
     for entry in receipt["plugins"]:
         default = "disabled" if entry["disabled"] else "enabled"
         print(f"  {entry['id']}: {entry['artifact']} sha256={entry['sha256']} ({default} default)")
+    print("Frozen tracked catalogue packs:")
+    for entry in receipt["catalogs"]:
+        print(f"  {entry['source']} -> {entry['destination']} sha256={entry['sha256']}")
     if receipt["lists"]:
         print("Loadout items/outfits list pack staged with buildables OFF.")
     print("Inspection tree only; this does not establish runtime, upgrade-preservation, parity, or release acceptance.")

@@ -43,6 +43,29 @@ defend against a hostile Windows parent replacement, and the tool cannot identif
 all possible game installation directories; choose and inspect the staging parent
 accordingly. Quote paths containing spaces.
 
+The candidate also snapshots these tracked sources before output creation and
+places their exact bytes at the existing data-pack paths:
+
+| Tracked source | Candidate pack path |
+| --- | --- |
+| `data/buildables.txt` | `data/plugins/build_catalog/lists/buildables.txt` |
+| `data/ships.txt` | `data/plugins/picker_catalog/lists/ships.txt` |
+| `data/npcs.txt` | `data/plugins/picker_catalog/lists/npcs.txt` |
+
+It does not copy the legacy top-level `data/buildables.txt` into the candidate
+tree and does not add `buildables.txt` to the optional Loadout `loadout_lists`
+pack. Build therefore has one staged default source at `build_catalog`; the
+optional Loadout pack remains limited to caller-supplied items and outfits. If a
+catalogue source is missing, redirected, changes after snapshot, or conflicts
+with existing tracked pack data, composition refuses before output creation.
+The tool is repository-only and trusts committed `HEAD` as its baseline:
+product defaults come only from files tracked there. It refuses staged or
+working-tree changes, changes detected during verification, and any extra
+untracked or ignored path under `data/plugins`, checking an extra path without
+opening its contents. It stages checkout bytes after verifying them against the
+committed blobs with Git's path-aware clean filters; checkout line endings may
+therefore differ from the raw blob bytes.
+
 Optional list staging is omitted by default. To include caller-supplied
 `items.txt` and `outfits.txt`, pass `--lists-source <absolute-list-directory>`;
 when that flag is present without `--lists-manifest`, the tracked Loadout list

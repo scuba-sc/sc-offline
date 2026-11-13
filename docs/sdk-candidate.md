@@ -71,6 +71,29 @@ reports module hashes but cannot independently establish all binary provenance.
 Synthetic peer artifacts appear
 only in disposable tests and do not stand in for the real 11 peer binaries.
 
+The inspection tree also snapshots the tracked `data/buildables.txt`,
+`data/ships.txt` and `data/npcs.txt` bytes and stages them at their existing pack
+paths:
+
+| Tracked source | Candidate path |
+| --- | --- |
+| `data/buildables.txt` | `data/plugins/build_catalog/lists/buildables.txt` |
+| `data/ships.txt` | `data/plugins/picker_catalog/lists/ships.txt` |
+| `data/npcs.txt` | `data/plugins/picker_catalog/lists/npcs.txt` |
+
+The legacy top-level `data/buildables.txt` is not copied into the candidate
+tree, and no second `buildables.txt` is added to Loadout's optional
+`loadout_lists` pack. This keeps the candidate's default Build list to the
+single `build_catalog` source. Missing, redirected, changed or conflicting
+catalog inputs stop composition before the candidate tree is created.
+Product defaults are repository-only, with committed `HEAD` as the trusted
+baseline. The tool derives its allowlist from files tracked there, refuses
+staged or working-tree changes and changes detected during verification, and
+fails on extra untracked or ignored paths beneath `data/plugins` without
+opening the extra contents. It stages checkout bytes only after Git's
+path-aware clean filters map them back to committed blobs, so checkout line
+endings may differ from raw blob bytes.
+
 By default, the items/outfits data pack is absent. To include it, pass
 `--lists-source <absolute-directory>` containing caller-supplied `items.txt` and
 `outfits.txt`. The tracked Loadout manifest is used unless an explicit

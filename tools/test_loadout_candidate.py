@@ -10,6 +10,7 @@ import io
 import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -61,6 +62,63 @@ def make_lists(root: Path) -> None:
     (root / "buildables.txt").write_text("# must not be staged\n[fixture]\nFixtureBuildable\n", encoding="utf-8")
 
 
+def make_git_repo(root: Path, files: dict[str, bytes], *, attributes: bytes | None = None) -> None:
+    """Create a disposable repository used only to exercise HEAD/index checks."""
+    root.mkdir(parents=True)
+    subprocess.run(["git", "-C", str(root), "init", "--quiet"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "Candidate Test"], check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "config", "user.email", "candidate-test@example.invalid"], check=True
+    )
+    if attributes is not None:
+        (root / ".gitattributes").write_bytes(attributes)
+    for name, data in files.items():
+        target = root / Path(name)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    subprocess.run(["git", "-C", str(root), "add", "--all"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(root), "commit", "--quiet", "-m", "controlled candidate fixture"],
+        check=True,
+        capture_output=True,
+    )
+
+
+def make_controlled_product_defaults(root: Path) -> tuple[dict[Path, str], set[Path], dict[Path, bytes]]:
+    """Create a narrow test-only product tree with an explicit file inventory."""
+    inventory: dict[Path, str] = {}
+    for entry in candidate_profile()["plugins"]:
+        plugin_id = entry["id"]
+        if plugin_id == "loadout":
+            continue
+        plugin_root = ROOT / "plugins" / plugin_id
+        folder = root / plugin_id
+        folder.mkdir(parents=True, exist_ok=True)
+        manifest = folder / "plugin.ini"
+        shutil.copyfile(plugin_root / "plugin.ini", manifest)
+        inventory[Path(plugin_id) / "plugin.ini"] = "fixture"
+        if entry["disabled"]:
+            shutil.copyfile(plugin_root / "disabled", folder / "disabled")
+            inventory[Path(plugin_id) / "disabled"] = "fixture"
+        for filename in entry.get("extra_files", []):
+            shutil.copyfile(plugin_root / filename, folder / filename)
+            inventory[Path(plugin_id) / filename] = "fixture"
+
+    extra_defaults = {
+        Path("build_catalog") / "plugin.ini": b"controlled build catalog manifest\n",
+        Path("picker_catalog") / "plugin.ini": b"controlled picker catalog manifest\n",
+        Path("quantum_drive") / "plugin.ini": b"controlled quantum drive manifest\n",
+        Path("quantum_drive") / "datacore" / "quantum_drive.toml": b"controlled default data\n",
+    }
+    for relative, data in extra_defaults.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        inventory[relative] = "fixture"
+    directories, files = candidate._snapshot_tree(root, inventory)
+    return inventory, directories, files
+
+
 class LoadoutCandidateComposition(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="loadout-candidate-test-")
@@ -69,6 +127,10 @@ class LoadoutCandidateComposition(unittest.TestCase):
         self.artifacts = self.root / "artifacts"
         self.artifacts.mkdir()
         make_synthetic_artifacts(self.artifacts)
+        self.default_root = self.root / "controlled-defaults" / "data" / "plugins"
+        self.default_oids, self.default_directories, self.default_files = make_controlled_product_defaults(
+            self.default_root
+        )
         self.stage_temp = tempfile.TemporaryDirectory(prefix="loadout-candidate-output-test-")
         self.addCleanup(self.stage_temp.cleanup)
         self.staging_parent = Path(self.stage_temp.name).resolve()
@@ -78,14 +140,25 @@ class LoadoutCandidateComposition(unittest.TestCase):
         self.output.mkdir(mode=0o700)
         return self.output
 
+    def controlled_default_context(self):
+        stack = contextlib.ExitStack()
+        stack.enter_context(mock.patch.object(
+            candidate,
+            "_snapshot_product_defaults",
+            return_value=(self.default_oids, self.default_directories, self.default_files),
+        ))
+        stack.enter_context(mock.patch.object(candidate, "_verify_product_defaults"))
+        return stack
+
     def stage(self, *, lists_source=None, lists_manifest=None):
-        with mock.patch.object(candidate, "_create_private_staging_root", side_effect=self.create_test_output):
-            return candidate.stage_candidate(
-                self.artifacts,
-                staging_parent=self.staging_parent,
-                lists_source=lists_source,
-                lists_manifest=lists_manifest,
-            )
+        with self.controlled_default_context():
+            with mock.patch.object(candidate, "_create_private_staging_root", side_effect=self.create_test_output):
+                return candidate.stage_candidate(
+                    self.artifacts,
+                    staging_parent=self.staging_parent,
+                    lists_source=lists_source,
+                    lists_manifest=lists_manifest,
+                )
 
     def test_composes_all_twelve_supplied_artifacts_and_preserves_defaults(self):
         receipt = self.stage()
@@ -93,10 +166,11 @@ class LoadoutCandidateComposition(unittest.TestCase):
         self.assertEqual(len(receipt["plugins"]), 12)
         self.assertFalse(receipt["lists"])
         self.assertFalse(receipt["buildables"])
+        self.assertEqual(len(receipt["catalogs"]), 3)
         plugin_root = self.output / "data" / "plugins"
         expected_ids = {entry["id"] for entry in candidate_profile()["plugins"]}
         actual_dirs = {path.name for path in plugin_root.iterdir() if path.is_dir()}
-        tracked_defaults = {path.name for path in (ROOT / "data" / "plugins").iterdir() if path.is_dir()}
+        tracked_defaults = {path.parts[0] for path in self.default_directories}
         self.assertEqual(actual_dirs, expected_ids | tracked_defaults)
         self.assertEqual(len(expected_ids), 12)
         for entry in candidate_profile()["plugins"]:
@@ -118,15 +192,174 @@ class LoadoutCandidateComposition(unittest.TestCase):
         self.assertFalse((plugin_root / "loadout_lists").exists())
         for entry in receipt["plugins"]:
             self.assertEqual(entry["sha256"], hashlib.sha256(SYNTHETIC_MODULE).hexdigest())
+        expected_catalogs = {
+            "buildables.txt": "build_catalog/lists/buildables.txt",
+            "ships.txt": "picker_catalog/lists/ships.txt",
+            "npcs.txt": "picker_catalog/lists/npcs.txt",
+        }
+        destinations = {}
+        for entry in receipt["catalogs"]:
+            source_name = entry["source"].name
+            target = plugin_root / Path(entry["destination"]).relative_to(plugin_root)
+            expected_target = plugin_root / Path(expected_catalogs[source_name])
+            self.assertEqual(target, expected_target)
+            self.assertEqual(target.read_bytes(), (ROOT / "data" / source_name).read_bytes())
+            self.assertEqual(entry["sha256"], hashlib.sha256(target.read_bytes()).hexdigest())
+            destinations[source_name] = target.relative_to(plugin_root).as_posix()
+        self.assertEqual(destinations, expected_catalogs)
+        self.assertFalse((self.output / "data" / "buildables.txt").exists())
+        self.assertFalse((self.output / "data" / "ships.txt").exists())
+        self.assertFalse((self.output / "data" / "npcs.txt").exists())
+        self.assertFalse((plugin_root / "loadout_lists" / "lists" / "buildables.txt").exists())
+        self.assertEqual(
+            [path.relative_to(plugin_root).as_posix() for path in self.output.rglob("buildables.txt")],
+            ["build_catalog/lists/buildables.txt"],
+        )
+
+    def test_catalog_sources_are_snapshotted_and_changed_inputs_refused(self):
+        data_root = self.root / "controlled-data"
+        data_root.mkdir()
+        contents = {
+            "buildables.txt": b"controlled build catalog\n",
+            "ships.txt": b"controlled ships catalog\n",
+            "npcs.txt": b"controlled NPC catalog\n",
+        }
+        for name, data in contents.items():
+            (data_root / name).write_bytes(data)
+        staged, sources = candidate._snapshot_catalog_paths(data_root)
+        self.assertEqual(staged[Path("build_catalog") / "lists" / "buildables.txt"], contents["buildables.txt"])
+        self.assertEqual(staged[Path("picker_catalog") / "lists" / "ships.txt"], contents["ships.txt"])
+        self.assertEqual(staged[Path("picker_catalog") / "lists" / "npcs.txt"], contents["npcs.txt"])
+        candidate._verify_catalog_sources(sources)
+        (data_root / "ships.txt").write_bytes(b"changed after snapshot\n")
+        with self.assertRaisesRegex(ValueError, "catalog source changed after snapshot"):
+            candidate._verify_catalog_sources(sources)
+
+    def test_missing_catalog_source_is_refused(self):
+        data_root = self.root / "controlled-data"
+        data_root.mkdir()
+        (data_root / "buildables.txt").write_bytes(b"buildables\n")
+        (data_root / "ships.txt").write_bytes(b"ships\n")
+        with self.assertRaisesRegex(ValueError, "tracked data/npcs.txt is missing"):
+            candidate._snapshot_catalog_paths(data_root)
+
+    def test_redirected_catalog_source_is_refused(self):
+        data_root = self.root / "controlled-data"
+        data_root.mkdir()
+        (data_root / "buildables.txt").write_bytes(b"buildables\n")
+        (data_root / "npcs.txt").write_bytes(b"npcs\n")
+        target = self.root / "ships-target.txt"
+        target.write_bytes(b"ships\n")
+        try:
+            (data_root / "ships.txt").symlink_to(target)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"file symlink creation unavailable: {exc}")
+        with self.assertRaisesRegex(ValueError, "redirected or ambiguous"):
+            candidate._snapshot_catalog_paths(data_root)
+
+    def test_conflicting_existing_catalog_destination_is_refused(self):
+        profile = candidate._candidate_profile(profile_stager)
+        artifact_files, _ = candidate._snapshot_artifacts(profile, self.artifacts, profile_stager)
+        default_directories = set(self.default_directories)
+        default_files = dict(self.default_files)
+        target = Path("build_catalog") / "lists" / "buildables.txt"
+        default_directories.update({Path("build_catalog"), Path("build_catalog") / "lists"})
+        default_files[target] = b"conflicting default catalog bytes\n"
+        catalog_files, _, _ = candidate._snapshot_catalog_data()
+        with self.assertRaisesRegex(ValueError, "catalogue pack conflicts with existing product data"):
+            candidate._compose_plugin_tree(
+                profile, artifact_files, default_directories, default_files, catalog_files
+            )
+
+    def test_product_default_snapshot_uses_clean_head_inventory_and_checkout_bytes(self):
+        repo = self.root / "controlled-product-repo"
+        path = "data/plugins/build_catalog/plugin.ini"
+        committed = b"controlled committed manifest\n"
+        make_git_repo(repo, {path: committed})
+        with mock.patch.object(candidate, "ROOT", repo):
+            oids, directories, files = candidate._snapshot_product_defaults()
+        self.assertEqual(set(oids), {Path("build_catalog/plugin.ini")})
+        self.assertEqual(directories, {Path("build_catalog")})
+        self.assertEqual(files, {Path("build_catalog/plugin.ini"): committed})
+
+    def test_product_default_snapshot_refuses_staged_and_working_changes(self):
+        repo = self.root / "controlled-product-repo"
+        path = "data/plugins/build_catalog/plugin.ini"
+        target = repo / Path(path)
+        make_git_repo(repo, {path: b"committed fixture\n"})
+        with mock.patch.object(candidate, "ROOT", repo):
+            target.write_bytes(b"staged change\n")
+            subprocess.run(["git", "-C", str(repo), "add", "--", path], check=True, capture_output=True)
+            with self.assertRaisesRegex(ValueError, "tracked index inputs differ from HEAD"):
+                candidate._snapshot_product_defaults()
+            subprocess.run(
+                ["git", "-C", str(repo), "reset", "--quiet", "HEAD", "--", path],
+                check=True,
+                capture_output=True,
+            )
+            with self.assertRaisesRegex(ValueError, "tracked working tree inputs differ from HEAD"):
+                candidate._snapshot_product_defaults()
+
+    def test_product_default_snapshot_rejects_untracked_provider_without_reading_it(self):
+        repo = self.root / "controlled-product-repo"
+        tracked_path = "data/plugins/build_catalog/plugin.ini"
+        make_git_repo(repo, {tracked_path: b"tracked controlled manifest\n"})
+        extra = repo / "data/plugins/build_catalog/lists/buildables.txt"
+        extra.parent.mkdir()
+        extra.write_bytes(b"untracked test fixture; never read by the snapshotter\n")
+        real_snapshot = candidate._snapshot_regular_file
+        opened: list[Path] = []
+
+        def record_snapshot(path, label):
+            opened.append(Path(path))
+            return real_snapshot(path, label)
+
+        with mock.patch.object(candidate, "ROOT", repo):
+            with mock.patch.object(candidate, "_snapshot_regular_file", side_effect=record_snapshot):
+                with self.assertRaisesRegex(ValueError, "unexpected untracked or ignored product default directory"):
+                    candidate._snapshot_product_defaults()
+        self.assertNotIn(extra, opened)
+
+    def test_tracked_unexpected_buildables_provider_is_rejected(self):
+        canonical = Path("build_catalog") / "lists" / "buildables.txt"
+        candidate._validate_build_list_providers({canonical})
+        for provider in (
+            Path("loadout_lists") / "lists" / "buildables.txt",
+            Path("other") / "LISTS" / "BUILDABLES.TXT",
+            Path("BUILD_CATALOG") / "LISTS" / "BUILDABLES.TXT",
+        ):
+            with self.subTest(provider=provider.as_posix()):
+                with self.assertRaisesRegex(ValueError, "unexpected tracked Build-list provider"):
+                    candidate._validate_build_list_providers({provider})
+
+    def test_catalog_snapshot_accepts_checkout_line_endings_but_requires_clean_head(self):
+        repo = self.root / "controlled-catalog-repo"
+        names = ("buildables.txt", "ships.txt", "npcs.txt")
+        files = {f"data/{name}": b"controlled " + name.encode("ascii") + b"\n" for name in names}
+        make_git_repo(repo, files, attributes=b"*.txt text eol=crlf\n")
+        for name, content in files.items():
+            (repo / Path(name)).write_bytes(content.replace(b"\n", b"\r\n"))
+        with mock.patch.object(candidate, "ROOT", repo):
+            staged, sources, oids = candidate._snapshot_catalog_data()
+            for source_relative, destination_relative in candidate.CATALOG_INPUTS:
+                checkout_bytes = (repo / "data" / source_relative).read_bytes()
+                self.assertEqual(staged[destination_relative], checkout_bytes)
+                self.assertEqual(oids[Path("data") / source_relative], candidate._git_working_blob_oid(
+                    Path("data") / source_relative, checkout_bytes
+                ))
+            candidate._verify_catalog_head(sources, oids)
+            (repo / "data" / "ships.txt").write_bytes(b"changed working input\n")
+            with self.assertRaisesRegex(ValueError, "tracked working tree inputs differ from HEAD"):
+                candidate._snapshot_catalog_data()
 
     def test_controlled_default_fixture_preserves_existing_lists_and_disabled_markers(self):
-        default_root = self.root / "controlled-defaults" / "data" / "plugins"
+        default_root = self.root / "marker-preservation-fixture"
+        default_root.mkdir()
         marker_bytes = {}
         for plugin_id in ("creative", "discord"):
+            marker_bytes[plugin_id] = (self.artifacts / "built-external" / plugin_id / "disabled").read_bytes()
             marker = default_root / plugin_id / "disabled"
             marker.parent.mkdir(parents=True, exist_ok=True)
-            source_marker = ROOT / "data" / "plugins" / plugin_id / "disabled"
-            marker_bytes[plugin_id] = source_marker.read_bytes()
             marker.write_bytes(marker_bytes[plugin_id])
         list_source = self.root / "controlled-list-source"
         make_lists(list_source)
@@ -146,9 +379,17 @@ class LoadoutCandidateComposition(unittest.TestCase):
 
         profile = candidate._candidate_profile(profile_stager)
         artifact_files, _ = candidate._snapshot_artifacts(profile, self.artifacts, profile_stager)
-        default_directories, default_files = candidate._snapshot_tree(default_root)
+        catalog_files, _, _ = candidate._snapshot_catalog_data()
+        fixture_inventory = {
+            Path(plugin_id) / "disabled" for plugin_id in marker_bytes
+        } | {
+            Path("loadout_lists") / Path(relative) for relative in list_bytes
+        } | {Path("loadout_lists") / "disabled"}
+        default_directories, default_files = candidate._snapshot_tree(
+            default_root, {relative: "fixture" for relative in fixture_inventory}
+        )
         directories, files = candidate._compose_plugin_tree(
-            profile, artifact_files, default_directories, default_files
+            profile, artifact_files, default_directories, default_files, catalog_files
         )
         output = self.staging_parent / "controlled-default-composition"
         output.mkdir(mode=0o700)
@@ -166,7 +407,8 @@ class LoadoutCandidateComposition(unittest.TestCase):
         )
 
     def test_generated_output_is_child_of_selected_parent_and_disjoint(self):
-        receipt = candidate.stage_candidate(self.artifacts, staging_parent=self.staging_parent)
+        with self.controlled_default_context():
+            receipt = candidate.stage_candidate(self.artifacts, staging_parent=self.staging_parent)
         output = receipt["output"]
         self.assertEqual(output.parent, self.staging_parent)
         self.assertNotEqual(output, self.artifacts)
@@ -185,12 +427,13 @@ class LoadoutCandidateComposition(unittest.TestCase):
 
     def test_cli_reports_generated_candidate_only_tree_and_artifact_hashes(self):
         output = io.StringIO()
-        with mock.patch.object(candidate, "_create_private_staging_root", side_effect=self.create_test_output):
-            with contextlib.redirect_stdout(output):
-                result = candidate.main([
-                    "--artifact-root", str(self.artifacts),
-                    "--staging-parent", str(self.staging_parent),
-                ])
+        with self.controlled_default_context():
+            with mock.patch.object(candidate, "_create_private_staging_root", side_effect=self.create_test_output):
+                with contextlib.redirect_stdout(output):
+                    result = candidate.main([
+                        "--artifact-root", str(self.artifacts),
+                        "--staging-parent", str(self.staging_parent),
+                    ])
         self.assertEqual(result, 0)
         report = output.getvalue()
         self.assertIn("Staged 12 plugins for player-offline-loadout-candidate", report)
@@ -232,8 +475,9 @@ class LoadoutCandidateComposition(unittest.TestCase):
             module.write_bytes(b"changed after snapshot\n")
             return self.create_test_output(staging_parent, protected)
 
-        with mock.patch.object(candidate, "_create_private_staging_root", side_effect=mutate_after_snapshot):
-            candidate.stage_candidate(self.artifacts, staging_parent=self.staging_parent)
+        with self.controlled_default_context():
+            with mock.patch.object(candidate, "_create_private_staging_root", side_effect=mutate_after_snapshot):
+                candidate.stage_candidate(self.artifacts, staging_parent=self.staging_parent)
         staged = self.output / "data" / "plugins" / "loadout" / "loadout.dll"
         self.assertEqual(staged.read_bytes(), SYNTHETIC_MODULE)
         self.assertEqual(module.read_bytes(), b"changed after snapshot\n")
@@ -255,10 +499,11 @@ class LoadoutCandidateComposition(unittest.TestCase):
                 injected["path"] = target
             return real_open(path, flags, mode)
 
-        with mock.patch.object(candidate, "_create_private_staging_root", side_effect=self.create_test_output):
-            with mock.patch.object(candidate.os, "open", side_effect=insert_conflict):
-                with self.assertRaisesRegex(RuntimeError, "no files were replaced"):
-                    candidate.stage_candidate(self.artifacts, staging_parent=self.staging_parent)
+        with self.controlled_default_context():
+            with mock.patch.object(candidate, "_create_private_staging_root", side_effect=self.create_test_output):
+                with mock.patch.object(candidate.os, "open", side_effect=insert_conflict):
+                    with self.assertRaisesRegex(RuntimeError, "no files were replaced"):
+                        candidate.stage_candidate(self.artifacts, staging_parent=self.staging_parent)
         self.assertIsNotNone(injected["path"])
         self.assertEqual(injected["path"].read_bytes(), b"concurrent user-owned sentinel\n")
 
@@ -312,11 +557,12 @@ class LoadoutCandidateComposition(unittest.TestCase):
                 raise OSError("synthetic fixture failure after items publication")
             return real_link(source, destination, *args, **kwargs)
 
-        with mock.patch.object(candidate, "_create_private_staging_root", side_effect=self.create_test_output):
-            with mock.patch.object(candidate, "_load_module", side_effect=controlled_loader):
-                with mock.patch.object(list_stager.os, "link", side_effect=fail_on_outfits):
-                    with self.assertRaisesRegex(RuntimeError, "items/outfits pack may be partial"):
-                        candidate.stage_candidate(self.artifacts, staging_parent=self.staging_parent, lists_source=lists)
+        with self.controlled_default_context():
+            with mock.patch.object(candidate, "_create_private_staging_root", side_effect=self.create_test_output):
+                with mock.patch.object(candidate, "_load_module", side_effect=controlled_loader):
+                    with mock.patch.object(list_stager.os, "link", side_effect=fail_on_outfits):
+                        with self.assertRaisesRegex(RuntimeError, "items/outfits pack may be partial"):
+                            candidate.stage_candidate(self.artifacts, staging_parent=self.staging_parent, lists_source=lists)
 
         pack = self.output / "data" / "plugins" / "loadout_lists"
         self.assertTrue((self.output / "data" / "plugins" / "loadout" / "loadout.dll").is_file())
@@ -343,11 +589,12 @@ class LoadoutCandidateComposition(unittest.TestCase):
                 raise FileExistsError(str(destination))
             return real_link(source, destination, *args, **kwargs)
 
-        with mock.patch.object(candidate, "_create_private_staging_root", side_effect=self.create_test_output):
-            with mock.patch.object(candidate, "_load_module", side_effect=controlled_loader):
-                with mock.patch.object(list_stager.os, "link", side_effect=conflict_on_items):
-                    with self.assertRaisesRegex(RuntimeError, "items/outfits pack may be partial"):
-                        candidate.stage_candidate(self.artifacts, staging_parent=self.staging_parent, lists_source=lists)
+        with self.controlled_default_context():
+            with mock.patch.object(candidate, "_create_private_staging_root", side_effect=self.create_test_output):
+                with mock.patch.object(candidate, "_load_module", side_effect=controlled_loader):
+                    with mock.patch.object(list_stager.os, "link", side_effect=conflict_on_items):
+                        with self.assertRaisesRegex(RuntimeError, "items/outfits pack may be partial"):
+                            candidate.stage_candidate(self.artifacts, staging_parent=self.staging_parent, lists_source=lists)
         target = self.output / "data" / "plugins" / "loadout_lists" / "lists" / "items.txt"
         self.assertEqual(target.read_bytes(), sentinel)
 
