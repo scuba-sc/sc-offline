@@ -30,8 +30,8 @@ struct State {
     Lists lists; bool lists_known = false, spoilers = false, clocked = false;
     uint32_t last_read = 0, page = 0; int32_t outfit = -1, ship = 0, build = -1;
     int cvars[4]{-1,-1,-1,-1};
-    std::string filter, outfit_filter, equip, visor, slots; std::vector<std::string> buildables;
-    std::vector<size_t> published_outfits;
+    std::string filter, outfit_filter, ship_filter, equip, visor, slots; std::vector<std::string> buildables;
+    std::vector<size_t> published_outfits, published_ships;
     uint64_t job = 0; std::vector<Piece> job_pieces; bool job_poll_paused = false;
     char job_status[256] = "No retained loadout job.";
     std::shared_ptr<const catalogue::Data> curated, published_curated;
@@ -154,7 +154,7 @@ sco_result Parse(std::string_view bytes,int kind,Lists& lists,std::vector<std::s
 }
 sco_result ReadLists() {
     // A source replacement makes every previously published outfit index stale.
-    g.sq_events=false; g.published_outfits.clear();
+    g.sq_events=false; g.published_outfits.clear(); g.published_ships.clear();
     const auto* content=Open<sco_content_v1>(SCO_CONTENT_NAME);
     if (!HAS(content,sco_content_v1,item) || !HAS(content,sco_content_v1,read)) return SCO_UNAVAILABLE;
     Lists lists; std::vector<std::string> buildables; uint32_t total=0; bool found=false;
@@ -645,10 +645,14 @@ void Event(const char* panel,const sco_widget_event* e,void* context) {
         case 104: if (e->kind==SCO_WIDGET_BUTTON) { auto a=Text(g.visor.c_str()); Visor(&a,1,nullptr,nullptr,0); } break;
         case 105: if (e->kind==SCO_WIDGET_BUTTON) Cvars(nullptr,0,nullptr,nullptr,0); break;
         case 110: case 111: case 112: case 113: Refuse(nullptr,0,nullptr,nullptr,0); break;
-        case 120: if (e->kind==SCO_WIDGET_COMBO && e->index>=0 && static_cast<size_t>(e->index)<std::size(ships)) g.ship=e->index; break;
+        case 120: if (e->kind==SCO_WIDGET_COMBO) {
+            if (e->index==-1) g.ship=-1;
+            else if (e->index>=0 && static_cast<size_t>(e->index)<g.published_ships.size()) g.ship=static_cast<int32_t>(g.published_ships[static_cast<size_t>(e->index)]);
+        } break;
+        case 136: (void)PickerText(e,g.ship_filter); break;
         case 121: if (e->kind==SCO_WIDGET_SLIDER && std::isfinite(e->value) && e->value>=0 && e->value<=500) g.height=e->value; break;
         case 122: if (e->kind==SCO_WIDGET_TOGGLE && (e->value==0 || e->value==1)) g.sit=e->value!=0; break;
-        case 123: if (e->kind==SCO_WIDGET_BUTTON) {
+        case 123: if (e->kind==SCO_WIDGET_BUTTON && g.ship>=0 && static_cast<size_t>(g.ship)<std::size(ships) && std::find(g.published_ships.begin(),g.published_ships.end(),static_cast<size_t>(g.ship))!=g.published_ships.end()) {
             const auto& ship=ships[g.ship]; const bool sit=ship.board && g.sit;
             sco_arg a[]{Text(ship.cls),Number(ship.board ? g.height : ship.height),Text(sit ? "pilot" : "none"),Boolean(sit)};
             Spawn(a,4,nullptr,nullptr,0);
@@ -773,11 +777,11 @@ void Publish() {
         }
     }
     nodes.clear(); options.clear(); text.clear();
-    std::vector<size_t> outfit_rows;
+    std::vector<size_t> outfit_rows, ship_rows;
     const auto publish_sq=[&] {
         if(next_sq_cookie<std::numeric_limits<uintptr_t>::max()) {
             const auto cookie=++next_sq_cookie;
-            if(w->set_panel(g.self,"loadout.sq42","Squadron 42",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(sco_widget_node),Event,reinterpret_cast<void*>(cookie))==SCO_OK) { g.published_outfits=std::move(outfit_rows); g.sq_cookie=cookie; g.sq_events=true; }
+            if(w->set_panel(g.self,"loadout.sq42","Squadron 42",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(sco_widget_node),Event,reinterpret_cast<void*>(cookie))==SCO_OK) { g.published_outfits=std::move(outfit_rows); g.published_ships=std::move(ship_rows); g.sq_cookie=cookie; g.sq_events=true; }
         }
     };
     if (!g.spoilers) { add(SCO_WIDGET_LABEL,99,"This tab may contain Squadron 42 spoilers. Confirmation is session-only."); add(SCO_WIDGET_BUTTON,100,"OK: show SQ42 spoilers"); }
@@ -801,11 +805,16 @@ void Publish() {
             auto& setting=add(SCO_WIDGET_TOGGLE,110+i,text.back().c_str(),SCO_WIDGET_DISABLED); setting.value=g.cvars[i]>0 ? 1 : 0;
         }
         add(SCO_WIDGET_LABEL,114,"Cvar writes and arbitrary console execution are not approved. Unknown is not off; no USER.cfg changes.");
-        const char* ship_labels[std::size(ships)]{}; for (size_t i=0;i<std::size(ships);++i) ship_labels[i]=ships[i].label;
-        auto& ship=add(SCO_WIDGET_COMBO,120,"SQ42 ships"); ship.items=ship_labels; ship.item_count=static_cast<uint32_t>(std::size(ships)); ship.index=g.ship;
+        add(SCO_WIDGET_TEXT_INPUT,136,"Search SQ42 ships (63 ASCII characters)").text=g.ship_filter.c_str();
+        std::vector<const char*> ship_labels; int32_t ship_row=-1;
+        for (size_t i=0;i<std::size(ships);++i) if (catalogue::Contains(ships[i].label,g.ship_filter)) {
+            if (g.ship>=0 && static_cast<size_t>(g.ship)==i) ship_row=static_cast<int32_t>(ship_rows.size());
+            ship_rows.push_back(i); ship_labels.push_back(ships[i].label);
+        }
+        auto& ship=add(SCO_WIDGET_COMBO,120,"SQ42 ships"); ship.items=ship_labels.empty() ? nullptr : ship_labels.data(); ship.item_count=static_cast<uint32_t>(ship_labels.size()); ship.index=ship_row;
         auto& height=add(SCO_WIDGET_SLIDER,121,"Height above me (m)"); height.value=g.height; height.minimum=0; height.maximum=500;
         add(SCO_WIDGET_TOGGLE,122,"Pilot seat and Flight Ready").value=g.sit ? 1 : 0;
-        add(SCO_WIDGET_BUTTON,123,"Spawn via external spawn.ship_options");
+        add(SCO_WIDGET_BUTTON,123,"Spawn via external spawn.ship_options",ship_row>=0 ? 0u : SCO_WIDGET_DISABLED);
         std::vector<const char*> builds; for (const auto& name:g.buildables) builds.push_back(name.c_str());
         auto& build=add(SCO_WIDGET_COMBO,130,"SQ42 buildables"); build.items=builds.empty() ? nullptr : builds.data(); build.item_count=static_cast<uint32_t>(builds.size()); build.index=g.build;
         auto& ahead=add(SCO_WIDGET_SLIDER,131,"Metres ahead (0 = feet)"); ahead.value=g.ahead; ahead.minimum=0; ahead.maximum=100;

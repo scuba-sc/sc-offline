@@ -380,3 +380,10 @@ localization service, images, extracted game data, engine calls or SDK contracts
 `loadout-weapon-picker` runs the actual module with synthetic content/widgets and
 checks independent filters, layout preorder, selection reset, invalid/stale
 callbacks and absence of loadout effects. This candidate has not been run in game.
+
+The SQ42 ship picker filters reference labels case-insensitively using up to 63
+printable ASCII characters. The selected ship is retained when hidden; spawning is
+disabled until it is visible and selected. Deselecting also disables spawning.
+Filtering does not spawn a ship. A rejected panel replacement invalidates the old
+callbacks until a successful publication. These labels do not establish native
+class availability or gameplay behavior.

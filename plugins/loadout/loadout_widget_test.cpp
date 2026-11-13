@@ -19,8 +19,8 @@ struct Panel {
     void* context = nullptr;
     unsigned accepted = 0;
     std::map<uint32_t,uint32_t> combos, flags;
-    std::vector<std::string> gear_labels, outfit_labels;
-    int outfit_index=-1; std::string outfit_filter;
+    std::vector<std::string> gear_labels, outfit_labels, ship_labels;
+    int outfit_index=-1, ship_index=-1; std::string outfit_filter, ship_filter;
 };
 std::vector<File> files;
 Panel player, sq42;
@@ -30,9 +30,14 @@ sco_content_v1 content{};
 sco_widgets_v1 widgets{};
 sc_loadout_v1_2 loadout{};
 bool async_cap=true, provider=true; uint32_t supported=SC_LOADOUT_VERSION_1_2;
+unsigned spawns=0; std::string spawn_class, spawn_seat; double spawn_height=0; int64_t spawn_ready=0;
 unsigned submits=0, cancels=0; std::vector<sc_loadout_item> captured;
 sco_result Submit(sco_plugin*,const sc_loadout_request* request,uint64_t* job) {
     ++submits; captured.assign(request->items,request->items+request->count); *job=42; return SCO_OK;
+}
+sco_result Invoke(sco_plugin*,const char* name,const sco_arg* args,uint32_t count,sco_invoke_done,void*) {
+    if (std::strcmp(name,"spawn.ship_options") || count!=4 || args[0].type!=SCO_ARG_STRING || args[1].type!=SCO_ARG_FLOAT || args[2].type!=SCO_ARG_STRING || args[3].type!=SCO_ARG_BOOL) std::abort();
+    ++spawns; spawn_class=args[0].v.s; spawn_height=args[1].v.f; spawn_seat=args[2].v.s; spawn_ready=args[3].v.i; return SCO_OK;
 }
 sco_result Status(sco_plugin*,uint64_t,sc_loadout_job_report*) { return SCO_UNAVAILABLE; }
 sco_result Cancel(sco_plugin*,uint64_t job) { (void)job; ++cancels; return SCO_OK; }
@@ -60,14 +65,16 @@ sco_result Read(sco_plugin*,uint64_t id,void* out,uint32_t* size) {
 sco_result SetPanel(sco_plugin*,const char* id,const char*,const sco_widget_node* nodes,
                     uint32_t count,uint32_t stride,sco_widget_event_fn event,void* context) {
     Require(nodes && count && stride==sizeof(sco_widget_node),"invalid panel extent");
-    std::map<uint32_t,uint32_t> combos, flags; std::vector<std::string> gear_labels, outfit_labels;
-    int outfit_index=-1; std::string outfit_filter;
+    std::map<uint32_t,uint32_t> combos, flags; std::vector<std::string> gear_labels, outfit_labels, ship_labels;
+    int outfit_index=-1, ship_index=-1; std::string outfit_filter, ship_filter;
     for (uint32_t i=0;i<count;++i) {
         const auto& node=nodes[i];
         Require(node.size==sizeof(node),"invalid node extent");
         flags[node.id]=node.flags;
         if(node.id==101) { outfit_index=node.index; for(uint32_t j=0;j<node.item_count;++j) outfit_labels.emplace_back(node.items[j]); }
         if(node.id==135 && node.text) outfit_filter=node.text;
+        if(node.id==120) { ship_index=node.index; for(uint32_t j=0;j<node.item_count;++j) ship_labels.emplace_back(node.items[j]); }
+        if(node.id==136 && node.text) ship_filter=node.text;
         if(node.id==2) for(uint32_t j=0;j<node.item_count;++j) gear_labels.emplace_back(node.items[j]);
         // sco.widgets requires a NULL array exactly when the item count is zero.
         // A rejected replacement must preserve the previous panel and callback.
@@ -83,7 +90,7 @@ sco_result SetPanel(sco_plugin*,const char* id,const char*,const sco_widget_node
     Require(!std::strcmp(id,"loadout.player") || !std::strcmp(id,"loadout.sq42"),"unexpected panel id");
     if(fail_sq && !std::strcmp(id,"loadout.sq42")) return SCO_FAILED;
     auto& panel=!std::strcmp(id,"loadout.player") ? player : sq42;
-    panel.event=event; panel.context=context; ++panel.accepted; panel.combos=std::move(combos); panel.flags=std::move(flags); panel.gear_labels=std::move(gear_labels); panel.outfit_labels=std::move(outfit_labels); panel.outfit_index=outfit_index; panel.outfit_filter=std::move(outfit_filter);
+    panel.event=event; panel.context=context; ++panel.accepted; panel.combos=std::move(combos); panel.flags=std::move(flags); panel.gear_labels=std::move(gear_labels); panel.outfit_labels=std::move(outfit_labels); panel.outfit_index=outfit_index; panel.outfit_filter=std::move(outfit_filter); panel.ship_labels=std::move(ship_labels); panel.ship_index=ship_index; panel.ship_filter=std::move(ship_filter);
     return SCO_OK;
 }
 sco_result RemovePanel(sco_plugin*,const char*) { ++removed; return SCO_OK; }
@@ -108,6 +115,10 @@ void Select(const char* id,Panel& panel,uint32_t node,int index) {
     sco_widget_event event{}; event.size=sizeof(event); event.node_id=node; event.kind=SCO_WIDGET_COMBO; event.index=index;
     panel.event(id,&event,panel.context);
 }
+void Value(const char* id,Panel& panel,uint32_t node,uint32_t kind,double value) {
+    sco_widget_event event{}; event.size=sizeof(event); event.node_id=node; event.kind=kind; event.value=value;
+    panel.event(id,&event,panel.context);
+}
 void Workflow(bool populated) {
     files={{"lists/items.txt","[helmet]\nFixtureHelmet\n[primary]\nFixtureGun\n"}};
     if (populated) {
@@ -116,7 +127,7 @@ void Workflow(bool populated) {
     }
     player={}; sq42={}; rejected=0; removed=0; unsubscribed=0; fail_sq=false; reload_command=nullptr; submits=0; cancels=0; captured.clear(); async_cap=provider=true; supported=SC_LOADOUT_VERSION_1_2; loadout.size=sizeof(loadout); loadout.submit=Submit; loadout.status=Status; loadout.cancel=Cancel;
     sco_api api{}; api.size=sizeof(api); api.major=SCO_API_MAJOR; api.minor=SCO_API_MINOR;
-    api.has=Has; api.register_command=Register; api.query_service=Query;
+    api.has=Has; api.register_command=Register; api.query_service=Query; api.invoke=Invoke; spawns=0;
     api.subscribe=Subscribe; api.unsubscribe=Unsubscribe;
     unsigned char owner=0; auto* self=reinterpret_cast<sco_plugin*>(&owner);
     Require(sco::features::loadout::Load(&api,self)==SCO_OK,"load failed");
@@ -144,6 +155,43 @@ void Workflow(bool populated) {
     Require(!rejected && sq42.accepted==old.accepted+1,"SQ42 panel rejected after spoiler confirmation");
     Require(sq42.combos.at(101)==(populated ? 3u : 0u),"outfit picker count mismatch");
     Require(sq42.combos.at(130)==(populated ? 1u : 0u),"build picker count mismatch");
+    Require(sq42.combos.at(120)==11 && sq42.ship_index==0,"default ship selection");
+    Send("loadout.sq42",sq42,123,SCO_WIDGET_BUTTON);
+    Require(spawns==1 && spawn_class=="AEGS_Idris_P" && spawn_height==30 && spawn_seat=="pilot" && spawn_ready==1,"default spawn arguments");
+    Value("loadout.sq42",sq42,121,SCO_WIDGET_SLIDER,77);
+    Value("loadout.sq42",sq42,122,SCO_WIDGET_TOGGLE,0);
+    Send("loadout.sq42",sq42,123,SCO_WIDGET_BUTTON);
+    Require(spawns==2 && spawn_class=="AEGS_Idris_P" && spawn_height==77 && spawn_seat=="none" && spawn_ready==0,"boarding options forwarded");
+    Send("loadout.sq42",sq42,136,SCO_WIDGET_TEXT_INPUT,"vAnDuUl");
+    Require(spawns==2 && sq42.ship_labels.size()==4 && sq42.ship_index==-1 && (sq42.flags.at(123)&SCO_WIDGET_DISABLED),"filter hides selection without spawning");
+    auto stale_ship=sq42; Select("loadout.sq42",sq42,120,1);
+    Send("loadout.sq42",sq42,123,SCO_WIDGET_BUTTON);
+    Require(spawns==3 && spawn_class=="VNCL_Scythe_PU_AI_VAN" && spawn_height==300 && spawn_seat=="none" && spawn_ready==0,"filtered source spawn arguments");
+    Select("loadout.sq42",stale_ship,120,0); Send("loadout.sq42",stale_ship,123,SCO_WIDGET_BUTTON);
+    Require(spawns==3 && sq42.ship_index==1,"stale ship callback refused");
+    Select("loadout.sq42",sq42,120,-1); Send("loadout.sq42",sq42,123,SCO_WIDGET_BUTTON);
+    Require(spawns==3 && sq42.ship_index==-1 && (sq42.flags.at(123)&SCO_WIDGET_DISABLED),"deselected ship refused");
+    Select("loadout.sq42",sq42,120,1);
+    Send("loadout.sq42",sq42,136,SCO_WIDGET_TEXT_INPUT,"no match"); Send("loadout.sq42",sq42,123,SCO_WIDGET_BUTTON);
+    Require(spawns==3 && sq42.combos.at(120)==0 && sq42.ship_index==-1 && (sq42.flags.at(123)&SCO_WIDGET_DISABLED),"empty ship filter refused");
+    Send("loadout.sq42",sq42,136,SCO_WIDGET_TEXT_INPUT,"VANDUUL");
+    Require(sq42.ship_index==1,"hidden ship selection retained");
+    Send("loadout.sq42",sq42,136,SCO_WIDGET_TEXT_INPUT,std::string(64,'x').c_str()); Send("loadout.sq42",sq42,136,SCO_WIDGET_TEXT_INPUT,"bad\ntext");
+    Require(sq42.ship_filter=="VANDUUL" && sq42.ship_index==1,"invalid ship searches rejected");
+    Send("loadout.sq42",sq42,136,SCO_WIDGET_TEXT_INPUT,std::string(63,'x').c_str());
+    Require(sq42.ship_filter.size()==63 && sq42.combos.at(120)==0,"bounded ship search accepted");
+    Send("loadout.sq42",sq42,136,SCO_WIDGET_TEXT_INPUT,"vanduul");
+    auto failed_ship=sq42; fail_sq=true; Send("loadout.sq42",sq42,136,SCO_WIDGET_TEXT_INPUT,"bengal");
+    Select("loadout.sq42",failed_ship,120,0); Send("loadout.sq42",failed_ship,123,SCO_WIDGET_BUTTON);
+    Require(spawns==3 && sq42.accepted==failed_ship.accepted,"failed ship publication refuses old callback");
+    fail_sq=false; Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"");
+    Require(sq42.ship_labels.size()==1 && sq42.ship_index==-1,"retry publishes new ship mapping");
+    Select("loadout.sq42",sq42,120,0); Send("loadout.sq42",sq42,123,SCO_WIDGET_BUTTON);
+    Require(spawns==4 && spawn_class=="RSI_Bengal_PU_AI_UEE" && spawn_height==1500 && spawn_seat=="none" && spawn_ready==0,"retry uses accepted mapping");
+    auto before_ship_reload=sq42; Require(reload_command(nullptr,0,nullptr,nullptr,0)==SCO_OK,"ship reload succeeds");
+    Send("loadout.sq42",before_ship_reload,123,SCO_WIDGET_BUTTON); Require(spawns==4,"reload invalidates ship callback");
+    Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"");
+
     Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"no matching gear");
     Require(!rejected && player.combos.at(2)==0,"empty filtered picker rejected");
     Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"");
@@ -213,6 +261,7 @@ void Workflow(bool populated) {
         Require(sq42.combos.at(101)==0 && (sq42.flags.at(106)&SCO_WIDGET_DISABLED),"failed reload clears picker");
     }
     auto before_unload=sq42; sco::features::loadout::Unload(); sco::features::loadout::Unload();
+    Send("loadout.sq42",before_unload,123,SCO_WIDGET_BUTTON); Require(spawns==4,"unloaded ship callback ignored");
     Send("loadout.sq42",before_unload,106,SCO_WIDGET_BUTTON); Require(submits==(populated ? 3u : 1u),"unloaded callback ignored");
     Require(removed==2 && unsubscribed==1,"unload cleanup mismatch");
 }
