@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Run isolated consumer proofs against the selected development SDK artifact."""
 import hashlib
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -40,4 +41,20 @@ for feature in features:
         command += ['--slice', 'read']
     print(f'Running {feature} against development Core {commit}', flush=True)
     subprocess.run(command, check=True)
+
+# The Loadout SDK proof above extracts the archive only after checking its digest,
+# checksum inventory, source commit, profile, and current product gitlink. Reuse
+# that extraction for the actual list-pack install staging test so it exercises
+# the same locked development SDK on both CI operating systems.
+sdk_include = work / 'loadout' / 'sdk' / ('sco-sdk-' + version) / 'include'
+if not (sdk_include / 'scosdk').is_dir():
+    raise SystemExit(f'verified Loadout SDK include directory is missing: {sdk_include}')
+staging_command = [sys.executable, str(ROOT / 'tools' / 'test_loadout_list_staging.py'),
+                   '--sdk-include', str(sdk_include)]
+if os.name == 'nt':
+    staging_command += ['--generator', 'Visual Studio 18 2026', '--architecture', 'x64']
+else:
+    staging_command += ['--generator', 'Unix Makefiles']
+print(f'Running Loadout list staging against development Core {commit}', flush=True)
+subprocess.run(staging_command, check=True)
 print('Development SDK consumer proofs passed; no native/game acceptance implied.')
