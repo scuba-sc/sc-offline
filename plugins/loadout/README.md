@@ -23,8 +23,37 @@ the release workflow does not yet stage loadout. Do not substitute this local bu
    ```
 
    `SCO_LOADOUT_BASE_LIST_DIR` is optional; when supplied it stages existing
-   `items.txt`, `outfits.txt` and `buildables.txt` unchanged into a separate
-   `loadout_lists` data pack. It does not grant runtime filesystem access.
+   `items.txt` and `outfits.txt` unchanged into a separate `loadout_lists`
+   data pack. It does not grant runtime filesystem access. The independently
+   disableable `build_catalog` data pack supplies the shared
+   `lists/buildables.txt` for Build and Loadout's SQ42 shortcuts. The Build
+   picker requires exactly one enabled source and refuses duplicate sources.
+
+   Standalone users without another enabled Build list can explicitly add
+   `-DSCO_LOADOUT_STAGE_BUILDABLES=ON`; this also requires `buildables.txt` in
+   the source directory and stages it unchanged in `loadout_lists`. Enable only
+   one pack supplying that list: disable `build_catalog` and any other such
+   pack when choosing this option. Disabling `loadout_lists` then also removes
+   that Build list. An install over an existing `loadout_lists` pack preserves
+   a previously staged `buildables.txt`, so upgrading alone does not remove a
+   duplicate. Before enabling packs, inspect the existing lists and choose
+   exactly one source; preserve any lists you want to keep and disable or move
+   the other pack out of discovery while the host is stopped. Staging does not
+   delete, overwrite, move or disable an existing buildables list in default mode.
+   Before writing the pack, installation checks all files it would stage. If an
+   existing destination differs, it stops with an error and leaves the pack
+   untouched; choose a fresh staging directory or preserve and reconcile the
+   existing pack yourself. Identical files are accepted. Do not change the pack
+   concurrently with installation: directory paths must remain trusted and
+   stable, and existing files must not be modified concurrently. Python 3 is
+   required when this optional list staging is configured. Complete files are
+   published using hard links without replacing destinations; a filesystem that
+   does not support hard links causes an error. A late conflict or write failure
+   may leave earlier new files installed, so inspect the pack before retrying.
+   Detected symlinks and reparse points are refused. This check covers the
+   list pack only: the Loadout module and its manifest are installed earlier and
+   follow ordinary CMake overwrite behavior, so use a fresh staging directory
+   when those destinations contain files you need to preserve.
    A larger standalone `plugins/` build uses `SCO_LOADOUT_FEATURE=ON`; that switch
 defaults off until release staging is approved (the pinned sdk-v2.4.0 ships
    the headers). Runtime folder metadata
@@ -211,8 +240,8 @@ the remaining cleanup boundary. No confirmed equipment is removed on unload.
 
 Read only `SCO_CONTENT_LIST` entries named `lists/items.txt`, `lists/outfits.txt`
 and optional `lists/buildables.txt`, in public discovery order. Legacy top-level
-base files are not read privately; stage them into `loadout_lists` or supply an
-enabled data pack. Duplicate packs remain ordered, but ambiguous item-slot or
+base files are not read privately; stage them into data packs or supply an
+enabled data pack. Use exactly one enabled `lists/buildables.txt` source for Build. Duplicate packs remain ordered, but ambiguous item-slot or
 outfit-name selections refuse. No item-existence guess is made while parsing;
 the typed provider reports missing items at apply time.
 

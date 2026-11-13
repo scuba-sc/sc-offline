@@ -74,12 +74,34 @@ install(TARGETS sc-offline-loadout LIBRARY DESTINATION data/plugins/loadout COMP
 install(FILES plugin.ini DESTINATION data/plugins/loadout COMPONENT loadout)
 # Explicit base-list staging, not a private runtime-file read or new content format.
 set(SCO_LOADOUT_BASE_LIST_DIR "" CACHE PATH "Existing product data directory to stage as a read-only loadout data pack")
+option(SCO_LOADOUT_STAGE_BUILDABLES "Include buildables in the Loadout pack (only when no other Build list is enabled)" OFF)
 if(SCO_LOADOUT_BASE_LIST_DIR)
-  foreach(list items outfits buildables)
+  set(loadout_base_lists items outfits)
+  if(SCO_LOADOUT_STAGE_BUILDABLES)
+    list(APPEND loadout_base_lists buildables)
+  endif()
+  foreach(list IN LISTS loadout_base_lists)
     if(NOT EXISTS "${SCO_LOADOUT_BASE_LIST_DIR}/${list}.txt")
       message(FATAL_ERROR "Loadout base list missing: ${list}.txt")
     endif()
-    install(FILES "${SCO_LOADOUT_BASE_LIST_DIR}/${list}.txt" DESTINATION data/plugins/loadout_lists/lists COMPONENT loadout)
   endforeach()
-  install(FILES lists-plugin.ini DESTINATION data/plugins/loadout_lists RENAME plugin.ini COMPONENT loadout)
+  # Python publishes each complete file with an atomic, no-replace hard link.
+  if(SCO_LOADOUT_STAGE_BUILDABLES)
+    set(loadout_stage_buildables ON)
+  else()
+    set(loadout_stage_buildables OFF)
+  endif()
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  install(CODE "
+    execute_process(COMMAND \"${Python3_EXECUTABLE}\"
+      \"${CMAKE_CURRENT_SOURCE_DIR}/../../tools/stage_loadout_lists.py\"
+      --prefix \"\${CMAKE_INSTALL_PREFIX}\"
+      --source \"${SCO_LOADOUT_BASE_LIST_DIR}\"
+      --manifest \"${CMAKE_CURRENT_SOURCE_DIR}/lists-plugin.ini\"
+      --buildables \"${loadout_stage_buildables}\"
+      RESULT_VARIABLE stage_result)
+    if(NOT stage_result STREQUAL \"0\")
+      message(FATAL_ERROR \"Loadout list staging failed (\${stage_result})\")
+    endif()
+  " COMPONENT loadout)
 endif()
