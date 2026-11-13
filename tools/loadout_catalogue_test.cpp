@@ -23,7 +23,7 @@ std::map<std::string,sco_command> commands;
 sco_widgets_v1 widgets{};sco_content_v1 content{};sc_loadout_v1_2 loadout{};
 const void* contentTable=&content;const void* loadoutTable=&loadout;
 bool applyCap=true,weaponsCap=true,asyncCap=true,contentPresent=true,endless=false,throwLog=false;
-uint32_t version=SC_LOADOUT_VERSION_1_2,queried=0;
+uint32_t version=SC_LOADOUT_VERSION_1_2,queried=0,applied_version=0;
 sco_result panelResult=SCO_OK,applyResult=SCO_OK,cancelResult=SCO_OK,statusResult=SCO_OK;
 int badMetadata=0,badRead=0,corruptReport=0,statusMode=0;
 std::vector<sc_loadout_item> captured;
@@ -69,7 +69,7 @@ sco_result SetPanel(sco_plugin* self,const char* id,const char*,const sco_widget
 sco_result Remove(sco_plugin* self,const char*){Check(self==owner,"panel removal owner");return SCO_OK;}
 void Capture(sco_plugin* self,const sc_loadout_request* r){Check(self==owner&&r&&r->size==sizeof(*r)&&r->item_stride==sizeof(sc_loadout_item)&&r->count&&r->count<=16,"public typed batch");captured.assign(r->items,r->items+r->count);}
 sc_loadout_report Report(){sc_loadout_report r{};r.size=sizeof(r);r.count=static_cast<uint32_t>(captured.size());r.applied=r.count;for(uint32_t i=0;i<r.count;++i)r.slots[i]={captured[i].slot,SC_LOADOUT_APPLIED};return r;}
-sco_result Apply(sco_plugin* self,const sc_loadout_request* r,sc_loadout_report* out){++applies;Capture(self,r);*out=Report();if(applyResult==SCO_FAILED){out->slots[0].status=SC_LOADOUT_ITEM_MISSING;--out->applied;}if(corruptReport)++out->count;return applyResult;}
+sco_result Apply(sco_plugin* self,const sc_loadout_request* r,sc_loadout_report* out){++applies;applied_version=queried;Capture(self,r);*out=Report();if(applyResult==SCO_FAILED){out->slots[0].status=SC_LOADOUT_ITEM_MISSING;--out->applied;}if(corruptReport)++out->count;return applyResult;}
 sco_result Submit(sco_plugin* self,const sc_loadout_request* r,uint64_t* job){++submits;Capture(self,r);*job=42;return SCO_OK;}
 sco_result Status(sco_plugin* self,uint64_t job,sc_loadout_job_report* out){
     ++statuses;Check(self==owner&&job==42&&out&&out->size==sizeof(*out)&&out->report.size==sizeof(out->report),"status owner/job/output extent");
@@ -153,7 +153,7 @@ int main(int argc,char** argv){
     Check(panel.nodes[200].options==std::vector<std::string>{"Unchanged (omit slot)","FixtureWeapon"},"explicit parent catalogue options");
     Check(panel.nodes[202].options==std::vector<std::string>{"Unchanged (omit slot)","FixtureOptic"},"explicit optic catalogue options");
     Check(Disabled(220)&&Disabled(221),"all unchanged initially, no implicit mutation");Button(220);Check(!applies,"forged empty apply makes no mutation");
-    Select(2,1);Button(220);Check(applies==1&&queried==SC_LOADOUT_VERSION_1_1&&captured.size()==1&&captured[0].slot==SC_LOADOUT_SLOT_PRIMARY_OPTIC,"attachment alone omits unchanged parent");
+    Select(2,1);Button(220);Check(applies==1&&applied_version==SC_LOADOUT_VERSION_1_1&&captured.size()==1&&captured[0].slot==SC_LOADOUT_SLOT_PRIMARY_OPTIC,"attachment alone omits unchanged parent");
     Select(0,1);Button(220);Check(captured.size()==2&&captured[0].slot==8&&captured[1].slot==10,"parent-first ordering independent of click order");
     Select(13,1);Button(220);Check(captured.size()==3&&captured[2].slot==21,"independent sidearm battery");
     Select(0,0);Button(220);Check(captured.size()==2&&captured[0].slot==10,"Unchanged removes only request assignment, no clear/default");

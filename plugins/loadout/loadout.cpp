@@ -39,13 +39,13 @@ struct State {
     std::array<std::string,2> weapon_filters, attachment_filters;
     std::array<weapon_types::Type,2> weapon_type{};
     std::array<std::vector<weapon_types::Type>,2> published_types;
-    bool player_events = false; uintptr_t player_cookie = 0;
+    bool player_events = false, sq_events = false; uintptr_t player_cookie = 0, sq_cookie = 0;
     char curated_status[256]{};
     double height = 30, ahead = 8, speed = 30; bool sit = true;
     char status[2048]{};
 } g;
-uintptr_t next_player_cookie = 0;
-bool job_observing = false;
+uintptr_t next_player_cookie = 0, next_sq_cookie = 0;
+bool job_observing = false, job_submitting = false, job_cancelling = false;
 uint64_t job_revision = 0;
 const sco_plugin_info info{sizeof(sco_plugin_info),SCO_API_MAJOR,SCO_API_MINOR,"loadout","1.0.0","sc-offline"};
 const char* const cvar_names[]{"i_target_selector.targeting2_enabled","pl_lensdisplay.minimap_enabled",
@@ -106,6 +106,9 @@ uint32_t Slot(std::string_view name,bool outfit) {
     for (const auto& m:map) if (Same(name,outfit ? m.port : m.item)) return m.slot;
     // This consumer retains its 1.0 armor/visor mapping; newer slot families are not selected here.
     return 0;
+}
+const char* ItemSupport(const Piece& p) {
+    return p.slot ? "" : (Same(p.port,"primary") || Same(p.port,"sidearm")) ? " [async only]" : " [unsupported]";
 }
 sco_result Parse(std::string_view bytes,int kind,Lists& lists,std::vector<std::string>& buildables) {
     if (bytes.find('\0')!=bytes.npos) return SCO_BAD_ARG;
@@ -193,7 +196,7 @@ const char* Status(uint32_t s) {
         case SC_LOADOUT_UNAVAILABLE:return "unavailable"; default:return "invalid"; }
 }
 sco_result Apply(const std::vector<Piece>& pieces,char* out,uint32_t size,uint32_t version=SC_LOADOUT_VERSION_1_0) {
-    if (g.job) return Answer(SCO_UNAVAILABLE,out,size,"Retained loadout job: inspect progress and cancel/release it before another equip request.");
+    if (g.job || job_submitting || job_cancelling) return Answer(SCO_UNAVAILABLE,out,size,"Retained loadout job: inspect progress and cancel/release it before another equip request.");
     if (pieces.empty()) return Answer(SCO_BAD_ARG,out,size,"No selected pieces; unspecified slots are unchanged (not cleared/defaulted).");
     if (pieces.size()>SC_LOADOUT_MAX_ITEMS) return Answer(SCO_TOO_MANY,out,size,"More than 16 pieces: entire request refused before equip; no split/retry.");
     sc_loadout_item items[SC_LOADOUT_MAX_ITEMS]{};
@@ -254,22 +257,42 @@ sco_result Slots(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     std::vector<Piece> pieces; const auto r=SlotPieces(args,n,out,size,pieces);
     return r==SCO_OK ? Apply(pieces,out,size,SC_LOADOUT_VERSION_1_1) : r;
 }
-sco_result Submit(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
-    std::vector<Piece> pieces; const auto parsed=SlotPieces(args,n,out,size,pieces); if (parsed!=SCO_OK) return parsed;
-    if (g.job) return Answer(SCO_UNAVAILABLE,out,size,"One retained job: inspect progress and cancel/release before submitting another batch.");
+sco_result SubmitPieces(std::vector<Piece> pieces,char* out,uint32_t size) {
+    if (g.job || job_submitting || job_cancelling) return Answer(SCO_UNAVAILABLE,out,size,"One retained or submitting job: inspect progress and cancel/release before another batch.");
+    if (pieces.empty()) return Answer(SCO_BAD_ARG,out,size,"No selected pieces; no job submitted.");
+    if (pieces.size()>SC_LOADOUT_MAX_ITEMS) return Answer(SCO_TOO_MANY,out,size,"More than 16 pieces; no job submitted.");
+    for (size_t i=0;i<pieces.size();++i) {
+        const auto& p=pieces[i];
+        if (!p.slot || p.slot>SC_LOADOUT_SLOT_SIDEARM_TOOL_BATTERY)
+            return Answer(SCO_UNAVAILABLE,out,size,"Unsupported legacy slot/port; entire selection refused.");
+        if (!Class(p.name) || Same(p.name,"none") || Same(p.name,"default")) return Answer(SCO_BAD_ARG,out,size,"Invalid or clear/default class; entire selection refused.");
+        for (size_t j=0;j<i;++j) if (pieces[j].slot==p.slot)
+            return Answer(SCO_BAD_ARG,out,size,"Duplicate logical slot; entire selection refused.");
+    }
+    struct Guard { Guard(){job_submitting=true;} ~Guard(){job_submitting=false;} } guard;
+    const auto* api=g.api; auto* owner=g.self; const auto revision=job_revision;
     const auto* service=Open<sc_loadout_v1_2>(SC_LOADOUT_SERVICE_NAME,SC_LOADOUT_VERSION_1_2);
-    if (!Cap("game.loadout.async") || !HAS(service,sc_loadout_v1_2,submit) ||
+    if (g.api!=api || g.self!=owner || job_revision!=revision) return SCO_UNAVAILABLE;
+    const bool admitted=Cap("game.loadout.async");
+    if (g.api!=api || g.self!=owner || job_revision!=revision) return SCO_UNAVAILABLE;
+    if (!admitted || !HAS(service,sc_loadout_v1_2,submit) ||
         !HAS(service,sc_loadout_v1_2,status) || !HAS(service,sc_loadout_v1_2,cancel))
         return Answer(SCO_UNAVAILABLE,out,size,"Loadout 1.2 job lifecycle/capabilities unavailable; no synchronous fallback.");
+    if (g.api!=api || g.self!=owner || job_revision!=revision) return SCO_UNAVAILABLE;
     sc_loadout_item items[SC_LOADOUT_MAX_ITEMS]{};
     for (size_t i=0;i<pieces.size();++i) { items[i].slot=pieces[i].slot; std::memcpy(items[i].item_class,pieces[i].name.c_str(),pieces[i].name.size()+1); }
     sc_loadout_request request{sizeof(request),static_cast<uint32_t>(pieces.size()),sizeof(sc_loadout_item),0,items};
-    uint64_t job=0; const auto result=service->submit(g.self,&request,&job);
+    uint64_t job=0; const auto result=service->submit(owner,&request,&job);
+    if (g.api!=api || g.self!=owner || job_revision!=revision) return SCO_UNAVAILABLE;
     if (result!=SCO_OK) return Answer(result,out,size,"Loadout submit refused; no retry or synchronous fallback.");
     if (!job) return Answer(SCO_FAILED,out,size,"Invalid zero job id; state unknown, no retry.");
     g.job=job; g.job_pieces=std::move(pieces); g.job_poll_paused=false; ++job_revision;
     std::snprintf(g.job_status,sizeof(g.job_status),"Loadout job submitted; waiting for a status observation.");
     return Answer(SCO_OK,out,size,"Loadout job submitted, not confirmed equipped. Use loadout.progress; cancel releases pending work without rollback.");
+}
+sco_result Submit(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
+    std::vector<Piece> pieces; const auto parsed=SlotPieces(args,n,out,size,pieces);
+    return parsed==SCO_OK ? SubmitPieces(std::move(pieces),out,size) : parsed;
 }
 // A status observation is copied only for this call; no service table survives a lookup.
 sco_result ObserveJob(std::string& message, bool& malformed, bool& obsolete, bool& async_available) {
@@ -335,11 +358,17 @@ sco_result Progress(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size
 }
 sco_result Cancel(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     const auto valid=Validate(args,n,0,out,size); if (valid!=SCO_OK) return valid;
+    if (job_cancelling) return SCO_UNAVAILABLE;
     if (!g.job) return Answer(SCO_NOT_FOUND,out,size,"No retained loadout job.");
+    struct Guard { Guard(){job_cancelling=true;} ~Guard(){job_cancelling=false;} } guard;
+    const auto* api=g.api; auto* owner=g.self; const auto job=g.job; const auto revision=job_revision;
+    const auto current=[&] { return g.api==api && g.self==owner && g.job==job && job_revision==revision; };
     const auto* service=Open<sc_loadout_v1_2>(SC_LOADOUT_SERVICE_NAME,SC_LOADOUT_VERSION_1_2);
+    if (!current()) return SCO_UNAVAILABLE;
     if (!HAS(service,sc_loadout_v1_2,cancel)) return Answer(SCO_UNAVAILABLE,out,size,"Loadout cancellation unavailable; job retained, owner unload remains the host cleanup boundary.");
     // Cleanup remains callable after mutation capability revocation; never undo confirmed equipment.
-    const auto result=service->cancel(g.self,g.job);
+    const auto result=service->cancel(owner,job);
+    if (!current()) return SCO_UNAVAILABLE;
     if (result==SCO_OK || result==SCO_NOT_FOUND) { g.job=0; g.job_pieces.clear(); g.job_poll_paused=false; ++job_revision; JobLabel("No retained loadout job."); }
     return Answer(result,out,size,result==SCO_OK ? "Loadout job released; confirmed equipment remains, no rollback." : "Loadout cancellation refused/not found; no rollback or retry.");
 }
@@ -373,7 +402,7 @@ void Curated(bool asynchronous) {
     sco_arg arg{};arg.type=SCO_ARG_STRING;arg.v.s=assignments.c_str();
     if(asynchronous)(void)Submit(&arg,1,nullptr,nullptr,0);else (void)Slots(&arg,1,nullptr,nullptr,0);
 }
-sco_result Equip(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
+sco_result EquipSelection(const sco_arg* args,uint32_t n,char* out,uint32_t size,bool async) {
     auto r=Validate(args,n,1,out,size); if (r!=SCO_OK) return r;
     if (!String(args[0],1023) || !*args[0].v.s) return SCO_BAD_ARG;
     r=Ready(out,size); if (r!=SCO_OK) return r;
@@ -390,10 +419,18 @@ sco_result Equip(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
         if (!match) return Answer(SCO_NOT_FOUND,out,size,("Item not in copied items.txt: "+std::string(name)).c_str());
         if (pieces.size()==SC_LOADOUT_MAX_ITEMS) return Answer(SCO_TOO_MANY,out,size,"Too many selected items; no equip requested.");
         pieces.push_back(*match);
+        // Copied item sections name the same public logical weapon slots; this
+        // applies only to the 1.2 route, not legacy synchronous equip.
+        if (async && !pieces.back().slot) {
+            if (Same(match->port,"primary")) pieces.back().slot=SC_LOADOUT_SLOT_PRIMARY;
+            else if (Same(match->port,"sidearm")) pieces.back().slot=SC_LOADOUT_SLOT_SIDEARM;
+        }
     }
-    return Apply(pieces,out,size);
+    return async ? SubmitPieces(std::move(pieces),out,size) : Apply(pieces,out,size);
 }
-sco_result Wear(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
+sco_result Equip(const sco_arg* a,uint32_t n,void*,char* o,uint32_t z) { return EquipSelection(a,n,o,z,false); }
+sco_result SubmitGear(const sco_arg* a,uint32_t n,void*,char* o,uint32_t z) { return EquipSelection(a,n,o,z,true); }
+sco_result WearSelection(const sco_arg* args,uint32_t n,char* out,uint32_t size,bool async) {
     auto r=Validate(args,n,1,out,size); if (r!=SCO_OK) return r;
     if (!String(args[0],127) || !*args[0].v.s) return SCO_BAD_ARG;
     if (!g.spoilers) return Answer(SCO_UNAVAILABLE,out,size,"SQ42 spoiler confirmation required: loadout.spoilers true (session-only).");
@@ -404,8 +441,10 @@ sco_result Wear(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
         found=&outfit;
     }
     if (!found) return Answer(SCO_NOT_FOUND,out,size,"Outfit not in copied outfits.txt.");
-    return Apply(found->pieces,out,size);
+    return async ? SubmitPieces(found->pieces,out,size) : Apply(found->pieces,out,size);
 }
+sco_result Wear(const sco_arg* a,uint32_t n,void*,char* o,uint32_t z) { return WearSelection(a,n,o,z,false); }
+sco_result SubmitOutfit(const sco_arg* a,uint32_t n,void*,char* o,uint32_t z) { return WearSelection(a,n,o,z,true); }
 sco_result Spoilers(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     const auto r=Validate(args,n,1,out,size); if (r!=SCO_OK) return r;
     if (args[0].type!=SCO_ARG_BOOL || (args[0].v.i!=0 && args[0].v.i!=1)) return SCO_BAD_ARG;
@@ -452,7 +491,7 @@ sco_result Items(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     std::string message="Copied gear list (first 12 matches; use UI filter/pages)"; uint32_t count=0;
     for (const auto& p:g.lists.items) if (p.name.find(args[0].v.s)!=p.name.npos) {
         if (count++==12) break;
-        message+="; "+p.port+":"+p.name+(p.slot ? "" : " [unsupported]");
+        message+="; "+p.port+":"+p.name+ItemSupport(p);
     }
     return Answer(SCO_OK,out,size,message.c_str());
 }
@@ -514,6 +553,7 @@ void Event(const char* panel,const sco_widget_event* e,void* context) {
     if (std::strcmp(panel,"loadout.player") && std::strcmp(panel,"loadout.sq42")) return;
     const bool sq=!std::strcmp(panel,"loadout.sq42");
     if(!sq&&(!g.player_events||reinterpret_cast<uintptr_t>(context)!=g.player_cookie))return;
+    if(sq&&(!g.sq_events||reinterpret_cast<uintptr_t>(context)!=g.sq_cookie))return;
     if (sq && !g.spoilers && e->node_id!=100) return;
     auto string=[&](std::string& target,size_t limit) {
         if (e->kind==SCO_WIDGET_TEXT_INPUT && e->text && std::strlen(e->text)<=limit) target=e->text;
@@ -563,6 +603,7 @@ void Event(const char* panel,const sco_widget_event* e,void* context) {
         case 4: if (e->kind==SCO_WIDGET_BUTTON && (g.page+1)*64<Filtered().size()) ++g.page; break;
         case 5: string(g.equip,1023); break;
         case 6: if (e->kind==SCO_WIDGET_BUTTON) { auto a=Text(g.equip.c_str()); Equip(&a,1,nullptr,nullptr,0); } break;
+        case 27: if (e->kind==SCO_WIDGET_BUTTON) { auto a=Text(g.equip.c_str()); SubmitGear(&a,1,nullptr,nullptr,0); } break;
         case 7: if (e->kind==SCO_WIDGET_BUTTON) { g.equip.clear(); } break;
         case 8: if (e->kind==SCO_WIDGET_BUTTON) Reload(nullptr,0,nullptr,nullptr,0); break;
         case 20: string(g.slots,255); break;
@@ -588,6 +629,11 @@ void Event(const char* panel,const sco_widget_event* e,void* context) {
         case 102: if (e->kind==SCO_WIDGET_BUTTON && g.outfit>=0 && static_cast<size_t>(g.outfit)<g.lists.outfits.size()) {
             auto a=Text(g.lists.outfits[static_cast<size_t>(g.outfit)].name.c_str()); Wear(&a,1,nullptr,nullptr,0);
         } break;
+        case 106: if (e->kind==SCO_WIDGET_BUTTON && g.outfit>=0 && static_cast<size_t>(g.outfit)<g.lists.outfits.size()) {
+            auto a=Text(g.lists.outfits[static_cast<size_t>(g.outfit)].name.c_str()); SubmitOutfit(&a,1,nullptr,nullptr,0);
+        } break;
+        case 107: if (e->kind==SCO_WIDGET_BUTTON) Progress(nullptr,0,nullptr,nullptr,0); break;
+        case 108: if (e->kind==SCO_WIDGET_BUTTON) Cancel(nullptr,0,nullptr,nullptr,0); break;
         case 103: string(g.visor,95); break;
         case 104: if (e->kind==SCO_WIDGET_BUTTON) { auto a=Text(g.visor.c_str()); Visor(&a,1,nullptr,nullptr,0); } break;
         case 105: if (e->kind==SCO_WIDGET_BUTTON) Cvars(nullptr,0,nullptr,nullptr,0); break;
@@ -609,8 +655,20 @@ void Event(const char* panel,const sco_widget_event* e,void* context) {
     }
     Publish();
 }
+bool AsyncAvailable() {
+    const auto* api=g.api; auto* owner=g.self; const auto revision=job_revision;
+    const auto current=[&] { return g.api==api && g.self==owner && job_revision==revision; };
+    const auto* service=Open<sc_loadout_v1_2>(SC_LOADOUT_SERVICE_NAME,SC_LOADOUT_VERSION_1_2);
+    if (!current()) return false;
+    const bool cap=Cap("game.loadout.async");
+    if (!current()) return false;
+    return cap && HAS(service,sc_loadout_v1_2,submit) && HAS(service,sc_loadout_v1_2,status) && HAS(service,sc_loadout_v1_2,cancel);
+}
 void Publish() {
-    g.player_events=false;
+    g.player_events=false; g.sq_events=false;
+    const auto* api=g.api; auto* owner=g.self; const auto revision=job_revision;
+    const bool async_available=AsyncAvailable();
+    if (g.api!=api || g.self!=owner || job_revision!=revision) return;
     const auto* w=Open<sco_widgets_v1>(SCO_WIDGETS_NAME);
     if (!HAS(w,sco_widgets_v1,set_panel)) return; // command-first when optional renderer-neutral UI is absent
     std::vector<sco_widget_node> nodes; std::vector<std::string> text;
@@ -621,7 +679,7 @@ void Publish() {
     const auto matches=Filtered(); if (g.page*64>=matches.size()) g.page=0;
     std::vector<const char*> options;
     for (size_t i=static_cast<size_t>(g.page)*64;i<matches.size() && options.size()<64;++i) {
-        const auto& p=g.lists.items[matches[i]]; text.push_back(p.port+": "+p.name+(p.slot ? "" : " [unsupported]")); options.push_back(text.back().c_str());
+        const auto& p=g.lists.items[matches[i]]; text.push_back(p.port+": "+p.name+ItemSupport(p)); options.push_back(text.back().c_str());
     }
     add(SCO_WIDGET_TEXT_INPUT,1,"Search gear/curated names or classes (63 ASCII characters)").text=g.filter.c_str();
     auto& picker=add(SCO_WIDGET_COMBO,2,"Gear list (64 per page)"); picker.items=options.empty() ? nullptr : options.data(); picker.item_count=static_cast<uint32_t>(options.size()); picker.index=-1;
@@ -629,18 +687,19 @@ void Publish() {
     add(SCO_WIDGET_BUTTON,4,"Next page",(g.page+1)*64<matches.size() ? 0u : SCO_WIDGET_DISABLED);
     // widgets text fields are bounded to 255 bytes; commands support the full 1023-byte multi-slot request.
     add(SCO_WIDGET_TEXT_INPUT,5,"Selected classes (commas/spaces)").text=g.equip.size()<=255 ? g.equip.c_str() : "Selection exceeds UI field; use loadout.equip command or clear";
-    add(SCO_WIDGET_BUTTON,6,"Equip selected gear"); add(SCO_WIDGET_BUTTON,7,"Clear selection"); add(SCO_WIDGET_BUTTON,8,"Reload copied lists");
+    add(SCO_WIDGET_BUTTON,6,"Equip selected gear",g.job ? SCO_WIDGET_DISABLED : 0u); add(SCO_WIDGET_BUTTON,7,"Clear selection"); add(SCO_WIDGET_BUTTON,8,"Reload copied lists");
+    add(SCO_WIDGET_BUTTON,27,"Submit selected gear job (1.2)",g.job || !async_available ? SCO_WIDGET_DISABLED : 0u);
     add(SCO_WIDGET_LABEL,9,"Unspecified slots stay unchanged. Unsupported legacy slots refuse the whole selection. No defaults/XML fallback.");
     add(SCO_WIDGET_TEXT_INPUT,20,"Manual public slots: primary_optic=Class,sidearm_barrel=Class").text=g.slots.c_str();
     add(SCO_WIDGET_BUTTON,21,"Apply manual slots (requires loadout 1.1)",g.job ? SCO_WIDGET_DISABLED : 0u);
-    add(SCO_WIDGET_BUTTON,22,"Submit manual slots job (requires 1.2)",g.job ? SCO_WIDGET_DISABLED : 0u);
+    add(SCO_WIDGET_BUTTON,22,"Submit manual slots job (requires 1.2)",g.job || !async_available ? SCO_WIDGET_DISABLED : 0u);
     add(SCO_WIDGET_BUTTON,23,"Inspect loadout job",g.job ? 0u : SCO_WIDGET_DISABLED);
     add(SCO_WIDGET_BUTTON,24,"Cancel/release loadout job",g.job ? 0u : SCO_WIDGET_DISABLED);
     add(SCO_WIDGET_LABEL,26,g.job_status);
     add(SCO_WIDGET_LABEL,25,"Use known item classes. Unspecified slots stay unchanged; None/clear is unavailable.");
-    std::array<std::vector<const char*>,std::size(weapon_slots)> curated_options;
-    std::array<std::vector<std::string>,std::size(weapon_slots)> curated_labels;
-    std::array<std::vector<int32_t>,std::size(weapon_slots)> curated_rows;
+    std::array<std::vector<const char*>,std::size(catalogue::kSlots)> curated_options;
+    std::array<std::vector<std::string>,std::size(catalogue::kSlots)> curated_labels;
+    std::array<std::vector<int32_t>,std::size(catalogue::kSlots)> curated_rows;
     bool chosen=false;
     std::array<std::vector<weapon_types::Type>,2> type_rows;
     std::array<std::vector<const char*>,2> type_options;
@@ -688,7 +747,7 @@ void Publish() {
         }
     }
     add(SCO_WIDGET_BUTTON,220,"Apply curated choices (1.1)",chosen&&!g.job?0u:SCO_WIDGET_DISABLED);
-    add(SCO_WIDGET_BUTTON,221,"Submit curated choices job (1.2)",chosen&&!g.job?0u:SCO_WIDGET_DISABLED);
+    add(SCO_WIDGET_BUTTON,221,"Submit curated choices job (1.2)",chosen&&!g.job&&async_available?0u:SCO_WIDGET_DISABLED);
     add(SCO_WIDGET_BUTTON,222,"Clear curated selection only");add(SCO_WIDGET_BUTTON,223,"Reload copied slot catalogue");
     add(SCO_WIDGET_LABEL,224,"Unchanged omits the slot. Parent replacement defaults are engine-defined; no None/clear or SRT defaults are synthesized.");
     add(SCO_WIDGET_LABEL,225,g.curated_status);
@@ -707,13 +766,23 @@ void Publish() {
         }
     }
     nodes.clear(); options.clear(); text.clear();
+    const auto publish_sq=[&] {
+        if(next_sq_cookie<std::numeric_limits<uintptr_t>::max()) {
+            const auto cookie=++next_sq_cookie;
+            if(w->set_panel(g.self,"loadout.sq42","Squadron 42",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(sco_widget_node),Event,reinterpret_cast<void*>(cookie))==SCO_OK) { g.sq_cookie=cookie; g.sq_events=true; }
+        }
+    };
     if (!g.spoilers) { add(SCO_WIDGET_LABEL,99,"This tab may contain Squadron 42 spoilers. Confirmation is session-only."); add(SCO_WIDGET_BUTTON,100,"OK: show SQ42 spoilers"); }
     else {
         for (const auto& o:g.lists.outfits) options.push_back(o.name.c_str());
         auto& outfit=add(SCO_WIDGET_COMBO,101,"SQ42 outfit"); outfit.items=options.empty() ? nullptr : options.data(); outfit.item_count=static_cast<uint32_t>(options.size()); outfit.index=g.outfit;
-        add(SCO_WIDGET_BUTTON,102,"Wear SQ42 outfit",g.outfit>=0 ? 0u : SCO_WIDGET_DISABLED);
+        add(SCO_WIDGET_BUTTON,102,"Wear SQ42 outfit",g.outfit>=0 && !g.job ? 0u : SCO_WIDGET_DISABLED);
+        add(SCO_WIDGET_BUTTON,106,"Submit selected outfit job (1.2)",g.outfit>=0 && !g.job && async_available ? 0u : SCO_WIDGET_DISABLED);
+        add(SCO_WIDGET_BUTTON,107,"Inspect loadout job",g.job ? 0u : SCO_WIDGET_DISABLED);
+        add(SCO_WIDGET_BUTTON,108,"Cancel/release loadout job",g.job ? 0u : SCO_WIDGET_DISABLED);
+        add(SCO_WIDGET_LABEL,109,g.job_status);
         add(SCO_WIDGET_TEXT_INPUT,103,"Visor item class (no implicit head replacement)").text=g.visor.c_str();
-        add(SCO_WIDGET_BUTTON,104,"Equip visor"); add(SCO_WIDGET_BUTTON,105,"Refresh real SQ42 values");
+        add(SCO_WIDGET_BUTTON,104,"Equip visor",g.job ? SCO_WIDGET_DISABLED : 0u); add(SCO_WIDGET_BUTTON,105,"Refresh real SQ42 values");
         for (uint32_t i=0;i<4;++i) {
             text.push_back(std::string(cvar_labels[i])+(g.cvars[i]<0 ? " [unknown/unavailable]" : " [read-only]"));
             auto& setting=add(SCO_WIDGET_TOGGLE,110+i,text.back().c_str(),SCO_WIDGET_DISABLED); setting.value=g.cvars[i]>0 ? 1 : 0;
@@ -730,10 +799,9 @@ void Publish() {
         add(SCO_WIDGET_BUTTON,132,"Place via build.place",g.build>=0 ? 0u : SCO_WIDGET_DISABLED);
         add(SCO_WIDGET_LABEL,133,"Enemy-wing orchestration remains deferred. Missing spawn/build commands refuse; no private fallback.");
         add(SCO_WIDGET_LABEL,134,status);
-        (void)w->set_panel(g.self,"loadout.sq42","Squadron 42",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(sco_widget_node),Event,nullptr);
-        return;
+        publish_sq(); return;
     }
-    (void)w->set_panel(g.self,"loadout.sq42","Squadron 42",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(sco_widget_node),Event,nullptr);
+    publish_sq();
 }
 void Tick(const char*,const void* data,void*) {
     if (!g.api || !data || job_observing) return;
@@ -774,7 +842,7 @@ sco_result Load(const sco_api* api,sco_plugin* self) {
     const sco_arg_def build[]{Arg("object",SCO_ARG_STRING),Arg("ahead",SCO_ARG_FLOAT)};
     const sco_arg_def write[]{Arg("name",SCO_ARG_STRING),Arg("on",SCO_ARG_BOOL)};
     struct Registration { const char* name; sco_command_fn fn; const sco_arg_def* args; uint32_t count; };
-    const Registration commands[]{ {"loadout.equip",Equip,&items,1},{"loadout.wear",Wear,&outfit,1},{"loadout.spoilers",Spoilers,&spoilers,1},
+    const Registration commands[]{ {"loadout.equip",Equip,&items,1},{"loadout.wear",Wear,&outfit,1},{"loadout.submit_gear",SubmitGear,&items,1},{"loadout.submit_outfit",SubmitOutfit,&outfit,1},{"loadout.spoilers",Spoilers,&spoilers,1},
         {"loadout.slots",Slots,&items,1},{"loadout.submit",Submit,&items,1},{"loadout.progress",Progress,nullptr,0},{"loadout.cancel",Cancel,nullptr,0},
         {"loadout.visor",Visor,&visor,1},{"loadout.items",Items,&filter,1},{"loadout.reload_lists",Reload,nullptr,0},
         {"loadout.reload_slots",ReloadSlots,nullptr,0},

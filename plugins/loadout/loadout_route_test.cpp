@@ -3,6 +3,7 @@
 #include "loadout.h"
 #include "sc_loadout.h"
 #include "sco_widgets.h"
+#include "sco_content.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -28,8 +29,21 @@ std::vector<sc_loadout_item> captured;
 sco_result apply_result=SCO_OK, submit_result=SCO_OK, status_result=SCO_OK, cancel_result=SCO_OK;
 uint64_t submitted_id=42;
 sc_loadout_job_report progress{};
-int corrupt=0;
+int corrupt=0; bool reenter_submit=false, reenter_cancel=false, unload_on_lookup=false; sco_result nested=SCO_OK, nested_cancel=SCO_OK;
 char reply[2048]{};
+std::string list_items, list_outfits;
+sco_content_v1 content{};
+sco_result Item(sco_plugin*,sco_content_kind,uint32_t ordinal,sco_content_item* item) {
+    if(ordinal>=2) return SCO_NOT_FOUND;
+    *item={}; item->size=sizeof(*item); item->id=ordinal+1;
+    std::snprintf(item->name,sizeof(item->name),"%s",ordinal ? "lists/outfits.txt" : "lists/items.txt"); return SCO_OK;
+}
+sco_result Read(sco_plugin*,uint64_t id,void* out,uint32_t* size) {
+    const auto& bytes=id==1 ? list_items : list_outfits;
+    if(*size<bytes.size()) { *size=static_cast<uint32_t>(bytes.size()); return SCO_TOO_MANY; }
+    if(!bytes.empty()) std::memcpy(out,bytes.data(),bytes.size());
+    *size=static_cast<uint32_t>(bytes.size()); return SCO_OK;
+}
 void Require(bool ok,const char* message) {
     ++checks; if (!ok) { std::fprintf(stderr,"loadout route: %s (%s)\n",message,reply); std::exit(1); }
 }
@@ -62,6 +76,7 @@ sco_result Apply(sco_plugin* self,const sc_loadout_request* request,sc_loadout_r
 }
 sco_result Submit(sco_plugin* self,const sc_loadout_request* request,uint64_t* id) {
     ++submits; Capture(self,request); Require(id && !*id,"submit output initialized");
+    if(reenter_submit) { sco_arg a{}; a.type=SCO_ARG_STRING; a.v.s="HelmetA"; nested=commands.at("loadout.submit_gear")(&a,1,nullptr,nullptr,0); }
     *id=submitted_id; return submit_result;
 }
 sco_result Status(sco_plugin* self,uint64_t id,sc_loadout_job_report* out) {
@@ -71,12 +86,19 @@ sco_result Status(sco_plugin* self,uint64_t id,sc_loadout_job_report* out) {
     return status_result;
 }
 sco_result Cancel(sco_plugin* self,uint64_t id) {
-    ++cancels; Require(self==owner && id==42,"cancel owner/job"); return cancel_result;
+    ++cancels; Require(self==owner && id==42,"cancel owner/job");
+    if(reenter_cancel) {
+        nested_cancel=commands.at("loadout.cancel")(nullptr,0,nullptr,nullptr,0);
+        sco_arg a{}; a.type=SCO_ARG_STRING; a.v.s="primary=Replacement";
+        nested=commands.at("loadout.submit")(&a,1,nullptr,nullptr,0);
+    }
+    return cancel_result;
 }
 sco_result Query(const char* name,uint32_t version,const void** out) {
     *out=nullptr;
     if (!std::strcmp(name,SC_LOADOUT_SERVICE_NAME)) {
         queried=version;
+        if (unload_on_lookup) { unload_on_lookup=false; sco::features::loadout::Unload(); }
         if (present && version<=supported) { *out=publication; return SCO_OK; }
     }
     return SCO_NOT_FOUND;
@@ -106,6 +128,7 @@ sco_result SetPanel(sco_plugin*,const char* id,const char*,const sco_widget_node
 sco_result WidgetsQuery(const char* name,uint32_t version,const void** out) {
     static sco_widgets_v1 widgets{};
     widgets.size=sizeof(widgets); widgets.set_panel=SetPanel;
+    if (!std::strcmp(name,SCO_CONTENT_NAME)) { *out=&content; return SCO_OK; }
     if (!std::strcmp(name,SCO_WIDGETS_NAME)) { Require(version==0x10000u,"widgets prefix version"); *out=&widgets; return SCO_OK; }
     return Query(name,version,out);
 }
@@ -116,9 +139,10 @@ sco_result Call(const char* name,const char* text=nullptr) {
 }
 void Reset() {
     sco::features::loadout::Unload(); commands.clear();
+    list_items="[helmet]\nHelmetA\n[torso]\nTorsoA\n[ammo]\nAmmoA\n[primary]\nWeaponA\n[sidearm]\nSidearmA\n[helmet]\nDefault\nNone\n[torso]\nHelmetA\n"; list_outfits="[Good]\nArmor_Torso TorsoA\nArmor_Helmet HelmetA\n[Bad]\nAmmo AmmoA\n[Duplicate]\nArmor_Helmet HelmetA\nArmor_Helmet HelmetB\n"; content.size=sizeof(content); content.item=Item; content.read=Read;
     service={}; service.size=sizeof(service); service.apply=Apply; service.submit=Submit; service.status=Status; service.cancel=Cancel;
     publication=&service; supported=SC_LOADOUT_VERSION_1_2; present=apply_cap=weapons_cap=async_cap=true;
-    apply_result=submit_result=status_result=cancel_result=SCO_OK; submitted_id=42; corrupt=0;
+    apply_result=submit_result=status_result=cancel_result=SCO_OK; submitted_id=42; corrupt=0; reenter_submit=false; reenter_cancel=false; unload_on_lookup=false;
     applies=submits=statuses=cancels=0; captured.clear(); copied_status.clear(); reply[0]=0;
     static unsigned char token=0; owner=reinterpret_cast<sco_plugin*>(&token);
     static sco_api api{}; api={}; api.size=sizeof(api); api.major=SCO_API_MAJOR; api.minor=SCO_API_MINOR;
@@ -221,6 +245,61 @@ void ManualRefusals(const char* command,uint32_t button,bool command_only=false)
             std::strstr(reply,"Manual slots refused"),"missing argument has refusal reply");
     Require(applies==0 && submits==0,"invalid command arguments make no provider request");
 }
+void CopiedAsync() {
+    Reset();
+    Require(Call("loadout.items","")==SCO_OK && std::strstr(reply,"primary:WeaponA [async only]") &&
+            std::strstr(reply,"sidearm:SidearmA [async only]") && std::strstr(reply,"ammo:AmmoA [unsupported]") &&
+            std::strstr(reply,"helmet:HelmetA;") && !std::strstr(reply,"primary:WeaponA [unsupported]"),"list command labels synchronous, async-only and unsupported selections");
+    Require(Call("loadout.submit_gear","TorsoA")==SCO_OK && Call("loadout.cancel")==SCO_OK,"fixture valid");
+    Require(Call("loadout.submit_gear","HelmetA")==SCO_BAD_ARG,"ambiguous item refused");
+    list_items="[helmet]\nHelmetA\nDefault\nNone\n[torso]\nTorsoA\n[ammo]\nAmmoA\n[primary]\nWeaponA\n[sidearm]\nSidearmA\n";
+    Require(Call("loadout.reload_lists")==SCO_OK,"reload unambiguous list");
+    reenter_submit=true;
+    Require(Call("loadout.submit_gear","HelmetA,TorsoA")==SCO_OK && captured.size()==2 && captured[0].slot==SC_LOADOUT_SLOT_HEAD && captured[1].slot==SC_LOADOUT_SLOT_TORSO,"copied gear order");
+    Require(nested==SCO_UNAVAILABLE,"recursive submission refused"); reenter_submit=false;
+    Require(Call("loadout.submit_gear","HelmetA")==SCO_UNAVAILABLE,"copied job retained");
+    Require(Call("loadout.cancel")==SCO_OK,"release copied job");
+    Require(Call("loadout.submit_gear","WeaponA,SidearmA")==SCO_OK && captured[0].slot==SC_LOADOUT_SLOT_PRIMARY && captured[1].slot==SC_LOADOUT_SLOT_SIDEARM,"copied public weapon slots");
+    Require(Call("loadout.cancel")==SCO_OK,"release weapon job");
+    Require(Call("loadout.equip","WeaponA")==SCO_UNAVAILABLE,"legacy synchronous weapon mapping unchanged");
+    const auto before=submits;
+    Require(Call("loadout.submit_gear","HelmetA,HelmetA")==SCO_BAD_ARG,"duplicate gear refused");
+    Require(Call("loadout.submit_gear","AmmoA")==SCO_UNAVAILABLE,"unsupported gear refused");
+    Require(Call("loadout.submit_gear","Default")==SCO_BAD_ARG && Call("loadout.submit_gear","None")==SCO_BAD_ARG,"clear/default refused");
+    Require(Call("loadout.submit_gear","Missing")==SCO_NOT_FOUND,"missing gear refused");
+    Require(Call("loadout.submit_gear",std::string(1024,'A').c_str())==SCO_BAD_ARG,"oversized gear refused");
+    Require(Call("loadout.submit_outfit","Good")==SCO_UNAVAILABLE,"spoilers required");
+    sco_arg confirm{}; confirm.type=SCO_ARG_BOOL; confirm.v.i=1;
+    Require(commands.at("loadout.spoilers")(&confirm,1,nullptr,reply,sizeof(reply))==SCO_OK,"confirm spoilers");
+    Require(Call("loadout.submit_outfit","Bad")==SCO_UNAVAILABLE && Call("loadout.submit_outfit","Duplicate")==SCO_BAD_ARG,"unsupported and duplicate outfit refused");
+    list_outfits+="[Good]\nArmor_Arms Other\n[Large]\n";
+    for(int i=0;i<17;++i) list_outfits+="Armor_Helmet HelmetA\n";
+    Require(Call("loadout.reload_lists")==SCO_OK,"reload ambiguous and large outfits");
+    Require(Call("loadout.submit_outfit","Good")==SCO_BAD_ARG,"ambiguous outfit refused");
+    Require(Call("loadout.submit_outfit","Large")==SCO_TOO_MANY,"oversized outfit refused before submit");
+    list_outfits="[Good]\nArmor_Torso TorsoA\nArmor_Helmet HelmetA\n";
+    Require(Call("loadout.reload_lists")==SCO_OK,"reload valid outfit");
+    Require(submits==before,"invalid copied selections do not call provider");
+    supported=SC_LOADOUT_VERSION_1_1; Require(Call("loadout.submit_outfit","Good")==SCO_UNAVAILABLE,"copied route old provider refuses"); supported=SC_LOADOUT_VERSION_1_2;
+    service.status=nullptr; Require(Call("loadout.submit_outfit","Good")==SCO_UNAVAILABLE,"copied route null member refuses"); service.status=Status;
+    const auto full_size=service.size; service.size=offsetof(sc_loadout_v1_2,cancel);
+    Require(Call("loadout.submit_outfit","Good")==SCO_UNAVAILABLE,"copied route short table refuses"); service.size=full_size;
+    Require(Call("loadout.submit_outfit","Good")==SCO_OK && captured.size()==2 && captured[0].slot==SC_LOADOUT_SLOT_TORSO && captured[1].slot==SC_LOADOUT_SLOT_HEAD,"outfit preserves source order");
+    SetProgress(SC_LOADOUT_JOB_PENDING,1); Require(Call("loadout.progress")==SCO_OK && std::strstr(reply,"Armor_Torso=applied"),"copied result order");
+    Require(Call("loadout.cancel")==SCO_OK,"release outfit job");
+}
+void ReentrantCancel() {
+    Reset(); Require(Call("loadout.submit","primary=Fixture")==SCO_OK,"job for reentrant cancellation");
+    reenter_cancel=true; Require(Call("loadout.cancel")==SCO_OK,"outer cancellation"); reenter_cancel=false;
+    Require(nested_cancel==SCO_UNAVAILABLE && nested==SCO_UNAVAILABLE && submits==1 && cancels==1,"recursive cancellation and replacement refused");
+    Require(Call("loadout.submit","primary=Replacement")==SCO_OK,"new job after cancellation returns");
+    SetProgress(SC_LOADOUT_JOB_PENDING,0);
+    Require(Call("loadout.progress")==SCO_OK && Call("loadout.cancel")==SCO_OK,"replacement remains retained and releasable");
+    Reset(); Require(Call("loadout.submit","primary=Fixture")==SCO_OK,"job for reentrant lookup");
+    unload_on_lookup=true; const auto prior=cancels;
+    Require(Call("loadout.cancel")==SCO_UNAVAILABLE && cancels==prior,"owner invalidated during lookup is not passed to provider");
+    Require(Call("loadout.progress")==SCO_UNAVAILABLE,"owner unloaded during lookup");
+}
 void Async() {
     Reset(); async_cap=false;
     Require(Call("loadout.submit","primary=Fixture")==SCO_UNAVAILABLE && submits==0,"async capability required independently of sync");
@@ -314,7 +393,7 @@ int main(int argc,char** argv) {
     else if (argc==2 && !std::strcmp(argv[1],"--command-refusal-submit")) ManualRefusals("loadout.submit",22,true);
     else {
         Require(argc==1,"unknown test option");
-        Sync(); Async(); ManualRefusals("loadout.slots",21); ManualRefusals("loadout.submit",22);
+        Sync(); Async(); CopiedAsync(); ReentrantCancel(); ManualRefusals("loadout.slots",21); ManualRefusals("loadout.submit",22);
     }
     sco::features::loadout::Unload();
     std::printf("loadout public route: %u checks PASS (synthetic providers; not run in game)\n",checks);

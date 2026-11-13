@@ -2,6 +2,7 @@
 // Synthetic public-service workflow; no renderer, host implementation or game.
 #include "loadout.h"
 #include "sco_content.h"
+#include "sc_loadout.h"
 #include "sco_widgets.h"
 #include <cstdio>
 #include <cstdlib>
@@ -17,13 +18,23 @@ struct Panel {
     sco_widget_event_fn event = nullptr;
     void* context = nullptr;
     unsigned accepted = 0;
-    std::map<uint32_t,uint32_t> combos;
+    std::map<uint32_t,uint32_t> combos, flags;
+    std::vector<std::string> gear_labels;
 };
 std::vector<File> files;
 Panel player, sq42;
 unsigned rejected = 0, removed = 0, unsubscribed = 0;
 sco_content_v1 content{};
 sco_widgets_v1 widgets{};
+sc_loadout_v1_2 loadout{};
+bool async_cap=true, provider=true; uint32_t supported=SC_LOADOUT_VERSION_1_2;
+unsigned submits=0, cancels=0; std::vector<sc_loadout_item> captured;
+sco_result Submit(sco_plugin*,const sc_loadout_request* request,uint64_t* job) {
+    ++submits; captured.assign(request->items,request->items+request->count); *job=42; return SCO_OK;
+}
+sco_result Status(sco_plugin*,uint64_t,sc_loadout_job_report*) { return SCO_UNAVAILABLE; }
+sco_result Cancel(sco_plugin*,uint64_t job) { (void)job; ++cancels; return SCO_OK; }
+
 
 void Require(bool condition,const char* message) {
     if (!condition) { std::fprintf(stderr,"loadout widgets: %s\n",message); std::exit(1); }
@@ -47,10 +58,12 @@ sco_result Read(sco_plugin*,uint64_t id,void* out,uint32_t* size) {
 sco_result SetPanel(sco_plugin*,const char* id,const char*,const sco_widget_node* nodes,
                     uint32_t count,uint32_t stride,sco_widget_event_fn event,void* context) {
     Require(nodes && count && stride==sizeof(sco_widget_node),"invalid panel extent");
-    std::map<uint32_t,uint32_t> combos;
+    std::map<uint32_t,uint32_t> combos, flags; std::vector<std::string> gear_labels;
     for (uint32_t i=0;i<count;++i) {
         const auto& node=nodes[i];
         Require(node.size==sizeof(node),"invalid node extent");
+        flags[node.id]=node.flags;
+        if(node.id==2) for(uint32_t j=0;j<node.item_count;++j) gear_labels.emplace_back(node.items[j]);
         // sco.widgets requires a NULL array exactly when the item count is zero.
         // A rejected replacement must preserve the previous panel and callback.
         if ((node.item_count && !node.items) || (!node.item_count && node.items)) {
@@ -64,13 +77,14 @@ sco_result SetPanel(sco_plugin*,const char* id,const char*,const sco_widget_node
     }
     Require(!std::strcmp(id,"loadout.player") || !std::strcmp(id,"loadout.sq42"),"unexpected panel id");
     auto& panel=!std::strcmp(id,"loadout.player") ? player : sq42;
-    panel.event=event; panel.context=context; ++panel.accepted; panel.combos=std::move(combos);
+    panel.event=event; panel.context=context; ++panel.accepted; panel.combos=std::move(combos); panel.flags=std::move(flags); panel.gear_labels=std::move(gear_labels);
     return SCO_OK;
 }
 sco_result RemovePanel(sco_plugin*,const char*) { ++removed; return SCO_OK; }
 sco_result Query(const char* name,uint32_t version,const void** out) {
-    Require(version==0x10000u,"consumer changed service version");
     *out=nullptr;
+    if (!std::strcmp(name,SC_LOADOUT_SERVICE_NAME)) { if(provider && version==SC_LOADOUT_VERSION_1_2 && version<=supported) *out=&loadout; return *out ? SCO_OK : SCO_NOT_FOUND; }
+    Require(version==0x10000u,"consumer changed service version");
     if (!std::strcmp(name,SCO_CONTENT_NAME)) *out=&content;
     if (!std::strcmp(name,SCO_WIDGETS_NAME)) *out=&widgets;
     return *out ? SCO_OK : SCO_NOT_FOUND;
@@ -78,40 +92,80 @@ sco_result Query(const char* name,uint32_t version,const void** out) {
 sco_result Register(sco_plugin*,const sco_command*) { return SCO_OK; }
 sco_result Subscribe(sco_plugin*,const char*,sco_event_fn,void*) { return SCO_OK; }
 sco_result Unsubscribe(sco_plugin*,const char*,sco_event_fn) { ++unsubscribed; return SCO_OK; }
-int Has(const char*) { return 0; }
+int Has(const char* name) { return async_cap && !std::strcmp(name,"game.loadout.async"); }
 void Send(const char* id,Panel& panel,uint32_t node,uint32_t kind,const char* text=nullptr) {
     Require(panel.event!=nullptr,"missing panel callback");
     sco_widget_event event{}; event.size=sizeof(event); event.node_id=node; event.kind=kind; event.text=text;
     panel.event(id,&event,panel.context);
 }
+void Select(const char* id,Panel& panel,uint32_t node,int index) {
+    sco_widget_event event{}; event.size=sizeof(event); event.node_id=node; event.kind=SCO_WIDGET_COMBO; event.index=index;
+    panel.event(id,&event,panel.context);
+}
 void Workflow(bool populated) {
-    files={{"lists/items.txt","[helmet]\nFixtureHelmet\n"}};
+    files={{"lists/items.txt","[helmet]\nFixtureHelmet\n[primary]\nFixtureGun\n"}};
     if (populated) {
         files.push_back({"lists/outfits.txt","[Fixture outfit]\nArmor_Helmet FixtureHelmet\n"});
         files.push_back({"lists/buildables.txt","[sq42]\nFixtureObject\n"});
     }
-    player={}; sq42={}; rejected=0; removed=0; unsubscribed=0;
+    player={}; sq42={}; rejected=0; removed=0; unsubscribed=0; submits=0; cancels=0; captured.clear(); async_cap=provider=true; supported=SC_LOADOUT_VERSION_1_2; loadout.size=sizeof(loadout); loadout.submit=Submit; loadout.status=Status; loadout.cancel=Cancel;
     sco_api api{}; api.size=sizeof(api); api.major=SCO_API_MAJOR; api.minor=SCO_API_MINOR;
     api.has=Has; api.register_command=Register; api.query_service=Query;
     api.subscribe=Subscribe; api.unsubscribe=Unsubscribe;
     unsigned char owner=0; auto* self=reinterpret_cast<sco_plugin*>(&owner);
     Require(sco::features::loadout::Load(&api,self)==SCO_OK,"load failed");
     Require(!rejected && player.accepted==1 && sq42.accepted==1,"initial panels rejected");
-    Require(player.combos.at(2)==1 && sq42.combos.empty(),"initial picker/confirmation mismatch");
+    Require(player.combos.at(2)==2 && sq42.combos.empty(),"initial picker/confirmation mismatch");
+    Require(player.gear_labels.size()==2 && player.gear_labels[1].find("[async only]")!=std::string::npos,"weapon label reflects async mapping");
+    async_cap=false; Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"");
+    Require(player.flags.at(27)&SCO_WIDGET_DISABLED,"capability disables submission");
+    Send("loadout.player",player,27,SCO_WIDGET_BUTTON); Require(submits==0,"forged unavailable submission refused");
+    async_cap=true; provider=false; Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"");
+    Require(player.flags.at(27)&SCO_WIDGET_DISABLED,"missing provider disables submission");
+    provider=true; supported=SC_LOADOUT_VERSION_1_1; Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"");
+    Require(player.flags.at(27)&SCO_WIDGET_DISABLED,"older provider disables submission");
+    supported=SC_LOADOUT_VERSION_1_2; loadout.size=offsetof(sc_loadout_v1_2,cancel); Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"");
+    Require(player.flags.at(27)&SCO_WIDGET_DISABLED,"short provider disables submission");
+    loadout.size=sizeof(loadout); loadout.status=nullptr; Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"");
+    Require(player.flags.at(27)&SCO_WIDGET_DISABLED,"null member disables submission");
+    loadout.status=Status; Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"");
+    Require(!(player.flags.at(27)&SCO_WIDGET_DISABLED),"available provider enables submission");
+    auto old=sq42; Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON);
+    Require(submits==0,"spoiler gate refused outfit submission");
     Send("loadout.sq42",sq42,100,SCO_WIDGET_BUTTON);
-    Require(!rejected && sq42.accepted==2,"SQ42 panel rejected after spoiler confirmation");
+    Send("loadout.sq42",old,100,SCO_WIDGET_BUTTON);
+    Require(sq42.accepted==old.accepted+1,"stale SQ42 callback ignored");
+    Require(!rejected && sq42.accepted==old.accepted+1,"SQ42 panel rejected after spoiler confirmation");
     Require(sq42.combos.at(101)==(populated ? 1u : 0u),"outfit picker count mismatch");
     Require(sq42.combos.at(130)==(populated ? 1u : 0u),"build picker count mismatch");
     Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"no matching gear");
     Require(!rejected && player.combos.at(2)==0,"empty filtered picker rejected");
     Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"");
-    Require(!rejected && player.combos.at(2)==1,"restored gear picker rejected");
+    Require(!rejected && player.combos.at(2)==2,"restored gear picker rejected");
+    Select("loadout.player",player,2,0);
+    Send("loadout.player",player,27,SCO_WIDGET_BUTTON);
+    Require(submits==1 && captured.size()==1 && captured[0].slot==SC_LOADOUT_SLOT_HEAD && !std::strcmp(captured[0].item_class,"FixtureHelmet"),"selected gear submitted");
+    Require((player.flags.at(6)&SCO_WIDGET_DISABLED) && (player.flags.at(27)&SCO_WIDGET_DISABLED) && (sq42.flags.at(104)&SCO_WIDGET_DISABLED),"retained job disables sync and async controls");
+    Send("loadout.player",player,27,SCO_WIDGET_BUTTON);
+    Require(submits==1,"retained job refuses second submission");
+    Send("loadout.player",player,24,SCO_WIDGET_BUTTON);
+    Require(cancels==1,"player releases job");
+    if(populated) {
+        Select("loadout.sq42",sq42,101,0);
+        async_cap=false; Send("loadout.sq42",sq42,105,SCO_WIDGET_BUTTON);
+        Require(sq42.flags.at(106)&SCO_WIDGET_DISABLED,"outfit submission disabled without capability");
+        Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON); Require(submits==1,"forged unavailable outfit refused");
+        async_cap=true; Send("loadout.sq42",sq42,105,SCO_WIDGET_BUTTON); Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON);
+        Require(submits==2 && captured.size()==1 && captured[0].slot==SC_LOADOUT_SLOT_HEAD,"selected outfit submitted");
+        Send("loadout.sq42",sq42,108,SCO_WIDGET_BUTTON); Require(cancels==2,"SQ42 releases job");
+    }
     sco::features::loadout::Unload(); sco::features::loadout::Unload();
     Require(removed==2 && unsubscribed==1,"unload cleanup mismatch");
 }
 }
 int main() {
     content.size=sizeof(content); content.item=Item; content.read=Read;
+    loadout.size=sizeof(loadout); loadout.submit=Submit; loadout.status=Status; loadout.cancel=Cancel;
     widgets.size=sizeof(widgets); widgets.set_panel=SetPanel; widgets.remove_panel=RemovePanel;
     Workflow(false); Workflow(true);
     std::puts("loadout widget workflow: PASS (synthetic public services; not run in game)");

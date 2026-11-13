@@ -183,7 +183,7 @@ submit/status/cancel members and requires **`game.loadout.async`**, independentl
 of those synchronous capabilities. No route falls back to a lower version or
 another mutation method. Table publication alone does not enable a backend.
 
-The Player panel displays the latest copied status of a retained job, refreshed
+The Player and SQ42 panels display the latest copied status of a retained job, refreshed
 at most once per existing 200 ms tick. It is a provider job observation, not a
 live inventory check; it also marks async capability revocation. If the service is
 unavailable or refuses, the display
@@ -193,6 +193,10 @@ inspection resumes polling. No polling submits, retries, cancels or adds a timeo
 If the widget provider rejects a panel replacement, it may continue drawing its
 previous copied panel; the plugin disables that panel's callbacks until a later
 successful publication. The latest observation cannot be shown until then.
+
+Job submit controls are disabled when the public 1.2 lifecycle or async capability
+is unavailable; callbacks recheck admission when invoked. Copied primary and sidearm
+choices are labelled async-only because synchronous copied-list mapping is unchanged.
 
 One job is retained until explicit cancellation/release, including after terminal
 status. While retained, another submit or synchronous equip refuses. Progress
@@ -229,8 +233,15 @@ also refuse before mutation; batches are never silently split. Legacy weapon, am
 grenades, clothing, body/head/eyes/hair/accessories/material variants, implicit
 magazine/default face/undersuit/medpen synthesis and old empty-slot clearing need
 separate consumer mappings, additional public contract coverage where absent,
-and validation. Copied-list/outfit selections still query 1.0 and use the
-synchronous armor/visor subset. The separate manual and curated-selector routes use the published
+and validation. The existing synchronous copied-list/outfit actions continue to query 1.0 and use the
+armor/visor subset. The Player and SQ42 panels also offer explicit 1.2 job submission
+for the selected copied gear and confirmed outfit, respectively. Commands
+`loadout.submit_gear` and `loadout.submit_outfit` use the same selections and
+one retained job; progress and cancel are available on both panels. The async
+gear route additionally maps the copied `primary` and `sidearm` sections to the
+matching public logical weapon slots. Outfit ports receive no new mapping.
+Unknown ports, duplicate slots, `None`/`Default`, and batches exceeding 16 items
+refuse before submission. The separate manual and curated-selector routes use the published
 1.1/1.2 contracts without assigning meanings to old catalogue ports. Public
 contract availability does not verify native equip or attachment behavior.
 Most legacy outfits therefore refuse; this is not full feature-parity acceptance.
