@@ -112,3 +112,15 @@ native activation refusal remains in force.
 The synthetic mission fixtures exercise publication and admission on both sides
 of the owner boundary. They do not prove engine-object lifetime or native
 teardown safety; in-game behavior remains unrun.
+
+## Startup gate module retention
+
+The entry-point startup gate is installed only when the DLL was loaded as a static
+import of the process executable (non-null `lpvReserved` in `DLL_PROCESS_ATTACH`)
+and the executable's in-memory import directory names the module. The loader holds
+such a module before `DllMain` runs, so nothing DLL-resident is published while it
+could still be released. A dynamic load (injection, late `LoadLibrary`) is refused
+before any entry patch, event, thread or callback exists. The later worker pin stays
+as defense in depth. This is a lifetime rule only: it does not establish native
+reader/worker exclusion or drain, and native activation remains refused. The
+synthetic `module_lifetime` fixture checks the OS behavior; it was not run in game.

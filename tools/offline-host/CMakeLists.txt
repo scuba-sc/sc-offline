@@ -17,6 +17,34 @@ if(BUILD_TESTING)
   target_include_directories(startup_gate_wait_test PRIVATE ../../src)
   add_test(NAME startup_gate_wait_policy COMMAND startup_gate_wait_test)
   set_tests_properties(startup_gate_wait_policy PROPERTIES TIMEOUT 15)
+  add_executable(startup_gate_load_mode_test startup_gate_load_mode_test.cpp)
+  target_include_directories(startup_gate_load_mode_test PRIVATE ../../src)
+  add_test(NAME startup_gate_load_mode_policy COMMAND startup_gate_load_mode_test)
+  set_tests_properties(startup_gate_load_mode_policy PROPERTIES TIMEOUT 15)
+  # Synthetic module-lifetime fixture: no game, launcher or product code. It proves the
+  # OS retention behavior the startup gate's load-mode rule relies on.
+  if(WIN32)
+    set(lifetime_dir "${CMAKE_CURRENT_BINARY_DIR}/module_lifetime")
+    add_library(sco_lifetime_fixture SHARED module_lifetime/sco_lifetime_fixture.c)
+    add_executable(module_lifetime_static module_lifetime/host_static.c)
+    target_link_libraries(module_lifetime_static PRIVATE sco_lifetime_fixture)
+    add_executable(module_lifetime_dynamic module_lifetime/host_dynamic.c)
+    add_dependencies(module_lifetime_dynamic sco_lifetime_fixture)
+    foreach(target sco_lifetime_fixture module_lifetime_static module_lifetime_dynamic)
+      set_target_properties(${target} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${lifetime_dir}"
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${lifetime_dir}"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${lifetime_dir}"
+        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${lifetime_dir}"
+        RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${lifetime_dir}")
+    endforeach()
+    add_test(NAME module_lifetime_static_import COMMAND module_lifetime_static
+      WORKING_DIRECTORY "${lifetime_dir}")
+    add_test(NAME module_lifetime_dynamic_load COMMAND module_lifetime_dynamic
+      WORKING_DIRECTORY "${lifetime_dir}")
+    set_tests_properties(module_lifetime_static_import module_lifetime_dynamic_load
+      PROPERTIES TIMEOUT 30)
+  endif()
   # Standalone file adapter tests only: neither target builds offline_host.cpp
   # with ASOP enabled, or changes the product's native-activation refusal.
   if(WIN32 AND EXISTS "${SCO_HOST_SOURCE_DIR}/include/sco/game/asop_selection.h"

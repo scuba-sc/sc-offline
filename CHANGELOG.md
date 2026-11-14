@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Install the startup gate only for a static-import load of the module, so loader retention precedes `DllMain`; a dynamic load is refused before any entry patch, event, thread or callback. Portable policy tests and a synthetic module-lifetime fixture only; native activation remains refused; **not run in game**.
+
 - Identify copied Loadout lists by data-pack ID and relative path, refuse duplicate, malformed or unreadable sources, and invalidate selections atomically on reload. Synthetic multi-pack tests only; full outfit parity remains open; **not run in game**.
 
 - Restore a copied first admissible Build catalogue selection before camera acquisition while preserving explicit selections and safe refusal. Synthetic tests only; G5 and the focus issue remain open; **not run in game**.

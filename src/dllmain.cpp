@@ -15,6 +15,7 @@
 #include "version.h"
 #include "native_activation_policy.h"
 #include "startup_gate_wait.h"
+#include "startup_gate_load_mode.h"
 #ifdef SCO_ASOP_HOST_COMPOSITION
 #include "asop_shell.h"
 #else
@@ -135,9 +136,36 @@ static DWORD WINAPI StartupGateProgressThread(LPVOID) {
     }
 }
 
-enum class StartupGateInstallResult { Refused, NotTarget, Installed };
+enum class StartupGateInstallResult { Refused, RefusedLoadMode, NotTarget, Installed };
 
-static StartupGateInstallResult InstallStartupGate() {
+// Runs under the loader lock: no allocation, logging or thread creation. Reports whether the
+// process executable's in-memory import directory names this module's file.
+static bool ProcessImageImportsModule(HMODULE self) {
+    wchar_t modulePath[MAX_PATH];
+    const DWORD length = GetModuleFileNameW(self, modulePath, MAX_PATH);
+    if (!length || length >= MAX_PATH) return false;
+    const wchar_t* baseName = PathFindFileNameW(modulePath);
+    char narrow[MAX_PATH];
+    size_t count = 0;
+    for (; baseName[count]; ++count) {
+        if (baseName[count] > 0x7F) return false;
+        narrow[count] = static_cast<char>(baseName[count]);
+    }
+    narrow[count] = '\0';
+
+    auto* image = reinterpret_cast<const unsigned char*>(GetModuleHandleW(nullptr));
+    if (!image) return false;
+    auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE || dos->e_lfanew <= 0) return false;
+    auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(image + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE) return false;
+    const DWORD imageSize = nt->OptionalHeader.SizeOfImage;
+    const auto& directory = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    return sc_offline::startup_gate_load_mode::ImportTableNames(
+        image, imageSize, directory.VirtualAddress, directory.Size, narrow);
+}
+
+static StartupGateInstallResult InstallStartupGate(HMODULE self, LPVOID attachReserved) {
     if (!offline_host::NativeActivationAvailable()) return StartupGateInstallResult::Refused;
 #ifndef SCO_OFFLINE_G1_HOST
     return StartupGateInstallResult::Refused;
@@ -148,6 +176,16 @@ static StartupGateInstallResult InstallStartupGate() {
     const DWORD length = GetModuleFileNameW(nullptr, path, MAX_PATH);
     if (!base || !length || length >= MAX_PATH || _wcsicmp(PathFindFileNameW(path), kTargetModule) != 0)
         return StartupGateInstallResult::NotTarget;
+    // Only a static import is retained by the loader before DllMain; refuse anything else
+    // before any patch, event, thread or callback is published.
+    struct LoadModeOperations {
+        HMODULE self;
+        bool ProcessImageImportsModule() { return ::ProcessImageImportsModule(self); }
+    } loadModeOperations{self};
+    if (sc_offline::startup_gate_load_mode::Evaluate(
+            sc_offline::startup_gate_load_mode::FromAttachReserved(attachReserved), loadModeOperations) !=
+        sc_offline::startup_gate_load_mode::Decision::Retained)
+        return StartupGateInstallResult::RefusedLoadMode;
     auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
     if (dos->e_magic != IMAGE_DOS_SIGNATURE) StartupGateFailStop(sc_offline::startup_gate_wait::Outcome::SetupFailed);
     auto* nt = reinterpret_cast<IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
@@ -202,9 +240,11 @@ static bool RetainStartupGateModule() {
         reinterpret_cast<LPCWSTR>(&StartupGateWait), &g_startupGateModulePin) != FALSE;
 }
 
-// The process-lifetime pin is acquired at ModThread entry, avoiding a loader-lock
-// call from DllMain. An independent external unload before that pin is acquired
-// is outside this local lifetime guarantee.
+// The gate is only installed for a static-import load, whose loader retention
+// precedes DllMain, so nothing DLL-resident is published while the module could be
+// released. A dynamically loaded copy is refused before publication. The
+// process-lifetime pin acquired at ModThread entry (avoiding a loader-lock call from
+// DllMain) is kept as defense in depth.
 
 // Read-only anti-cheat inspection; no service/process/module state is modified.
 // Unknown is a refusal, including access-denied, partial enumeration and query errors.
@@ -883,11 +923,11 @@ static DWORD WINAPI ModThread(LPVOID param) {
 #endif // SCO_OFFLINE_G1_HOST
 }
 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(hModule);
         InitLog();
-        const auto gate = InstallStartupGate();
+        const auto gate = InstallStartupGate(hModule, reserved);
         g_startupGateInstalled.store(gate == StartupGateInstallResult::Installed, std::memory_order_release);
         switch (gate) {
         case StartupGateInstallResult::Refused:
@@ -895,6 +935,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID) {
             // and minimal; do not enter the logger or start DLL-owned code that could
             // outlive an unpinned module.
             OutputDebugStringA("[sc-offline] offline startup unavailable: native reader and worker exclusion and drain are not proven; no worker started\r\n");
+            return TRUE;
+        case StartupGateInstallResult::RefusedLoadMode:
+            OutputDebugStringA("[sc-offline] offline startup unavailable: module was not loaded through the game executable's import table; no gate, worker or callback was published\r\n");
             return TRUE;
         case StartupGateInstallResult::NotTarget:
             return TRUE;
