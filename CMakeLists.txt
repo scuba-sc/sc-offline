@@ -246,6 +246,15 @@ if(TARGET sco_game_host)
   else()
     message(STATUS "Core lacks request_stop/RequestStopDetailed: product host remains fail-closed")
   endif()
+  # Native startup runs only on a Core that offers the opt-in process-retained composition: module
+  # and dependencies retained until exit, a truthful install-quiescence callback, stop as closure.
+  # Without it the product keeps refusing native startup (native_activation_policy.h).
+  if(SCO_GAME_HOST_H MATCHES "enum[ \t]+class[ \t]+Composition[^;{]*\{[^}]*ProcessRetained" AND
+     SCO_GAME_HOST_H MATCHES "Composition[ \t]+composition[ \t]*=")
+    target_compile_definitions(dinput8 PRIVATE SCO_CORE_PROCESS_RETAINED_COMPOSITION)
+  else()
+    message(STATUS "Core lacks the process-retained host composition: native startup remains refused with this Core")
+  endif()
 elseif(SCO_HOST_SOURCE_DIR)
   message(FATAL_ERROR "SCO_HOST_SOURCE_DIR lacks the required sco_game_host composition target")
 else()

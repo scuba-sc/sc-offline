@@ -69,10 +69,18 @@ static const wchar_t* kTargetModule = L"StarCitizen.exe";
 // 12-byte absolute jump and puts the original bytes back before the entry runs. Only the main thread
 // exists at the entry, so the restore can't race another thread.
 static HANDLE g_startupDone = nullptr;
-// ModThread pins this module before any refusal/unload path, so the gate and
-// reporter code remain backed even if its ordinary reference is dropped.
+// ModThread pins this module before any refusal path, so the gate and reporter
+// code remain backed even if its ordinary reference is dropped. Nothing ever
+// unloads the module: it stays mapped until the process exits.
 static HMODULE g_startupGateModulePin = nullptr;
 static std::atomic<bool> g_startupGateInstalled{false};
+// Set by ReleaseStartupGate() before the event is signalled: the game's entry point is no longer parked.
+static std::atomic<bool> g_startupGateReleased{false};
+// Thread id of the game's main thread, recorded when it enters the gate at the entry point (0 until then).
+static std::atomic<DWORD> g_gateThreadId{0};
+// Thread id inside the product's own StartHostKit() -> offline_host::Start() window, else 0.
+static std::atomic<DWORD> g_hostStartThreadId{0};
+static std::atomic<unsigned> g_quiesceGateHeld{0}, g_quiesceAdmittedStart{0}, g_quiesceRefused{0};
 static uint8_t* g_entry = nullptr;
 static uint8_t g_entrySaved[12];
 static std::atomic<uint64_t> g_startupGateProgressMs{0};
@@ -80,8 +88,44 @@ static constexpr DWORD kGateTimeoutMs = 60000;
 static constexpr DWORD kGateProgressIntervalMs = 5000;
 
 static void ReleaseStartupGate() {
+    g_startupGateReleased.store(true, std::memory_order_release);
     if (g_startupDone) SetEvent(g_startupDone);
 }
+
+#ifdef SCO_CORE_PROCESS_RETAINED_COMPOSITION
+// Core's install-quiescence attestation (Platform::gameReadersQuiesced): it calls this immediately
+// before each native mutation (quit hook and pak hook in Prepare; game-service hooks in Start) and
+// refuses on false. Only atomics are read; it never blocks, allocates or throws. True in exactly two
+// situations, anything else is false:
+//
+// (i) Gate held. The startup gate is installed and not yet released, so the game's main thread is
+//     still parked at the executable's entry point. This is real quiescence of the executable's
+//     code: no game code of the executable has run yet. It says nothing about threads the loader or
+//     other modules started before the entry point (ModThread logs the thread count at the gate).
+//
+// (ii) Admitted start. The caller is the thread on which the product itself opened the start window,
+//     inside its own StartHostKit() -> offline_host::Start() call (the message-hook thread). It is
+//     not required to equal the gate thread: nothing proves they are the same thread, and the first
+//     Start attempt logs whether they are. This is NOT quiescence: other engine threads keep running
+//     while the game services install their hooks on this thread. It matches how the last shipped
+//     versions started their services and is a known, documented deviation from the
+//     install-quiescence rule, to be revisited after in-game evidence. It admits no other thread or
+//     time: the window is opened and closed (RAII) only around that one call.
+static bool InstallQuiescenceAttested(void*) noexcept {
+    if (g_startupGateInstalled.load(std::memory_order_acquire) &&
+        !g_startupGateReleased.load(std::memory_order_acquire)) {
+        g_quiesceGateHeld.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+    const DWORD self = GetCurrentThreadId();
+    if (g_hostStartThreadId.load(std::memory_order_acquire) == self) {
+        g_quiesceAdmittedStart.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+    g_quiesceRefused.fetch_add(1, std::memory_order_relaxed);
+    return false;
+}
+#endif
 
 [[noreturn]] static void StartupGateFailStop(sc_offline::startup_gate_wait::Outcome outcome) {
     DWORD exitCode = 0xC0DE0004;
@@ -103,6 +147,7 @@ static void ReleaseStartupGate() {
 }
 
 extern "C" void StartupGateWait() {
+    g_gateThreadId.store(GetCurrentThreadId(), std::memory_order_release); // game main thread, for the attestation
     struct Operations {
         uint64_t NowMs() const { return GetTickCount64(); }
         sc_offline::startup_gate_wait::WaitResult Wait(uint64_t timeoutMs) const {
@@ -294,7 +339,42 @@ static AcCheck InspectAntiCheat() {
     return unknown ? AcCheck::Unknown : AcCheck::Clear;
 }
 
+// Startup/shutdown instrumentation for mod.log. Counts and names only, never addresses. Called from
+// ModThread or the game thread, never from DllMain or the gate wait.
+static ULONGLONG g_modThreadStartMs = 0;
+
+// Threads of this process, by a Toolhelp32 snapshot; -1 when the snapshot is unavailable.
+static long ProcessThreadCount() {
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return -1;
+    THREADENTRY32 entry{}; entry.dwSize = sizeof(entry);
+    const DWORD pid = GetCurrentProcessId();
+    long count = 0;
+    if (Thread32First(snapshot, &entry)) {
+        do { if (entry.th32OwnerProcessID == pid) ++count; } while (Thread32Next(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+    return count;
+}
+
 #ifdef SCO_OFFLINE_G1_HOST
+static const char* PhaseName(sco::game::host::Phase phase) {
+    using P = sco::game::host::Phase;
+    switch (phase) {
+    case P::Idle: return "Idle";
+    case P::Preparing: return "Preparing";
+    case P::Prepared: return "Prepared";
+    case P::Activating: return "Activating";
+    case P::Activated: return "Activated";
+    case P::Starting: return "Starting";
+    case P::Running: return "Running";
+    case P::Stopping: return "Stopping";
+    case P::Stopped: return "Stopped";
+    case P::Failed: return "Failed";
+    }
+    return "?";
+}
+
 // session/officialNetwork come from the live OS reading in admission_evidence.h / admission_probe.cpp
 // (firewall rule store + this process's TCP table). Launcher flags, IsOnline patch success and EAC
 // absence are NOT evidence. Every decision lives there; this file only maps Tri onto the host's enums.
@@ -392,9 +472,28 @@ static void LogEvidenceIfChanged(const admission::Evidence& ev) {
         d.profiles, d.rules, d.ms, failure);
 }
 
+// [startup] 1/8, once: which readings were not Clear, by name only (later changes: the [g1] line).
+static void LogAdmissionMilestone(const admission::Evidence& ev) {
+    static std::atomic<bool> logged{false};
+    if (logged.exchange(true)) return;
+    char names[64] = "";
+    size_t used = 0;
+    const auto add = [&](Tri t, const char* name) {
+        if (t == Tri::Clear) return;
+        used += static_cast<size_t>(std::snprintf(names + used, sizeof(names) - used, "%s%s", used ? ", " : "", name));
+    };
+    add(ev.session, "session");
+    add(ev.antiCheat, "anti-cheat");
+    add(ev.officialNetwork, "network");
+    add(ev.targetProcess, "target");
+    if (used) Log("[startup] 1/8 admission inspection: not clear: %s", names);
+    else Log("[startup] 1/8 admission inspection: all clear");
+}
+
 static sco::game::host::Admission InspectOfflineEnvironment() {
     const admission::Evidence ev = g_evidence.Get(InspectTargetProcess()); // target read fresh every call
     LogEvidenceIfChanged(ev);
+    LogAdmissionMilestone(ev);
     sco::game::host::Admission evidence;
     evidence.session = ToSession(ev.session);
     evidence.officialNetwork = ToCheck(ev.officialNetwork);
@@ -422,9 +521,16 @@ static void StartOffline() {
     g_signaturesResolved = sco::game::host::Status().signaturesResolved;
 #endif
     g_offline = ApplyOfflinePatches();
-    if (!g_offline) return;
+    // Per-patch ok/failed lines follow in LogStartup; the patch results are private to patches.cpp.
+    Log("[startup] 3/8 offline patches: %s", g_offline ? "applied (per-patch results follow)" : "refused or failed");
+    if (!g_offline) {
+        Log("[startup] host stays prepared: no plugins or menu will load; the game continues with whatever patches the per-patch lines list; close the game");
+        return;
+    }
     InstallHooks();
-    if (ResolveTeleportApi()) {
+    Log("[startup] 4/8 hooks installed: %s", g_hooksInstalled ? "yes" : "none");
+    const bool teleportApi = ResolveTeleportApi();
+    if (teleportApi) {
         ResolveSpawnApi(g_text, g_rdata);
         ResolveNpcApi(g_text);
         ResolveLegacyPlacementApi(g_text, g_rdata); // unrelated legacy NPC/contracts helpers only
@@ -436,6 +542,8 @@ static void StartOffline() {
         ResolveHangarsApi();
 #endif
     }
+    Log("[startup] 5/8 API resolution: teleport=%s spawner=%s contracts=%s", teleportApi ? "ok" : "no",
+        SpawnerReady() ? "ok" : "no", ContractsReady() ? "ok" : "no");
 }
 
 static void LogStartup() {
@@ -580,6 +688,10 @@ static bool PrepareHostKit() {
     sco::game::host::Options options;
     options.inspect = InspectOfflineEnvironment;
     options.image = &original;
+#ifdef SCO_CORE_PROCESS_RETAINED_COMPOSITION
+    pf.gameReadersQuiesced = InstallQuiescenceAttested;
+    pf.gameReadersContext = nullptr;
+#endif
     options.platform = std::move(pf);
     if (!offline_host::AttachShutdownOwner(options)) {
         Log("[app] product owner unavailable or core stop contract missing; host remains refused");
@@ -602,6 +714,9 @@ static bool PrepareHostKit() {
     }
     g_quitHookStatus = sco::game::host::Status().quitHookInstalled ? "installed by game pack" : "unavailable";
     if (result != sco::Result::Ok) Log("[app] offline admission/prepare refused: %s", sco::ResultName(result));
+    Log("[startup] 2/8 host Prepare: %s (phase %s; quiescence attested gate-held=%u refused=%u)", sco::ResultName(result),
+        PhaseName(sco::game::host::Status().phase), g_quiesceGateHeld.load(std::memory_order_relaxed),
+        g_quiesceRefused.load(std::memory_order_relaxed));
     return result == sco::Result::Ok;
 #else
     Log("[app] offline startup unavailable: published host pin lacks G1; no private fallback");
@@ -617,6 +732,9 @@ static void StopHostKit(const char* trigger) {
     RequestLifecycleStop(trigger);
 #ifdef SCO_OFFLINE_G1_HOST
     InvalidateEvidence();
+    // Closure only (admission closed, game.exit once, nothing unloaded). Core's quit hook runs the
+    // same closure; a repeat is Ok. Nothing waits here.
+    Log("[shutdown] game-thread closure (%s): %s", trigger, sco::ResultName(offline_host::Stop()));
 #else
     (void)trigger;
 #endif
@@ -634,8 +752,37 @@ static void OnContractActorDied(const char*, const void* data, void*) {
 static void StartHostKit() {
 #ifdef SCO_OFFLINE_G1_HOST
     InvalidateEvidence(); // Start re-inspects: no positive reading carried over from Prepare
-    const sco::Result result = offline_host::Start();
+    // Attestation case (ii): the window is open only around this one call, on this thread, and is
+    // closed on every exit path (including an exception out of Start).
+    struct StartWindow {
+        StartWindow() noexcept { g_hostStartThreadId.store(GetCurrentThreadId(), std::memory_order_release); }
+        ~StartWindow() { g_hostStartThreadId.store(0, std::memory_order_release); }
+    };
+    const sco::Result result = [] { StartWindow window; return offline_host::Start(); }();
     g_hostKitStarted = result == sco::Result::Ok;
+    {   // [startup] 7/8: the first attempt, then only a changed result (retries run until admitted).
+        static unsigned attempts = 0;
+        static int lastLogged = -1;
+        ++attempts;
+        if (attempts == 1 || static_cast<int>(result) != lastLogged) {
+            lastLogged = static_cast<int>(result);
+            char threads[48] = "";
+            if (attempts == 1)
+                std::snprintf(threads, sizeof(threads), "; start-thread==gate-thread: %s",
+                    GetCurrentThreadId() == g_gateThreadId.load(std::memory_order_acquire) ? "yes" : "no");
+            Log("[startup] 7/8 host Start: attempt %u: %s (phase %s; attested admitted-start=%u refused=%u%s)",
+                attempts, sco::ResultName(result), PhaseName(sco::game::host::Status().phase),
+                g_quiesceAdmittedStart.load(std::memory_order_relaxed), g_quiesceRefused.load(std::memory_order_relaxed),
+                threads);
+        }
+    }
+    if (!g_hostKitStarted && sco::game::host::Status().phase == sco::game::host::Phase::Failed) {
+        static bool failureLogged = false; // Failed is terminal: no further retry follows
+        if (!failureLogged) {
+            failureLogged = true;
+            Log("[startup] host start failed permanently: the game continues with the offline patches but without plugins, services or menu; close the game");
+        }
+    }
     static sc_offline::StartDiagnostics diagnostics;
     const auto diagnostic = diagnostics.Observe(g_hostKitStarted, static_cast<int32_t>(result));
     if (diagnostic == sc_offline::StartDiagnosticAction::Refused)
@@ -686,14 +833,31 @@ static void OnMainThreadTick() {
     // Hold the exact OwnedShutdown carried in host Options through every
     // product consumer invoked by this admitted callback.
     auto ownerRead = offline_host::TryRead();
-    if (!ownerRead) { RequestLifecycleStop("owner admission closed"); return; }
+    if (!ownerRead) { StopHostKit("owner admission closed"); return; }
     const DWORD now = GetTickCount();
     // Re-inspect BEFORE cadence, OS callbacks or retained legacy consumers. Lost
     // admission cancels pending app tasks through G1 without executing them.
-    if (offline_host::Tick(now) != sco::Result::Ok || !offline_host::Running()) {
+    const sco::Result tick = offline_host::Tick(now);
+    if (!offline_host::Running()) {
         InvalidateEvidence();
-        RequestLifecycleStop("tick admission lost");
+        StopHostKit("tick admission lost"); // game thread: request, then Core's closure
         return;
+    }
+    if (tick != sco::Result::Ok) {
+        // Still Running: a transient refusal (re-entrant callback in a plugin callout, Core's
+        // control gate busy). Skip this tick entirely and try again on the next message.
+        static bool skipLogged = false;
+        if (!skipLogged) {
+            skipLogged = true;
+            Log("[app] tick skipped: %s while the host is still Running; retrying on the next message (logged once)",
+                sco::ResultName(tick));
+        }
+        return;
+    }
+    static bool firstTickLogged = false;
+    if (!firstTickLogged) {
+        firstTickLogged = true;
+        Log("[startup] 8/8 first game-thread tick: ok");
     }
 #ifdef SCO_ASOP_HOST_COMPOSITION
     offline::asop::Pump(now); // EVERY admitted message, never behind tick cadence.
@@ -732,6 +896,7 @@ private:
 };
 
 static void RequestLifecycleStop(const char* trigger) {
+    if (!g_stopRequestIssued.load(std::memory_order_acquire)) Log("[shutdown] 1/3 stop requested: %s", trigger);
     Menu_RequestStop();
     g_hookCallbackAdmission.Close();
     if (g_hookCallbackAdmission.ClosedAndDrained() && g_hookCallbacksDrainedEvent)
@@ -739,7 +904,7 @@ static void RequestLifecycleStop(const char* trigger) {
     if (!g_stopRequestIssued.exchange(true, std::memory_order_acq_rel)) {
 #ifdef SCO_OFFLINE_G1_HOST
         const auto request = offline_host::RequestStop();
-        Log("[app] lifecycle stop request (%s): result=%s phase=%u dependency=%u; backing stays retained",
+        Log("[app] lifecycle stop request (%s): result=%s phase=%u dependency=%u; closure only, backing stays retained",
             trigger, sco::ResultName(request.result), static_cast<unsigned>(request.phase),
             static_cast<unsigned>(request.dependencies));
 #else
@@ -777,9 +942,9 @@ static BOOL CALLBACK FindGameWindow(HWND hwnd, LPARAM out) {
 }
 
 // Set only once ModThread has passed the fail-closed gate and the early refusal
-// path that unloads this module. The sink is an atomic borrowed callback in
-// sco-core; core has no in-flight sink drain, so do not publish it on paths that
-// may return or unload the DLL.
+// paths. The sink is an atomic borrowed callback in sco-core; core has no in-flight
+// sink drain, so do not publish it on paths that may return early. The module is
+// pinned and never unloaded, but a refused start should not leave a callback behind.
 static void ForwardCoreLog(const char* line) { Log("%s", line); }
 
 // The message hook is the bootstrap's, not teleport's: it starts the host kit (and with it the
@@ -816,18 +981,31 @@ static void RunMainThreadService() {
         }
         PostMessageW(hwnd, WM_NULL, 0, 0);
     }
-    // An explicit request can originate inside this hook. Wait for all admitted
-    // callbacks to return before the independent thread drains their owner.
+    // An explicit request can originate inside this hook. Wait, bounded, for admitted callbacks to
+    // return before the independent thread drains their owner. Timing out changes nothing else:
+    // the hook, the module and every dependency stay retained, and the drains below are bounded too.
+    constexpr DWORD kHookDrainWaitMs = 5000;
+    const ULONGLONG waitStartMs = GetTickCount64();
     bool reportedPending = false;
+    bool callbacksDrained = true;
     while (!g_hookCallbackAdmission.ClosedAndDrained()) {
-        const DWORD drained = WaitForSingleObject(g_hookCallbacksDrainedEvent, 1000);
+        const ULONGLONG elapsedMs = GetTickCount64() - waitStartMs;
+        if (elapsedMs >= kHookDrainWaitMs) { callbacksDrained = false; break; }
+        const DWORD slice = static_cast<DWORD>(kHookDrainWaitMs - elapsedMs < 1000 ? kHookDrainWaitMs - elapsedMs : 1000);
+        const DWORD drained = WaitForSingleObject(g_hookCallbacksDrainedEvent, slice);
         if (drained == WAIT_OBJECT_0) continue;
         if (!reportedPending) {
-            Log("[app] admitted hook callback is still active; controller will wait and retain backing");
+            Log("[app] admitted hook callback is still active; waiting up to %lu ms, then continuing retained",
+                static_cast<unsigned long>(kHookDrainWaitMs));
             reportedPending = true;
         }
-        if (drained == WAIT_FAILED) Sleep(1000); // retain; never drain around an uncertain callback
+        if (drained == WAIT_FAILED) Sleep(slice); // never spin; the bound above still applies
     }
+    if (callbacksDrained)
+        Log("[shutdown] 2/3 hook callbacks drained after %llu ms", static_cast<unsigned long long>(GetTickCount64() - waitStartMs));
+    else
+        Log("[shutdown] 2/3 hook callback wait timed out after %lu ms; continuing, everything stays retained",
+            static_cast<unsigned long>(kHookDrainWaitMs));
     // This registration path has no entry fence proving no thread has entered
     // GetMsgProc but not yet executed HookCallbackLease::Enter. Keep the hook
     // registered and its HHOOK stable. After Close, later entries take only the
@@ -840,18 +1018,29 @@ static void RunMainThreadService() {
     const auto menu = Menu_Drain(1000);
     Log("[menu] worker drain: state=%u status=%u backing=%u; product backing remains process-retained",
         static_cast<unsigned>(menu.worker), static_cast<unsigned>(menu.status), static_cast<unsigned>(menu.backing));
+    // Closure itself runs on the game thread (Core's quit hook, a tick, or StopHostKit); this only reads it.
+    const auto closurePhase = sco::game::host::Status().phase;
+    Log("[shutdown] 3/3 closure: core phase %s (%s)", PhaseName(closurePhase),
+        closurePhase == sco::game::host::Phase::Stopped ? "closed, nothing unloaded" :
+        closurePhase == sco::game::host::Phase::Failed ? "closure failed, backing retained" :
+        "closure not yet run on the game thread, backing retained");
 #endif
 }
 
 static DWORD WINAPI ModThread(LPVOID param) {
-    HMODULE self = static_cast<HMODULE>(param);
+    (void)param; // the module is pinned and never unloaded, so no path needs its handle
 #ifdef SCO_OFFLINE_G1_HOST
     if (!RetainStartupGateModule())
         StartupGateFailStop(sc_offline::startup_gate_wait::Outcome::SetupFailed);
+    g_modThreadStartMs = GetTickCount64();
 #endif
     OpenConsole();
     Log(SCO_TITLE " (" SCO_BASED_ON ")");
     Log("Bug reports: https://github.com/scuba-sc/sc-offline/issues");
+#ifdef SCO_OFFLINE_G1_HOST
+    Log("[startup] threads in process at the gate: %ld (gate installed: %s)", ProcessThreadCount(),
+        g_startupGateInstalled.load(std::memory_order_acquire) ? "yes" : "no");
+#endif
 
     if (!offline_host::NativeActivationAvailable()) {
         Log("[app] offline startup unavailable: native reader and worker exclusion and drain are not proven; close the game and await a validated build");
@@ -882,10 +1071,8 @@ static DWORD WINAPI ModThread(LPVOID param) {
         }
         Log("[!] Launch Star Citizen offline with no EAC, then load this. Offline startup is refused; close the game.");
         ReleaseStartupGate();
-        // This delay leaves time to read the refusal; the gate module is pinned,
-        // so it is not used as proof that the waiter or reporter has exited.
-        Sleep(5000);
-        FreeLibraryAndExitThread(self, 0);
+        // The module stays loaded (pinned, retained until exit); only this worker returns.
+        return 0;
     }
     Log("[app] anti-cheat inspection clear; offline/network admission still required");
     if (ProcessElevated())
@@ -911,11 +1098,12 @@ static DWORD WINAPI ModThread(LPVOID param) {
     }
 
     // No core host work occurs before this point. Keep the borrowed sink out of
-    // the fail-closed and early-unload paths above.
+    // the fail-closed and early-refusal paths above.
     sco::SetLogSink(ForwardCoreLog);
     ReadStartOptions();
     StartOffline();
     ReleaseStartupGate();
+    Log("[startup] 6/8 gate released after %llu ms", static_cast<unsigned long long>(GetTickCount64() - g_modThreadStartMs));
     LogStartup();
     RunMainThreadService();
 

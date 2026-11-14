@@ -48,3 +48,14 @@ state and content through public contracts. Missing capabilities mean unavailabl
 not a private engine fallback. Contracts land upstream before consumers move their
 pin. See [architecture](architecture.md), [NPC and inspector tutorials](sdk-workflows.md)
 and the [pending acceptance ledger](status.md).
+
+## 2026-11-13: run on the process-retained composition
+
+Product-owner decision: sc-offline runs on the Core's opt-in process-retained host
+composition, with the bar "loads and works in game like the last shipped version".
+The product then relies on retain-until-exit (no unload, stop is closure) instead of a
+reader/worker drain proof. Install quiescence is attested only while the entry gate is
+held, plus the game thread's own service start, which is a known deviation to revisit
+after in-game evidence. A Core without the composition keeps the native-startup refusal.
+No in-game result supports this yet; see [host composition](host-composition.md) and the
+[pending acceptance ledger](status.md).

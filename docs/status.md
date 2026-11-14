@@ -1,15 +1,28 @@
 # What is not verified in game
 
+## 2026-11-13: process-retained native startup — NOT RUN
+
+With a Core that provides `Composition::ProcessRetained`, the product's native startup
+is enabled under retain-until-exit (module pinned and never unloaded, stop is closure,
+no restart). The Core now pinned in `external/sco-core` (`2c59c2b`) provides it, so
+activation is ON with the current pin; it is OFF only when building against an older Core.
+Compile, static source checks and synthetic host tests only. Not verified in game: that
+the game loads and behaves like the last shipped version, engine-object lifetime inside
+hooks, real hook behavior, and that starting the game services on the game thread
+(a documented deviation from the install-quiescence rule) is safe. See
+[host composition](host-composition.md).
+
 ## Current local development pairing
 
-The development gitlink selects Core `4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd`,
-tree `b80a97a9af8d19c447399922fa0664ecc22d4190`, with unpublished
-`2.4.1-dev.3` archives. [SDK coordinates](sdk-candidate.md) records the matching
-plugin and host-source digests. This pairing includes the additive storage,
-diagnostic and widget contract packet; earlier stable/development receipts do
-not recertify it. The paired-source runner requires a new clean committed
-Offline identity before qualification. Native startup and ASOP composition
-remain refused; **not run in game**.
+The development gitlink selects Core `2c59c2b9e5fdb50e3d4ee6c795e4edf730dd19ae`,
+which adds the opt-in process-retained host composition, with the development SDK
+coordinate `2.4.1-dev.4`. [SDK coordinates](sdk-candidate.md) still records the
+earlier `2.4.1-dev.3` digests; archive digests for this pairing are not recorded
+there yet. Earlier stable/development receipts do not recertify it. The paired-source
+runner requires a new clean committed Offline identity before qualification. Native
+startup is ON with this pin (process-retained, retain-until-exit) and is OFF only
+when building against an older Core; ASOP composition remains refused. **Not run in
+game.**
 
 ## Historical stable SDK 2.4.0 consumer integration
 

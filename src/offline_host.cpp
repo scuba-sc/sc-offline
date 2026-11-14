@@ -108,17 +108,18 @@ gh::HostReport StopReport(sco::Result result, gh::Phase phase,
 
 #ifdef SCO_CORE_NON_DRAINING_STOP_API
 namespace {
+// Retain-until-exit: the module is pinned for the life of the process, so no reference is ever
+// released and the owner below is only a handle that proves the pin was taken.
 struct ModulePin {
     HMODULE module;
-    ~ModulePin() { if (module) FreeLibrary(module); }
 };
 
 std::shared_ptr<const void> PinModule(const void* address) noexcept {
     HMODULE module = nullptr;
-    if (!address || !GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+    if (!address || !GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
             reinterpret_cast<LPCWSTR>(address), &module)) return {};
     auto* pin = new (std::nothrow) ModulePin{module};
-    if (!pin) { FreeLibrary(module); return {}; }
+    if (!pin) return {}; // the pin is permanent; there is nothing to release
     try { return std::shared_ptr<const void>(pin); }
     catch (...) { return {}; } // shared_ptr deletes pin if control-block allocation fails
 }
@@ -200,8 +201,10 @@ sco::game::host::HostReport RequestStop() noexcept {
 #ifdef SCO_CORE_NON_DRAINING_STOP_API
     if (!NativeActivationAvailable())
         return StopReport(sco::Result::Unavailable, gh::Phase::Idle, gh::DependencyDisposition::NeverExposed);
-    // Legacy Prepare does not adopt a detailed HostCapsule, so the Core report
-    // is Unavailable here. Owner closure is independent and remains retained.
+    // Under the process-retained composition Core reports Ok with the retained dependency
+    // disposition and leaves the closure to a game-thread Stop (the product's Tick refuses once a
+    // stop is requested, so Core's own "next Tick" closure does not happen here); before Prepare
+    // it is Unavailable. Owner closure is independent and remains retained.
     return detail::RequestOwnedStop(stopRequest, [] { return ProductOwner(); });
 #else
     return StopReport(sco::Result::Unavailable, gh::Phase::Idle, gh::DependencyDisposition::NeverExposed);
@@ -219,14 +222,18 @@ OwnerDrain DrainRequestedStop(uint32_t timeoutMs) noexcept {
 }
 
 sco::Result Prepare(gh::Options options) {
-    // Core Prepare owns a private registry candidate, but this product cannot
-    // yet prove the image, resolver, reader and worker lifetimes it requires.
+    // Native startup is available only on a Core with the process-retained composition (see
+    // native_activation_policy.h); any other Core refuses here.
     if (RestartRequired() || !NativeActivationAvailable()) return sco::Result::Unavailable;
-#ifndef SCO_CORE_NON_DRAINING_STOP_API
+#if !defined(SCO_CORE_NON_DRAINING_STOP_API) || !defined(SCO_CORE_PROCESS_RETAINED_COMPOSITION)
     (void)options;
     return sco::Result::Unavailable;
 #else
     if (!options.shutdownOwner || options.shutdownOwner != ProductOwner()) return sco::Result::BadArg;
+    // The shell's install-quiescence attestation is mandatory; Core refuses without it too, but a
+    // missing callback is a shell bug and is reported as one.
+    if (!options.platform.gameReadersQuiesced) return sco::Result::BadArg;
+    options.composition = gh::Composition::ProcessRetained;
     // Required game-pack hooks, never a shell WM_QUIT-only or private-loader fallback.
     options.quit = gh::QuitPolicy::Required;
     options.dataCoreHook = gh::DataCoreHook::Required;
@@ -257,9 +264,15 @@ sco::Result Tick(uint32_t now) {
 #endif
 }
 sco::Result Stop() {
-    // Legacy game-thread Stop can drain synchronously. Product shutdown must
-    // close owner admission and let the independent controller drain it.
-    return RequestStop().result;
+    // Never a drain. The product request closes owner admission and the independent controller
+    // drains it. Under the process-retained composition Core's Stop is closure only (admission
+    // closed, game.exit dispatched once, nothing unloaded), so on the game thread it follows the
+    // request; a repeat after closure is Ok. Elsewhere this stays the request alone.
+    const auto request = RequestStop();
+#ifdef SCO_CORE_PROCESS_RETAINED_COMPOSITION
+    if (NativeActivationAvailable()) return gh::Stop();
+#endif
+    return request.result;
 }
 bool Running() { return !RestartRequired() && NativeActivationAvailable() && gh::Status().phase == gh::Phase::Running; }
 } // namespace offline_host

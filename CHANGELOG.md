@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Run native startup on the process-retained Core composition.** On a Core that provides `Composition::ProcessRetained`, the product starts natively under retain-until-exit: its module is pinned and never unloaded, code patches are written at the entry gate, install quiescence is attested by the shell (gate held, or the game thread inside the product's own `Start`, a known deviation documented in `docs/host-composition.md`), and stop is closure only (no drain, unload or restart). The post-stop hook-callback wait is bounded to 5 s, and startup and shutdown write numbered `[startup]`/`[shutdown]` lines to `mod.log`. Any other Core keeps the refusal. Static and synthetic checks only; **not run in game**.
+
 - Install the startup gate only for a static-import load of the module, so loader retention precedes `DllMain`; a dynamic load is refused before any entry patch, event, thread or callback. Portable policy tests and a synthetic module-lifetime fixture only; native activation remains refused; **not run in game**.
 
 - Identify copied Loadout lists by data-pack ID and relative path, refuse duplicate, malformed or unreadable sources, and invalidate selections atomically on reload. Synthetic multi-pack tests only; full outfit parity remains open; **not run in game**.

@@ -3,7 +3,7 @@
 """Fail when a native write site in src/ is not classified in native_write_census.json.
 
 This is a static source census. It does not run Windows, observe the game, or
-establish runtime behavior or a native barrier; native activation stays refused.
+establish runtime behavior or a native barrier; activation under the process-retained composition is unverified in game.
 
 Matching is by file + enclosing function + call label, with counts: a function
 with three InstallDetour( calls needs census entries summing to count 3.

@@ -7,8 +7,9 @@ matching write, or when a class, admission or required field is invalid. Entries
 enclosing function and call label (with counts); there are no line numbers.
 
 This is a static source census, not evidence of runtime behavior. It does not show that any site
-runs, in which order, or that a hook works in the game. Native activation remains refused; the
-census does not change that.
+runs, in which order, or that a hook works in the game. Native activation is available only on a Core with
+the process-retained composition (retain until exit, stop is closure); the census does not
+establish that it works.
 
 ## Classes
 

@@ -1,9 +1,41 @@
 # G1 host-source composition
 
-**Development startup is refused:** the product does not install the entry hook,
-call native host Prepare/Start, apply product patches, or activate plugins until
-native reader/worker exclusion and drain have been established. The composition
-description below describes the intended lifecycle, not a currently running host.
+**Native startup is available only with a Core that provides the process-retained
+composition.** CMake probes the selected Core's `include/sco/game/host.h` for
+`Composition::ProcessRetained` and defines `SCO_CORE_PROCESS_RETAINED_COMPOSITION`;
+together with the non-draining stop API (`SCO_CORE_NON_DRAINING_STOP_API`) that makes
+`NativeActivationAvailable()` true. The current `external/sco-core` pin (Core `2c59c2b`, development SDK coordinate
+`2.4.1-dev.4`) provides it, so activation is ON with the pin. With an older Core (for
+example one selected through `SCO_HOST_SOURCE_DIR`), configure prints that native startup
+remains refused and the product keeps refusing: no entry hook, native Prepare/Start, product patch or plugin
+activation. The product selects `Options::composition = ProcessRetained`, which runs the
+normal app runtime inside the game process. Three rules apply, none of them proved by Core
+or by this product:
+
+- **Retention.** The product module and every dependency stay mapped until the process
+  exits. The module is pinned (`GET_MODULE_HANDLE_EX_FLAG_PIN`), nothing in `src/` calls
+  `FreeLibrary`, and a refused start returns from `ModThread` without unloading.
+- **Install quiescence.** The shell supplies `platform.gameReadersQuiesced`, which Core
+  calls immediately before each native mutation (quit hook and pak hook in `Prepare`;
+  game services in `Start`). The product's callback returns true in two cases only:
+  (i) the startup gate is installed and not yet released, so the executable's main thread
+  is still parked at the entry point, which is real quiescence of the executable's code;
+  (ii) the calling thread is the one on which the product itself opened the start window
+  around its own `Start()` call (the message-hook thread; whether it is also the gate
+  thread is logged once in the first `[startup] 7/8` line). Case (ii) is
+  **not** quiescence: other engine threads run while the game services install their
+  hooks on that thread. It matches how the last shipped versions started their
+  services and is a **known, documented deviation** from the install-quiescence rule, to
+  be revisited after in-game evidence.
+- **Stop is closure.** Admission is closed and `game.exit` is dispatched once; nothing is
+  drained, unloaded or restarted. The wait for hook callbacks after a stop request is
+  bounded (5 s) and proceeds retained whether or not they drained.
+
+**Not established:** engine-object lifetime inside hooks, real hook behavior, reader or
+worker drain, unload safety, and any in-game behavior. This path has been compiled and
+exercised with synthetic and static tests only; **it has not been run in game**. Startup
+and shutdown write numbered `[startup]` and `[shutdown]` lines to `mod.log` for the first
+owner-run session.
 
 The default development host builds from the exact `external/sco-core` gitlink.
 The selected source is an unpublished coordinated candidate; the published
@@ -22,8 +54,9 @@ game services and legacy product adapters. The product cannot supply the actual
 image/resolver ownership or native reader/worker exclusion and drain needed to
 change that. A copied snapshot does not lease image memory or exclude readers.
 
-The old G1 path's quit interception, early DataCore and plugin startup are
-therefore not active. The product still contains Windows proxy forwarding,
+Under the strict composition the old G1 path's quit interception, early DataCore and
+plugin startup are therefore not active; the process-retained composition above is the
+one that enables them. The product still contains Windows proxy forwarding,
 read-only OS inspection, message/window/input/render policy, paths/configuration,
 launcher consent/restoration and legacy engine helpers. A failed or uncertain
 Stop latches restart refusal; the process, module and backing must remain live
@@ -70,8 +103,9 @@ A portable capsule-bound adapter is qualified separately in
 [`tools/offline-host`](../tools/offline-host/README.md#capsule-bound-non-native-consumer).
 It binds read/request/drain operations to the immutable capsule owner only after
 its own successful detailed Prepare. This is a restricted non-native consumer
-milestone, not adoption by the product's legacy Prepare path. The hard-false
-native policy and every refusal boundary above remain in force.
+milestone, not adoption by the product's legacy Prepare path. The native
+policy above (available only with the process-retained composition) and every refusal
+boundary above remain in force.
 
 ## Inventory filter post-original admission
 
@@ -107,7 +141,8 @@ the hook write is atomic with respect to game threads. In particular, the
 existing direct quit route may forward a reentrant quit while a read admission
 is still on the same stack. The lifetime of borrowed engine arguments and
 structured-exception behavior also require actual build-specific evidence. The
-native activation refusal remains in force.
+retain-until-exit rules above are the only lifetime claim here, and native
+activation is unverified in game.
 
 The synthetic mission fixtures exercise publication and admission on both sides
 of the owner boundary. They do not prove engine-object lifetime or native
@@ -122,5 +157,5 @@ such a module before `DllMain` runs, so nothing DLL-resident is published while 
 could still be released. A dynamic load (injection, late `LoadLibrary`) is refused
 before any entry patch, event, thread or callback exists. The later worker pin stays
 as defense in depth. This is a lifetime rule only: it does not establish native
-reader/worker exclusion or drain, and native activation remains refused. The
+reader/worker exclusion or drain, and does not by itself make native activation safe. The
 synthetic `module_lifetime` fixture checks the OS behavior; it was not run in game.

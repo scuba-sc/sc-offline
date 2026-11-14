@@ -44,7 +44,16 @@ worker = source.split('static DWORD WINAPI ModThread(LPVOID param) {', 1)[1].spl
 assert 'if (!RetainStartupGateModule())' in worker
 assert worker.index('RetainStartupGateModule()') < worker.index('OpenConsole();'), \
     'pin installed gate code before any worker refusal or unload path'
-assert worker.index('RetainStartupGateModule()') < worker.index('FreeLibraryAndExitThread')
+# The module is never unloaded: the anti-cheat refusal returns after releasing the gate.
+refusal = worker.split('if (InspectAntiCheat() != AcCheck::Clear) {', 1)[1].split('Log("[app] anti-cheat inspection clear', 1)[0]
+assert refusal.index('ReleaseStartupGate();') < refusal.index('return 0;')
+assert 'Sleep(5000)' not in refusal and 'FreeLibrary' not in refusal
+assert worker.index('RetainStartupGateModule()') < worker.index('if (InspectAntiCheat() != AcCheck::Clear)')
+import re
+for src_file in sorted((root / 'src').rglob('*')):
+    if src_file.suffix in ('.cpp', '.h') and 'third_party' not in src_file.parts:
+        assert not re.search(r'\bFreeLibrary(AndExitThread)?\s*\(', src_file.read_text(errors='replace')), \
+            f'{src_file.name}: the product module must never be unloaded'
 assert 'Unloading in 5s.' not in worker
 assert 'Offline startup is refused; close the game.' in worker
 assert worker.index('if (!offline_host::NativeActivationAvailable())') < worker.index('GetModuleHandleW(')
@@ -101,8 +110,7 @@ dllmain = source.split('BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPV
 assert 'SetLogSink(ForwardCoreLog)' not in dllmain, 'do not publish a callback from DllMain'
 sink = worker.index('sco::SetLogSink(ForwardCoreLog)')
 assert sink > worker.index('if (!offline_host::NativeActivationAvailable())')
-assert sink > worker.index('FreeLibraryAndExitThread'), 'early unload path must precede sink registration'
-assert sink > worker.index('if (InspectAntiCheat() != AcCheck::Clear)')
+assert sink > worker.index('if (InspectAntiCheat() != AcCheck::Clear)'), 'early refusal path must precede sink registration'
 assert sink < worker.index('StartOffline();'), 'install before the first core host operation'
 # The product request may run in a hook callback, so it must only request.
 request = (root / 'src/offline_host.cpp').read_text().split('sco::game::host::HostReport RequestStop() noexcept {', 1)[1].split('\nOwnerDrain DrainRequestedStop', 1)[0]
@@ -116,4 +124,59 @@ controller = source.split('static void RunMainThreadService() {', 1)[1].split('\
 assert controller.index('ClosedAndDrained()') < controller.index('DrainRequestedStop(')
 assert source.count('const auto gate = InstallStartupGate(hModule, reserved);') == 1
 assert source.count('StartOffline();') == 1
+# Process-retained activation rule: available only when BOTH macros are defined (retain until exit,
+# stop is closure). Any other Core keeps the refusal.
+policy = (root / 'src/native_activation_policy.h').read_text()
+available = policy.split('inline bool NativeActivationAvailable() noexcept {', 1)[1].split('\n}', 1)[0]
+assert '#if defined(SCO_CORE_PROCESS_RETAINED_COMPOSITION) && defined(SCO_CORE_NON_DRAINING_STOP_API)' in available
+assert available.index('return true;') < available.index('#else') < available.index('return false;')
+assert 'return false; }' not in policy, 'activation is no longer unconditionally false'
+assert '#error "ASOP composition lacks a reviewed nonblocking quit and stop/drain contract"' in policy
+host_cpp = (root / 'src/offline_host.cpp').read_text()
+assert 'options.composition = gh::Composition::ProcessRetained;' in host_cpp
+assert 'if (!options.platform.gameReadersQuiesced) return sco::Result::BadArg;' in host_cpp
+# Install-quiescence attestation: gate-held, or the admitted game-thread start window; nothing else.
+attest = source.split('static bool InstallQuiescenceAttested(void*) noexcept {', 1)[1].split('\n}', 1)[0]
+assert 'g_startupGateInstalled.load' in attest and 'g_startupGateReleased.load' in attest
+# Case (ii): the thread that opened the product's own start window; no equality with the gate thread.
+assert 'g_hostStartThreadId.load' in attest and 'GetCurrentThreadId()' in attest
+assert 'g_gateThreadId' not in attest, 'case (ii) must not require the gate thread'
+assert attest.rstrip().endswith('return false;')
+assert 'pf.gameReadersQuiesced = InstallQuiescenceAttested;' in source
+assert source.index('pf.gameReadersQuiesced = InstallQuiescenceAttested;') < source.index('options.platform = std::move(pf);')
+release = source.split('static void ReleaseStartupGate() {', 1)[1].split('\n}', 1)[0]
+assert release.index('g_startupGateReleased.store(true') < release.index('SetEvent(g_startupDone)')
+assert 'g_gateThreadId.store(GetCurrentThreadId()' in startup_wait
+start_host = source.split('static void StartHostKit() {', 1)[1].split('\n}', 1)[0]
+# RAII window: opened by the guard's constructor, closed by its destructor on every exit path.
+guard = start_host.split('struct StartWindow {', 1)[1].split('};', 1)[0]
+assert 'g_hostStartThreadId.store(GetCurrentThreadId()' in guard and '~StartWindow()' in guard
+assert 'g_hostStartThreadId.store(0' in guard.split('~StartWindow()', 1)[1]
+assert start_host.index('StartWindow window;') < start_host.index('offline_host::Start()')
+assert start_host.count('g_hostStartThreadId.store') == 2, 'only the guard touches the window'
+assert source.count('g_hostStartThreadId.store(GetCurrentThreadId()') == 1, 'only StartHostKit opens the window'
+assert 'start-thread==gate-thread' in start_host
+assert '[startup] host start failed permanently: the game continues with the offline patches but without plugins, services or menu; close the game' in start_host
+# Game-thread stop paths run Core's closure through StopHostKit; ModThread and DllMain never do.
+tick = source.split('static void OnMainThreadTick() {', 1)[1].split('\n}', 1)[0]
+assert 'StopHostKit("owner admission closed")' in tick and 'StopHostKit("tick admission lost")' in tick
+assert 'RequestLifecycleStop(' not in tick
+stop_host = source.split('static void StopHostKit(const char* trigger) {', 1)[1].split('\n}', 1)[0]
+assert stop_host.index('RequestLifecycleStop(trigger)') < stop_host.index('offline_host::Stop()')
+assert source.count('offline_host::Stop()') == 1
+assert 'offline_host::Stop()' not in worker and 'offline_host::Stop()' not in dllmain
+# Tick result: stop only when no longer Running; a non-Ok tick while Running skips the rest of the tick.
+assert 'const sco::Result tick = offline_host::Tick(now);' in tick
+assert tick.index('if (!offline_host::Running())') < tick.index('if (tick != sco::Result::Ok)')
+skip = tick.split('if (tick != sco::Result::Ok) {', 1)[1].split('\n    }', 1)[0]
+assert 'return;' in skip and 'StopHostKit' not in skip and 'skipLogged' in skip
+assert tick.index('if (tick != sco::Result::Ok)') < tick.index('Menu_GameThreadFrame();')
+assert tick.index('if (tick != sco::Result::Ok)') < tick.index('RunLegacyTicks(now)')
+start_offline = source.split('static void StartOffline() {', 1)[1].split('\n}', 1)[0]
+assert 'host stays prepared: no plugins or menu will load' in start_offline
+# The post-stop wait for hook callbacks is bounded; the existing bounded drains still follow it.
+assert 'constexpr DWORD kHookDrainWaitMs = 5000;' in controller
+assert controller.index('kHookDrainWaitMs') < controller.index('DrainRequestedStop(')
+assert 'WaitForSingleObject(g_hookCallbacksDrainedEvent, slice)' in controller
+assert 'WaitForSingleObject(g_hookCallbacksDrainedEvent, 1000)' not in controller
 print('Windows native preflight call-site wiring: PASS (static)')
