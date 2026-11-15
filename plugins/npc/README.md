@@ -11,7 +11,7 @@ no `disabled` marker. It requires `plugins = on`; the launcher's Plugins page ca
 disable its folder for the next game start. No host linkage, built-in registration
 or hidden fallback remains. Current registry/release counts are reconciled in
 [status](../../docs/status.md): 13 baseline units plus two optional external
-bridges, not the superseded nine/four split. Creative stays off and launcher
+bridges, not the superseded nine/four split. Creative ships enabled and launcher
 behavior is unchanged. Step 1D separately
 sets Discord folder metadata off and refuses presence pending privacy/transport
 approval ([review](../discord/README.md)).

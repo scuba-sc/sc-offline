@@ -22,7 +22,7 @@ The project separates the **product**, the **framework** and its **extensions**:
 | --- | --- |
 | **sc-offline** | The launcher, `dinput8.dll` bootstrap, configuration and menu shell. It connects the game session to the framework and packages the product. |
 | **sco-core** | The shared runtime: plugin loading, commands, events, services, settings, storage and UI contracts. Its Star Citizen game pack owns the shared game-integration layer. |
-| **Feature plugins** | Independently built modules that use public SDK services rather than depending on the product's private internals. |
+| **Feature plugins** | Independently built modules that use public SDK services rather than depending on the product's private internals. Most live in `plugins/`; the Creative plugin (noclip, god mode, infinite ammo) has its own repository, [`sc-creative`](https://github.com/scuba-sc/sc-creative), carried as the `external/sc-creative` submodule and shipped enabled. |
 
 This keeps reusable infrastructure in sco-core and product behavior in sc-offline. When a plugin needs a missing capability, the intended path is to add the SDK contract/provider in sco-core, then consume it here—not introduce another private implementation in the plugin.
 

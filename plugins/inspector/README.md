@@ -6,7 +6,7 @@ built-in. Release layout is `data/plugins/inspector/plugin.ini` plus
 launcher's Plugins page can switch its folder off. There is no host fallback.
 Step 1C also ships NPC as an enabled external command-first plugin. Nine built-ins
 remain and four features are external (npc, inspector, creative, discord);
-creative stays off. Step 1D separately sets Discord folder metadata off and
+creative ships enabled. Step 1D separately sets Discord folder metadata off and
 refuses presence pending privacy/transport approval ([review](../discord/README.md)).
 See [NPC](../npc/README.md).
 

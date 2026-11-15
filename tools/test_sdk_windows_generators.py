@@ -521,7 +521,7 @@ class WindowsGeneratorProofs(unittest.TestCase):
 
     def test_plugin_and_checker_receive_explicit_or_default_settings(self):
         files = ['check_' + n + '_sdk.py' for n in
-                 ('build', 'creative', 'crew', 'discord', 'inspector', 'loadout',
+                 ('build', 'crew', 'discord', 'inspector', 'loadout',
                   'mining', 'npc', 'spawn', 'teleport', 'titanlink')]
         files += ['contracts_sdk_check.py', 'check_quantum_sdk.py']
         for filename in files:
@@ -556,7 +556,7 @@ class WindowsGeneratorProofs(unittest.TestCase):
                             folder.mkdir(parents=True)
                             shutil.copy2(ROOT / 'plugins' / feature / 'plugin.ini', folder / 'plugin.ini')
                             (folder / 'mock.dll').write_bytes(b'')
-                            if feature in ('creative', 'discord', 'titanlink'):
+                            if feature in ('discord', 'titanlink'):
                                 (folder / 'disabled').write_bytes(b'')
                             if feature == 'mining':
                                 for name in ('import_settings.py', 'README.md'):

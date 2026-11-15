@@ -12,8 +12,8 @@ A local, unpublished profile named `player-offline-loadout-candidate` combines t
 11 entries from the stable `player-offline` profile with enabled Loadout. It is an
 inspection candidate only. The stable release profile and release gate are
 unchanged; this local composition does not publish a package, approve runtime use,
-or establish Loadout parity. The profile leaves `creative` and `discord` disabled;
-the other ten entries, including Loadout, are enabled.
+or establish Loadout parity. The profile leaves `discord` disabled;
+the other eleven entries, including Creative and Loadout, are enabled.
 
 For a real composition, supply real caller-built artifacts for all 12 entries; the
 tool does not build or substitute modules. It checks the selected manifests,
@@ -96,8 +96,7 @@ for the evidence boundary.
 ## Obtain, build, install
 
 1. Obtain the pinned published combined core+game SDK containing `sc_loadout.h`,
-   `sc_cvars.h`, `sco_content.h` and `sco_widgets.h`, plus `sco_api.h` and the
-   existing `sc_creative.h`. Use its extracted public `include/` directory and
+   `sc_cvars.h`, `sco_content.h` and `sco_widgets.h`, plus `sco_api.h`. Use its extracted public `include/` directory and
    checksum inventory, never the host checkout's headers.
 2. Build separately from the Windows host:
 
@@ -181,9 +180,9 @@ public game-thread routes, reopen tables, and guard complete pointer extents/nul
 
 Game-thread external shortcuts preserve the provider result/reply. This is not
 proof of eventual gameplay/streaming completion. Missing,
-disabled or refusing spawn/build/creative plugins have no private fallback.
-The Player panel invokes optional creative commands and displays the public
-provider's requested-state flags, not an invented engine-state observation.
+disabled or refusing spawn/build plugins have no private fallback.
+The Player panel has no creative controls: noclip, god mode, infinite ammo and
+noclip speed are on the Creative tab, which the separate creative plugin owns.
 SQ42 ship labels/reference classes are retained; enemy-wing orchestration remains
 deferred rather than silently spawning an ordinary ship as a substitute.
 

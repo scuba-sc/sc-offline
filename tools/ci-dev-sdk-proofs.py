@@ -32,8 +32,13 @@ work.mkdir(parents=True)
 features = ('npc', 'inspector', 'loadout', 'creative', 'discord', 'crew',
             'spawn', 'build', 'mining', 'teleport', 'quantum', 'contracts')
 for feature in features:
-    script = 'contracts_sdk_check.py' if feature == 'contracts' else f'check_{feature}_sdk.py'
-    command = [sys.executable, str(ROOT / 'tools' / script), '--archive', str(archive),
+    script = ROOT / 'tools' / ('contracts_sdk_check.py' if feature == 'contracts' else f'check_{feature}_sdk.py')
+    if feature == 'creative':
+        # Creative is its own repository, carried as the external/sc-creative submodule.
+        script = ROOT / 'external' / 'sc-creative' / 'tools' / 'check_creative_sdk.py'
+        if not script.is_file():
+            raise SystemExit('creative proof missing: git submodule update --init external/sc-creative')
+    command = [sys.executable, str(script), '--archive', str(archive),
                '--sums', str(sums), '--work', str(work / feature), '--candidate',
                '--sdk-version', version, '--sdk-sha256', digest, '--archive-sha256', digest,
                '--sdk-source', commit, '--sdk-profile', 'legacy']

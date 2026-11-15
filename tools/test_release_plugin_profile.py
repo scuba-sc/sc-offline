@@ -22,6 +22,14 @@ stage = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(stage)
 
 
+# Creative lives in its own repository, carried as a submodule; every other plugin is under plugins/.
+EXTERNAL_PLUGINS = {"creative": ROOT / "external" / "sc-creative" / "plugins" / "creative"}
+
+
+def plugin_dir(plugin_id: str) -> Path:
+    return EXTERNAL_PLUGINS.get(plugin_id, ROOT / "plugins" / plugin_id)
+
+
 def offline_profile():
     return stage.load_profile("player-offline", PROFILE_PATH)
 
@@ -34,13 +42,13 @@ def make_artifacts(root: Path, profile: dict) -> None:
     for entry in profile["plugins"]:
         source = root / entry["artifact_dir"]
         source.mkdir(parents=True)
-        manifest = (ROOT / "plugins" / entry["id"] / "plugin.ini").read_bytes()
+        manifest = (plugin_dir(entry["id"]) / "plugin.ini").read_bytes()
         (source / "plugin.ini").write_bytes(manifest)
         (source / entry["module"]).write_bytes(f"fixture for {entry['id']}; not a PE DLL".encode())
         for filename in entry.get("extra_files", []):
-            (source / filename).write_bytes((ROOT / "plugins" / entry["id"] / filename).read_bytes())
+            (source / filename).write_bytes((plugin_dir(entry["id"]) / filename).read_bytes())
         if entry["disabled"]:
-            (source / "disabled").write_bytes((ROOT / "plugins" / entry["id"] / "disabled").read_bytes())
+            (source / "disabled").write_bytes((plugin_dir(entry["id"]) / "disabled").read_bytes())
 
 
 class ReleasePluginProfile(unittest.TestCase):
@@ -88,7 +96,7 @@ class ReleasePluginProfile(unittest.TestCase):
                 self.assertEqual((folder / "disabled").is_file(), entry["disabled"], entry["id"])
                 self.assertEqual(
                     (folder / "plugin.ini").read_bytes(),
-                    (ROOT / "plugins" / entry["id"] / "plugin.ini").read_bytes(),
+                    (plugin_dir(entry["id"]) / "plugin.ini").read_bytes(),
                 )
 
             self.assertTrue((destination / "loadout" / "loadout.dll").is_file())
@@ -155,7 +163,7 @@ class ReleasePluginProfile(unittest.TestCase):
         excluded = set(profile["excluded"])
         repository_plugins = {
             folder.name
-            for folder in (ROOT / "plugins").iterdir()
+            for folder in [*(ROOT / "plugins").iterdir(), *EXTERNAL_PLUGINS.values()]
             if folder.is_dir() and (folder / "plugin.ini").is_file()
         }
         self.assertEqual(selected, {
@@ -169,9 +177,9 @@ class ReleasePluginProfile(unittest.TestCase):
     def test_product_defaults_match_the_profile(self):
         profile = offline_profile()
         disabled = {entry["id"] for entry in profile["plugins"] if entry["disabled"]}
-        self.assertEqual(disabled, {"creative", "discord"})
+        self.assertEqual(disabled, {"discord"})
         for entry in profile["plugins"]:
-            source = ROOT / "plugins" / entry["id"]
+            source = plugin_dir(entry["id"])
             if entry["disabled"]:
                 self.assertTrue((source / "disabled").is_file(), entry["id"])
             else:
@@ -179,6 +187,19 @@ class ReleasePluginProfile(unittest.TestCase):
             tracked_manifest = ROOT / "data" / "plugins" / entry["id"] / "plugin.ini"
             if tracked_manifest.exists():
                 self.assertEqual(tracked_manifest.read_bytes(), (source / "plugin.ini").read_bytes(), entry["id"])
+
+    def test_creative_comes_from_the_submodule_and_ships_enabled(self):
+        source = plugin_dir("creative")
+        self.assertTrue((source / "plugin.ini").is_file(), "run: git submodule update --init external/sc-creative")
+        self.assertFalse((ROOT / "plugins" / "creative").exists(), "creative must not be duplicated under plugins/")
+        self.assertFalse((source / "disabled").exists())
+        tracked = ROOT / "data" / "plugins" / "creative"
+        self.assertEqual({p.name for p in tracked.iterdir()}, {"plugin.ini"}, "no tracked disabled marker")
+        self.assertEqual((tracked / "plugin.ini").read_bytes(), (source / "plugin.ini").read_bytes())
+        for profile in (offline_profile(), candidate_profile()):
+            entry = next(e for e in profile["plugins"] if e["id"] == "creative")
+            self.assertEqual(entry, {"id": "creative", "artifact_dir": "built-external/creative",
+                                     "module": "creative.dll", "disabled": False})
 
     def test_profile_stages_only_selected_modules_and_preserves_defaults(self):
         profile = offline_profile()
@@ -195,7 +216,7 @@ class ReleasePluginProfile(unittest.TestCase):
                 self.assertTrue((folder / "plugin.ini").is_file())
                 self.assertTrue((folder / entry["module"]).is_file())
                 self.assertEqual((folder / "disabled").is_file(), entry["disabled"], entry["id"])
-                self.assertEqual((folder / "plugin.ini").read_bytes(), (ROOT / "plugins" / entry["id"] / "plugin.ini").read_bytes())
+                self.assertEqual((folder / "plugin.ini").read_bytes(), (plugin_dir(entry["id"]) / "plugin.ini").read_bytes())
             for excluded in profile["excluded"]:
                 self.assertFalse(any((destination / excluded).glob("*.dll")), excluded)
 
@@ -221,7 +242,8 @@ class ReleasePluginProfile(unittest.TestCase):
                 ])
             self.assertEqual(result, 0)
             self.assertTrue((destination / "contracts" / "contracts.dll").is_file())
-            self.assertTrue((destination / "creative" / "disabled").is_file())
+            self.assertFalse((destination / "creative" / "disabled").exists())
+            self.assertTrue((destination / "discord" / "disabled").is_file())
             self.assertFalse((destination / "npc" / "disabled").exists())
 
     def test_missing_module_refuses_the_package(self):

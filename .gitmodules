@@ -1,3 +1,6 @@
 [submodule "external/sco-core"]
 	path = external/sco-core
 	url = https://github.com/scuba-sc/sco-core.git
+[submodule "external/sc-creative"]
+	path = external/sc-creative
+	url = https://github.com/scuba-sc/sc-creative.git

@@ -33,6 +33,9 @@ def prove(sdk_include, sdk_archive, sdk_version, sdk_sha256):
         # The plugin project configures all feature subdirectories even when
         # only the two workflow targets below are built.
         shutil.copytree(ROOT / "plugins", source)
+        # Creative is the external/sc-creative submodule; the aggregate adds it from ../external.
+        shutil.copytree(ROOT / "external" / "sc-creative" / "plugins" / "creative",
+                        root / "external" / "sc-creative" / "plugins" / "creative")
         run(["cmake", "-S", str(source), "-B", str(build), "-G", "Unix Makefiles",
              f"-DSCO_SDK_INCLUDE_DIR={sdk_include}", f"-DSCO_SDK_ARCHIVE={sdk_archive}",
              f"-DSCO_SDK_VERSION={sdk_version}", f"-DSCO_SDK_SHA256={sdk_sha256}",

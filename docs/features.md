@@ -28,7 +28,7 @@ Most of the lists below are plain text files in `data/`, and the counts are take
 
 ## Player
 
-- Noclip, god mode, infinite ammo: from the optional [creative plugin](#the-creative-plugin) (shipped off; turn it on in the launcher's Plugins page).
+- Noclip, god mode, infinite ammo, infinite ship ammo: from the [creative plugin](#the-creative-plugin) (shipped on; its controls are on the Creative tab).
 - Gear selection is now the external [loadout development module](../plugins/loadout/README.md): copied `items.txt` lists, typed G6 equip, explicit unsupported slots/refusals, no private/XML fallback. The pinned SDK lacks this route; equip and complete legacy-slot parity remain pending.
 - Wallet: your aUEC balance is loaded when you spawn and saved to `data/wallet.txt` when it changes (checked every 5 seconds) and once more when the game closes. That file is the only wallet store today; nothing is kept in `storage/contracts.db`. The file holds just the number; edit it while the game is closed to change your balance (see [What persists between sessions](data-files.md#what-persists-between-sessions)). Without the file, you start with the `aUEC amount` in `data/OfflineDB/default_1.xml` (100,000,000). Once `wallet.txt` exists, that amount is no longer used, so delete `wallet.txt` to go back to it.
 
@@ -145,7 +145,7 @@ The Gladius' new quantum drive (hold Caps Lock, or B for NAV mode then hold left
 
 ## Plugins
 
-sc-offline can load plugins built with the [sco SDK](https://github.com/scuba-sc/sco-core/blob/main/sdk/README.md): native DLLs, Lua scripts and data packs. Loading is **on by default** (`plugins = on` in `sc-offline.ini`); the current release recipe stages external native IDs `spawn`, `crew`, `build`, `npc`, `inspector`, `teleport`, `quantum` (on), `discord` and `creative` (off). Other external implementations await staging; [status](status.md) distinguishes source implementation from distribution. None has a hidden built-in fallback.
+sc-offline can load plugins built with the [sco SDK](https://github.com/scuba-sc/sco-core/blob/main/sdk/README.md): native DLLs, Lua scripts and data packs. Loading is **on by default** (`plugins = on` in `sc-offline.ini`); the current release recipe stages external native IDs `spawn`, `crew`, `build`, `npc`, `inspector`, `teleport`, `quantum`, `creative` (on) and `discord` (off). Other external implementations await staging; [status](status.md) distinguishes source implementation from distribution. None has a hidden built-in fallback.
 
 1. Keep `plugins = on` in `sc-offline.ini`.
 2. Put each plugin in its own folder, `data/plugins/<id>/`, with its `plugin.ini` (for example `data/plugins/hello/plugin.ini` and `hello.dll`). The SDK's examples (`hello`, `greeter`, `travel_pack`) are ready to copy.
@@ -157,7 +157,7 @@ sc-offline can load plugins built with the [sco SDK](https://github.com/scuba-sc
    [plugin] spawn <version> native loaded
    ...
    [plugin] contracts <version> builtin loaded
-   [plugin] creative <version> <kind> disabled
+   [plugin] creative <version> native loaded
    [plugin] discord <version> native disabled
    [plugin] npc 1.1.0 native loaded
    [plugin] inspector 1.0.0 native loaded
@@ -216,11 +216,11 @@ When you quit the game (the menu's Quit, or the `quit` console command), the hos
 
 `data/plugins/inspector/plugin.ini` and `inspector.dll` ship enabled, with no `disabled` marker. Keep `plugins = on`; the launcher's Plugins page can disable the folder for the next game start. `inspector.read` reads player actor/entity IDs, health and zone-local transform through public SDK services. Missing providers, absent player, invalid data and unknown maximum health are reported as unavailable/unknown, not fabricated zeroes. It performs no mutation and registers no menu tab or hotkey. The restricted Lua example is non-default, with its own `inspector_lua` ID; it is not another baseline feature or release default. Build/check/install: [SDK workflows](sdk-workflows.md), [plugin README](../plugins/inspector/README.md). **Not run in game.**
 
-The [13-feature migration target](decisions.md) is policy, not completion: steps 1B/1C remove inspector and NPC built-in registrations, with the current two-built-in/six-staged-external boundary reconciled in [status](status.md). Creative stays off. Discord folder metadata is off under step 1D; manually enabling it exposes only refused `discord.status`, not presence ([review](../plugins/discord/README.md)).
+The [13-feature migration target](decisions.md) is policy, not completion: steps 1B/1C remove inspector and NPC built-in registrations, with the current two-built-in/six-staged-external boundary reconciled in [status](status.md). Creative ships enabled. Discord folder metadata is off under step 1D; manually enabling it exposes only refused `discord.status`, not presence ([review](../plugins/discord/README.md)).
 
 ### The creative plugin
 
-Noclip, god mode and infinite ammo are not part of `dinput8.dll` any more: they are `data/plugins/creative`, a plain plugin built only from the sco SDK's headers (`plugins/creative/`, CMake target `sc-offline-creative`) on sco-core's `game.creative` service. The folder ships with an empty `disabled` file, so the plugin is **off** until you turn it on in the launcher's Plugins page (and `plugins = on` in `sc-offline.ini`; see [the launcher](launcher.md)). A change applies at the next game start. Unloading the plugin switches every toggle it turned on off again.
+Noclip, god mode and infinite ammo are not part of `dinput8.dll` any more: they are `data/plugins/creative`, a plain plugin built only from the sco SDK's headers on sco-core's `game.creative` service. Its source lives in its own repository, [`sc-creative`](https://github.com/scuba-sc/sc-creative), carried here as the `external/sc-creative` submodule (CMake target `sc-offline-creative`). The folder ships **enabled**, with no `disabled` file; switch it off in the launcher's Plugins page (it needs `plugins = on` in `sc-offline.ini`; see [the launcher](launcher.md)). A change applies at the next game start. Unloading the plugin switches every toggle it turned on off again.
 
 | Command | Does |
 | --- | --- |
@@ -231,7 +231,7 @@ Noclip, god mode and infinite ammo are not part of `dinput8.dll` any more: they 
 | `creative.ship_ammo <on>` | Infinite ammo for every weapon on the ship you're aboard |
 | `creative.status` | Which toggles are on |
 
-The Player tab's Noclip, speed slider, God mode and Infinite ammo checkboxes, and the Vehicles tab's Infinite ship ammo checkbox, run these commands (through `sco_api`'s `invoke`); with the plugin off they put the checkbox back and say so in the status strip. What changed from the built-in versions: the commands were `ammo.infinite` and `ammo.ship_infinite` (a plugin's commands must start with its id, so they are `creative.ammo` and `creative.ship_ammo` now), god mode no longer starts on, and the ship toggle covers the ship you're aboard but not the Crew tab's target ship. Each toggle needs its capability: `game.creative.god_mode`, `game.creative.fly`, `game.creative.ammo`, `game.creative.ship_ammo`.
+All the creative controls (God mode, Noclip, Infinite ammo, Infinite ship ammo and the Noclip speed slider) are on the plugin's own **Creative** tab, which runs these commands' setters; the Player and Vehicles tabs have no creative controls and do not depend on the plugin. What changed from the built-in versions: the commands were `ammo.infinite` and `ammo.ship_infinite` (a plugin's commands must start with its id, so they are `creative.ammo` and `creative.ship_ammo` now), god mode no longer starts on, and the ship toggle covers the ship you're aboard but not the Crew tab's target ship. Each toggle needs its capability: `game.creative.god_mode`, `game.creative.fly`, `game.creative.ammo`, `game.creative.ship_ammo`.
 
 ## Multiplayer (LAN or VPN)
 

@@ -116,7 +116,7 @@ loads plugins only on a Core with the process-retained composition; any other Co
 ## Steps 1D/2A/2B: external features — Windows/game acceptance NOT RUN
 
 Crew and ordinary spawn ship as enabled external folders; their host registrations,
-linked UI and tick fallbacks are removed. Creative stays off; Discord stays off and
+linked UI and tick fallbacks are removed. Creative ships enabled (its source is the `external/sc-creative` submodule); Discord stays off and
 refuses presence pending approved transport/privacy policy. The current host registry has no feature built-ins; the release recipe
 stages 11 external native IDs (spawn, crew, build, mining, npc, inspector, teleport, quantum, creative, discord, contracts).
 Loadout has an external implementation not yet staged
@@ -234,16 +234,16 @@ Each converted feature has a deferred checklist in the PR's body. In short:
 
 #98 is open at the time of writing. Nothing below has run in game or on MSVC; its CI gates (`sdk-headers`, `no-scans`) run on the PR.
 
-1. Enable `creative` in the launcher's Plugins page (with `plugins = on`); `mod.log` shows `[plugin] loaded creative`.
+1. With `plugins = on`, `creative` loads by default (no `disabled` marker); `mod.log` shows `[plugin] loaded creative`.
 2. `creative.god on`: no damage; `creative.god off` restores it.
 3. `creative.noclip on` with `creative.noclip_speed 100`: you fly through geometry at that speed; off returns to walking.
 4. `creative.ammo on`: a carried weapon's magazine doesn't drain.
 5. `creative.ship_ammo on` aboard a ship: the ship's weapons don't drain.
 6. Disable or unload the plugin and restart: all five are off and the fly speed is the game's own again.
-7. The Player and Vehicles tabs' checkboxes drive the same commands, and revert with a status message ("Needs the creative plugin") when the plugin is off.
-8. Verify launcher update behavior against saved enable choices. The earlier
+7. The Creative tab's toggles and slider drive the same commands, and flip back with the provider's reason when one is refused. The Player and Vehicles tabs have no creative controls.
+8. Verify launcher update behavior against saved enable choices. An earlier
    request expected the release's `disabled` marker to turn creative off again;
-   this is not evidence of a tested result or approval to reset user choices.
+   creative now ships enabled, so no marker is replaced. This is not evidence of a tested result or approval to reset user choices.
    [Current decisions](decisions.md) leave updater/default reconciliation and
    preservation of enable choices open, separate from step 1C.
 

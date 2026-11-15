@@ -3,7 +3,7 @@
   "profiles": {
     "player-offline": {
       "plugins": [
-        {"id": "creative", "artifact_dir": "built-external/creative", "module": "creative.dll", "disabled": true},
+        {"id": "creative", "artifact_dir": "built-external/creative", "module": "creative.dll", "disabled": false},
         {"id": "discord", "artifact_dir": "built-external/discord", "module": "discord.dll", "disabled": true},
         {"id": "crew", "artifact_dir": "built-external/crew", "module": "crew.dll", "disabled": false},
         {"id": "spawn", "artifact_dir": "built-external/spawn", "module": "spawn.dll", "disabled": false},
@@ -27,7 +27,7 @@
     },
     "player-offline-loadout-candidate": {
       "plugins": [
-        {"id": "creative", "artifact_dir": "built-external/creative", "module": "creative.dll", "disabled": true},
+        {"id": "creative", "artifact_dir": "built-external/creative", "module": "creative.dll", "disabled": false},
         {"id": "discord", "artifact_dir": "built-external/discord", "module": "discord.dll", "disabled": true},
         {"id": "crew", "artifact_dir": "built-external/crew", "module": "crew.dll", "disabled": false},
         {"id": "spawn", "artifact_dir": "built-external/spawn", "module": "spawn.dll", "disabled": false},

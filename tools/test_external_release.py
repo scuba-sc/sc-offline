@@ -39,7 +39,7 @@ class ExternalRelease(unittest.TestCase):
         self.assertNotIn('kBuiltins', registry)
         self.assertIn('src/contracts.cpp', host)  # retained legacy engine, callers unchanged
         self.assertIn('contracts_sdk_check.py', workflow)
-        self.assertIn('needs: [build, development-sdk-proofs, inspector-sdk, npc-sdk, contracts-sdk, external-sdk]', workflow)
+        self.assertIn('needs: [build, development-sdk-proofs, inspector-sdk, npc-sdk, contracts-sdk, external-sdk, creative-sdk]', workflow)
         profiles = json.loads((ROOT / 'tools/release-plugin-profiles.json').read_text())
         contracts = next(p for p in profiles['profiles']['player-offline']['plugins'] if p['id'] == 'contracts')
         self.assertEqual((contracts['artifact_dir'], contracts['module'], contracts['disabled']),
@@ -52,12 +52,19 @@ class ExternalRelease(unittest.TestCase):
         workflow = (ROOT / '.github/workflows/build.yml').read_text()
         for feature in ('creative', 'discord', 'crew', 'spawn'):
             self.assertNotIn(f'add_library(sc-offline-{feature}', host)
-            self.assertIn(f'add_subdirectory({feature})', sdk)
-            self.assertIn(f'check_{feature}_sdk.py', workflow)
-            source = ROOT / f'plugins/{feature}'
+            if feature == 'creative':
+                # Creative is the external/sc-creative submodule: built from it, proved by its own script.
+                self.assertIn('add_subdirectory("${SCO_CREATIVE_SOURCE_DIR}" creative)', sdk)
+                self.assertIn('external/sc-creative/tools/check_creative_sdk.py', workflow)
+                self.assertFalse((ROOT / 'plugins/creative').exists())
+                source = ROOT / 'external/sc-creative/plugins/creative'
+            else:
+                self.assertIn(f'add_subdirectory({feature})', sdk)
+                self.assertIn(f'check_{feature}_sdk.py', workflow)
+                source = ROOT / f'plugins/{feature}'
             shipped = ROOT / f'data/plugins/{feature}'
             self.assertEqual((source / 'plugin.ini').read_text(), (shipped / 'plugin.ini').read_text())
-            self.assertEqual((shipped / 'disabled').exists(), feature in ('creative', 'discord'))
+            self.assertEqual((shipped / 'disabled').exists(), feature == 'discord')
         self.assertIn('external-sdk', workflow)
         self.assertIn('built-external', workflow)
         self.assertNotIn('build/data/plugins/creative/creative.dll', workflow)

@@ -244,7 +244,8 @@ int main(int argc,char** argv) {
     occupants[32]=102;Event("crew.crew",19,SCO_WIDGET_BUTTON);assert(ejected==1);
     occupants[32]=102;Event("crew.crew",20,SCO_WIDGET_BUTTON);assert(removed==2);
     occupants[32]=9999;Event("crew.crew",20,SCO_WIDGET_BUTTON);Event("crew.crew",19,SCO_WIDGET_BUTTON);assert(removed==2 && ejected==1);
-    Event("spawn.vehicles",16,SCO_WIDGET_TOGGLE,-1,nullptr,1);assert(panels.at("spawn.vehicles").nodes.at(16).value==0);
+    assert(panels.at("spawn.vehicles").nodes.count(16)==0 && panels.at("spawn.vehicles").nodes.count(17)==1); // the ammo toggle moved to the Creative tab; other ids unchanged
+    Event("spawn.vehicles",16,SCO_WIDGET_TOGGLE,-1,nullptr,1);assert(panels.at("spawn.vehicles").nodes.count(16)==0); // a forged event for it is ignored
     Event("spawn.vehicles",17,SCO_WIDGET_BUTTON);assert(panels.at("spawn.vehicles").nodes.at(20).label.find("unavailable")!=std::string::npos);
     vehicle=false;Event("crew.crew",17,SCO_WIDGET_BUTTON);assert(panels.at("crew.crew").nodes.at(21).items.empty());
     auto fn=panels.at("npc.npcs").fn;auto ctx=panels.at("npc.npcs").ctx;sco_widget_event shortEvent{};shortEvent.size=sizeof(shortEvent)-1;fn("npc.npcs",&shortEvent,ctx);
@@ -252,5 +253,5 @@ int main(int argc,char** argv) {
     widgets=false;assert(npc.load(&api,reinterpret_cast<sco_plugin*>(3))==SCO_OK);assert(panels.empty());npc.unload();
     widgets=true;content=false;assert(npc.load(&api,reinterpret_cast<sco_plugin*>(3))==SCO_OK);assert(panels.at("npc.npcs").nodes.at(2).items.empty());
     Event("npc.npcs",3,SCO_WIDGET_TEXT_INPUT,-1,"manual_actor");Event("npc.npcs",5,SCO_WIDGET_BUTTON);assert(lastNpc=="manual_actor");npc.unload();assert(panels.empty());
-    std::puts("PASS picker-module-workflow: 3 actual modules; catalogs/filter/paging, owned seat actions, foreign refusal, unavailable services, creative revert, startup refusal, unload/reload");
+    std::puts("PASS picker-module-workflow: 3 actual modules; catalogs/filter/paging, owned seat actions, foreign refusal, unavailable services, no creative control, startup refusal, unload/reload");
 }

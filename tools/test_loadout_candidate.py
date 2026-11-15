@@ -24,6 +24,13 @@ PROVEN_LOADOUT_MODULE_SHA256 = "a0d515118876f7cbcbf265ccb4be9b1f6061eaafcb0181e1
 PROVEN_LOADOUT_MODULE_ENV = "SCO_CANDIDATE_PROVEN_LOADOUT_MODULE"
 
 
+def plugin_source(plugin_id: str) -> Path:
+    """Creative is the external/sc-creative submodule; every other plugin is under plugins/."""
+    if plugin_id == "creative":
+        return ROOT / "external" / "sc-creative" / "plugins" / "creative"
+    return ROOT / "plugins" / plugin_id
+
+
 def load_module(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec and spec.loader
@@ -46,7 +53,7 @@ def make_synthetic_artifacts(root: Path) -> None:
     for entry in candidate_profile()["plugins"]:
         source = root / entry["artifact_dir"]
         source.mkdir(parents=True)
-        plugin_root = ROOT / "plugins" / entry["id"]
+        plugin_root = plugin_source(entry["id"])
         shutil.copyfile(plugin_root / "plugin.ini", source / "plugin.ini")
         (source / entry["module"]).write_bytes(SYNTHETIC_MODULE)
         for filename in entry.get("extra_files", []):
@@ -91,7 +98,7 @@ def make_controlled_product_defaults(root: Path) -> tuple[dict[Path, str], set[P
         plugin_id = entry["id"]
         if plugin_id == "loadout":
             continue
-        plugin_root = ROOT / "plugins" / plugin_id
+        plugin_root = plugin_source(plugin_id)
         folder = root / plugin_id
         folder.mkdir(parents=True, exist_ok=True)
         manifest = folder / "plugin.ini"
@@ -179,7 +186,7 @@ class LoadoutCandidateComposition(unittest.TestCase):
             self.assertEqual((staged / entry["module"]).read_bytes(), SYNTHETIC_MODULE, entry["id"])
             self.assertEqual(
                 (staged / "plugin.ini").read_bytes(),
-                (ROOT / "plugins" / entry["id"] / "plugin.ini").read_bytes(),
+                plugin_source(entry["id"]).joinpath("plugin.ini").read_bytes(),
             )
             if entry["disabled"]:
                 self.assertEqual(
@@ -356,7 +363,7 @@ class LoadoutCandidateComposition(unittest.TestCase):
         default_root = self.root / "marker-preservation-fixture"
         default_root.mkdir()
         marker_bytes = {}
-        for plugin_id in ("creative", "discord"):
+        for plugin_id in ("discord",):
             marker_bytes[plugin_id] = (self.artifacts / "built-external" / plugin_id / "disabled").read_bytes()
             marker = default_root / plugin_id / "disabled"
             marker.parent.mkdir(parents=True, exist_ok=True)
@@ -515,7 +522,7 @@ class LoadoutCandidateComposition(unittest.TestCase):
         self.assertFalse(self.output.exists())
 
     def test_disabled_marker_bytes_are_preserved_and_mismatch_refused(self):
-        marker = self.artifacts / "built-external" / "creative" / "disabled"
+        marker = self.artifacts / "built-external" / "discord" / "disabled"
         marker.write_bytes(b"different default marker\n")
         with self.assertRaisesRegex(ValueError, "disabled conflicts with existing product data"):
             self.stage()

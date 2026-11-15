@@ -27,8 +27,10 @@ headers ship in the pinned published SDK 2.4.0 (SDK 2.0.0 lacked them). Its buil
 is separate from the published tutorial below; release staging is pending.
 No loadout built-in or legacy host fallback remains; quantum control is deferred.
 
-The already external, shipped-off creative plugin has its own
-[published-SDK build/check/install and settings/lifecycle guide](../plugins/creative/README.md).
+The creative plugin, an external plugin with its own repository [`sc-creative`](https://github.com/scuba-sc/sc-creative) (the
+`external/sc-creative` submodule, shipped enabled), has its own
+[published-SDK build/check/install and settings/lifecycle guide](https://github.com/scuba-sc/sc-creative/blob/main/plugins/creative/README.md).
+The product CI runs that repository's `tools/check_creative_sdk.py` from the submodule before staging.
 Its focused `creative-module-workflow` tests the actual module; reversible cleanup
 uses a synthetic provider release-hook stand-in, not Windows/game certification.
 
@@ -37,7 +39,7 @@ Steps 1B/1C ship inspector and NPC as enabled external native plugins under
 registration or fallback remains for either. Seven built-ins and six external
 features (npc, inspector, crew, spawn, creative, discord) preserve 13 baseline feature units;
 two optional bridges are separate. Neither `plugins = off` nor a disabled feature
-folder resurrects a hidden implementation. Creative stays off and launcher behavior is unchanged. Step 1D separately
+folder resurrects a hidden implementation. Creative ships enabled and launcher behavior is unchanged. Step 1D separately
 sets Discord folder metadata off and refuses presence pending privacy/transport
 approval; see [Discord review and proof](../plugins/discord/README.md).
 

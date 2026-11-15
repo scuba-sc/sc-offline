@@ -247,7 +247,7 @@ class GeneratorSelection(unittest.TestCase):
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64], '--candidate requires full lowercase --sdk-source'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64, '--sdk-source', 'a' * 40], '--candidate requires --sdk-profile legacy'),
         ]
-        for feature in ('quantum', 'teleport', 'npc', 'loadout', 'creative', 'discord', 'crew', 'mining'):
+        for feature in ('quantum', 'teleport', 'npc', 'loadout', 'discord', 'crew', 'mining'):
             for extra, message in cases:
                 with self.subTest(feature=feature, extra=extra), tempfile.TemporaryDirectory() as temp:
                     work = Path(temp) / 'proof'
@@ -278,7 +278,7 @@ class GeneratorSelection(unittest.TestCase):
 
     def test_other_consumers_default_to_published_stable_verifier(self):
         from check_inspector_sdk import SDK_ROOT, SDK_VERSION, SDK_SHA256
-        for feature in ('npc', 'loadout', 'creative', 'discord', 'crew', 'mining'):
+        for feature in ('npc', 'loadout', 'discord', 'crew', 'mining'):
             with self.subTest(feature=feature), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 module = proof_module(feature)
@@ -295,7 +295,7 @@ class GeneratorSelection(unittest.TestCase):
             root = Path(temp)
             archive = root / 'sco-sdk-2.4.0.zip'; archive.write_bytes(b'not matching')
             sums = root / 'SHA256SUMS'; sums.write_text('0' * 64 + '  ' + archive.name + '\n')
-            for feature in ('quantum', 'teleport', 'npc', 'loadout', 'creative', 'discord', 'crew', 'mining'):
+            for feature in ('quantum', 'teleport', 'npc', 'loadout', 'discord', 'crew', 'mining'):
                 work = root / feature
                 result = subprocess.run([sys.executable, str(TOOLS / ('check_' + feature + '_sdk.py')),
                     '--archive', str(archive), '--sums', str(sums), '--work', str(work), '--candidate',

@@ -170,6 +170,13 @@ void Workflow(bool populated) {
     Require(player.combos.at(2)==2 && sq42.combos.empty(),"initial picker/confirmation mismatch");
     Require(player.gear_labels.size()==2 && player.gear_labels[1].find("[requires 1.1]")!=std::string::npos,"weapon label reflects synchronous version requirement");
     Require(player.status.find("fixture_armory/lists/items.txt")!=std::string::npos,"startup reports copied item source identity");
+    // The creative controls (node ids 10 to 13) live only on the Creative tab: the Player panel publishes none
+    // of them, and a forged event for those ids reaches no command (Invoke aborts on any name but spawn.ship_options).
+    Require(!player.flags.count(10) && !player.flags.count(11) && !player.flags.count(12) && !player.flags.count(13) && player.flags.count(14),
+            "Player panel carries no creative controls and keeps its status line");
+    Send("loadout.player",player,10,SCO_WIDGET_TOGGLE); Send("loadout.player",player,11,SCO_WIDGET_TOGGLE);
+    Send("loadout.player",player,12,SCO_WIDGET_TOGGLE); Value("loadout.player",player,13,SCO_WIDGET_SLIDER,100);
+    Require(spawns==0 && !rejected,"forged creative events are ignored");
     if(populated) {
         Require(player.status.find("sq42_catalog/lists/outfits.txt")!=std::string::npos &&
                 player.status.find("build_catalog/lists/buildables.txt")!=std::string::npos,

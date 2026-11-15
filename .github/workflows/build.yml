@@ -211,7 +211,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # external/sco-core: its headers are parsed with src/.
+          # external/sco-core: its headers are parsed with src/. external/sc-creative: the package
+          # preflight reads creative's registered commands from its sources.
           submodules: true
 
       - name: Install clang + mingw-w64 headers
@@ -439,6 +440,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # external/sc-creative carries the creative plugin and its proof.
+          submodules: recursive
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: development-sdk-candidate
@@ -629,8 +632,8 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # Proofs: check_creative_sdk.py, check_discord_sdk.py, check_crew_sdk.py, check_spawn_sdk.py, check_build_sdk.py,
-  # check_teleport_sdk.py, check_quantum_sdk.py.
+  # Proofs: check_discord_sdk.py, check_crew_sdk.py, check_spawn_sdk.py, check_build_sdk.py,
+  # check_teleport_sdk.py, check_quantum_sdk.py. Creative is proved by its own job below.
   # Isolated native features; checker and compiler traces use published archives only.
   # Every external plugin consumes the one published SDK 2.4.0 stable release.
   # The archive basename and tag carry the same SDK version.
@@ -639,7 +642,7 @@ jobs:
       fail-fast: false
       matrix:
         # mining requires the newly published game SDK; the old pin must refuse, not fall back.
-        feature: [creative, discord, crew, spawn, build, mining, teleport, quantum]
+        feature: [discord, crew, spawn, build, mining, teleport, quantum]
     runs-on: windows-2025-vs2026
     env:
       SDK_VERSION: '2.4.0'
@@ -660,6 +663,34 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: external-${{ matrix.feature }}-plugin
+          path: ${{ runner.temp }}/feature-proof/stage/data/plugins
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
+
+  # Creative is its own repository, the external/sc-creative submodule. Its proof runs from the
+  # pinned checkout, before the folder is staged, and uploads the folder under the same artifact
+  # name the release job already collects (external-*-plugin).
+  creative-sdk:
+    runs-on: windows-2025-vs2026
+    env:
+      SDK_VERSION: '2.4.0'
+      SDK_TAG: 'sdk-v2.4.0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Download published SDK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$env:SDK_TAG" -R scuba-sc/sco-core -p "sco-sdk-$env:SDK_VERSION.zip" -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
+      - name: Build, test, check and stage creative from the submodule
+        run: python external/sc-creative/tools/check_creative_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-$env:SDK_VERSION.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/feature-proof"
+      - name: Upload published-SDK release folder
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: external-creative-plugin
           path: ${{ runner.temp }}/feature-proof/stage/data/plugins
           if-no-files-found: error
           include-hidden-files: true
@@ -800,7 +831,7 @@ jobs:
   # G3 requires a future approved SDK; do not revive host-embedded bridges-test builds.
 
   release:
-    needs: [build, development-sdk-proofs, inspector-sdk, npc-sdk, contracts-sdk, external-sdk]
+    needs: [build, development-sdk-proofs, inspector-sdk, npc-sdk, contracts-sdk, external-sdk, creative-sdk]
     runs-on: ubuntu-24.04
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:

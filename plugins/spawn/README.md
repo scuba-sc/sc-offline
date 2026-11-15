@@ -9,8 +9,9 @@ Trusted native code, **GPL-3.0-only**. SDK **2.4.0**, frozen plugin ABI **1.1**,
 Star Citizen game pack **0.8.0**. This source builds independently of the host.
 No private headers, engine memory, custom spawner, network or ImGui dependency.
 The Vehicles panel uses public `sco.widgets`: class filtering/paging, manual
-class, height, seat-name/pilot/none, Flight Ready, owned boarding/cancel/clear and
-Infinite ship ammo through the external creative command (reverts on refusal).
+class, height, seat-name/pilot/none, Flight Ready and owned boarding/cancel/clear.
+Infinite ship ammo is on the Creative tab, owned by the creative plugin; this panel
+has no creative control and invokes no `creative.*` command.
 Picker actions use the same command handlers/jobs, not legacy engine helpers.
 Keep `data/ships.txt` as the existing caller-supplied class list;
 `spawn.pack_list` additionally reads enabled `lists/ships.txt` through G14's

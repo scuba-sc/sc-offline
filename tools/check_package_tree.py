@@ -36,7 +36,10 @@ How commands are found (patterns; comments are stripped first, string contents k
     component is P's id, in P's source files, and which is not an invoke argument (below). P's
     sources are plugins/<id>/*.cpp|*.h|*.inc (test files excluded), plus plugins/spatial/*.h for
     quantum and teleport (shared travel code, `#ifdef TRAVEL_TELEPORT` selects the names) and
-    plugins/picker.h. The registration call itself (register_command / RegisterBuiltinCommand /
+    plugins/picker.h. A plugin kept in its own repository is read from its submodule instead
+    (EXTERNAL_PLUGIN_ROOTS: creative -> external/sc-creative/plugins/creative) and takes no
+    shared product sources; without that checkout its commands are not seen as provided.
+    The registration call itself (register_command / RegisterBuiltinCommand /
     a Toggle(...) or CommandBuilder(...) helper) is not parsed: a literal with P's prefix counts.
   Invoked: the command-shaped literals in the first two arguments of `->invoke(` / `.invoke(`
     (self comes first), the first argument of the helpers `Invoke(` and `Forward(`, and the
@@ -94,6 +97,8 @@ LIST_POLICY = {
 }
 
 SHARED_SOURCES = {'quantum': ['spatial/*.h'], 'teleport': ['spatial/*.h']}
+# Plugins that live in their own repository, carried as a submodule below the product root.
+EXTERNAL_PLUGIN_ROOTS = {'creative': 'external/sc-creative/plugins/creative'}
 COMMON_SOURCES = ['picker.h']
 FILE_SUFFIXES = {'h', 'hpp', 'cpp', 'inc', 'ini', 'txt', 'dll', 'exe', 'db', 'xml', 'toml', 'json', 'md',
                  'lua', 'png', 'jpg', 'log', 'cfg', 'py', 'sh', 'zip', 'pdb'}
@@ -183,14 +188,15 @@ def read_sources(paths):
 
 
 def plugin_source_files(source, plugin_id):
-    base = source / 'plugins' / plugin_id
+    external = plugin_id in EXTERNAL_PLUGIN_ROOTS
+    base = source / EXTERNAL_PLUGIN_ROOTS[plugin_id] if external else source / 'plugins' / plugin_id
     files = []
     if base.is_dir():
         for pattern in ('*.cpp', '*.h', '*.inc'):
             files += [p for p in sorted(base.glob(pattern)) if 'test' not in p.name]
     for pattern in SHARED_SOURCES.get(plugin_id, []):
         files += [p for p in sorted((source / 'plugins').glob(pattern)) if 'test' not in p.name]
-    if base.is_dir():
+    if base.is_dir() and not external:
         files += [source / 'plugins' / name for name in COMMON_SOURCES if (source / 'plugins' / name).is_file()]
     return files
 
@@ -315,7 +321,8 @@ def check(tree, source, allow=()):
     for p in native:
         files = plugin_source_files(source, p['id'])
         if not files:
-            report['notes'].append(f"{p['id']}: no sources in {source.name}/plugins/{p['id']}; not analysed")
+            where = EXTERNAL_PLUGIN_ROOTS.get(p['id'], f"plugins/{p['id']}")
+            report['notes'].append(f"{p['id']}: no sources in {source.name}/{where}; not analysed")
             continue
         sources = read_sources(files)
         registered, invoked = analyse_commands(sources)

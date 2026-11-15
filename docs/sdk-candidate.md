@@ -81,8 +81,8 @@ host integration, native activation and game acceptance are distinct evidence.
 The local profile `player-offline-loadout-candidate` selects the 11 plugins from
 the stable `player-offline` profile plus enabled Loadout. It is an unpublished,
 inspection-only composition. The stable release profile and release gate are
-unchanged. Its disabled defaults remain explicit: `creative` and `discord` are
-disabled; the other ten entries are enabled. This local profile does not publish
+unchanged. Its disabled default remains explicit: `discord` is
+disabled; the other eleven entries, including `creative`, are enabled. This local profile does not publish
 an SDK or plugin package, approve runtime activation, or qualify upgrades.
 
 Supply real caller-built artifacts for all 12 entries; the tool does not build

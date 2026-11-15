@@ -3,7 +3,6 @@
 #include "loadout.h"
 #include "sc_loadout.h"
 #include "sc_cvars.h"
-#include "sc_creative.h"
 #include "sco_content.h"
 #include "sco_widgets.h"
 #include "slot_catalogue.h"
@@ -56,7 +55,7 @@ struct State {
     std::array<std::vector<weapon_types::Type>,2> published_types;
     bool player_events = false, sq_events = false; uintptr_t player_cookie = 0, sq_cookie = 0;
     char curated_status[256]{};
-    double height = 30, ahead = 8, speed = 30; bool sit = true;
+    double height = 30, ahead = 8; bool sit = true;
     char status[2048]{};
 } g;
 uintptr_t next_player_cookie = 0, next_sq_cookie = 0;
@@ -716,12 +715,6 @@ void Event(const char* panel,const sco_widget_event* e,void* context) {
         case 221: if(e->kind==SCO_WIDGET_BUTTON)Curated(true);break;
         case 222: if(e->kind==SCO_WIDGET_BUTTON){g.curated_picks.fill(0);Answer(SCO_OK,nullptr,0,"Curated selection cleared; equipped items and retained job unchanged.");}break;
         case 223: if(e->kind==SCO_WIDGET_BUTTON)(void)ReloadSlots(nullptr,0,nullptr,nullptr,0);break;
-        case 10: case 11: case 12: if (e->kind==SCO_WIDGET_TOGGLE && (e->value==0 || e->value==1)) {
-            auto a=Boolean(e->value!=0); Forward(e->node_id==10 ? "creative.noclip" : e->node_id==11 ? "creative.god" : "creative.ammo",&a,1,nullptr,0);
-        } break;
-        case 13: if (e->kind==SCO_WIDGET_SLIDER && std::isfinite(e->value) && e->value>=1 && e->value<=500) {
-            g.speed=e->value; auto a=Number(g.speed); Forward("creative.noclip_speed",&a,1,nullptr,0);
-        } break;
         default: break;
     }
     else switch(e->node_id) {
@@ -873,13 +866,6 @@ void Publish() {
     add(SCO_WIDGET_BUTTON,222,"Clear curated selection only");add(SCO_WIDGET_BUTTON,223,"Reload copied slot catalogue");
     add(SCO_WIDGET_LABEL,224,"Unchanged omits the slot. Parent replacement defaults are engine-defined; no None/clear or SRT defaults are synthesized.");
     add(SCO_WIDGET_LABEL,225,g.curated_status);
-    const auto* creative=Open<sc_creative_v1>(SC_CREATIVE_SERVICE_NAME);
-    uint32_t creative_flags=0;
-    const bool creative_known=HAS(creative,sc_creative_v1,state) && creative->state(g.self,&creative_flags)==SCO_OK;
-    add(SCO_WIDGET_TOGGLE,10,creative_known ? "Noclip (provider requested state)" : "Noclip [unknown]",creative_known && Cap("game.creative.fly") ? 0u : SCO_WIDGET_DISABLED).value=(creative_flags & SC_CREATIVE_FLY) ? 1 : 0;
-    add(SCO_WIDGET_TOGGLE,11,creative_known ? "God mode (provider requested state)" : "God mode [unknown]",creative_known && Cap("game.creative.god_mode") ? 0u : SCO_WIDGET_DISABLED).value=(creative_flags & SC_CREATIVE_GOD_MODE) ? 1 : 0;
-    add(SCO_WIDGET_TOGGLE,12,creative_known ? "Infinite ammo (provider requested state)" : "Infinite ammo [unknown]",creative_known && Cap("game.creative.ammo") ? 0u : SCO_WIDGET_DISABLED).value=(creative_flags & SC_CREATIVE_INFINITE_AMMO) ? 1 : 0;
-    auto& speed=add(SCO_WIDGET_SLIDER,13,"Noclip speed"); speed.value=g.speed; speed.minimum=1; speed.maximum=500;
     char status[256]{}; std::snprintf(status,sizeof(status),"%.255s",g.status); add(SCO_WIDGET_LABEL,14,status);
     if(next_player_cookie<std::numeric_limits<uintptr_t>::max()) {
         const auto cookie=++next_player_cookie;
