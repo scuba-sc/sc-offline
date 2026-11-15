@@ -331,7 +331,7 @@ static void ApplyTheme() {
     st.PopupBorderSize = 1;
     st.DisabledAlpha = 0.8f;   // ImGui's 0.6 over this dark green is unreadable
     st.ChildBorderSize = 1;
-    st.FrameBorderSize = 0;
+    st.FrameBorderSize = 1; // outlines checkboxes, inputs and combos against the dark panels
     st.TabBorderSize = 0;
     st.SeparatorTextBorderSize = 1;
     st.SeparatorTextPadding = ImVec2(0, 6);
@@ -356,6 +356,7 @@ static void ApplyTheme() {
     c[ImGuiCol_ScrollbarGrabHovered] = Hex(0x3C5E3F);
     c[ImGuiCol_ScrollbarGrabActive]  = kLeafDeep;
     c[ImGuiCol_CheckMark]            = kLeaf;
+    c[ImGuiCol_CheckboxSelectedBg]   = kLeafDeep;             // checked box; ImGui's default is stock blue
     c[ImGuiCol_SliderGrab]           = kLeafDeep;
     c[ImGuiCol_SliderGrabActive]     = kLeaf;
     c[ImGuiCol_Button]               = Hex(0x1F3523, 0.92f);

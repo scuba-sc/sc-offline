@@ -4,7 +4,7 @@
 
 With a Core that provides `Composition::ProcessRetained`, the product's native startup
 is enabled under retain-until-exit (module pinned and never unloaded, stop is closure,
-no restart). The Core now pinned in `external/sco-core` (`5ff2a64`) provides it, so
+no restart). The Core now pinned in `external/sco-core` (`94dffc5`) provides it, so
 activation is ON with the current pin; it is OFF only when building against an older Core.
 Compile, static source checks and synthetic host tests only. Not verified in game: that
 the game loads and behaves like the last shipped version, engine-object lifetime inside
@@ -14,9 +14,9 @@ hooks, real hook behavior, and that starting the game services on the game threa
 
 ## Current local development pairing
 
-The development gitlink selects Core `5ff2a64702e8…`,
+The development gitlink selects Core `94dffc561d98…`,
 which adds the opt-in process-retained host composition, with the development SDK
-coordinate `2.4.1-dev.5`. [SDK coordinates](sdk-candidate.md) still records the
+coordinate `2.4.1-dev.6`. [SDK coordinates](sdk-candidate.md) still records the
 earlier `2.4.1-dev.3` digests; archive digests for this pairing are not recorded
 there yet. Earlier stable/development receipts do not recertify it. The paired-source
 runner requires a new clean committed Offline identity before qualification. Native
