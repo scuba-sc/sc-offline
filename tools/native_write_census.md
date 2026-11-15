@@ -33,10 +33,10 @@ establish that it works.
 | `slot` | 7 |
 | `per_request` | 2 |
 | `os_hook` | 2 |
-| `core_registration` | 7 |
+| `core_registration` | 8 |
 | `entry_gate` | 3 |
 | `unreachable` | 4 |
-| total | 85 |
+| total | 86 |
 
 A table-driven site counts once: `InstallHooks` has one `Detour` call over the five-row `kHooks`
 table (the census records and the test checks the row count), and two patch functions make one
@@ -76,7 +76,7 @@ None. Every code write (`InstallDetour` through `HookFunction`, `EnsureHook`, `E
   `RunMainThreadService`, after `ReleaseStartupGate()`, once the game window exists. Neither is removed.
 - `core_registration`: `SetLogSink` is set in `ModThread` before `StartOffline`. The
   `Platform`/`Options` callbacks are set in `PrepareHostKit` and `offline_host::Prepare` at the gate.
-  `sco::Subscribe` runs from `StartHostKit` on a tick (under the hook callback lease), after the host kit reaches Prepared.
+  `sco::Subscribe` (actor deaths and `game.exit`) runs from `StartHostKit` on a tick (under the hook callback lease), after the host kit reaches Prepared.
 - `entry_gate`: the entry jump is written in `DllMain` (under the loader lock) by
   `InstallStartupGate`; it is restored on the game thread once the gate is released.
 - `unreachable`: the four detours in `HookBoostInput` (`src/quantum.cpp`). Nothing calls

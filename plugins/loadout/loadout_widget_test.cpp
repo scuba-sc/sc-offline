@@ -25,7 +25,7 @@ struct Panel {
     unsigned accepted = 0;
     std::map<uint32_t,uint32_t> combos, flags;
     std::vector<std::string> gear_labels, outfit_labels, ship_labels;
-    int outfit_index=-1, ship_index=-1; std::string outfit_filter, ship_filter, status;
+    int outfit_index=-1, ship_index=-1, build_index=-1; std::string outfit_filter, ship_filter, status;
 };
 std::vector<File> files;
 Panel player, sq42;
@@ -78,7 +78,7 @@ sco_result SetPanel(sco_plugin*,const char* id,const char*,const sco_widget_node
                     uint32_t count,uint32_t stride,sco_widget_event_fn event,void* context) {
     Require(nodes && count && stride==sizeof(sco_widget_node),"invalid panel extent");
     std::map<uint32_t,uint32_t> combos, flags; std::vector<std::string> gear_labels, outfit_labels, ship_labels;
-    int outfit_index=-1, ship_index=-1; std::string outfit_filter, ship_filter, status;
+    int outfit_index=-1, ship_index=-1, build_index=-1; std::string outfit_filter, ship_filter, status;
     for (uint32_t i=0;i<count;++i) {
         const auto& node=nodes[i];
         Require(node.size==sizeof(node),"invalid node extent");
@@ -88,6 +88,7 @@ sco_result SetPanel(sco_plugin*,const char* id,const char*,const sco_widget_node
         if(node.id==14 && node.label) status=node.label;
         if(node.id==120) { ship_index=node.index; for(uint32_t j=0;j<node.item_count;++j) ship_labels.emplace_back(node.items[j]); }
         if(node.id==136 && node.text) ship_filter=node.text;
+        if(node.id==130) build_index=node.index;
         if(node.id==2) for(uint32_t j=0;j<node.item_count;++j) gear_labels.emplace_back(node.items[j]);
         // sco.widgets requires a NULL array exactly when the item count is zero.
         // A rejected replacement must preserve the previous panel and callback.
@@ -104,6 +105,7 @@ sco_result SetPanel(sco_plugin*,const char* id,const char*,const sco_widget_node
     if(fail_sq && !std::strcmp(id,"loadout.sq42")) return SCO_FAILED;
     auto& panel=!std::strcmp(id,"loadout.player") ? player : sq42;
     panel.event=event; panel.context=context; ++panel.accepted; panel.combos=std::move(combos); panel.flags=std::move(flags); panel.gear_labels=std::move(gear_labels); panel.outfit_labels=std::move(outfit_labels); panel.outfit_index=outfit_index; panel.outfit_filter=std::move(outfit_filter); panel.ship_labels=std::move(ship_labels); panel.ship_index=ship_index; panel.ship_filter=std::move(ship_filter); panel.status=std::move(status);
+    panel.build_index=build_index;
     return SCO_OK;
 }
 sco_result RemovePanel(sco_plugin*,const char*) { ++removed; return SCO_OK; }
@@ -380,11 +382,67 @@ void Workflow(bool populated) {
     Send("loadout.sq42",before_unload,106,SCO_WIDGET_BUTTON); Require(submits==(populated ? 3u : 1u),"unloaded callback ignored");
     Require(removed==2 && unsubscribed==1,"unload cleanup mismatch");
 }
+// Long SQ42 outfit and buildable lists are paged 64 rows at a time (ids 137/138 and 139/140).
+std::string NumberedLines(const char* section,const char* prefix,unsigned count,bool outfits) {
+    std::string text=section;
+    for (unsigned i=0;i<count;++i) {
+        text+=outfits ? std::string("Armor_Helmet ")+prefix+std::to_string(i)+"\n" : std::string(prefix)+std::to_string(i)+"\n";
+    }
+    return text;
+}
+void Paging(unsigned outfits,unsigned builds) {
+    files={{"fixture_armory","lists/items.txt","[helmet]\nFixtureHelmet\n"}};
+    std::string outfit_text;
+    for (unsigned i=0;i<outfits;++i) outfit_text+="[Outfit "+std::to_string(i)+"]\nArmor_Helmet Helmet"+std::to_string(i)+"\n";
+    files.push_back({"sq42_catalog","lists/outfits.txt",outfit_text});
+    files.push_back({"build_catalog","lists/buildables.txt",NumberedLines("[sq42]\n","Object",builds,false)});
+    files[0].id=1; files[1].id=2; files[2].id=3;
+    player={}; sq42={}; rejected=0; removed=0; unsubscribed=0; fail_sq=false; reload_command=nullptr; items_command=nullptr; wear_command=nullptr; tick_event=nullptr; tick_time=0; async_cap=provider=true; supported=SC_LOADOUT_VERSION_1_2;
+    sco_api api{}; api.size=sizeof(api); api.major=SCO_API_MAJOR; api.minor=SCO_API_MINOR;
+    api.has=Has; api.register_command=Register; api.query_service=Query; api.invoke=Invoke;
+    api.subscribe=Subscribe; api.unsubscribe=Unsubscribe;
+    unsigned char owner=0; auto* self=reinterpret_cast<sco_plugin*>(&owner);
+    Require(sco::features::loadout::Load(&api,self)==SCO_OK,"paging load failed");
+    Send("loadout.sq42",sq42,100,SCO_WIDGET_BUTTON);
+    const auto disabled=[&](uint32_t id) { return (sq42.flags.at(id)&SCO_WIDGET_DISABLED)!=0; };
+    // Outfits: 64 fit one page; the 65th is on a second page.
+    Require(sq42.combos.at(101)==std::min(outfits,64u),"first outfit page holds at most 64 rows");
+    Require(disabled(137),"no previous outfit page on the first page");
+    Require(disabled(138)==(outfits<=64),"next outfit page exists only beyond 64 outfits");
+    Select("loadout.sq42",sq42,101,0);
+    Require(sq42.outfit_index==0 && !disabled(102),"first outfit selected and wearable");
+    if (outfits>64) {
+        Send("loadout.sq42",sq42,138,SCO_WIDGET_BUTTON);
+        Require(sq42.combos.at(101)==outfits-64,"second outfit page shows the remainder");
+        Require(sq42.outfit_index==-1 && disabled(102) && disabled(106),"selection off the page disables Wear and Submit");
+        Require(!disabled(137) && disabled(138),"previous enabled and next disabled on the last outfit page");
+        Send("loadout.sq42",sq42,138,SCO_WIDGET_BUTTON); // already last: a forged Next stays put
+        Require(sq42.combos.at(101)==outfits-64 && !disabled(137),"a forged Next past the last page is ignored");
+        Send("loadout.sq42",sq42,137,SCO_WIDGET_BUTTON);
+        Require(sq42.combos.at(101)==64 && sq42.outfit_index==0 && !disabled(102),"previous returns to the selected outfit");
+    }
+    // Buildables.
+    Require(sq42.combos.at(130)==std::min(builds,64u),"first buildable page holds at most 64 rows");
+    Require(disabled(139),"no previous buildable page on the first page");
+    Require(disabled(140)==(builds<=64),"next buildable page exists only beyond 64 buildables");
+    Select("loadout.sq42",sq42,130,0);
+    Require(sq42.build_index==0 && !disabled(132),"first buildable selected and placeable");
+    if (builds>64) {
+        Send("loadout.sq42",sq42,140,SCO_WIDGET_BUTTON);
+        Require(sq42.combos.at(130)==builds-64,"second buildable page shows the remainder");
+        Require(sq42.build_index==-1 && disabled(132),"selection off the page disables Place");
+        Require(!disabled(139) && disabled(140),"previous enabled and next disabled on the last buildable page");
+        Send("loadout.sq42",sq42,139,SCO_WIDGET_BUTTON);
+        Require(sq42.combos.at(130)==64 && sq42.build_index==0 && !disabled(132),"previous returns to the selected buildable");
+    }
+    sco::features::loadout::Unload();
+}
 }
 int main() {
     content.size=sizeof(content); content.item=Item; content.read=Read;
     loadout.size=sizeof(loadout); loadout.submit=Submit; loadout.status=Status; loadout.cancel=Cancel;
     widgets.size=sizeof(widgets); widgets.set_panel=SetPanel; widgets.remove_panel=RemovePanel;
     Workflow(false); Workflow(true);
+    Paging(65,64); Paging(64,65); Paging(65,65);
     std::puts("loadout widget workflow: PASS (synthetic public services; not run in game)");
 }

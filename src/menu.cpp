@@ -77,7 +77,7 @@ private:
 
 namespace Window = sc_offline::menu_window;
 static Window::EscapeInput g_escapeInput;
-static Window::Size g_menuSize;
+static Window::Size g_menuSize;   // outer size at 96 dpi (menu_window.h); not the live window's pixels
 static char g_menuSizePath[MAX_PATH];
 static bool g_clipped = false;
 static RECT g_clipRect = {};
@@ -98,16 +98,51 @@ static RECT MenuWorkArea(HWND window) {
     return work;
 }
 
+// The scale the window's own coordinates are in (96 when the thread is not DPI aware).
+static int MenuDpi(HWND window) {
+    const UINT dpi = GetDpiForWindow(window);
+    return dpi ? static_cast<int>(dpi) : Window::kBaseDpi;
+}
+
+// `size` is an outer size in the pixels of `monitorWindow`.
 static RECT FitMenu(Window::Size size, int x, int y, HWND monitorWindow) {
     const RECT work = MenuWorkArea(monitorWindow);
-    const auto fit = Window::Fit(size, x, y, MenuBounds(work));
+    const auto fit = Window::Fit(size, x, y, MenuBounds(work), MenuDpi(monitorWindow));
     return {fit.left, fit.top, fit.right, fit.bottom};
+}
+
+// The outer size the last restore applied. A resize that ends at this size changed nothing the user
+// asked for (a pure move also ends with WM_EXITSIZEMOVE), so it must not overwrite the saved size.
+static Window::Size g_appliedOuter = {0, 0};
+
+// The saved size, as an outer size for the monitor `monitorWindow` is on.
+static RECT RestoreMenu(int x, int y, HWND monitorWindow) {
+    const RECT work = MenuWorkArea(monitorWindow);
+    const int dpi = MenuDpi(monitorWindow);
+    const RECT fit = FitMenu(Window::Restore(g_menuSize, dpi, MenuBounds(work)), x, y, monitorWindow);
+    g_appliedOuter = MenuSize(fit);
+    Log("[menu] size restore: saved %dx%d (96 dpi) -> outer %dx%d at %d dpi, work area %ldx%ld",
+        g_menuSize.width, g_menuSize.height, g_appliedOuter.width, g_appliedOuter.height, dpi,
+        work.right - work.left, work.bottom - work.top);
+    return fit;
 }
 
 static void RememberMenuSize(HWND window) {
     RECT rect{};
-    if (!GetWindowRect(window, &rect)) return;
-    g_menuSize = MenuSize(rect);
+    if (!GetWindowRect(window, &rect)) return;   // outer rect, the same space SetWindowPos takes
+    const Window::Size outer = MenuSize(rect);
+    const RECT work = MenuWorkArea(window);
+    const int dpi = MenuDpi(window);
+    if (outer.width == g_appliedOuter.width && outer.height == g_appliedOuter.height) {
+        Log("[menu] size kept: outer %dx%d at %d dpi is what restore applied (a move, or no resize); saved stays %dx%d",
+            outer.width, outer.height, dpi, g_menuSize.width, g_menuSize.height);
+        return;
+    }
+    g_appliedOuter = outer;
+    g_menuSize = Window::Remember(outer, dpi, MenuBounds(work));
+    Log("[menu] size remember: outer %dx%d at %d dpi, work area %ldx%ld -> saved %dx%d (96 dpi)",
+        outer.width, outer.height, dpi, work.right - work.left, work.bottom - work.top,
+        g_menuSize.width, g_menuSize.height);
     if (g_menuSizePath[0] && !Window::Save(g_menuSizePath, g_menuSize))
         Log("[menu] couldn't save menu-window.ini; size will not persist");
 }
@@ -166,11 +201,11 @@ static LRESULT CALLBACK MenuWndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
     switch (msg) {
     case WM_GETMINMAXINFO: {
         const RECT work = MenuWorkArea(h);
-        const auto minimum = Window::Fit({Window::kMinWidth, Window::kMinHeight}, work.left, work.top,
-                                         MenuBounds(work));
+        const auto minimum = Window::Clamp({1, 1}, MenuBounds(work), MenuDpi(h));
+        const auto maximum = Window::Clamp({Window::kMaxDimension, Window::kMaxDimension}, MenuBounds(work), MenuDpi(h));
         auto* limits = reinterpret_cast<MINMAXINFO*>(l);
-        limits->ptMinTrackSize = {minimum.right - minimum.left, minimum.bottom - minimum.top};
-        limits->ptMaxTrackSize = {work.right - work.left, work.bottom - work.top};
+        limits->ptMinTrackSize = {minimum.width, minimum.height};
+        limits->ptMaxTrackSize = {maximum.width, maximum.height};
         return 0;
     }
     case WM_SIZING: {
@@ -223,7 +258,7 @@ static void ShowMenu(bool show) {
     if (show) {
         RECT r = {};
         GetWindowRect(g_game, &r);
-        const RECT fit = FitMenu(g_menuSize, r.left + 60, r.top + 60, g_game);
+        const RECT fit = RestoreMenu(r.left + 60, r.top + 60, g_game);
         SetWindowPos(g_wnd, HWND_TOPMOST, fit.left, fit.top, fit.right - fit.left, fit.bottom - fit.top, SWP_SHOWWINDOW);
         SetForegroundWindow(g_wnd);
         SetCursorPos(fit.left + (fit.right - fit.left) / 2, fit.top + (fit.bottom - fit.top) / 2);
@@ -293,6 +328,8 @@ static void ApplyTheme() {
     st.TabRounding = 4;
     st.ScrollbarRounding = 4;
     st.WindowBorderSize = 0;
+    st.PopupBorderSize = 1;
+    st.DisabledAlpha = 0.8f;   // ImGui's 0.6 over this dark green is unreadable
     st.ChildBorderSize = 1;
     st.FrameBorderSize = 0;
     st.TabBorderSize = 0;
@@ -305,8 +342,8 @@ static void ApplyTheme() {
     c[ImGuiCol_TextDisabled]         = kMuted;
     c[ImGuiCol_WindowBg]             = ImVec4(0, 0, 0, 0);          // the background is drawn underneath
     c[ImGuiCol_ChildBg]              = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_PopupBg]              = Hex(0x132216, 0.98f);
-    c[ImGuiCol_Border]               = kLine;
+    c[ImGuiCol_PopupBg]              = Hex(0x1C3321, 1.0f);         // lighter than the soil-green window
+    c[ImGuiCol_Border]               = Hex(0x4F7F51);               // visible on popups and child panels
     c[ImGuiCol_BorderShadow]         = ImVec4(0, 0, 0, 0);
     c[ImGuiCol_FrameBg]              = Hex(0x172A1B, 0.88f);
     c[ImGuiCol_FrameBgHovered]       = Hex(0x1F3523, 0.95f);
@@ -324,9 +361,9 @@ static void ApplyTheme() {
     c[ImGuiCol_Button]               = Hex(0x1F3523, 0.92f);
     c[ImGuiCol_ButtonHovered]        = Hex(0x2A4730);
     c[ImGuiCol_ButtonActive]         = kLeafDeep;
-    c[ImGuiCol_Header]               = Hex(0x3E6B27, 0.55f);
-    c[ImGuiCol_HeaderHovered]        = Hex(0x1F3523, 0.95f);
-    c[ImGuiCol_HeaderActive]         = kLeafDeep;
+    c[ImGuiCol_Header]               = Hex(0x3F7A2A, 0.90f);        // selected row: leaf green, text stays above 4.5:1
+    c[ImGuiCol_HeaderHovered]        = Hex(0x2D5832, 1.0f);         // hovered row: clearly lighter than the panels
+    c[ImGuiCol_HeaderActive]         = Hex(0x4F9433, 1.0f);
     c[ImGuiCol_Separator]            = kLine;
     c[ImGuiCol_SeparatorHovered]     = kLeafDeep;
     c[ImGuiCol_SeparatorActive]      = kLeaf;
@@ -865,7 +902,7 @@ static DWORD WINAPI MenuThread(LPVOID) {
     }
     RECT game{};
     GetWindowRect(g_game, &game);
-    const RECT initial = FitMenu(g_menuSize, game.left + 60, game.top + 60, g_game);
+    const RECT initial = RestoreMenu(game.left + 60, game.top + 60, g_game);
     WNDCLASSEXW wc = { sizeof(wc) };
     wc.lpfnWndProc = MenuWndProc;
     wc.hInstance = GetModuleHandleW(nullptr);

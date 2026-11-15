@@ -4,8 +4,8 @@
 composition.** CMake probes the selected Core's `include/sco/game/host.h` for
 `Composition::ProcessRetained` and defines `SCO_CORE_PROCESS_RETAINED_COMPOSITION`;
 together with the non-draining stop API (`SCO_CORE_NON_DRAINING_STOP_API`) that makes
-`NativeActivationAvailable()` true. The current `external/sco-core` pin (Core `2c59c2b`, development SDK coordinate
-`2.4.1-dev.4`) provides it, so activation is ON with the pin. With an older Core (for
+`NativeActivationAvailable()` true. The current `external/sco-core` pin (Core `5ff2a64`, development SDK coordinate
+`2.4.1-dev.5`) provides it, so activation is ON with the pin. With an older Core (for
 example one selected through `SCO_HOST_SOURCE_DIR`), configure prints that native startup
 remains refused and the product keeps refusing: no entry hook, native Prepare/Start, product patch or plugin
 activation. The product selects `Options::composition = ProcessRetained`, which runs the

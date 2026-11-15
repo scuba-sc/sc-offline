@@ -84,7 +84,7 @@ static std::atomic<unsigned> g_quiesceGateHeld{0}, g_quiesceAdmittedStart{0}, g_
 static uint8_t* g_entry = nullptr;
 static uint8_t g_entrySaved[12];
 static std::atomic<uint64_t> g_startupGateProgressMs{0};
-static constexpr DWORD kGateTimeoutMs = 60000;
+static constexpr DWORD kGateTimeoutMs = 180000;
 static constexpr DWORD kGateProgressIntervalMs = 5000;
 
 static void ReleaseStartupGate() {
@@ -555,7 +555,7 @@ static void LogStartup() {
         else Log("[app] signature snapshot unavailable; no host registry is published");
     }
     if (g_quitHookStatus) Log("[app] game quit hook: %s", g_quitHookStatus);
-    Log("[!] teleport: G2 REFUSE; F7/F8 consumer unavailable; read services are separate");
+    Log("[app] teleport: moves use game.relocation and report their own result");
     if (SpawnerReady()) Log("[+] ship spawner: ready (M = menu)");
     else                Log("[!] ship spawner: unavailable (see above)");
 #ifndef SCO_ASOP_HOST_COMPOSITION
@@ -714,9 +714,10 @@ static bool PrepareHostKit() {
     }
     g_quitHookStatus = sco::game::host::Status().quitHookInstalled ? "installed by game pack" : "unavailable";
     if (result != sco::Result::Ok) Log("[app] offline admission/prepare refused: %s", sco::ResultName(result));
-    Log("[startup] 2/8 host Prepare: %s (phase %s; quiescence attested gate-held=%u refused=%u)", sco::ResultName(result),
-        PhaseName(sco::game::host::Status().phase), g_quiesceGateHeld.load(std::memory_order_relaxed),
-        g_quiesceRefused.load(std::memory_order_relaxed));
+    Log("[startup] 2/8 host Prepare: %s (phase %s; quiescence attested gate-held=%u refused=%u; %llu ms since ModThread start)",
+        sco::ResultName(result), PhaseName(sco::game::host::Status().phase), g_quiesceGateHeld.load(std::memory_order_relaxed),
+        g_quiesceRefused.load(std::memory_order_relaxed),
+        static_cast<unsigned long long>(GetTickCount64() - g_modThreadStartMs));
     return result == sco::Result::Ok;
 #else
     Log("[app] offline startup unavailable: published host pin lacks G1; no private fallback");
@@ -748,6 +749,8 @@ static void OnContractActorDied(const char*, const void* data, void*) {
     const auto* d = static_cast<const sc_game_actor_died*>(data);
     if (d && d->size >= sizeof(*d)) RecordContractDeath(d->entity_id);
 }
+// The wallet is polled every 5 s; this writes the last change before the game closes.
+static void OnContractsGameExit(const char*, const void*, void*) { SaveContractsWalletAtExit(); }
 
 static void StartHostKit() {
 #ifdef SCO_OFFLINE_G1_HOST
@@ -793,6 +796,9 @@ static void StartHostKit() {
         const auto deaths = sco::Subscribe(&kContractsOwner, SC_GAME_EVENT_ACTOR_DIED, OnContractActorDied, nullptr);
         if (deaths != sco::Result::Ok)
             Log("[contracts] actor-death subscription refused: %s; kill objectives may not complete", sco::ResultName(deaths));
+        const auto exits = sco::Subscribe(&kContractsOwner, "game.exit", OnContractsGameExit, nullptr);
+        if (exits != sco::Result::Ok)
+            Log("[contracts] game.exit subscription refused: %s; the wallet saves every 5 s only", sco::ResultName(exits));
     }
 #ifdef SCO_ASOP_HOST_COMPOSITION
     if (g_hostKitStarted) {

@@ -106,8 +106,8 @@ CryPak timing or gameplay.
 
 | File | Contents |
 | --- | --- |
-| `storage\` | Your saves: `teleport.db` (the F7 / F8 position), `quantum.db` (your named Travel spots), `contracts.db` (your aUEC balance), each with SQLite's `-wal` and `-shm` files, and any plugin's own database. See [Saves](#saves) |
-| `wallet.txt` | Your aUEC balance, also in `storage\contracts.db`; you can edit it |
+| `storage\` | Your saves: `teleport.db` (the F7 / F8 position), `quantum.db` (your named Travel spots), each with SQLite's `-wal` and `-shm` files, and any plugin's own database. See [Saves](#saves) |
+| `wallet.txt` | Your aUEC balance, the only wallet store today; you can edit it while the game is closed |
 | `spawn.txt` | Your F7 / F8 position from before `storage\`; read once, then left as it is |
 | `bookmarks.txt` | Your named Travel spots from before `storage\`; read once, then left as it is |
 | `locations_found.txt` | The results of the Travel scan |
@@ -122,14 +122,33 @@ build refuses before the host selection service starts, so it does not create or
 read this file and the file does not change the terminal list. See the
 [ASOP selection candidate](asop-selection-candidate.md).
 
+## What persists between sessions
+
+| What | Where | Written |
+| --- | --- | --- |
+| F7 saved spot | `storage\teleport.db` | when you save it |
+| Travel bookmarks | `storage\quantum.db` | when you save or delete one |
+| Discovered locations | `locations_found.txt` | by the Travel scan |
+| Wallet (aUEC) | `wallet.txt` | when the balance changes, and at exit |
+| Menu window size | `menu-window.ini` | when you finish resizing the menu |
+| Plugin settings and enable markers | each plugin's folder | by the launcher, while the game is closed |
+
+What does **not** persist today:
+
+- Inventory and loadout: gear you equip is session only.
+- Owned or stored ships and hangar contents: session only.
+- Contract progress and reputation.
+- Objects placed with build mode.
+- World state.
+
 ## Saves
 
-The F7 / F8 spot, the Travel tab's saved spots and the wallet are kept by the built-in plugins `teleport`, `quantum` and `contracts` in sco-core's `sco.storage` service: one SQLite database each in `data\storage\<built-in>.db`. A save there is all or nothing, so a crash keeps either the old save or the new one.
+The F7 / F8 spot and the Travel tab's saved spots are kept by the built-in plugins `teleport` and `quantum` in sco-core's `sco.storage` service: one SQLite database each in `data\storage\<built-in>.db`. A save there is all or nothing, so a crash keeps either the old save or the new one.
 
 The old files are imported, not deleted:
 
 - `spawn.txt` and `bookmarks.txt` are read into storage the first time the game starts with this version (`[storage] imported spawn.txt into teleport` in `mod.log`) and are not written after that. They stay readable as they were. If one changes later (you copy one in from an older install, say), it is newer than what storage has seen and is imported again, replacing the saved spot or the saved spot list.
-- `wallet.txt` is still written every time your balance is saved, because you can edit it (see [Features](features.md#player)). Storage records the file's time with each save. When the game starts and `wallet.txt` has a different time (you edited it, or copied one in), the file wins and is imported again (`[storage] imported wallet.txt into contracts`). Deleting `wallet.txt` still takes you back to the starting amount: storage's balance is cleared with it.
+- `wallet.txt` is the wallet's only store: no code opens `storage\contracts.db` today, so no such database is created. It is written when your balance changes and once more when the game closes, to a temporary file that then replaces it, so a crash leaves the old balance or the new one. Deleting `wallet.txt` takes you back to the starting amount from `OfflineDB\default_1.xml`.
 
 If storage can't be used (a built-in didn't load, or a database can't be opened or written), `mod.log` says so with a `[storage]` line and that feature reads and writes its `.txt` file as before. Delete the three files of a database (`.db`, `.db-wal`, `.db-shm`) while the game is closed to forget what it holds; the `.txt` file, if there is one, is imported again on the next start.
 

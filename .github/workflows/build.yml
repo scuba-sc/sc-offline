@@ -342,6 +342,7 @@ jobs:
           ./capability_refusal_test
           python3 tools/test_native_preflight_wiring.py
           python3 tools/test_native_write_census.py
+          python3 tools/test_check_package_tree.py
           python3 tools/test_no_host_fallback.py
 
       - name: Owned signature snapshot diagnostics

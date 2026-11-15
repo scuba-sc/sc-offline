@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- **Add a package preflight.** `tools/check_package_tree.py` inspects a staged package and fails when an enabled plugin invokes a command no enabled plugin registers, or when a list file an enabled plugin needs is in no enabled data pack (or in several). Static check; it does not show that anything loads or works in game.
+
+- **Guard the wallet and keep `wallet.txt` byte-compatible.** The wallet is saved only after the restored balance has actually been applied to the engine this session, so the engine's default balance can no longer overwrite a good `wallet.txt`; the file keeps its CR LF line ending. The exit save logs whether it wrote. The menu logs each size restore and remember with its inputs, and a pure move no longer re-saves a size that was only reduced to fit a small monitor.
+
+- **Keep the menu window size stable.** The saved size is now the window's outer size at 96 dpi, restored for the monitor the game is on and clamped between 720 x 520 and 90% of that monitor's work area; a saved file outside that range, or a malformed one, falls back to the default size. Showing and hiding the menu or resizing it no longer changes the size. Synthetic size tests only; the cause of the reported growth is not confirmed; **not run in game**.
+
+- **Make menu text easier to read.** Disabled controls are less faded, selected and hovered rows stand out, and popups have a lighter background with a visible border. Not checked on screen.
+
+- **Wait longer at the startup gate and log where the time goes.** The game's entry gate now waits up to 180 s instead of 60 s, and the `[startup] 2/8 host Prepare` line in `mod.log` shows the milliseconds since the mod's startup thread began. **Not run in game**.
+
+- **Save the wallet at exit and write it safely.** A balance change in the last few seconds before the game closes is saved on `game.exit`, and `wallet.txt` is replaced through a flushed temporary file so a crash leaves the old balance or the new one. The log now says whether the balance came from `wallet.txt` or from the offline data file. The docs no longer claim a `storage/contracts.db` wallet; `wallet.txt` is the only store. **Not run in game**.
+
+- Correct stale texts: the startup log no longer claims the teleport move is refused, the Teleport plugin's setting help says moves use `game.relocation` and report their own result, and the quit paragraph in the feature guide describes the closure-only stop. A new "What persists between sessions" table lists what is and is not saved.
+
+- Spawn refusals now name the failed check (class lookup, entities spawn or despawn, player pose, or the `spawn.ship` / `game.entities.spawn` capability).
+
+- Loadout: remove the duplicated weapon-group labels and page long SQ42 outfit and buildable lists 64 rows at a time. Synthetic tests only; **not run in game**.
+
 - **Run native startup on the process-retained Core composition.** On a Core that provides `Composition::ProcessRetained`, the product starts natively under retain-until-exit: its module is pinned and never unloaded, code patches are written at the entry gate, install quiescence is attested by the shell (gate held, or the game thread inside the product's own `Start`, a known deviation documented in `docs/host-composition.md`), and stop is closure only (no drain, unload or restart). The post-stop hook-callback wait is bounded to 5 s, and startup and shutdown write numbered `[startup]`/`[shutdown]` lines to `mod.log`. Any other Core keeps the refusal. Static and synthetic checks only; **not run in game**.
 
 - Install the startup gate only for a static-import load of the module, so loader retention precedes `DllMain`; a dynamic load is refused before any entry patch, event, thread or callback. Portable policy tests and a synthetic module-lifetime fixture only; native activation remains refused; **not run in game**.

@@ -319,7 +319,7 @@ Keep `Game.log` if you want to report a bug. Set `clean_logs = off` in `sc-offli
 
 Each line is `key = value`. Lines starting with `#` are comments. An unknown key is reported when the launcher starts, not silently ignored.
 
-There is no wallet setting: your aUEC balance is kept in `data\storage\contracts.db` and `data\wallet.txt`, which you can edit (see [Features](features.md#player)).
+There is no wallet setting: your aUEC balance is kept in `data\wallet.txt`, which you can edit (see [Features](features.md#player)).
 
 Reading a setting does not establish that its requested game feature is available.
 The launcher retains `start` and `start_ship` and passes them to the host for

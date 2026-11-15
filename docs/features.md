@@ -13,12 +13,13 @@ and unverified game acceptance. Other sections retain historical feature
 requests where their owning modules have not yet closed parity.
 
 The menu window can be resized from its edges and corners. Finishing a resize
-saves its outer width and height beside `mod.log`, normally `data/menu-window.ini`;
-the next game start restores them. Opening the menu again keeps that size. The
-window is fitted inside the monitor's work area, with a 400×300 minimum unless
-the work area itself is smaller. Long tab titles keep their width; use the tab
-bar's arrow buttons when they overflow. Missing or invalid saved dimensions fall
-back to 600×900 before fitting to the display. Delete `menu-window.ini` while the
+saves its outer width and height, normalised to 96 dpi, beside `mod.log`, normally
+`data/menu-window.ini`; the next game start restores them for the dpi of the
+monitor the game is on. Opening the menu again keeps that size. The window is
+clamped from 720×520 up to 90% of that monitor's work area (the minimum yields
+if the work area is smaller). Long tab titles keep their width; use the tab
+bar's arrow buttons when they overflow. Missing, malformed or out-of-range saved dimensions fall
+back to 1000×800 (at 96 dpi) before clamping to the display. Delete `menu-window.ini` while the
 game is closed to reset the size. This file does not change `sc-offline.ini`, game
 settings, or plugin preferences. These paths have headless regression coverage;
 native Windows resizing, rendering and game acceptance remain unverified.
@@ -29,7 +30,7 @@ Most of the lists below are plain text files in `data/`, and the counts are take
 
 - Noclip, god mode, infinite ammo: from the optional [creative plugin](#the-creative-plugin) (shipped off; turn it on in the launcher's Plugins page).
 - Gear selection is now the external [loadout development module](../plugins/loadout/README.md): copied `items.txt` lists, typed G6 equip, explicit unsupported slots/refusals, no private/XML fallback. The pinned SDK lacks this route; equip and complete legacy-slot parity remain pending.
-- Wallet: your aUEC balance is loaded when you spawn and saved as it changes, in the contracts built-in's storage (`data/storage/contracts.db`) and in `data/wallet.txt`. The file holds just the number; edit it while the game is closed to change your balance: an edited `wallet.txt` always wins over the stored balance (see [Saves](data-files.md#saves)). Without the file, you start with the `aUEC amount` in `data/OfflineDB/default_1.xml` (100,000,000). Once `wallet.txt` exists, that amount is no longer used, so delete `wallet.txt` to go back to it.
+- Wallet: your aUEC balance is loaded when you spawn and saved to `data/wallet.txt` when it changes (checked every 5 seconds) and once more when the game closes. That file is the only wallet store today; nothing is kept in `storage/contracts.db`. The file holds just the number; edit it while the game is closed to change your balance (see [What persists between sessions](data-files.md#what-persists-between-sessions)). Without the file, you start with the `aUEC amount` in `data/OfflineDB/default_1.xml` (100,000,000). Once `wallet.txt` exists, that amount is no longer used, so delete `wallet.txt` to go back to it.
 
 ## Travel
 
@@ -209,7 +210,7 @@ sco-core's game pack publishes `teleport.spatial` 1.0 (since game pack 0.1.0; th
 
 A plugin can add its own menu tab (drawn with sc-offline's ImGui), a badge beside the tab title, and an overlay. It can also bind a free key chord such as `ctrl+alt+9` to any command. sc-offline keeps **M** and build mode's keys for itself. See [plugin-ui.md](plugin-ui.md) for the tab order, how to draw, and the full key table.
 
-When you quit the game (the menu's Quit, or the `quit` console command), plugins get `game.exit` and are then unloaded, newest first and built-ins last, before the game exits. `mod.log` shows `[app] game closing (CSystem::Quit): game.exit, unloading plugins` followed by one `[plugin] unloaded <id>` line per plugin. If the game crashes or is killed (Task Manager, `taskkill`), plugins get no `game.exit` and aren't unloaded; don't rely on it to save anything that matters.
+When you quit the game (the menu's Quit, or the `quit` console command), the host dispatches `game.exit` once and closes admission, so no new work is accepted. Plugins are not unloaded: everything stays loaded until the process exits. `mod.log` shows one `[shutdown] game-thread closure` line. If the game crashes or is killed (Task Manager, `taskkill`), plugins get no `game.exit`; don't rely on it to save anything that matters. The wallet is written on change, so at most the last few seconds of a balance change are at risk.
 
 ### The inspector plugin
 

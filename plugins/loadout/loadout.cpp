@@ -39,11 +39,11 @@ struct Lists {
 struct State {
     const sco_api* api = nullptr; sco_plugin* self = nullptr;
     Lists lists; bool lists_known = false, spoilers = false, clocked = false;
-    uint32_t last_read = 0, page = 0; int32_t outfit = -1, ship = 0, build = -1;
+    uint32_t last_read = 0, page = 0, outfit_page = 0, build_page = 0; int32_t outfit = -1, ship = 0, build = -1;
     uint64_t content_generation = 0, outfit_generation = 0;
     int cvars[4]{-1,-1,-1,-1};
     std::string filter, outfit_filter, ship_filter, equip, visor, slots;
-    std::vector<size_t> published_items, published_outfits, published_ships;
+    std::vector<size_t> published_items, published_outfits, published_ships, published_builds;
     ContentSource published_items_source, published_outfits_source, published_buildables_source;
     uint64_t player_content_generation = 0, sq_content_generation = 0;
     uint64_t job = 0; std::vector<Piece> job_pieces; bool job_poll_paused = false;
@@ -192,10 +192,10 @@ sco_result ReadLists(std::string* failure=nullptr) {
     // A reload withdraws the old snapshot before reading. Callbacks and selections
     // from that generation cannot act while a replacement is being assembled.
     g.player_events=false; g.sq_events=false; g.lists_known=false;
-    g.lists={}; g.published_items.clear(); g.published_outfits.clear(); g.published_ships.clear();
+    g.lists={}; g.published_items.clear(); g.published_outfits.clear(); g.published_ships.clear(); g.published_builds.clear();
     g.published_items_source={}; g.published_outfits_source={}; g.published_buildables_source={};
     g.player_content_generation=0; g.sq_content_generation=0; g.outfit_generation=0;
-    g.outfit=-1; g.build=-1; g.page=0; g.equip.clear();
+    g.outfit=-1; g.build=-1; g.page=0; g.outfit_page=0; g.build_page=0; g.equip.clear();
     if (failure) failure->clear();
     if (g.content_generation==std::numeric_limits<uint64_t>::max())
         return fail(SCO_TOO_MANY,"Loadout content generation limit reached; restart the host before reloading.");
@@ -621,6 +621,11 @@ std::vector<size_t> Filtered() {
     }
     return matches;
 }
+size_t OutfitMatches() {
+    size_t count=0;
+    for (const auto& outfit:g.lists.outfits) if (catalogue::Contains(outfit.name,g.outfit_filter)) ++count;
+    return count;
+}
 // Slot indices are catalogue identities, not the order used to draw the groups.
 size_t WeaponGroup(size_t slot) { return slot==1 || (slot>=5&&slot<=7) || slot>=11 ? 1u : 0u; }
 void ClearAttachments(size_t group) {
@@ -728,7 +733,11 @@ void Event(const char* panel,const sco_widget_event* e,void* context) {
                 g.outfit_generation=g.sq_content_generation;
             }
         } break;
-        case 135: (void)PickerText(e,g.outfit_filter); break;
+        case 135: (void)PickerText(e,g.outfit_filter); g.outfit_page=0; break;
+        case 137: if (e->kind==SCO_WIDGET_BUTTON && g.outfit_page) --g.outfit_page; break;
+        case 138: if (e->kind==SCO_WIDGET_BUTTON && static_cast<size_t>(g.outfit_page+1)*64<OutfitMatches()) ++g.outfit_page; break;
+        case 139: if (e->kind==SCO_WIDGET_BUTTON && g.build_page) --g.build_page; break;
+        case 140: if (e->kind==SCO_WIDGET_BUTTON && static_cast<size_t>(g.build_page+1)*64<g.lists.buildables.size()) ++g.build_page; break;
         case 102: if (e->kind==SCO_WIDGET_BUTTON && g.outfit_generation==g.lists.generation && g.outfit>=0 && static_cast<size_t>(g.outfit)<g.lists.outfits.size() && std::find(g.published_outfits.begin(),g.published_outfits.end(),static_cast<size_t>(g.outfit))!=g.published_outfits.end()) {
             auto a=Text(g.lists.outfits[static_cast<size_t>(g.outfit)].name.c_str()); Wear(&a,1,nullptr,nullptr,0);
         } break;
@@ -753,9 +762,9 @@ void Event(const char* panel,const sco_widget_event* e,void* context) {
             sco_arg a[]{Text(ship.cls),Number(ship.board ? g.height : ship.height),Text(sit ? "pilot" : "none"),Boolean(sit)};
             Spawn(a,4,nullptr,nullptr,0);
         } break;
-        case 130: if (e->kind==SCO_WIDGET_COMBO && e->index>=0 && static_cast<size_t>(e->index)<g.lists.buildables.size()) g.build=e->index; break;
+        case 130: if (e->kind==SCO_WIDGET_COMBO && e->index>=0 && static_cast<size_t>(e->index)<g.published_builds.size()) g.build=static_cast<int32_t>(g.published_builds[static_cast<size_t>(e->index)]); break;
         case 131: if (e->kind==SCO_WIDGET_SLIDER && std::isfinite(e->value) && e->value>=0 && e->value<=100) g.ahead=e->value; break;
-        case 132: if (e->kind==SCO_WIDGET_BUTTON && g.build>=0 && static_cast<size_t>(g.build)<g.lists.buildables.size()) {
+        case 132: if (e->kind==SCO_WIDGET_BUTTON && g.build>=0 && static_cast<size_t>(g.build)<g.lists.buildables.size() && std::find(g.published_builds.begin(),g.published_builds.end(),static_cast<size_t>(g.build))!=g.published_builds.end()) {
             sco_arg a[]{Text(g.lists.buildables[static_cast<size_t>(g.build)].c_str()),Number(g.ahead)}; Build(a,2,nullptr,nullptr,0);
         } break;
         default: break;
@@ -825,7 +834,6 @@ void Publish() {
         auto grouped=[&](uint32_t kind,uint32_t id,const char* label,uint32_t flags=0)->sco_widget_node& {
             auto& node=add(kind,id,label,flags);node.parent=parent;return node;
         };
-        grouped(SCO_WIDGET_LABEL,250u+static_cast<uint32_t>(group),group?"Secondary weapon / tool":"Primary weapon / tool");
         auto& types=type_rows[group];auto& labels=type_options[group];types.push_back(weapon_types::All);
         if(g.curated)for(int type=weapon_types::All+1;type<weapon_types::Count;++type) {
             const auto value=static_cast<weapon_types::Type>(type);
@@ -882,12 +890,12 @@ void Publish() {
         }
     }
     nodes.clear(); options.clear(); text.clear();
-    std::vector<size_t> outfit_rows, ship_rows;
+    std::vector<size_t> outfit_rows, ship_rows, build_rows;
     const auto publish_sq=[&] {
         if(next_sq_cookie<std::numeric_limits<uintptr_t>::max()) {
             const auto cookie=++next_sq_cookie;
             if(w->set_panel(g.self,"loadout.sq42","Squadron 42",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(sco_widget_node),Event,reinterpret_cast<void*>(cookie))==SCO_OK) {
-                g.published_outfits=std::move(outfit_rows); g.published_ships=std::move(ship_rows);
+                g.published_outfits=std::move(outfit_rows); g.published_ships=std::move(ship_rows); g.published_builds=std::move(build_rows);
                 g.published_outfits_source=outfits_source; g.published_buildables_source=buildables_source;
                 g.sq_content_generation=content_generation; g.sq_cookie=cookie; g.sq_events=true;
             }
@@ -897,11 +905,16 @@ void Publish() {
     else {
         add(SCO_WIDGET_TEXT_INPUT,135,"Search SQ42 outfits (63 ASCII characters)").text=g.outfit_filter.c_str();
         int32_t selected_row=-1;
-        for (size_t i=0;i<g.lists.outfits.size();++i) if (catalogue::Contains(g.lists.outfits[i].name,g.outfit_filter)) {
-            if (g.outfit>=0 && static_cast<size_t>(g.outfit)==i) selected_row=static_cast<int32_t>(outfit_rows.size());
-            outfit_rows.push_back(i); options.push_back(g.lists.outfits[i].name.c_str());
+        std::vector<size_t> outfit_matches;   // paged like the Player gear list: at most 64 rows per combo
+        for (size_t i=0;i<g.lists.outfits.size();++i) if (catalogue::Contains(g.lists.outfits[i].name,g.outfit_filter)) outfit_matches.push_back(i);
+        if (static_cast<size_t>(g.outfit_page)*64>=outfit_matches.size()) g.outfit_page=0;
+        for (size_t i=static_cast<size_t>(g.outfit_page)*64;i<outfit_matches.size() && outfit_rows.size()<64;++i) {
+            if (g.outfit>=0 && static_cast<size_t>(g.outfit)==outfit_matches[i]) selected_row=static_cast<int32_t>(outfit_rows.size());
+            outfit_rows.push_back(outfit_matches[i]); options.push_back(g.lists.outfits[outfit_matches[i]].name.c_str());
         }
-        auto& outfit=add(SCO_WIDGET_COMBO,101,"SQ42 outfit"); outfit.items=options.empty() ? nullptr : options.data(); outfit.item_count=static_cast<uint32_t>(options.size()); outfit.index=selected_row;
+        auto& outfit=add(SCO_WIDGET_COMBO,101,"SQ42 outfit (64 per page)"); outfit.items=options.empty() ? nullptr : options.data(); outfit.item_count=static_cast<uint32_t>(options.size()); outfit.index=selected_row;
+        add(SCO_WIDGET_BUTTON,137,"Previous outfit page",g.outfit_page ? 0u : SCO_WIDGET_DISABLED);
+        add(SCO_WIDGET_BUTTON,138,"Next outfit page",static_cast<size_t>(g.outfit_page+1)*64<outfit_matches.size() ? 0u : SCO_WIDGET_DISABLED);
         add(SCO_WIDGET_BUTTON,102,"Wear SQ42 outfit",selected_row>=0 && !g.job ? 0u : SCO_WIDGET_DISABLED);
         add(SCO_WIDGET_BUTTON,106,"Submit selected outfit job (1.2)",selected_row>=0 && !g.job && async_available ? 0u : SCO_WIDGET_DISABLED);
         add(SCO_WIDGET_BUTTON,107,"Inspect loadout job",g.job ? 0u : SCO_WIDGET_DISABLED);
@@ -924,10 +937,17 @@ void Publish() {
         auto& height=add(SCO_WIDGET_SLIDER,121,"Height above me (m)"); height.value=g.height; height.minimum=0; height.maximum=500;
         add(SCO_WIDGET_TOGGLE,122,"Pilot seat and Flight Ready").value=g.sit ? 1 : 0;
         add(SCO_WIDGET_BUTTON,123,"Spawn via external spawn.ship_options",ship_row>=0 ? 0u : SCO_WIDGET_DISABLED);
-        std::vector<const char*> builds; for (const auto& name:g.lists.buildables) builds.push_back(name.c_str());
-        auto& build=add(SCO_WIDGET_COMBO,130,"SQ42 buildables"); build.items=builds.empty() ? nullptr : builds.data(); build.item_count=static_cast<uint32_t>(builds.size()); build.index=g.build;
+        std::vector<const char*> builds; int32_t build_row=-1;   // at most 64 rows per page
+        if (static_cast<size_t>(g.build_page)*64>=g.lists.buildables.size()) g.build_page=0;
+        for (size_t i=static_cast<size_t>(g.build_page)*64;i<g.lists.buildables.size() && builds.size()<64;++i) {
+            if (g.build>=0 && static_cast<size_t>(g.build)==i) build_row=static_cast<int32_t>(builds.size());
+            build_rows.push_back(i); builds.push_back(g.lists.buildables[i].c_str());
+        }
+        auto& build=add(SCO_WIDGET_COMBO,130,"SQ42 buildables (64 per page)"); build.items=builds.empty() ? nullptr : builds.data(); build.item_count=static_cast<uint32_t>(builds.size()); build.index=build_row;
+        add(SCO_WIDGET_BUTTON,139,"Previous buildable page",g.build_page ? 0u : SCO_WIDGET_DISABLED);
+        add(SCO_WIDGET_BUTTON,140,"Next buildable page",static_cast<size_t>(g.build_page+1)*64<g.lists.buildables.size() ? 0u : SCO_WIDGET_DISABLED);
         auto& ahead=add(SCO_WIDGET_SLIDER,131,"Metres ahead (0 = feet)"); ahead.value=g.ahead; ahead.minimum=0; ahead.maximum=100;
-        add(SCO_WIDGET_BUTTON,132,"Place via build.place",g.build>=0 ? 0u : SCO_WIDGET_DISABLED);
+        add(SCO_WIDGET_BUTTON,132,"Place via build.place",build_row>=0 ? 0u : SCO_WIDGET_DISABLED);
         add(SCO_WIDGET_LABEL,133,"Enemy-wing orchestration remains deferred. Missing spawn/build commands refuse; no private fallback.");
         add(SCO_WIDGET_LABEL,134,status);
         publish_sq(); return;

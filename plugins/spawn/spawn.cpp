@@ -90,10 +90,19 @@ sco_result Ship(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     const auto* cls = Open<sc_spawn_service_v1>(SC_SPAWN_SERVICE_NAME);
     const auto* ent = Open<sc_entities_v1>(SC_ENTITIES_NAME);
     const auto* sp = Open<sc_spatial_v1>(SC_SPATIAL_SERVICE_NAME);
-    if (!HAS(cls,sc_spawn_service_v1,class_exists) || !HAS(ent,sc_entities_v1,spawn) ||
-        !HAS(ent,sc_entities_v1,despawn) || !HAS(sp,sc_spatial_v1,player_pose) ||
-        !g.api->has("spawn.ship") || !g.api->has("game.entities.spawn"))
-        return Answer(SCO_UNAVAILABLE,out,size,"Owned spawn/removal, class lookup or player pose unavailable; no fallback");
+    // Each refusal names the check that failed (the same checks, in the same order, as before).
+    const char* missing = nullptr;
+    if (!HAS(cls,sc_spawn_service_v1,class_exists)) missing = "class lookup service (class_exists) missing";
+    else if (!HAS(ent,sc_entities_v1,spawn)) missing = "entities spawn is missing";
+    else if (!HAS(ent,sc_entities_v1,despawn)) missing = "entities despawn is missing";
+    else if (!HAS(sp,sc_spatial_v1,player_pose)) missing = "no player pose service (player_pose)";
+    else if (!g.api->has("spawn.ship")) missing = "capability spawn.ship is off";
+    else if (!g.api->has("game.entities.spawn")) missing = "capability game.entities.spawn is off";
+    if (missing) {
+        char text[160];
+        std::snprintf(text,sizeof(text),"spawn unavailable: %s (class %s); no fallback",missing,args[0].v.s);
+        return Answer(SCO_UNAVAILABLE,out,size,text);
+    }
     if (g.count == kMaxTickets) return Answer(SCO_TOO_MANY,out,size,"Loaded-session ticket quota reached (including pending removal)");
     if (!cls->class_exists(args[0].v.s)) return Answer(SCO_NOT_FOUND,out,size,"Not a spawnable class on this build");
     const double nan = std::numeric_limits<double>::quiet_NaN();

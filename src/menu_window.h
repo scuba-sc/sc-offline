@@ -24,25 +24,68 @@ struct EscapeInput {
         return true;
     }
 };
-struct Size { int width = 600, height = 900; };
+// The saved size is the OUTER window rect (what GetWindowRect returns and SetWindowPos takes),
+// normalised to 96 dpi, so frame thickness and monitor scale never feed back into it.
+struct Size { int width = 1000, height = 800; };
 struct Bounds { int left, top, right, bottom; };
-constexpr int kMinWidth = 400, kMinHeight = 300, kMaxDimension = 32768;
+constexpr int kMinWidth = 720, kMinHeight = 520, kMaxDimension = 32768;
+constexpr int kMaxSavedDimension = 8192;   // a saved file beyond this is not a size this menu wrote
+constexpr int kBaseDpi = 96;
+constexpr int kMaxPercent = 90;            // of the work area of the monitor the window is on
 inline bool Valid(Size size) {
     return size.width > 0 && size.height > 0 && size.width <= kMaxDimension && size.height <= kMaxDimension;
 }
-inline Bounds Fit(Size size, int x, int y, Bounds work) {
+inline bool Sane(Size size) {
+    return size.width >= kMinWidth && size.height >= kMinHeight
+        && size.width <= kMaxSavedDimension && size.height <= kMaxSavedDimension;
+}
+inline int ScaleDpi(int value, int from, int to) {
+    if (from <= 0 || to <= 0) { from = to = kBaseDpi; }
+    const int64_t scaled = (static_cast<int64_t>(value) * to + from / 2) / from;
+    return static_cast<int>(std::clamp<int64_t>(scaled, 0, kMaxDimension));
+}
+// Outer pixels at `dpi` -> the 96 dpi form that is saved; and back.
+inline Size ToLogical(Size outer, int dpi) { return {ScaleDpi(outer.width, dpi, kBaseDpi), ScaleDpi(outer.height, dpi, kBaseDpi)}; }
+inline Size ToOuter(Size logical, int dpi) { return {ScaleDpi(logical.width, kBaseDpi, dpi), ScaleDpi(logical.height, kBaseDpi, dpi)}; }
+// Outer size clamped to [96 dpi minimum at this scale, 90% of the work area]; the minimum yields to
+// a small work area.
+inline Size Clamp(Size size, Bounds work, int dpi = kBaseDpi) {
     const int64_t availableW = static_cast<int64_t>(work.right) - work.left;
     const int64_t availableH = static_cast<int64_t>(work.bottom) - work.top;
-    if (availableW <= 0 || availableH <= 0) return {0, 0, 600, 900};
+    if (availableW <= 0 || availableH <= 0) return {};
     if (!Valid(size)) size = {};
-    const auto width = std::min<int64_t>(std::max<int64_t>(size.width, kMinWidth), availableW);
-    const auto height = std::min<int64_t>(std::max<int64_t>(size.height, kMinHeight), availableH);
+    const auto maxW = std::max<int64_t>(availableW * kMaxPercent / 100, 1);
+    const auto maxH = std::max<int64_t>(availableH * kMaxPercent / 100, 1);
+    const auto minW = std::min<int64_t>(ScaleDpi(kMinWidth, kBaseDpi, dpi), maxW);
+    const auto minH = std::min<int64_t>(ScaleDpi(kMinHeight, kBaseDpi, dpi), maxH);
+    return {static_cast<int>(std::min<int64_t>(std::max<int64_t>(size.width, minW), maxW)),
+            static_cast<int>(std::min<int64_t>(std::max<int64_t>(size.height, minH), maxH))};
+}
+inline Bounds Fit(Size size, int x, int y, Bounds work, int dpi = kBaseDpi) {
+    const int64_t availableW = static_cast<int64_t>(work.right) - work.left;
+    const int64_t availableH = static_cast<int64_t>(work.bottom) - work.top;
+    if (availableW <= 0 || availableH <= 0) return {0, 0, kMinWidth, kMinHeight};
+    size = Clamp(size, work, dpi);
+    const int64_t width = size.width, height = size.height;
     const auto left = std::clamp<int64_t>(x, work.left, static_cast<int64_t>(work.right) - width);
     const auto top = std::clamp<int64_t>(y, work.top, static_cast<int64_t>(work.bottom) - height);
     return {static_cast<int>(left), static_cast<int>(top), static_cast<int>(left + width), static_cast<int>(top + height)};
 }
+// What is written when a resize ends: the window's outer size, clamped, at 96 dpi (never below the
+// 96 dpi minimum, so a small monitor cannot save a size Load would reject).
+inline Size Remember(Size outer, int dpi, Bounds work) {
+    Size logical = ToLogical(Clamp(outer, work, dpi), dpi);
+    logical.width = std::clamp(logical.width, kMinWidth, kMaxSavedDimension);
+    logical.height = std::clamp(logical.height, kMinHeight, kMaxSavedDimension);
+    return logical;
+}
+// What the window is given when shown: the saved 96 dpi size at this monitor's scale, clamped.
+inline Size Restore(Size logical, int dpi, Bounds work) {
+    if (!Valid(logical) || !Sane(logical)) logical = {};
+    return Clamp(ToOuter(logical, dpi), work, dpi);
+}
 inline bool Save(const std::filesystem::path& path, Size size) {
-    if (!Valid(size)) return false;
+    if (!Valid(size) || !Sane(size)) return false;
     std::ofstream file(path, std::ios::binary | std::ios::trunc);
     file << "[window]\nwidth=" << size.width << "\nheight=" << size.height << '\n';
     file.close();
@@ -79,6 +122,6 @@ inline Size Load(const std::filesystem::path& path) {
         else if (key == "height" && !height) { size.height = parsed; height = true; }
         else return {};
     }
-    return width && height && Valid(size) ? size : Size{};
+    return width && height && Valid(size) && Sane(size) ? size : Size{};
 }
 } // namespace sc_offline::menu_window

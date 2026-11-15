@@ -4,7 +4,7 @@
 
 With a Core that provides `Composition::ProcessRetained`, the product's native startup
 is enabled under retain-until-exit (module pinned and never unloaded, stop is closure,
-no restart). The Core now pinned in `external/sco-core` (`2c59c2b`) provides it, so
+no restart). The Core now pinned in `external/sco-core` (`5ff2a64`) provides it, so
 activation is ON with the current pin; it is OFF only when building against an older Core.
 Compile, static source checks and synthetic host tests only. Not verified in game: that
 the game loads and behaves like the last shipped version, engine-object lifetime inside
@@ -14,9 +14,9 @@ hooks, real hook behavior, and that starting the game services on the game threa
 
 ## Current local development pairing
 
-The development gitlink selects Core `2c59c2b9e5fdb50e3d4ee6c795e4edf730dd19ae`,
+The development gitlink selects Core `5ff2a64702e8…`,
 which adds the opt-in process-retained host composition, with the development SDK
-coordinate `2.4.1-dev.4`. [SDK coordinates](sdk-candidate.md) still records the
+coordinate `2.4.1-dev.5`. [SDK coordinates](sdk-candidate.md) still records the
 earlier `2.4.1-dev.3` digests; archive digests for this pairing are not recorded
 there yet. Earlier stable/development receipts do not recertify it. The paired-source
 runner requires a new clean committed Offline identity before qualification. Native
@@ -28,7 +28,7 @@ game.**
 
 The current private development candidate uses the source in its exact Core
 gitlink and requires a matching development SDK. The historical stable results
-below do not certify the new pair. Native startup remains refused.
+below do not certify the new pair. Native startup runs only on a Core with the process-retained composition; any other Core keeps the refusal.
 
 The combined plugin archive is the published stable `sdk-v2.4.0` release, source
 `6106fa3639cbcc28f78a1ded8de2707de019f4d3`, SHA-256
@@ -46,8 +46,8 @@ consumer's model, storage and actual-module fixtures pass against the matching
 stable host source and archive.
 These fixtures use synthetic or absent providers and do not certify production
 providers, renderer behavior, Windows/MSVC or game state. Product native startup
-remains refused pending real native-reader and worker exclusion/drain evidence;
-no game session was run.
+is refused on a Core without the process-retained composition; on one with it,
+startup is native under retain-until-exit. Not run in game.
 
 ## v0.7.8.1 offline startup
 
@@ -67,9 +67,9 @@ Observed a second time by the maintainer, on a desktop session with the game run
 
 `data/plugins/teleport` and `data/plugins/quantum` are staged enabled. `tools/check_teleport_sdk.py` and `tools/check_quantum_sdk.py` pass against the published stable SDK 2.4.0 archive (`sdk-v2.4.0`), including the synthetic travel-model test, quantum actual-module workflow (player switch, `game.relocation` capability, one request, tick tracking to complete and failed), full compiler dependency traces, boundary negatives and the relocation red arm. The SDK checker has no game services and refuses unavailable moves. These are development-machine checks, not game tests.
 
-**NOT VERIFIED:** any move in game. Owed: F7 then F8 returning to the saved spot; `quantum.travel` arriving at the destination radius plus the altitude (placed along the destination zone's own +Z axis, never checked); `quantum.bookmark`; the arrival, failure and cancellation messages; the plugin `relocation` setting and `sc-offline.ini` `relocation = off` refusing moves; both plugins loading from the release folder on Windows. The current product preflight refuses native startup before plugins load; live moves remain unavailable until a real native reader/worker barrier and later owner testing exist.
+**NOT VERIFIED:** any move in game. Owed: F7 then F8 returning to the saved spot; `quantum.travel` arriving at the destination radius plus the altitude (placed along the destination zone's own +Z axis, never checked); `quantum.bookmark`; the arrival, failure and cancellation messages; the plugin `relocation` setting and `sc-offline.ini` `relocation = off` refusing moves; both plugins loading from the release folder on Windows. On a Core with the process-retained composition the product starts natively and a move reports its own result through `game.relocation`; any other Core keeps the native-startup refusal. Owner testing in game is still owed.
 
-**NOT VERIFIED:** the host switch in game. The pinned source declares `SetRelocationEnabled`, but the product's native-startup refusal keeps host and plugin activation unavailable. Compilation with the switch does not establish a live control path or game behavior.
+**NOT VERIFIED:** the host switch in game. The pinned source declares `SetRelocationEnabled`, but host and plugin activation depend on the Core's composition (a Core without the process-retained composition keeps the native-startup refusal). Compilation with the switch does not establish a live control path or game behavior.
 
 ## Optional co-presence module
 
@@ -110,8 +110,8 @@ fixtures, dependency traces and private-boundary negatives. The historical RC2
 MCP transcript is recorded separately in
 [its validation receipt](../examples/sdk-mcp/rc2-validation.md). Neither proof
 certifies Windows/MSVC, runtime host/session acceptance, installation, reload,
-actual provider cleanup or gameplay. The current product does not activate native
-services or load plugins pending the reader/worker safety barrier.
+actual provider cleanup or gameplay. The product activates native services and
+loads plugins only on a Core with the process-retained composition; any other Core keeps the refusal.
 
 ## Steps 1D/2A/2B: external features — Windows/game acceptance NOT RUN
 

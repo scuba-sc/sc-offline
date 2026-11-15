@@ -48,7 +48,7 @@ You need your own installed copy of Star Citizen and **64-bit Windows**. Linux t
 1. Download **`sc-offline-<version>.zip`** from [Releases](https://github.com/scuba-sc/sc-offline/releases/latest), not GitHub's source-code zip.
 2. Extract it into its own folder and keep the files together. Do not copy the DLL into the game folder yourself.
 3. Close the game, open **`sc-offline.exe`** normally and click **Play**. Approve the setup helper's administrator prompt.
-4. Let initialization finish. The launcher holds the game at its first instruction while the mod starts (up to 60 seconds by design), so a pause of roughly 15 seconds before the game window appears is expected. Then **M** is meant to open the menu in game; opening the menu has **not been confirmed in game** on a current release ([Status](docs/status.md)).
+4. Let initialization finish. The launcher holds the game at its first instruction while the mod starts (up to 3 minutes by design), so a pause of roughly 15 seconds before the game window appears is expected. Then **M** is meant to open the menu in game; opening the menu has **not been confirmed in game** on a current release ([Status](docs/status.md)).
 
 Use the launcher's **Plugins** page to manage extensions. Feature availability depends on the release, game build and enabled services; see [Features](docs/features.md) and [Status](docs/status.md), rather than assuming `main` and a downloaded release are identical.
 

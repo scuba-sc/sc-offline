@@ -1152,13 +1152,28 @@ static int64_t LoadWalletBalance(const char* path, const char*& from) {
     return stored;
 }
 
+// wallet.txt, durably: a temp file beside it is written and flushed, then replaces it, so a crash or
+// a power cut leaves the old balance or the new one, never a torn file. Format: the number and CR LF, as the CRT text-mode writer produced.
+static bool WriteWalletFile(const char* path, int64_t uec) {
+    wchar_t target[MAX_PATH], temp[MAX_PATH + 8];
+    if (!MultiByteToWideChar(CP_ACP, MB_ERR_INVALID_CHARS, path, -1, target, MAX_PATH)) return false;
+    if (swprintf_s(temp, L"%s.tmp", target) < 0) return false;
+    const HANDLE file = CreateFileW(temp, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return false;
+    char text[32];
+    const int length = sprintf_s(text, "%lld\r\n", static_cast<long long>(uec));
+    DWORD done = 0;
+    const bool ok = length > 0 && WriteFile(file, text, static_cast<DWORD>(length), &done, nullptr)
+                 && done == static_cast<DWORD>(length) && FlushFileBuffers(file);
+    CloseHandle(file);
+    if (ok && MoveFileExW(temp, target, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) return true;
+    DeleteFileW(temp);
+    return false;
+}
+
 // wallet.txt and storage; true when either has the balance.
 static bool SaveWalletBalance(const char* path, int64_t uec) {
-    bool written = false;
-    if (FILE* f = _fsopen(path, "w", _SH_DENYWR)) {
-        fprintf(f, "%lld\n", static_cast<long long>(uec));
-        written = fclose(f) == 0;
-    }
+    const bool written = WriteWalletFile(path, uec);
     BuiltinStore& st = g_contractsStore;
     if (!st) return written;
     // Not written: keep the old time, so the stored balance (newer) wins over the old file.
@@ -1167,33 +1182,61 @@ static bool SaveWalletBalance(const char* path, int64_t uec) {
     return written || r == SCO_OK;
 }
 
+// Set only once the restored balance is in the engine this session. Until then the engine's own
+// default balance must never be written over wallet.txt.
+static bool g_walletApplied = false;
+
 static void RestoreWallet() {
     char path[MAX_PATH];
-    if (g_walletSaved >= 0 || !WalletPath(path)) return;
+    if (g_walletApplied || !WalletPath(path)) return;
     const char* from = "wallet.txt";
     g_walletSaved = LoadWalletBalance(path, from);
     if (g_walletSaved <= 0) {
         const int64_t start = DataFileAmount("default_1");
         if (start > 0) {
             g_walletSaved = start;
+            from = "the offline data file";
             Log("[contracts] wallet: no saved balance - %lld aUEC from the offline data file", static_cast<long long>(start));
         }
     }
     const uintptr_t wallet = PlayerWallet();
-    if (!wallet || !g_updateBalance) return;
+    if (!wallet || !g_updateBalance) return;   // not applied: nothing is saved until a later restore succeeds
     const int64_t now = Rd<int64_t>(wallet + kWalletUec);
     if (g_walletSaved > 0 && g_walletSaved != now) g_updateBalance(wallet, 1, g_walletSaved - now);
-    Log("[contracts] wallet: %lld aUEC from %s (was %lld, now %lld)", static_cast<long long>(g_walletSaved), from,
-        static_cast<long long>(now), static_cast<long long>(Rd<int64_t>(wallet + kWalletUec)));
+    const int64_t after = Rd<int64_t>(wallet + kWalletUec);
+    g_walletApplied = g_walletSaved <= 0 || after == g_walletSaved;
+    Log("[contracts] wallet: %lld aUEC from %s (was %lld, now %lld)%s", static_cast<long long>(g_walletSaved), from,
+        static_cast<long long>(now), static_cast<long long>(after),
+        g_walletApplied ? "" : "; the engine did not take it, so the wallet is not saved this session");
 }
 
-static void SaveWallet() {
+// Writes the balance when it changed. Returns the balance known to be saved, or -1 with `why` set.
+static int64_t SaveWallet(const char** why = nullptr) {
     char path[MAX_PATH];
-    const uintptr_t wallet = g_walletSaved >= 0 ? PlayerWallet() : 0;
-    if (!wallet || !WalletPath(path)) return;
+    const char* reason = nullptr;
+    const uintptr_t wallet = g_walletApplied ? PlayerWallet() : 0;
+    if (!g_walletApplied) reason = "the wallet was not restored this session";
+    else if (!wallet) reason = "the wallet is unreadable";
+    else if (!WalletPath(path)) reason = "no wallet.txt location";
+    if (reason) { if (why) *why = reason; return -1; }
     const int64_t uec = Rd<int64_t>(wallet + kWalletUec);
-    if (uec == g_walletSaved || uec < 0 || uec >= 1000000000000LL) return;
-    if (SaveWalletBalance(path, uec)) g_walletSaved = uec;
+    if (uec == g_walletSaved) return uec;
+    if (uec < 0 || uec >= 1000000000000LL) { if (why) *why = "the balance is out of range"; return -1; }
+    if (SaveWalletBalance(path, uec)) { g_walletSaved = uec; return uec; }
+    if (why) *why = "wallet.txt could not be written";
+    return -1;
+}
+
+// game.exit: a balance changed since the last 5 s poll is saved before the game closes.
+void SaveContractsWalletAtExit() {
+    static bool ran = false;
+    if (ran) return;
+    ran = true;
+    const char* why = "unexpected fault";
+    int64_t saved = -1;
+    __try { saved = SaveWallet(&why); } __except (EXCEPTION_EXECUTE_HANDLER) { saved = -1; why = "fault while reading the wallet"; }
+    if (saved >= 0) Log("[contracts] wallet saved at exit: %lld aUEC", static_cast<long long>(saved));
+    else Log("[contracts] wallet not saved at exit: %s", why);
 }
 
 static bool PlayerDataPath(const char* nickname, char path[MAX_PATH]) {
