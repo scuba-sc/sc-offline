@@ -5158,7 +5158,7 @@ int wmain(int argc, wchar_t** argv) {
         } else {
             Out("Update:   sc-offline %s is available (you have %s)\n", u.tag.c_str(), SCO_VERSION);
             if (dry) Out("[dry-run] would download %s, check its SHA-256 and replace the program files\n", u.zipName.c_str());
-            else if (GameRunningIn(g.bin)) Out("[!] close the game before updating\n");
+            else if (GameRunning()) Out("[!] close the game before updating\n");
             else if (!OwnsConsoleInput()) Out("          (not asking: no console to answer in)\n");
             else if (AskYes("Update now? Your saves and sc-offline.ini are kept.")) {
                 if (ApplyUpdate(here, u)) {

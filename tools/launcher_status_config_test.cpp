@@ -693,8 +693,7 @@ static void TestStatusRows() {
     CHECK(PcRow(r, false, false).text == T(LocaleKey::PcNone) && !PcRow(r, false, false).warn);
     CHECK(PcRow(r, true, true).text == T(LocaleKey::PcApplied) && !PcRow(r, true, true).warn);
     CHECK(PcRow(r, false, true).text == T(LocaleKey::PcNone));   // not playing: the live flag alone is not shown here
-    r.pcLeft = "time=now
-";
+    r.pcLeft = "time=now\n";
     CHECK(PcRow(r, false, true).warn && PcRow(r, false, true).text != T(LocaleKey::PcApplied));
     CHECK(PcRow(r, true, true).text == T(LocaleKey::PcApplied) && !PcRow(r, true, true).warn);
     CHECK(std::string(T(LocaleKey::ModInstalledSession)) == "Installed (this session)" &&
