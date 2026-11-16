@@ -227,8 +227,10 @@ void Progress(Ticket& t,uint32_t now) {
     // Reopened tables are validated independently; never reuse an earlier borrowed pointer.
     if(!HAS(a,sc_actors_v1,local_player) || !HAS(v,sc_vehicles_v1,seats) ||
        !HAS(v,sc_vehicles_v1,seat_occupant) || !HAS(v,sc_vehicles_v1,seat)) return;
-    uint64_t actor=0;
-    if(a->local_player(&actor,nullptr)!=SCO_OK || !actor) return;
+    // game.vehicles works in ENTITY ids (seat refuses anything else with "isn't yours"), so take
+    // local_player's second out parameter; the first is the client player record's actor id.
+    uint64_t player=0;
+    if(a->local_player(nullptr,&player)!=SCO_OK || !player) return;
     sc_vehicle_seat seats[64]{};uint32_t count=0,more=0;
     if(v->seats(t.id,seats,64,&count,&more)!=SCO_OK || count>64 || more) return;
     for(uint32_t i=0;i<count;++i) {
@@ -238,7 +240,7 @@ void Progress(Ticket& t,uint32_t now) {
            (seat.flags&(SC_SEAT_USABLE|SC_SEAT_USABLE_KNOWN))!=(SC_SEAT_USABLE|SC_SEAT_USABLE_KNOWN)) continue;
         uint64_t occupant=0;
         if(v->seat_occupant(t.id,seat.index,&occupant)!=SCO_OK) return;
-        if(occupant==actor) {
+        if(occupant==player) {
             if(!t.power) {t.phase=Phase::Ready;return;}
             // game.entities ownership is NOT spawn_as authority for power_on. Require
             // the real public player_ship reading after confirmed pilot boarding.
@@ -255,7 +257,7 @@ void Progress(Ticket& t,uint32_t now) {
         t.phase=Phase::Boarding;
         if(t.seatTried && static_cast<uint32_t>(now-t.lastSeat)<1000u) return;
         t.seatTried=true;t.lastSeat=now;
-        (void)v->seat(g.self,actor,t.id,seat.index); // Accepted link is not yet confirmed.
+        (void)v->seat(g.self,player,t.id,seat.index); // Accepted link is not yet confirmed.
         return;
     }
 }
@@ -269,9 +271,17 @@ void Tick(const char*,const void* data,void*) {
         auto& t=g.tickets[i];
         if(t.phase==Phase::Ready || t.phase==Phase::Removing) continue;
         if(!t.clocked){t.started=now;t.clocked=true;}
-        if(t.phase==Phase::Cancelling || static_cast<uint32_t>(now-t.started)>=60000u) {
-            if(t.phase!=Phase::Cancelling) g.api->log(g.self,SCO_LOG_WARN,"Spawn/seat timeout; owned removal requested (not disappearance)");
-            (void)RemoveTicket(t);continue;
+        if(t.phase==Phase::Cancelling) {(void)RemoveTicket(t);continue;}
+        if(static_cast<uint32_t>(now-t.started)>=60000u) {
+            const bool known=HAS(ent,sc_entities_v1,alive) && g.api->has("game.entities.transform");
+            if(known && !ent->alive(t.id)) { // Never streamed in: nobody can be aboard.
+                g.api->log(g.self,SCO_LOG_WARN,"Spawn timeout; ship never streamed in, owned removal requested (not disappearance)");
+                (void)RemoveTicket(t);continue;
+            }
+            // A ship that exists is never removed because boarding was slow (the player may be inside):
+            // give up the automatic boarding only. It stays owned, removed on unload or spawn.remove.
+            g.api->log(g.self,SCO_LOG_INFO,"Boarding not completed in 60 s; ship kept");
+            t.phase=Phase::Ready;continue;
         }
         if(!HAS(ent,sc_entities_v1,alive) || !g.api->has("game.entities.transform") || !ent->alive(t.id)) continue;
         if(!t.seat[0]) t.phase=Phase::Ready; else Progress(t,now);

@@ -104,9 +104,10 @@ sco_result Remove(Job& j,const sc_actors_v1* actors) {
     // Accepted removal relinquishes authority, but not the bounded session ticket.
     return r == SCO_NOT_FOUND ? SCO_OK : r;
 }
+// game.vehicles works in entity ids, so this is local_player's entity id (second out parameter).
 sco_result Player(const sc_actors_v1* a,uint64_t& id) {
     if (!Cap("game.actors.local_player") || !HAS_FN(a,sc_actors_v1,local_player)) return SCO_UNAVAILABLE;
-    const auto r = a->local_player(&id,nullptr); return r == SCO_OK && !id ? SCO_NOT_FOUND : r;
+    const auto r = a->local_player(nullptr,&id); return r == SCO_OK && !id ? SCO_NOT_FOUND : r;
 }
 bool Matches(const char* name,const char* words) {
     char seat[SC_VEHICLE_SEAT_NAME_MAX]{},text[48]{};

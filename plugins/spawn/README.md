@@ -67,7 +67,7 @@ SDK game-thread path. No workers or private thread handoff are created.
 | Command | Typed arguments / behavior |
 | --- | --- |
 | `spawn.pack_list <ordinal:int>` | Copies one enabled `lists/ships.txt` startup snapshot; zero-based matching-pack ordinal. Discovery order and duplicate names are retained, not merged or silently overwritten. Empty lists succeed; binary lists, insufficient output capacity, missing/short/null service methods and provider failures refuse. Does not spawn a class; the public Vehicles picker consumes the same catalog snapshots. |
-| `spawn.ship <class:string> <height:float>` | Existing ID, argument names/types/count preserved. Class length 1–63; finite height 0–10000 m along the player's current zone Z axis. Returns the final owned session ID before it streams in. No automatic boarding. |
+| `spawn.ship <class:string> <height:float>` | Existing ID, argument names/types/count preserved. Class length 1–63; finite height 0–10000 m along the player's current zone Z axis. Returns the final owned session ID before it streams in. No automatic boarding: the Vehicles panel's **Spawn** button runs `spawn.ship_options` with its seat field (default `pilot`) and Flight Ready toggle (default on), which is the spawn-and-board behaviour. |
 | `spawn.ship_options <class:string> <height:float> <seat:string> <power:bool>` | `none` means no boarding; `pilot` selects the known usable pilot seat; another string requires **every word**, case-insensitively, in the copied seat name. Power is accepted only with `pilot`. Boarding providers/capabilities are preflighted before spawn. |
 | `spawn.board <id:int> <seat:string> <power:bool>` | Choose a seat later on an ID this plugin still owns. Uses the same boarding workflow; refuses foreign/retrieved/crew IDs. `none` is not a board target. |
 | `spawn.status` | Reports workflow pending/ready/boarding/removing counts. Ready means workflow completed, not guaranteed ongoing visibility. Missing observation provider is unavailable, never absence. |
@@ -105,7 +105,9 @@ missing player/provider state wait, never evict. Seating acceptance is not
 completion; later ticks confirm occupancy. Seat/power mutations retry at most once
 per 1000 ms, so an accepted asynchronous link is not reset every frame. Stream/seat/power work expires after
 **60000 ms from its first game tick**, with wrap-safe 32-bit tick arithmetic.
-Timeout stops the job and requests removal. Provider reopen failure/null/partial
+Timeout gives up the automatic boarding only: a ship that has streamed in is kept
+(ticket Ready, still owned, removed on unload or `spawn.remove`), because the player
+may already be inside; only a ship that never streamed in is removed. Provider reopen failure/null/partial
 callbacks do not authorize mutation. Provider cleanup refusal remains pending
 until retry or host owner release; it is logged on unload.
 

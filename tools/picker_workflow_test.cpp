@@ -81,7 +81,7 @@ sco_result Seat(sco_plugin*,uint64_t actor,uint64_t ship,uint32_t index){if(ship
 sco_result Eject(sco_plugin*,uint64_t actor){for(auto& id:occupants)if(id==actor)id=0;++ejected;return SCO_OK;}
 sco_result Power(sco_plugin*,uint64_t){return SCO_OK;}
 sc_vehicles_v1 v{};
-sco_result Local(uint64_t* actor,uint64_t* entity){*actor=1;if(entity)*entity=1;return SCO_OK;}
+sco_result Local(uint64_t* actor,uint64_t* entity){if(actor)*actor=9001;if(entity)*entity=1;return SCO_OK;} // entity id 1; actor id differs
 sco_result Spawn(sco_plugin* self,const char* cls,uint64_t,const double*,uint64_t* id){lastNpc=cls;*id=nextId++;owners[*id]=self;++spawned;return SCO_OK;}
 sco_result Despawn(sco_plugin* self,uint64_t id){if(owners[id]!=self)return SCO_BAD_ARG;++removed;return SCO_OK;}
 sc_actors_v1 a{};

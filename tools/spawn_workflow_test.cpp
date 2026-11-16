@@ -50,7 +50,7 @@ sco_result Query(const char* name,uint32_t,const void** out) {
  return *out? SCO_OK:SCO_NOT_FOUND;
 }
 int Has(const char* name) {return !missing_cap || std::strcmp(name,missing_cap);}
-sco_result Player(uint64_t* actor,uint64_t* entity){if(!player_present)return SCO_NOT_FOUND;if(actor)*actor=7;if(entity)*entity=7;return SCO_OK;}
+sco_result Player(uint64_t* actor,uint64_t* entity){if(!player_present)return SCO_NOT_FOUND;if(actor)*actor=9007;if(entity)*entity=7;return SCO_OK;} // game.vehicles takes the entity id (7), never the actor id
 sco_result PlayerShip(uint64_t* id){*id=linked?101:0;return linked?SCO_OK:SCO_NOT_FOUND;}
 sco_result Seats(uint64_t id,sc_vehicle_seat* out,uint32_t max,uint32_t* count,uint32_t* more){
  CHECK(id==101 && issued.count(id));*count=0;*more=0;if(!visible)return SCO_NOT_FOUND;CHECK(max>=2);
@@ -154,9 +154,25 @@ void SeatRefusals(){
  for(int mode=0;mode<7;++mode){Reset();auto api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Options()==SCO_OK);visible=true;
   if(mode==0)occupant=9001;if(mode==1)seat_more=1;if(mode==2)seat_count=65;
   if(mode==3)seat_flags=SC_SEAT_PILOT;if(mode==4)player_present=false;if(mode==5)missing_cap="game.vehicles.seat";if(mode==6)missing_cap="game.entities.transform";
-  Advance(10);CHECK(!seated && !powered);Advance(60010);CHECK(removed==1 && issued.empty());
-  test_module::Unload(); // The borrowed host API must outlive unload.
+  Advance(10);CHECK(!seated && !powered);Advance(60010);CHECK(removed==0 && issued.count(101)); // alive at timeout: kept, never removed
+  CHECK(Run("spawn.status")==SCO_OK);Contains("ready=1");
+  test_module::Unload();CHECK(removed==1); // removed on unload; the borrowed host API must outlive it.
  }
+}
+void EntityIdsAndTimeout(){
+ // Manual boarding: the player (entity id 7, actor id 9007) already sits in the requested seat.
+ Reset();auto api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Options("pilot",false)==SCO_OK);visible=true;occupant=7;
+ Advance(1);CHECK(seated==0);CHECK(Run("spawn.status")==SCO_OK);Contains("ready=1");Advance(60010);CHECK(removed==0);
+ // seat() gets the entity id (the fake's Seat checks it).
+ Reset();api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Options("pilot",false)==SCO_OK);visible=true;Advance(1);CHECK(seated==1);
+ // Player in a seat the plugin cannot match (unusable): the timeout must not remove the ship.
+ Reset();api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Options("pilot",false)==SCO_OK);visible=true;seat_flags=SC_SEAT_PILOT;occupant=7;
+ Advance(10);Advance(60010);CHECK(removed==0 && issued.count(101));CHECK(Run("spawn.status")==SCO_OK);Contains("ready=1");
+ Advance(120000);CHECK(removed==0);test_module::Unload();CHECK(removed==1);
+ // A ship that never streamed in is still removed at the timeout.
+ Reset();api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Options("pilot",false)==SCO_OK);
+ Advance(10);Advance(60010);CHECK(removed==1 && issued.empty());
+ test_module::Unload();CHECK(removed==1);
 }
 void HostAndCommandNegatives(){Reset();auto api=Api();
  CHECK(test_module::Load(nullptr,owner)==SCO_BAD_ARG);CHECK(test_module::Load(&api,nullptr)==SCO_BAD_ARG);
@@ -227,4 +243,4 @@ void RefusedCleanupReload(){Reset();auto api=Api();api.log=CleanupLog;api.unsubs
  CHECK(Id("spawn.remove",101)==SCO_NOT_FOUND && removed==1);test_module::Unload();CHECK(unsubscriptions==2 && removed==1);
 }
 }
-int main(int argc,char** argv){test_module::Open(argc,argv);ProviderNegatives();HostAndCommandNegatives();BoundedOwnership();SeatRefusals();BoardLaterAndStartup();TimeoutCancel();Boarding();RefusedCleanupReload();Lifecycle();test_module::Open(argc,argv);Reset();auto api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Ship()==SCO_OK);test_module::Unload();CHECK(removed==1);test_module::Close();std::puts("spawn dynamic workflow: owned lifecycle, delayed board/power, timeout/cancel, providers/tails/reopen, bounds, unload/reload PASS (synthetic, not game)");}
+int main(int argc,char** argv){test_module::Open(argc,argv);ProviderNegatives();HostAndCommandNegatives();BoundedOwnership();SeatRefusals();EntityIdsAndTimeout();BoardLaterAndStartup();TimeoutCancel();Boarding();RefusedCleanupReload();Lifecycle();test_module::Open(argc,argv);Reset();auto api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Ship()==SCO_OK);test_module::Unload();CHECK(removed==1);test_module::Close();std::puts("spawn dynamic workflow: owned lifecycle, delayed board/power, timeout/cancel, providers/tails/reopen, bounds, unload/reload PASS (synthetic, not game)");}

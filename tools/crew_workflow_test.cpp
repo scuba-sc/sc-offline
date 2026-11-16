@@ -31,7 +31,8 @@ uint64_t occupants[3]{};
 sc_actors_v1 actors{};
 sc_spatial_v1 spatial{};
 sc_vehicles_v1 vehicles{};
-sco_result Player(uint64_t* id,uint64_t*) { *id = player ? 700u : 0u; return player ? SCO_OK : SCO_NOT_FOUND; }
+// The actor id differs from the entity id: game.vehicles takes the entity id (700).
+sco_result Player(uint64_t* actor,uint64_t* entity) { if (actor) *actor = player ? 9700u : 0u; if (entity) *entity = player ? 700u : 0u; return player ? SCO_OK : SCO_NOT_FOUND; }
 sco_result Ship(uint64_t* id) { ++ship_queries; *id = 800; return SCO_OK; }
 sco_result Seats(uint64_t ship,sc_vehicle_seat* out,uint32_t max,uint32_t* n,uint32_t* more) {
     CHECK(ship == 800); *n = max ? (partial ? 1u : 3u) : 0u; *more = partial || !max;
