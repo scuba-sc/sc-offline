@@ -172,10 +172,20 @@ void Sync() {
     Require(Call("loadout.slots",all.c_str())==SCO_OK && captured.size()==14,"all public weapon/tool slots");
     for (uint32_t i=0;i<14;++i) Require(captured[i].slot==8+i,"canonical public slot number");
     const unsigned before=applies;
-    for (const char* bad:{"","primary=","primary=None","primary=none","primary=Fixture,primary=Other","unknown=Fixture","Armor_Helmet=Fixture","primary=Bad-Class",
+    for (const char* bad:{"primary=","primary=Fixture,primary=Other","unknown=Fixture","Armor_Helmet=Fixture","primary=Bad-Class",
             "primary=../Class","primary=Fixture,","primary=Fixture,,sidearm=Other","primary=Fixture=Other","Primary=Fixture","primary=Cl\xC3\xA4ss"})
         Require(Call("loadout.slots",bad)==SCO_BAD_ARG,"invalid/ambiguous input refused");
     Require(applies==before,"invalid inputs make no calls");
+    // Unset (None/default) slots are skipped; only the chosen slots are sent.
+    Require(Call("loadout.slots","primary=None,sidearm=FixtureWeapon,primary_optic=default")==SCO_OK && captured.size()==1 && captured[0].slot==SC_LOADOUT_SLOT_SIDEARM,"None/default slots skipped, chosen slot sent");
+    Require(Call("loadout.slots","primary=none,primary=FixtureWeapon")==SCO_OK && captured.size()==1 && captured[0].slot==SC_LOADOUT_SLOT_PRIMARY,"skipped slot does not make a duplicate");
+    const unsigned chosen_before=applies;
+    for (const char* none:{"","  ","primary=None","primary=none,sidearm=Default"}) {
+        Require(Call("loadout.slots",none)==SCO_BAD_ARG && std::strstr(reply,"Choose at least one slot") && !std::strstr(reply,"refused"),"nothing chosen asks to choose a slot");
+    }
+    Require(Call("loadout.slots","unknown=None")==SCO_BAD_ARG && std::strstr(reply,"Manual slots refused"),"unknown slot name stays refused even when None");
+    Require(Call("loadout.slots","primary=None,")==SCO_BAD_ARG && std::strstr(reply,"Manual slots refused"),"trailing comma stays refused");
+    Require(applies==chosen_before,"nothing chosen makes no provider call");
     Require(Call("loadout.slots",std::string(2048,'x').c_str())==SCO_BAD_ARG,"command byte bound");
     Require(commands.at("loadout.slots")(nullptr,1,nullptr,reply,sizeof(reply))==SCO_BAD_ARG,"missing argument array");
     sco_arg bad{}; bad.type=SCO_ARG_INT;
@@ -211,16 +221,21 @@ void Sync() {
     Require(captured.size()==1 && captured[0].slot==14,"widget action routes to public slot");
     const auto calls=applies; Send(20,SCO_WIDGET_TEXT_INPUT,std::string(256,'x').c_str()); Send(21,SCO_WIDGET_BUTTON);
     Require(applies==calls+1 && captured[0].slot==14,"oversized forged widget text preserves bounded field");
+    for (const char* text:{"","primary=None"}) {
+        const auto before_none=applies; Send(20,SCO_WIDGET_TEXT_INPUT,text); Send(21,SCO_WIDGET_BUTTON);
+        Require(applies==before_none && copied_status.find("Choose at least one slot")!=std::string::npos &&
+                copied_status.find("refused")==std::string::npos,"widget with nothing chosen shows a choose-a-slot status");
+    }
 }
 void ManualRefusals(const char* command,uint32_t button,bool command_only=false) {
-    for (const char* invalid:{"", "primary=", "primary=None", "primary=Fixture,primary=Other",
+    for (const char* invalid:{"primary=", "primary=Fixture,primary=Other",
                               "unknown=Fixture", "primary=Bad-Class", "primary=Fixture,"}) {
         Reset();
         Require(Call("loadout.slots","primary=FixtureWeapon")==SCO_OK,"prior successful apply");
         const auto before_apply=applies,before_submit=submits;
         if (command_only) {
             Require(Call(command,invalid)==SCO_BAD_ARG,"direct command parse refusal result");
-            Require(std::strstr(reply,"Manual slots refused") && std::strstr(reply,"None/clear") &&
+            Require(std::strstr(reply,"Manual slots refused") && std::strstr(reply,"skipped") &&
                     !std::strstr(reply,"applied="),"direct command replaces empty reply with refusal");
             Require(applies==before_apply && submits==before_submit,"direct command refusal makes no provider request");
             continue;
@@ -229,11 +244,11 @@ void ManualRefusals(const char* command,uint32_t button,bool command_only=false)
         Require(copied_status.find("applied=1/1")!=std::string::npos,"copied panel holds previous receipt");
         Send(button,SCO_WIDGET_BUTTON);
         Require(copied_status.find("Manual slots refused")!=std::string::npos &&
-                copied_status.find("None/clear")!=std::string::npos &&
+                copied_status.find("skipped")!=std::string::npos &&
                 copied_status.find("applied=")==std::string::npos,"widget replaces prior success with refusal");
         Require(applies==before_apply && submits==before_submit,"widget parse refusal makes no provider request");
         Require(Call(command,invalid)==SCO_BAD_ARG,"manual command parse refusal result");
-        Require(std::strstr(reply,"Manual slots refused") && std::strstr(reply,"None/clear") &&
+        Require(std::strstr(reply,"Manual slots refused") && std::strstr(reply,"skipped") &&
                 !std::strstr(reply,"applied="),"manual command returns descriptive refusal");
         Require(applies==before_apply && submits==before_submit,"command parse refusal makes no provider request");
     }

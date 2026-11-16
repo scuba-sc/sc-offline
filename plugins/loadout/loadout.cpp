@@ -312,24 +312,36 @@ sco_result Apply(const std::vector<Piece>& pieces,char* out,uint32_t size,uint32
 const auto& weapon_slots=catalogue::kSlots;
 sco_result SlotPieces(const sco_arg* args,uint32_t n,char* out,uint32_t size,std::vector<Piece>& pieces) {
     const auto refuse=[&] {
-        return Answer(SCO_BAD_ARG,out,size,"Manual slots refused: use unique public slot=Class pairs (at most 2047 bytes). Classes need 1-95 ASCII letters, digits or underscores. None/clear is unsupported; no new request.");
+        return Answer(SCO_BAD_ARG,out,size,"Manual slots refused: use unique public slot=Class pairs (at most 2047 bytes). Classes need 1-95 ASCII letters, digits or underscores. Slots set to None/default are skipped (never cleared); no new request.");
+    };
+    // Nothing chosen is not a malformed request: say what to do, send nothing, and log it as info.
+    const auto choose=[&] {
+        constexpr const char* message="Choose at least one slot as slot=Class; slots left at None/default are skipped and nothing was sent.";
+        std::snprintf(g.status,sizeof(g.status),"%s",message);
+        if (out && size) std::snprintf(out,size,"%s",g.status);
+        if (HAS(g.api,sco_api,log)) g.api->log(g.self,SCO_LOG_INFO,g.status);
+        return SCO_BAD_ARG;
     };
     const auto r=Validate(args,n,1,out,size); if (r!=SCO_OK) return r==SCO_BAD_ARG ? refuse() : r;
-    if (!String(args[0],2047) || !*args[0].v.s) return refuse();
+    if (!String(args[0],2047)) return refuse();
     std::string_view input=args[0].v.s;
+    if (Trim(input).empty()) return choose();
     while (!input.empty()) {
         const auto comma=input.find(','); const auto assignment=input.substr(0,comma);
         const auto equal=assignment.find('='); if (equal==assignment.npos) return refuse();
         const auto name=Trim(assignment.substr(0,equal)),cls=Trim(assignment.substr(equal+1));
-        if (!Class(cls) || Same(cls,"none")) return refuse();
+        const bool unset=Same(cls,"none") || Same(cls,"default");   // an unset slot is skipped, never sent
+        if (!unset && !Class(cls)) return refuse();
         uint32_t slot=0;
         for (const auto& entry:weapon_slots) if (name==entry.name) slot=entry.slot;
         if (!slot) return refuse();
+        if (unset) { if (comma==input.npos) break; input.remove_prefix(comma+1); if (input.empty()) return refuse(); continue; }
         for (const auto& piece:pieces) if (piece.slot==slot) return refuse();
         pieces.push_back({name,cls,slot});
         if (comma==input.npos) break;
         input.remove_prefix(comma+1); if (input.empty()) return refuse();
     }
+    if (pieces.empty()) return choose();
     // Parents 8/9 precede every attachment in the same batch, regardless of input order.
     std::sort(pieces.begin(),pieces.end(),[](const Piece& a,const Piece& b) { return a.slot<b.slot; });
     return SCO_OK;
@@ -580,20 +592,30 @@ sco_result Items(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     }
     return Answer(SCO_OK,out,size,message.c_str());
 }
-void ForwardReply(sco_result result,const char* reply,void*) {
+const char* ResultName(sco_result result) {
+    switch(result) { case SCO_OK:return "SCO_OK"; case SCO_UNAVAILABLE:return "SCO_UNAVAILABLE"; case SCO_NOT_FOUND:return "SCO_NOT_FOUND";
+        case SCO_BAD_ARG:return "SCO_BAD_ARG"; case SCO_CRASHED:return "SCO_CRASHED"; case SCO_WRONG_THREAD:return "SCO_WRONG_THREAD";
+        case SCO_TOO_MANY:return "SCO_TOO_MANY"; case SCO_FAILED:return "SCO_FAILED"; default:return "unknown result"; }
+}
+// Names the external command and the result code, so a refusal with no provider reply is identifiable.
+std::string ExternalOutcome(const char* name,sco_result result,const char* tail) {
+    return std::string("External command ")+name+(result==SCO_OK ? " accepted: " : " refused: ")+ResultName(result)+"; "+tail;
+}
+void ForwardReply(sco_result result,const char* reply,void* name) {
     if (!g.api) return;
-    Answer(result,nullptr,0,reply && *reply ? reply : "External command refused/unavailable; no fallback.");
+    if (reply && *reply) { Answer(result,nullptr,0,reply); return; }
+    Answer(result,nullptr,0,ExternalOutcome(static_cast<const char*>(name),result,"provider supplied no reply; no fallback.").c_str());
 }
 sco_result Forward(const char* name,const sco_arg* args,uint32_t n,char* out,uint32_t size) {
     if (!HAS(g.api,sco_api,invoke)) return Answer(SCO_UNAVAILABLE,out,size,"External command invocation unavailable.");
     g.status[0]=0;
-    const auto r=g.api->invoke(g.self,name,args,n,ForwardReply,nullptr);
+    const auto r=g.api->invoke(g.self,name,args,n,ForwardReply,const_cast<char*>(name));
     // Public game-thread invocation completes synchronously; preserve its actual reply.
     if (g.status[0]) {
         if (out && size) std::snprintf(out,size,"%s",g.status);
         return r;
     }
-    return Answer(r,out,size,r==SCO_OK ? "External command accepted; provider supplied no reply." : "External command absent/refused; no host fallback.");
+    return Answer(r,out,size,ExternalOutcome(name,r,r==SCO_OK ? "provider supplied no reply." : "no host fallback.").c_str());
 }
 sco_result Spawn(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     const auto r=Validate(args,n,4,out,size); if (r!=SCO_OK) return r;
