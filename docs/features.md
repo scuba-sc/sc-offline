@@ -44,7 +44,7 @@ Most of the lists below are plain text files in `data/`, and the counts are take
 
 - Filter/page copied ship catalogs from enabled `lists/ships.txt` packs, select a class or type one manually. Catalog presence is not class availability; current behavior is in [pickers.md](pickers.md).
 - Pick where you board: the pilot seat, a seat by name, choose after spawning, or don't board. The spawn module never evicts a foreign NPC; crew-owned seat removal belongs to the Crew panel.
-- **Power on** sends the game's Flight Ready event. Depending on the ship, some systems may still start switched off.
+- **Power on** sends the game's Flight Ready event. Depending on the ship, some systems may still start switched off. It is only offered with the pilot seat: with any other seat the toggle is greyed out ("Flight Ready needs the pilot seat") and is not sent.
 - Infinite ship ammo refills the magazines of the ship you're aboard (the [creative plugin](#the-creative-plugin)).
 
 ## Ship terminals, hangars and ATC
@@ -128,7 +128,7 @@ The old tab was removed from host build inputs and retained under `legacy/loadou
 - **Outfits**: a searchable list of 35 outfits from `outfits.txt`. Pick one, then press **Wear SQ42 outfit**. Outfits that don't name a head use the default face. Unknown item names are skipped when the list loads, and `mod.log` counts them. **SQ42 visor HUD** changes the lens display the next time you press Equip or wear an outfit.
 - **Settings**: four toggles, each with a tooltip: SQ42 auto targeting, visor mini-map, visor greebles, and the SQ42 frontend menu. They are greyed out until the game's current value has been read. They reset when the session ends, and nothing is written to `USER.cfg`.
 - **Spawn**: place a buildable from the 60-item `[sq42]` group without entering build mode; the search box narrows the list. Anything you spawn joins your base, so Build's **Undo** and **Clear base** remove it.
-- **Ships**: the Idris-P, Gladius, Retaliator, Starfarer, Avenger Stalker and Hornet, plus a Vanduul AI wing and two Bengal rows. Rows are greyed out when this game build doesn't have the class. Player ships spawn 30 m up and put you in the pilot seat using the Vehicles tab's seat rules. Everything spawned here becomes the Crew tab's target ship, except the Vanduul wing that comes with the Bengal. Vanduul spawn 300 m up and attack you. Bengals spawn 1500 m up. **Bengal + Vanduul wing** only brings the wing if this game build has the Vanduul classes, and its label tells you which happened.
+- **Ships**: the Idris-P, Gladius, Retaliator, Starfarer, Avenger Stalker and Hornet, plus a Vanduul AI wing and two Bengal rows. Nothing is selected when the tab opens, and **Spawn** stays greyed out until you choose a ship. Rows are greyed out when this game build doesn't have the class. Player ships spawn 30 m up and put you in the pilot seat using the Vehicles tab's seat rules. Everything spawned here becomes the Crew tab's target ship, except the Vanduul wing that comes with the Bengal. Vanduul spawn 300 m up and attack you. Bengals spawn 1500 m up. **Bengal + Vanduul wing** only brings the wing if this game build has the Vanduul classes, and its label tells you which happened.
 - **Console**: type a command and press Enter or **Run** to run it in the game's own console. The output goes to `Game.log`, not the menu.
 
 ## Menu

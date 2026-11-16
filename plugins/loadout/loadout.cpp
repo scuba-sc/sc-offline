@@ -38,7 +38,7 @@ struct Lists {
 struct State {
     const sco_api* api = nullptr; sco_plugin* self = nullptr;
     Lists lists; bool lists_known = false, spoilers = false, clocked = false;
-    uint32_t last_read = 0, page = 0, outfit_page = 0, build_page = 0; int32_t outfit = -1, ship = 0, build = -1;
+    uint32_t last_read = 0, page = 0, outfit_page = 0, build_page = 0; int32_t outfit = -1, ship = -1, build = -1;
     uint64_t content_generation = 0, outfit_generation = 0;
     int cvars[4]{-1,-1,-1,-1};
     std::string filter, outfit_filter, ship_filter, equip, visor, slots;
@@ -941,7 +941,7 @@ void Publish() {
             if (g.ship>=0 && static_cast<size_t>(g.ship)==i) ship_row=static_cast<int32_t>(ship_rows.size());
             ship_rows.push_back(i); ship_labels.push_back(ships[i].label);
         }
-        auto& ship=add(SCO_WIDGET_COMBO,120,"SQ42 ships"); ship.items=ship_labels.empty() ? nullptr : ship_labels.data(); ship.item_count=static_cast<uint32_t>(ship_labels.size()); ship.index=ship_row;
+        auto& ship=add(SCO_WIDGET_COMBO,120,"SQ42 ships (choose a ship)"); ship.items=ship_labels.empty() ? nullptr : ship_labels.data(); ship.item_count=static_cast<uint32_t>(ship_labels.size()); ship.index=ship_row;
         auto& height=add(SCO_WIDGET_SLIDER,121,"Height above me (m)"); height.value=g.height; height.minimum=0; height.maximum=500;
         add(SCO_WIDGET_TOGGLE,122,"Pilot seat and Flight Ready").value=g.sit ? 1 : 0;
         add(SCO_WIDGET_BUTTON,123,"Spawn via external spawn.ship_options",ship_row>=0 ? 0u : SCO_WIDGET_DISABLED);

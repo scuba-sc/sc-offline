@@ -9,6 +9,8 @@ struct Picker {
     char reply[256]{};
 } picker;
 void RenderPicker();
+// Flight Ready is only meaningful with the pilot seat; spawn.ship_options still refuses it otherwise.
+bool PickerPower(){return picker.power && picker.seat=="pilot";}
 void PickerEvent(const char* panel,const sco_widget_event* e,void*) {
     using namespace sco::picker;
     if(!g.api || !panel || std::strcmp(panel,"spawn.vehicles") || !e || e->size<sizeof(*e))return;
@@ -24,14 +26,14 @@ void PickerEvent(const char* panel,const sco_widget_event* e,void*) {
     else if(Event(e,SCO_WIDGET_TOGGLE) && (e->value==0 || e->value==1)) {
         if(e->node_id==6)picker.power=e->value!=0;
     } else if(Event(e,SCO_WIDGET_BUTTON)) {
-        const sco_arg options[]={String(picker.ship.c_str()),Float(picker.height),String(picker.seat.c_str()),Bool(picker.power)};
+        const sco_arg options[]={String(picker.ship.c_str()),Float(picker.height),String(picker.seat.c_str()),Bool(PickerPower())};
         switch(e->node_id) {
         case 7:(void)Options(options,4,nullptr,picker.reply,sizeof(picker.reply));break;
         case 8:picker.catalog.Previous();break;
         case 9:picker.catalog.Next();break;
         case 10:picker.catalog.Load(g.api,g.self,"lists/ships.txt",63);break;
         case 12:if(picker.owned>=0 && static_cast<uint32_t>(picker.owned)<g.count) {
-            const sco_arg args[]={Int(static_cast<int64_t>(g.tickets[picker.owned].id)),String(picker.seat.c_str()),Bool(picker.power)};
+            const sco_arg args[]={Int(static_cast<int64_t>(g.tickets[picker.owned].id)),String(picker.seat.c_str()),Bool(PickerPower())};
             (void)Board(args,3,nullptr,picker.reply,sizeof(picker.reply));}break;
         case 13:if(picker.owned>=0 && static_cast<uint32_t>(picker.owned)<g.count) {
             const auto id=Int(static_cast<int64_t>(g.tickets[picker.owned].id));(void)Remove(&id,1,nullptr,picker.reply,sizeof(picker.reply));}break;
@@ -54,18 +56,19 @@ void RenderPicker() {
     char page[96];std::snprintf(page,sizeof(page),"Page %u: %zu matching classes; copied catalog order",picker.catalog.page+1,picker.catalog.visible.size());
     sco_widget_node nodes[]={Node(SCO_WIDGET_TEXT_INPUT,1,"Filter classes"),Node(SCO_WIDGET_LIST,2,"Ship class"),
         Node(SCO_WIDGET_TEXT_INPUT,3,"Class (manual or selected)"),Node(SCO_WIDGET_SLIDER,4,"Height (metres)"),
-        Node(SCO_WIDGET_TEXT_INPUT,5,"Seat: pilot, name words, or none"),Node(SCO_WIDGET_TOGGLE,6,"Flight Ready (pilot only)"),
+        Node(SCO_WIDGET_TEXT_INPUT,5,"Seat: pilot, name words, or none"),Node(SCO_WIDGET_TOGGLE,6,"Flight Ready (pilot only)",picker.seat=="pilot"?0u:SCO_WIDGET_DISABLED),
         Node(SCO_WIDGET_BUTTON,7,"Spawn"),Node(SCO_WIDGET_BUTTON,8,"Previous classes"),Node(SCO_WIDGET_BUTTON,9,"Next classes"),
         Node(SCO_WIDGET_BUTTON,10,"Refresh catalog"),Node(SCO_WIDGET_COMBO,11,"Owned ship"),Node(SCO_WIDGET_BUTTON,12,"Board selected ship"),
         Node(SCO_WIDGET_BUTTON,13,"Cancel/remove selected ship"),Node(SCO_WIDGET_BUTTON,14,"Clear owned ships"),Node(SCO_WIDGET_BUTTON,15,"Refresh spawn status"),
         Node(SCO_WIDGET_BUTTON,17,"Startup destination (unavailable)"),
-        Node(SCO_WIDGET_LABEL,18,picker.catalog.status),Node(SCO_WIDGET_LABEL,19,page),Node(SCO_WIDGET_LABEL,20,picker.reply)};
+        Node(SCO_WIDGET_LABEL,18,picker.catalog.status),Node(SCO_WIDGET_LABEL,19,page),Node(SCO_WIDGET_LABEL,20,picker.reply),
+        Node(SCO_WIDGET_LABEL,21,"Flight Ready needs the pilot seat")};
     nodes[0].text=picker.catalog.filter.c_str();nodes[1].items=picker.catalog.labels.empty()?nullptr:picker.catalog.labels.data();nodes[1].item_count=static_cast<uint32_t>(picker.catalog.labels.size());nodes[1].index=-1;
     nodes[2].text=picker.ship.c_str();nodes[3].value=picker.height;nodes[3].maximum=10000;
-    nodes[4].text=picker.seat.c_str();nodes[5].value=picker.power?1:0;
+    nodes[4].text=picker.seat.c_str();nodes[5].value=PickerPower()?1:0;
     nodes[10].items=g.count?titles:nullptr; // sco.widgets rejects items without a count
     nodes[10].item_count=g.count;nodes[10].index=picker.owned;
-    auto r=w->set_panel(g.self,"spawn.vehicles","Vehicles",nodes,19,sizeof(nodes[0]),PickerEvent,nullptr);
+    auto r=w->set_panel(g.self,"spawn.vehicles","Vehicles",nodes,picker.seat=="pilot"?19:20,sizeof(nodes[0]),PickerEvent,nullptr);
     if(r!=SCO_OK)g.api->log(g.self,SCO_LOG_WARN,"Vehicles panel refused; spawn commands remain available");
 }
 void StartPicker(){picker={};picker.catalog.Load(g.api,g.self,"lists/ships.txt",63);RenderPicker();}

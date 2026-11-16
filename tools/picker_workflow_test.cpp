@@ -24,7 +24,7 @@
 #include <dlfcn.h>
 #endif
 namespace {
-struct Node {uint32_t kind=0;double value=0;int32_t index=0;std::string text,label;std::vector<std::string> items;};
+struct Node {uint32_t kind=0,flags=0;double value=0;int32_t index=0;std::string text,label;std::vector<std::string> items;};
 struct Panel {std::string title;sco_plugin* owner=nullptr;sco_widget_event_fn fn=nullptr;void* ctx=nullptr;std::map<uint32_t,Node> nodes;};
 std::map<std::string,Panel> panels;
 std::map<std::string,sco_command> commands;
@@ -45,7 +45,7 @@ sco_result Set(sco_plugin* self,const char* id,const char* title,const sco_widge
         if(n.kind==SCO_WIDGET_SLIDER)assert(std::isfinite(n.value) && n.value>=n.minimum && n.value<=n.maximum);
         if(n.kind==SCO_WIDGET_COMBO || n.kind==SCO_WIDGET_LIST)assert(n.index==-1 || (n.index>=0 && static_cast<uint32_t>(n.index)<n.item_count));
         if(n.kind==SCO_WIDGET_TABLE)assert(n.columns && n.item_count%n.columns==0);
-        Node out;out.kind=n.kind;out.value=n.value;out.index=n.index;out.label=n.label;out.text=n.text?n.text:"";
+        Node out;out.kind=n.kind;out.flags=n.flags;out.value=n.value;out.index=n.index;out.label=n.label;out.text=n.text?n.text:"";
         for(uint32_t j=0;j<n.item_count;++j){assert(n.items && n.items[j] && std::strlen(n.items[j])<=SCO_WIDGETS_MAX_TEXT);out.items.emplace_back(n.items[j]);}
         p.nodes.emplace(n.id,std::move(out));
     }
@@ -180,6 +180,21 @@ int main(int argc,char** argv) {
     assert(shipLabels[0]=="Synthetic Shuttle [synthetic_ship_alpha] [ship_pack_a]");
     assert(shipLabels[1]=="synthetic_ship_beta [ship_pack_a]");
     assert(shipLabels[2]=="Synthetic Shuttle [synthetic_ship_alpha] [ship_pack_b]");
+    {   // Flight Ready is offered only with the pilot seat; otherwise it is disabled, explained and sent as false.
+        auto& vp=panels.at("spawn.vehicles");
+        assert(vp.nodes.at(5).text=="pilot" && vp.nodes.at(6).value==1 && !(vp.nodes.at(6).flags&SCO_WIDGET_DISABLED) && vp.nodes.count(21)==0);
+        Event("spawn.vehicles",3,SCO_WIDGET_TEXT_INPUT,-1,"synthetic_ship_alpha");
+        for(const char* seat:{"none","synthetic seat 1"}) {
+            Event("spawn.vehicles",5,SCO_WIDGET_TEXT_INPUT,-1,seat);
+            auto& np=panels.at("spawn.vehicles");
+            assert(np.nodes.at(5).text==seat && (np.nodes.at(6).flags&SCO_WIDGET_DISABLED) && np.nodes.at(6).value==0);
+            assert(np.nodes.at(21).label=="Flight Ready needs the pilot seat");
+            Event("spawn.vehicles",7,SCO_WIDGET_BUTTON);
+            assert(panels.at("spawn.vehicles").nodes.at(20).label.find("Power requires")==std::string::npos);
+        }
+        Event("spawn.vehicles",5,SCO_WIDGET_TEXT_INPUT,-1,"pilot");
+        assert(panels.at("spawn.vehicles").nodes.at(6).value==1 && !(panels.at("spawn.vehicles").nodes.at(6).flags&SCO_WIDGET_DISABLED) && panels.at("spawn.vehicles").nodes.count(21)==0);
+    }
     Event("spawn.vehicles",1,SCO_WIDGET_TEXT_INPUT,-1,"synthetic shuttle");
     assert(panels.at("spawn.vehicles").nodes.at(2).items.size()==2);
     assert(panels.at("spawn.vehicles").nodes.at(2).items[0]=="Synthetic Shuttle [synthetic_ship_alpha] [ship_pack_a]");

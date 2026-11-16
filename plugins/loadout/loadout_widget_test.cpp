@@ -230,7 +230,12 @@ void Workflow(bool populated) {
                 std::strstr(outfit_reply,"No enabled data pack supplies lists/outfits.txt"),
                 "an absent outfit section is explicitly unavailable without fallback");
     }
-    Require(sq42.combos.at(120)==11 && sq42.ship_index==0,"default ship selection");
+    Require(sq42.combos.at(120)==11 && sq42.ship_index==-1 && (sq42.flags.at(123)&SCO_WIDGET_DISABLED),"no default ship; spawn disabled until chosen");
+    Send("loadout.sq42",sq42,123,SCO_WIDGET_BUTTON);
+    Require(spawns==0,"unchosen ship spawns nothing");
+    Require(sq42.build_index==-1 && (sq42.flags.at(132)&SCO_WIDGET_DISABLED),"no default buildable; place disabled until chosen");
+    Select("loadout.sq42",sq42,120,0);
+    Require(sq42.ship_index==0 && !(sq42.flags.at(123)&SCO_WIDGET_DISABLED),"chosen ship enables spawn");
     Send("loadout.sq42",sq42,123,SCO_WIDGET_BUTTON);
     Require(spawns==1 && spawn_class=="AEGS_Idris_P" && spawn_height==30 && spawn_seat=="pilot" && spawn_ready==1,"default spawn arguments");
     Value("loadout.sq42",sq42,121,SCO_WIDGET_SLIDER,77);
