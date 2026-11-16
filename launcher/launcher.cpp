@@ -58,6 +58,7 @@
 #include "plugin_startup_snapshot.h"
 #include "../src/version.h"
 #include "../src/private_network_ranges.h"
+#include "../src/stop_channel.h"
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "../src/third_party/imgui/imgui.h"
 #include "../src/third_party/imgui/imgui_impl_win32.h"
@@ -2688,6 +2689,8 @@ static const GuiCommand kGuiCommands[] = {
 };
 // Stop asks the game to close (WM_CLOSE); only this long after that does the window offer to end the process.
 static const double kStopWaitSeconds = 60.0;
+// Before WM_CLOSE, Stop asks the mod (if it is loaded in that process) to run its exit work and waits this long for it.
+static const DWORD kStopAckWaitMs = 10000;
 
 static const ImU32 kUiBg          = IM_COL32(21, 21, 23, 255);
 static const ImU32 kUiSide        = IM_COL32(17, 17, 19, 255);
@@ -2869,6 +2872,7 @@ static double Seconds() {
 }
 
 static void StartStatusRefresh();
+static void StopLog(const char* fmt, ...);   // the Stop/End steps in data\launcher.log
 
 // What the status banner shows. Uses only cheap facts (no drive search): the game folder from
 // sc-offline.ini, the one remembered from the last run, or the one the Status panel found.
@@ -2897,7 +2901,10 @@ static void RefreshLight() {
     g.pcLeft = !pc.empty();
     g.gameUp = GameRunning();
     g.folderKnown = !bin.empty();
-    if (!g.gameUp) { g.stopState = 0; g.stopNote.clear(); g.stopTargets.clear(); }
+    if (!g.gameUp) {
+        if (g.stopState) StopLog("game exited (%s)", g.stopState == 2 ? "after the End confirm was shown" : "within the wait");
+        g.stopState = 0; g.stopNote.clear(); g.stopTargets.clear();
+    }
     RefreshLightText();
     // The Status panel follows the game closing and what is left behind; it never polls on its own.
     if (g.wnd && ((wasUp && !g.gameUp) || hadLeftovers != g.hasLeftovers || hadPc != g.pcLeft)) StartStatusRefresh();
@@ -3340,6 +3347,20 @@ static std::vector<GameProc> FindGameProcs(const wstring& bin) {
     return found;
 }
 
+// One timestamped line in data\launcher.log for the Stop / End steps. The file is opened for append and closed
+// again each time (the play helper appends to it too); without a data folder nothing is written.
+static void StopLog(const char* fmt, ...) {
+    char text[512];
+    va_list a; va_start(a, fmt);
+    std::vsnprintf(text, sizeof(text), fmt, a);
+    va_end(a);
+    FILE* f = _wfsopen((g_gui.here + L"\\data\\launcher.log").c_str(), L"a", _SH_DENYNO);
+    if (!f) return;
+    SYSTEMTIME t; GetLocalTime(&t);
+    std::fprintf(f, "[stop %02u:%02u:%02u.%03u] %s\n", t.wHour, t.wMinute, t.wSecond, t.wMilliseconds, text);
+    std::fclose(f);
+}
+
 struct CloseRequest { const std::vector<GameProc>* targets; int posted; };
 
 static BOOL CALLBACK PostCloseToGame(HWND w, LPARAM lp) {
@@ -3352,20 +3373,49 @@ static BOOL CALLBACK PostCloseToGame(HWND w, LPARAM lp) {
     return TRUE;
 }
 
-// Stop: WM_CLOSE to the game's top-level windows, then wait kStopWaitSeconds before offering to end it. The
-// processes of this install are recorded as targets whether or not they have a window yet (loading); End only
-// ever touches those. Refuses when the game folder isn't known or no process of it is found.
+// Stop: first, in each target where the mod is loaded, the mod's stop event (so its exit work, the wallet save
+// among it, runs as on a normal quit; WM_CLOSE alone skips it), then WM_CLOSE to the game's top-level windows,
+// then wait kStopWaitSeconds before offering to end it. The processes of this install are recorded as targets
+// whether or not they have a window yet (loading); End only ever touches those. Refuses when the game folder
+// isn't known or no process of it is found. The wait for the mod blocks this window for up to g_stopAckWaitMs
+// per Stop (normally a fraction of a second; only a hung game takes the full time).
+static DWORD g_stopAckWaitMs = kStopAckWaitMs;   // the test shortens it
+
+static void AskModToStop(const std::vector<GameProc>& targets) {
+    for (const GameProc& t : targets) {
+        const sc_offline::stop_channel::Request r = sc_offline::stop_channel::RequestStop(t.pid, g_stopAckWaitMs);
+        using sc_offline::stop_channel::Outcome;
+        switch (r.outcome) {
+        case Outcome::NotPresent:
+            StopLog("pid %lu: no stop event (the mod is not loaded in it); closing the window directly", t.pid); break;
+        case Outcome::Denied:
+            StopLog("pid %lu: stop event not usable (error %lu); closing the window directly", t.pid, r.error); break;
+        case Outcome::Acknowledged:
+            StopLog("pid %lu: stop event signalled; mod acknowledged after %lu ms", t.pid, r.elapsedMs); break;
+        case Outcome::TimedOut:
+            StopLog("pid %lu: stop event signalled; no acknowledgement after %lu ms, closing the window anyway", t.pid, r.elapsedMs); break;
+        }
+    }
+}
+
 static void StopGame() {
     Gui& g = g_gui;
     g.stopTargets.clear();
     g.stopState = 0;
     g.stopNote.clear();
     const wstring bin = StopBin();
-    if (bin.empty()) { PluginNote(T(LocaleKey::StopNoFolder)); return; }
+    if (bin.empty()) { StopLog("Stop pressed: game folder unknown; nothing done"); PluginNote(T(LocaleKey::StopNoFolder)); return; }
     g.stopTargets = FindGameProcs(bin);
-    if (g.stopTargets.empty()) { PluginNote(T(LocaleKey::StopNoProcess)); return; }
+    if (g.stopTargets.empty()) { StopLog("Stop pressed: no game process of this install found; nothing done"); PluginNote(T(LocaleKey::StopNoProcess)); return; }
+    {
+        std::string pids;
+        for (const GameProc& t : g.stopTargets) pids += (pids.empty() ? "" : ", ") + std::to_string(t.pid);
+        StopLog("Stop pressed: %u target(s), pid %s", static_cast<unsigned>(g.stopTargets.size()), pids.c_str());
+    }
+    AskModToStop(g.stopTargets);
     CloseRequest req{ &g.stopTargets, 0 };
     EnumWindows(PostCloseToGame, reinterpret_cast<LPARAM>(&req));
+    StopLog("WM_CLOSE posted to %d window(s)", req.posted);
     g.stopState = 1;
     g.stopAt = Seconds();
     g.stopNote = T(req.posted ? LocaleKey::StopAsked : LocaleKey::StopNoWindow);
@@ -3377,6 +3427,7 @@ static void TickStop() {
     if (g.stopState != 1 || !g.gameUp || Seconds() - g.stopAt < kStopWaitSeconds) return;
     g.stopState = 2;
     g.stopNote.clear();
+    StopLog("game still running %.0f s after Stop: End confirm shown", kStopWaitSeconds);
     ShowPage(0);
 }
 
@@ -3386,13 +3437,14 @@ static void TickStop() {
 static void EndTargets(const std::vector<GameProc>& targets, const wstring& bin, int& ended, int& failed) {
     for (const GameProc& t : targets) {
         HANDLE h = OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, t.pid);
-        if (!h) { ++failed; continue; }
+        if (!h) { ++failed; StopLog("pid %lu: not ended (cannot open it, error %lu)", t.pid, GetLastError()); continue; }
         FILETIME created{}, exited{}, kernel{}, user{};
         DWORD code = 0;
-        if (GetExitCodeProcess(h, &code) && code != STILL_ACTIVE) { ++ended; CloseHandle(h); continue; }   // already gone
+        if (GetExitCodeProcess(h, &code) && code != STILL_ACTIVE) { ++ended; StopLog("pid %lu: already gone", t.pid); CloseHandle(h); continue; }   // already gone
         const bool same = t.created && GetProcessTimes(h, &created, &exited, &kernel, &user) &&
                           FileTimeU64(created) == t.created && ImageIsGame(h, bin);
-        if (same && TerminateProcess(h, 1)) ++ended; else ++failed;
+        if (same && TerminateProcess(h, 1)) { ++ended; StopLog("pid %lu: process ended", t.pid); }
+        else { ++failed; StopLog("pid %lu: not ended (%s)", t.pid, same ? "terminate failed" : "creation time or image no longer matches"); }
         CloseHandle(h);
     }
 }
@@ -3403,6 +3455,7 @@ static void EndGame() {
     Gui& g = g_gui;
     g.stopState = 0;
     g.stopNote.clear();
+    StopLog("End answered: yes; ending the %u recorded process(es)", static_cast<unsigned>(g.stopTargets.size()));
     int ended = 0, failed = g.stopTargets.empty() ? 1 : 0;
     EndTargets(g.stopTargets, StopBin(), ended, failed);
     g.stopTargets.clear();
@@ -4626,7 +4679,7 @@ static void RunAction() {
     case kActRepair: RunCommand(L"uninstall"); break;   // the old Uninstall: the mod out, the PC changes undone
     case kActStop: StopGame(); break;
     case kActEndYes: EndGame(); break;
-    case kActEndNo: g.stopState = 0; g.stopNote.clear(); break;
+    case kActEndNo: StopLog("End answered: no; the game is left running"); g.stopState = 0; g.stopNote.clear(); break;
     case kActRefresh: StartStatusRefresh(); break;
     case kActLogs: {
         const wstring d = g.here + L"\\data"; CreateDirectoryW(d.c_str(), nullptr);

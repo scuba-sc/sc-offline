@@ -10,7 +10,9 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <atomic>
 #include <map>
+#include <thread>
 
 namespace fs = std::filesystem;
 static unsigned checks = 0;
@@ -329,6 +331,108 @@ static void TestStopTargets(const fs::path& root) {
     Reap(a); Reap(b);
 }
 
+// Stop's request to the mod. The test plays the mod: it creates the two named events of the stand-in's pid and a
+// helper thread answers the stop event. data\launcher.log must show each step, with the mod's answer before WM_CLOSE.
+static std::string::size_type At(const std::string& text, const char* part) { return text.find(part); }
+
+struct FakeMod {
+    HANDLE stop = nullptr, stopped = nullptr;
+    std::thread thread;
+    std::atomic<bool> sawStop{false};
+    FakeMod(DWORD pid, DWORD answerDelayMs, bool answers) {
+        wchar_t name[64];
+        sc_offline::stop_channel::EventName(name, L"stop", pid);
+        stop = CreateEventW(nullptr, TRUE, FALSE, name);
+        sc_offline::stop_channel::EventName(name, L"stopped", pid);
+        stopped = CreateEventW(nullptr, TRUE, FALSE, name);
+        CHECK(stop && stopped);
+        if (answers)
+            thread = std::thread([this, answerDelayMs] {
+                if (WaitForSingleObject(stop, 10000) != WAIT_OBJECT_0) return;
+                sawStop = true;
+                Sleep(answerDelayMs);   // the exit work takes a moment
+                SetEvent(stopped);
+            });
+    }
+    ~FakeMod() {
+        SetEvent(stop);   // releases a helper still waiting
+        if (thread.joinable()) thread.join();
+        CloseHandle(stop); CloseHandle(stopped);
+    }
+};
+
+static void TestStopChannel(const fs::path& root) {
+    Gui& g = g_gui;
+    Dummy a = SpawnDummy(root, "chan-a");
+    const fs::path here = root / "chan-here";
+    Put(here / "sc-offline.ini", "game = " + a.bin.parent_path().string() + "\r\n");
+    fs::create_directories(here / "data");
+    const fs::path logFile = here / "data" / "launcher.log";
+    g.here = here.wstring();
+    g.status = StatusReport{};
+    g.gameUp = true;
+    auto fresh = [&] { fs::remove(logFile); };
+    const DWORD savedWait = g_stopAckWaitMs;
+
+    // No events (the mod is not loaded in the process): no wait, WM_CLOSE goes out directly, and it is logged.
+    fresh();
+    ULONGLONG t0 = GetTickCount64();
+    StopGame();
+    CHECK(GetTickCount64() - t0 < 2000);
+    std::string log = Get(logFile);
+    CHECK(log.find("Stop pressed: 1 target(s), pid " + std::to_string(a.pid)) != std::string::npos);
+    CHECK(At(log, "no stop event (the mod is not loaded in it); closing the window directly") != std::string::npos);
+    CHECK(At(log, "no stop event") < At(log, "WM_CLOSE posted to 0 window(s)"));
+    CHECK(At(log, "Stop pressed") < At(log, "no stop event"));
+    CHECK(g.stopState == 1 && Alive(a));
+
+    // The mod answers after 300 ms: Stop signals, waits for the answer, and only then posts WM_CLOSE.
+    fresh();
+    {
+        FakeMod mod(a.pid, 300, true);
+        g_stopAckWaitMs = 5000;
+        t0 = GetTickCount64();
+        StopGame();
+        const ULONGLONG took = GetTickCount64() - t0;
+        CHECK(mod.sawStop && took >= 250 && took < 4000);
+        CHECK(WaitForSingleObject(mod.stopped, 0) == WAIT_OBJECT_0);   // it really was the mod's answer that ended the wait
+        log = Get(logFile);
+        CHECK(At(log, "stop event signalled; mod acknowledged after") != std::string::npos);
+        CHECK(At(log, "Stop pressed") < At(log, "mod acknowledged after") && At(log, "mod acknowledged after") < At(log, "WM_CLOSE posted"));
+        CHECK(At(log, "no stop event") == std::string::npos);
+        CHECK(g.stopState == 1 && Alive(a));
+    }
+
+    // The mod never answers: Stop gives up after the wait, says so, and still posts WM_CLOSE.
+    fresh();
+    {
+        FakeMod mod(a.pid, 0, false);
+        g_stopAckWaitMs = 400;
+        t0 = GetTickCount64();
+        StopGame();
+        CHECK(GetTickCount64() - t0 >= 350);
+        CHECK(WaitForSingleObject(mod.stop, 0) == WAIT_OBJECT_0 && WaitForSingleObject(mod.stopped, 0) == WAIT_TIMEOUT);
+        log = Get(logFile);
+        CHECK(At(log, "no acknowledgement after") != std::string::npos);
+        CHECK(At(log, "no acknowledgement after") < At(log, "WM_CLOSE posted"));
+        CHECK(g.stopState == 1 && Alive(a));
+    }
+    g_stopAckWaitMs = savedWait;
+
+    // The rest of the sequence is logged: the End confirm after the wait, the answer, the process ended.
+    g.stopAt -= kStopWaitSeconds + 1;
+    TickStop();
+    CHECK(g.stopState == 2);
+    EndGame();
+    CHECK(WaitForSingleObject(a.process, 10000) == WAIT_OBJECT_0);
+    log = Get(logFile);
+    CHECK(At(log, "End confirm shown") < At(log, "End answered: yes") && At(log, "End answered: yes") < At(log, "process ended"));
+    CHECK(log.find("pid " + std::to_string(a.pid) + ": process ended") != std::string::npos);
+
+    g.stopState = 0; g.stopTargets.clear(); g.gameUp = false; g.status = StatusReport{};
+    Reap(a);
+}
+
 // The built sc-offline.exe, copied into a scratch folder with a minimal package layout: `status` must leave the
 // whole folder byte-identical (this covers the order of things in wmain, which RunStatus alone can't).
 static void TestStatusExe(const fs::path& root, const fs::path& exe) {
@@ -413,6 +517,7 @@ int wmain(int argc, wchar_t** argv) {
     TestStatusReport(owned);
     TestSessionLogs(owned);
     TestStopTargets(owned);
+    TestStopChannel(owned);
     TestHomeState();
     if (argc == 3) TestStatusExe(owned, fs::path(argv[2]));
     CHECK(fs::remove_all(owned) > 0);

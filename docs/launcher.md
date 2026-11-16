@@ -43,13 +43,25 @@ The sidebar has three pages (the fourth, Settings, opens from the top bar):
   path. The child's `[y/N]` questions turn the buttons into **Yes** / **No** (or press Y / N); the session-log
   question has four answers, **Delete**, **Keep**, **Always delete** and **Never delete** (see
   [Session logs](#session-logs)). **Play** and **Update** are disabled while a command runs and while the game runs.
-  - **Stop**: while the game runs, **Play** becomes **Stop**. It posts WM_CLOSE to the visible top-level window(s)
+  - **Stop**: while the game runs, **Play** becomes **Stop**. First it asks the mod to run its exit work: if the mod
+    is loaded in the game process it has made a per-process event, `Local\sc-offline-stop-<pid>` (session-local,
+    default security descriptor, so only the same user can open it). Stop signals it and waits up to 10 seconds for
+    `Local\sc-offline-stopped-<pid>`; on the game thread the mod then runs what a normal quit runs (the wallet is
+    saved, the private session closed, `game.exit` sent to plugins, admission closed) once, logs `[app] stop requested
+    by the launcher: exit work done` to `data\mod.log`, and answers. It unloads nothing and does not quit the game
+    itself; the menu and hotkeys stop working from then on. Closing a game window with WM_CLOSE alone skips that exit
+    work (the wallet was not saved). Without the event (the mod is not loaded, or the game is online) Stop goes on
+    straight to the next step, and so it does if the mod has not answered after 10 seconds (the window is unresponsive
+    for those seconds at most). Then Stop posts WM_CLOSE to the visible top-level window(s)
     of this install's `StarCitizen.exe`: the game folder is resolved as Play does (`game =`, else the folder the panel
     found), and Stop refuses when it isn't known; it never touches another install (PTU, another folder). The play
     command that started the game keeps waiting for it, so the usual cleanup runs when the game exits: the mod out,
     the PC changes undone. Nothing terminates the game automatically. If it is still running 60 seconds after Stop,
     the Actions card asks **"End the game process?"**; only **Yes** ends that process (the one that was asked to
-    close, checked by its creation time), **No** leaves it alone and **Stop** can be pressed again.
+    close, checked by its creation time), **No** leaves it alone and **Stop** can be pressed again. Each step is
+    written to `data\launcher.log` with a time: Stop pressed (targets and process ids), the stop event signalled or
+    not present, the mod's answer (after how many milliseconds) or its timeout, WM_CLOSE posted, the game exited, the
+    End confirm shown, the End answer, and each process ended.
   - **Repair banner**: when `%ProgramData%\sc-offline\pc-changes.txt` holds a record and the game is not running
     (after a crash; not while a command such as Play runs), a banner across the top of the page lists what is left and has the **Repair: undo PC changes**
     button, which runs `uninstall`.

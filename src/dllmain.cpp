@@ -39,6 +39,7 @@
 #include "offline_host.h"
 #include "admission_probe.h"
 #include "start_retry.h"
+#include "stop_channel.h"
 #include <mutex>
 #include <cstdio>
 #endif
@@ -744,6 +745,29 @@ static void StopHostKit(const char* trigger) {
 #endif
 }
 
+// The launcher's Stop (src/stop_channel.h). WM_CLOSE alone ends the game without the quit path Core hooks,
+// so the launcher first signals Local\sc-offline-stop-<pid>; the game thread then runs the same closure a
+// normal quit runs (Core's Stop: admission closed, game.exit once, nothing unloaded) and acknowledges.
+// Every part is latched (Core's closure, the wallet's exit save), so a later real quit repeats nothing.
+// Nothing here quits the game or unloads anything: Core keeps its quit function private, and the launcher
+// closes the window afterwards.
+static sc_offline::stop_channel::HostChannel g_stopChannel;
+
+static void RunLauncherStopWork() {
+    Log("[app] stop requested by the launcher: running the exit work");
+    StopHostKit("launcher stop");
+#ifdef SCO_OFFLINE_G1_HOST
+    const bool closed = sco::game::host::Status().phase == sco::game::host::Phase::Stopped;
+#else
+    const bool closed = false;
+#endif
+    // Closure refused on this stack (a callout holds Core's gate): the wallet is still saved here, as
+    // game.exit would have. The save is latched, so a later quit does not repeat it.
+    if (!closed) SaveContractsWalletAtExit();
+    Log("[app] stop requested by the launcher: %s", closed ? "exit work done" :
+        "exit work done except Core's closure (refused on this stack; wallet saved directly)");
+}
+
 // Contracts run on the retained host engine (contracts.cpp), as the v0.7.7 built-in did, until a
 // published missions/economy provider lets the external plugin take over. Its mission accounting
 // needs every actor death.
@@ -832,6 +856,8 @@ static void RunLegacyTicks(DWORD now) {
 }
 
 static void OnMainThreadTick() {
+    // Before anything else: the launcher's Stop must be answered even when the host never started.
+    if (g_stopChannel.Poll(RunLauncherStopWork)) return;
 #ifdef SCO_OFFLINE_G1_HOST
     // Terminal phases never restart; each attempt re-inspects before provider publication.
     // A persistent admission refusal must not inspect and log on every window message.
@@ -971,6 +997,11 @@ static void RunMainThreadService() {
     // The game's window exists, so its own crash filter is set: ours goes in front of it.
     InstallCrashLine();
     Log("[app] crash line: installed (a crash writes its module and offset here as [crash] lines)");
+    {   // Created before the hook, so the game thread never sees it half made; the launcher finds this event only where the mod runs.
+        DWORD error = 0;
+        if (g_stopChannel.Create(GetCurrentProcessId(), &error)) Log("[app] launcher stop channel: ready");
+        else Log("[app] launcher stop channel unavailable (%lu); the launcher closes the window directly", error);
+    }
     g_msgHook = SetWindowsHookExW(WH_GETMESSAGE, GetMsgProc, nullptr, GetWindowThreadProcessId(hwnd, nullptr));
     if (!g_msgHook) { Log("[app] could not hook the game's message loop (%lu); hotkeys, menu and plugins disabled", GetLastError()); return; }
     if (SpawnerReady()) Menu_Start(hwnd);
