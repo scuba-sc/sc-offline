@@ -72,7 +72,7 @@ sco_content_v1 c{sizeof(c),0,Item,Read};
 sco_result PlayerShip(uint64_t* out){*out=99;return SCO_OK;}
 sco_result Seats(uint64_t ship,sc_vehicle_seat* out,uint32_t max,uint32_t* count,uint32_t* more) {
     if(ship!=99)return SCO_NOT_FOUND;
-    *count=out?std::min(max,128u):0;*more=128-*count;
+    *count=out?(std::min)(max,128u):0;*more=128-*count;
     for(uint32_t i=0;i<*count;++i){out[i]={};out[i].index=i;out[i].flags=SC_SEAT_USABLE|SC_SEAT_USABLE_KNOWN;out[i].occupant_id=occupants[i];std::snprintf(out[i].name,sizeof(out[i].name),"synthetic seat %u",i);}
     return SCO_OK;
 }
