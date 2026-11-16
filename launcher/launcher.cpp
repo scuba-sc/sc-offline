@@ -3425,16 +3425,14 @@ static bool ModExpected(const wstring& bin) {
 // The mod's part is over (or there is none): close the window(s) as before and start the 60 s wait.
 static void CloseGameWindows() {
     Gui& g = g_gui;
+    if (g.stopNoAnswer) StopLog("the mod did not answer; closing without its save");
     CloseRequest req{ &g.stopTargets, 0 };
     EnumWindows(PostCloseToGame, reinterpret_cast<LPARAM>(&req));
     StopLog("WM_CLOSE posted to %d window(s)", req.posted);
     g.stopState = 1;
     g.stopAt = Seconds();
     g.stopNote = T(req.posted ? LocaleKey::StopAsked : LocaleKey::StopNoWindow);
-    if (g.stopNoAnswer) {
-        StopLog("the mod did not answer; closing without its save");
-        g.stopNote = std::string(T(LocaleKey::StopNoAnswer)) + " " + g.stopNote;
-    }
+    if (g.stopNoAnswer) g.stopNote = std::string(T(LocaleKey::StopNoAnswer)) + " " + g.stopNote;
 }
 
 static void StopGame() {
