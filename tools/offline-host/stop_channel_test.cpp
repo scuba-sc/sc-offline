@@ -5,6 +5,7 @@
 // the work once, acknowledges after it, and that a later quit through the latched path repeats nothing.
 #include "stop_channel.h"
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -35,12 +36,16 @@ struct Fake {
         ++walletSaves;
         log.push_back("[contracts] wallet saved at exit");
     }
-    // The shape of RunLauncherStopWork in src/dllmain.cpp.
-    void LauncherWork() {
-        CoreStop();
-        if (!closed) SaveWalletAtExit();
-        log.push_back("[app] stop requested by the launcher: exit work done");
-    }
+    bool refuseClosure = false;   // Core's gate is busy on this stack: its closure does not run
+    // The product's own sequence (sc::RunExitWork, used by RunLauncherStopWork in src/dllmain.cpp) over the fake.
+    struct Ops {
+        Fake& f;
+        void Log(const char* line) { f.log.push_back(line); }
+        void CloseHost() { if (!f.refuseClosure) f.CoreStop(); }
+        bool HostClosed() { return f.closed; }
+        void SaveWallet() { f.SaveWalletAtExit(); }
+    };
+    void LauncherWork() { Ops ops{*this}; sc::RunExitWork(ops); }
     unsigned Count(const char* line) const {
         unsigned n = 0;
         for (const auto& l : log) n += l == line;
@@ -153,6 +158,78 @@ int main() {
         CHECK(!host.Create(pid, &error) && error == ERROR_ALREADY_EXISTS && !host.Created());
         CloseHandle(squatter);
         CHECK(host.Create(pid) && host.Created());
+    }
+
+    // Core's closure refused on the launcher's stack: the wallet is still saved once, and the quit that follows
+    // (Core's closure now runs, game.exit reaches the wallet again) repeats nothing.
+    {
+        const DWORD pid = TestPid(5);
+        sc::HostChannel host;
+        CHECK(host.Create(pid));
+        Fake fake;
+        fake.refuseClosure = true;
+        std::thread launcher([&] { CHECK(sc::RequestStop(pid, 5000).outcome == sc::Outcome::Acknowledged); });
+        for (unsigned polls = 0; !host.Poll([&] { fake.LauncherWork(); }); ++polls) { CHECK(polls < 5000); Sleep(1); }
+        launcher.join();
+        CHECK(fake.closures == 0 && fake.walletSaves == 1);
+        CHECK(fake.Count("[app] stop requested by the launcher: exit work done except Core's closure "
+                         "(refused on this stack; wallet saved directly)") == 1);
+        fake.refuseClosure = false;
+        fake.CoreStop();   // the real quit
+        CHECK(fake.closures == 1 && fake.gameExit == 1 && fake.walletSaves == 1);
+        CHECK(fake.Count("[contracts] wallet saved at exit") == 1);
+    }
+
+    // Retire: the mod's closure was reached some other way (WM_QUIT, lost admission). A later Stop is answered at
+    // once instead of timing out, and the work does not run again.
+    {
+        const DWORD pid = TestPid(6);
+        sc::HostChannel host;
+        CHECK(host.Create(pid));
+        Fake fake;
+        host.Retire();
+        const sc::Request r = sc::RequestStop(pid, 5000);
+        CHECK(r.outcome == sc::Outcome::Acknowledged && r.elapsedMs < 1000);
+        CHECK(!host.Poll([&] { fake.LauncherWork(); }) && fake.closures == 0);
+    }
+
+    // Retire from inside the launcher's own work (the closure retires the channel) must not answer early: the
+    // launcher is released at the end of the work, not in the middle of it.
+    {
+        const DWORD pid = TestPid(7);
+        sc::HostChannel host;
+        CHECK(host.Create(pid));
+        Fake fake;
+        wchar_t n[64];
+        sc::EventName(n, L"stopped", pid);
+        HANDLE stopped = OpenEventW(SYNCHRONIZE, FALSE, n);
+        CHECK(stopped);
+        HANDLE stop = OpenEventW(EVENT_MODIFY_STATE, FALSE, (sc::EventName(n, L"stop", pid), n));
+        CHECK(stop && SetEvent(stop));
+        bool answeredInside = true;
+        CHECK(host.Poll([&] {
+            fake.LauncherWork();
+            host.Retire();
+            answeredInside = WaitForSingleObject(stopped, 0) == WAIT_OBJECT_0;
+        }));
+        CHECK(!answeredInside && WaitForSingleObject(stopped, 0) == WAIT_OBJECT_0 && fake.closures == 1);
+        CloseHandle(stop);
+        CloseHandle(stopped);
+    }
+
+    // The channel is made on another thread while the game thread is already polling: nothing is half made.
+    {
+        const DWORD pid = TestPid(8);
+        sc::HostChannel host;
+        std::atomic<bool> stopPolling{false};
+        unsigned runs = 0;
+        std::thread game([&] { while (!stopPolling) { host.Poll([&] { ++runs; }); Sleep(0); } });
+        Sleep(20);
+        CHECK(host.Create(pid));
+        CHECK(sc::RequestStop(pid, 5000).outcome == sc::Outcome::Acknowledged);
+        stopPolling = true;
+        game.join();
+        CHECK(runs == 1);
     }
 
     std::puts("stop channel: all checks passed");

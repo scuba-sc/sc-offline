@@ -754,18 +754,19 @@ static void StopHostKit(const char* trigger) {
 static sc_offline::stop_channel::HostChannel g_stopChannel;
 
 static void RunLauncherStopWork() {
-    Log("[app] stop requested by the launcher: running the exit work");
-    StopHostKit("launcher stop");
+    struct Ops {
+        void Log(const char* line) { ::Log("%s", line); }
+        void CloseHost() { StopHostKit("launcher stop"); }
+        bool HostClosed() {
 #ifdef SCO_OFFLINE_G1_HOST
-    const bool closed = sco::game::host::Status().phase == sco::game::host::Phase::Stopped;
+            return sco::game::host::Status().phase == sco::game::host::Phase::Stopped;
 #else
-    const bool closed = false;
+            return false;
 #endif
-    // Closure refused on this stack (a callout holds Core's gate): the wallet is still saved here, as
-    // game.exit would have. The save is latched, so a later quit does not repeat it.
-    if (!closed) SaveContractsWalletAtExit();
-    Log("[app] stop requested by the launcher: %s", closed ? "exit work done" :
-        "exit work done except Core's closure (refused on this stack; wallet saved directly)");
+        }
+        void SaveWallet() { SaveContractsWalletAtExit(); }
+    } ops;
+    sc_offline::stop_channel::RunExitWork(ops);
 }
 
 // Contracts run on the retained host engine (contracts.cpp), as the v0.7.7 built-in did, until a
@@ -931,6 +932,7 @@ private:
 };
 
 static void RequestLifecycleStop(const char* trigger) {
+    g_stopChannel.Retire();   // a later launcher Stop has nothing to wait for (a stop running right now answers at its end)
     if (!g_stopRequestIssued.load(std::memory_order_acquire)) Log("[shutdown] 1/3 stop requested: %s", trigger);
     Menu_RequestStop();
     g_hookCallbackAdmission.Close();
@@ -997,13 +999,13 @@ static void RunMainThreadService() {
     // The game's window exists, so its own crash filter is set: ours goes in front of it.
     InstallCrashLine();
     Log("[app] crash line: installed (a crash writes its module and offset here as [crash] lines)");
-    {   // Created before the hook, so the game thread never sees it half made; the launcher finds this event only where the mod runs.
+    g_msgHook = SetWindowsHookExW(WH_GETMESSAGE, GetMsgProc, nullptr, GetWindowThreadProcessId(hwnd, nullptr));
+    if (!g_msgHook) { Log("[app] could not hook the game's message loop (%lu); hotkeys, menu and plugins disabled", GetLastError()); return; }
+    {   // Only once the hook is in: the launcher finds these events only where a tick can answer them.
         DWORD error = 0;
         if (g_stopChannel.Create(GetCurrentProcessId(), &error)) Log("[app] launcher stop channel: ready");
         else Log("[app] launcher stop channel unavailable (%lu); the launcher closes the window directly", error);
     }
-    g_msgHook = SetWindowsHookExW(WH_GETMESSAGE, GetMsgProc, nullptr, GetWindowThreadProcessId(hwnd, nullptr));
-    if (!g_msgHook) { Log("[app] could not hook the game's message loop (%lu); hotkeys, menu and plugins disabled", GetLastError()); return; }
     if (SpawnerReady()) Menu_Start(hwnd);
 #ifdef SCO_OFFLINE_G1_HOST
     for (;;) {

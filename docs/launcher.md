@@ -49,10 +49,15 @@ The sidebar has three pages (the fourth, Settings, opens from the top bar):
     `Local\sc-offline-stopped-<pid>`; on the game thread the mod then runs what a normal quit runs (the wallet is
     saved, the private session closed, `game.exit` sent to plugins, admission closed) once, logs `[app] stop requested
     by the launcher: exit work done` to `data\mod.log`, and answers. It unloads nothing and does not quit the game
-    itself; the menu and hotkeys stop working from then on. Closing a game window with WM_CLOSE alone skips that exit
-    work (the wallet was not saved). Without the event (the mod is not loaded, or the game is online) Stop goes on
-    straight to the next step, and so it does if the mod has not answered after 10 seconds (the window is unresponsive
-    for those seconds at most). Then Stop posts WM_CLOSE to the visible top-level window(s)
+    itself. **After Stop the mod stays closed until the game exits**: its menu, hotkeys and timers (the 5 second
+    wallet poll among them) stop, and nothing is saved again. If the game does not close and **End** is declined,
+    the game keeps running without the mod. Closing a game window with WM_CLOSE alone skips that exit work (the
+    wallet was not saved). While the launcher waits for the mod's answer the button shows **Saving…** and the window
+    stays responsive. Without the event (the mod is not loaded, or the game is online) Stop goes on straight to the
+    next step; it does too when the mod has already closed itself (the game was quitting), when the game process
+    exits, or when the mod has not answered after 10 seconds. If the mod is installed in the game folder but did not
+    answer (no event, an event that can't be opened, or a timeout), the window says "The mod didn't answer; closing
+    without its save." and logs it. Then Stop posts WM_CLOSE to the visible top-level window(s)
     of this install's `StarCitizen.exe`: the game folder is resolved as Play does (`game =`, else the folder the panel
     found), and Stop refuses when it isn't known; it never touches another install (PTU, another folder). The play
     command that started the game keeps waiting for it, so the usual cleanup runs when the game exits: the mod out,

@@ -124,7 +124,11 @@ static void Out(const char* fmt, ...) {
 }
 
 static void OpenLog(const wstring& dataDir, bool append, const char* header) {
-    g_log = _wfsopen((dataDir + L"\\launcher.log").c_str(), append ? L"a" : L"w", _SH_DENYNO);
+    const wstring file = dataDir + L"\\launcher.log";
+    // One truncation at the start of a run, then every writer appends: the window's Stop/End lines are appended
+    // to this file while the play child (or this process) has it open, and must not be overwritten by it.
+    if (!append) { if (FILE* t = _wfsopen(file.c_str(), L"w", _SH_DENYNO)) std::fclose(t); }
+    g_log = _wfsopen(file.c_str(), L"a", _SH_DENYNO);
     if (!g_log) return;
     SYSTEMTIME t; GetLocalTime(&t);
     std::fprintf(g_log, "--- %04u-%02u-%02u %02u:%02u:%02u %s\n", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute,
@@ -2784,9 +2788,13 @@ struct Gui {
     LogChoice cleanLogs = LogChoice::Ask;
     StatusReport status;         // the Status panel; refreshed on start, after the game exits and on the refresh icon
     bool statusBusy = false, statusAgain = false;
-    // Stop: 1 = the game was asked to close and we are waiting, 2 = asking whether to end the process
+    // Stop: 3 = waiting for the mod's exit work (the window stays responsive), 1 = the game was asked to close and
+    // we are waiting, 2 = asking whether to end the process
     int stopState = 0;
     double stopAt = 0;
+    std::vector<sc_offline::stop_channel::Waiter> stopWait;   // one per target while stopState == 3
+    bool stopModExpected = false;   // the mod is installed in the game folder (this play), so it should answer
+    bool stopNoAnswer = false;      // ... and a target gave no answer
     std::vector<GameProc> stopTargets;   // the StarCitizen.exe processes that were asked to close
     std::string stopNote;
 };
@@ -2872,6 +2880,7 @@ static double Seconds() {
 }
 
 static void StartStatusRefresh();
+static void EndStopWait();
 static void StopLog(const char* fmt, ...);   // the Stop/End steps in data\launcher.log
 
 // What the status banner shows. Uses only cheap facts (no drive search): the game folder from
@@ -2902,7 +2911,9 @@ static void RefreshLight() {
     g.gameUp = GameRunning();
     g.folderKnown = !bin.empty();
     if (!g.gameUp) {
-        if (g.stopState) StopLog("game exited (%s)", g.stopState == 2 ? "after the End confirm was shown" : "within the wait");
+        if (g.stopState) StopLog("game exited (%s)", g.stopState == 2 ? "after the End confirm was shown" :
+                                 g.stopState == 3 ? "while waiting for the mod" : "within the wait");
+        EndStopWait();
         g.stopState = 0; g.stopNote.clear(); g.stopTargets.clear();
     }
     RefreshLightText();
@@ -3377,32 +3388,63 @@ static BOOL CALLBACK PostCloseToGame(HWND w, LPARAM lp) {
 // among it, runs as on a normal quit; WM_CLOSE alone skips it), then WM_CLOSE to the game's top-level windows,
 // then wait kStopWaitSeconds before offering to end it. The processes of this install are recorded as targets
 // whether or not they have a window yet (loading); End only ever touches those. Refuses when the game folder
-// isn't known or no process of it is found. The wait for the mod blocks this window for up to g_stopAckWaitMs
-// per Stop (normally a fraction of a second; only a hung game takes the full time).
+// isn't known or no process of it is found. The wait for the mod never blocks the window: stopState 3 is polled
+// by TickStop every loop (normally a fraction of a second); it ends when every target has answered, has exited,
+// or g_stopAckWaitMs has passed, and only then is WM_CLOSE posted.
 static DWORD g_stopAckWaitMs = kStopAckWaitMs;   // the test shortens it
 
-static void AskModToStop(const std::vector<GameProc>& targets) {
-    for (const GameProc& t : targets) {
-        const sc_offline::stop_channel::Request r = sc_offline::stop_channel::RequestStop(t.pid, g_stopAckWaitMs);
-        using sc_offline::stop_channel::Outcome;
-        switch (r.outcome) {
-        case Outcome::NotPresent:
-            StopLog("pid %lu: no stop event (the mod is not loaded in it); closing the window directly", t.pid); break;
-        case Outcome::Denied:
-            StopLog("pid %lu: stop event not usable (error %lu); closing the window directly", t.pid, r.error); break;
-        case Outcome::Acknowledged:
-            StopLog("pid %lu: stop event signalled; mod acknowledged after %lu ms", t.pid, r.elapsedMs); break;
-        case Outcome::TimedOut:
-            StopLog("pid %lu: stop event signalled; no acknowledgement after %lu ms, closing the window anyway", t.pid, r.elapsedMs); break;
-        }
+static void EndStopWait() {
+    for (auto& w : g_gui.stopWait) sc_offline::stop_channel::Release(w);
+    g_gui.stopWait.clear();
+}
+
+static void LogStopOutcome(const sc_offline::stop_channel::Waiter& w) {
+    using sc_offline::stop_channel::Outcome;
+    switch (w.result.outcome) {
+    case Outcome::NotPresent:
+        StopLog("pid %lu: no stop event (the mod is not loaded in it); closing the window directly", w.pid); break;
+    case Outcome::Denied:
+        StopLog("pid %lu: stop event not usable (error %lu); closing the window directly", w.pid, w.result.error); break;
+    case Outcome::Acknowledged:
+        StopLog("pid %lu: stop event signalled; mod acknowledged after %lu ms", w.pid, w.result.elapsedMs); break;
+    case Outcome::TimedOut:
+        StopLog("pid %lu: stop event signalled; no acknowledgement after %lu ms, closing the window anyway", w.pid, w.result.elapsedMs); break;
+    case Outcome::ProcessExited:
+        StopLog("pid %lu: stop event signalled; the process exited after %lu ms", w.pid, w.result.elapsedMs); break;
+    }
+    if (g_gui.stopModExpected && w.result.outcome != Outcome::Acknowledged && w.result.outcome != Outcome::ProcessExited)
+        g_gui.stopNoAnswer = true;
+}
+
+// True when the mod is installed in this game folder: it was put there by this play, so it should answer.
+static bool ModExpected(const wstring& bin) {
+    const GamePaths p(bin);
+    return IsFile(p.marker) || Identify(p.dll).ours;
+}
+
+// The mod's part is over (or there is none): close the window(s) as before and start the 60 s wait.
+static void CloseGameWindows() {
+    Gui& g = g_gui;
+    CloseRequest req{ &g.stopTargets, 0 };
+    EnumWindows(PostCloseToGame, reinterpret_cast<LPARAM>(&req));
+    StopLog("WM_CLOSE posted to %d window(s)", req.posted);
+    g.stopState = 1;
+    g.stopAt = Seconds();
+    g.stopNote = T(req.posted ? LocaleKey::StopAsked : LocaleKey::StopNoWindow);
+    if (g.stopNoAnswer) {
+        StopLog("the mod did not answer; closing without its save");
+        g.stopNote = std::string(T(LocaleKey::StopNoAnswer)) + " " + g.stopNote;
     }
 }
 
 static void StopGame() {
     Gui& g = g_gui;
+    if (g.stopState == 3) return;   // already asking; the button is disabled meanwhile
+    EndStopWait();
     g.stopTargets.clear();
     g.stopState = 0;
     g.stopNote.clear();
+    g.stopNoAnswer = false;
     const wstring bin = StopBin();
     if (bin.empty()) { StopLog("Stop pressed: game folder unknown; nothing done"); PluginNote(T(LocaleKey::StopNoFolder)); return; }
     g.stopTargets = FindGameProcs(bin);
@@ -3412,18 +3454,43 @@ static void StopGame() {
         for (const GameProc& t : g.stopTargets) pids += (pids.empty() ? "" : ", ") + std::to_string(t.pid);
         StopLog("Stop pressed: %u target(s), pid %s", static_cast<unsigned>(g.stopTargets.size()), pids.c_str());
     }
-    AskModToStop(g.stopTargets);
-    CloseRequest req{ &g.stopTargets, 0 };
-    EnumWindows(PostCloseToGame, reinterpret_cast<LPARAM>(&req));
-    StopLog("WM_CLOSE posted to %d window(s)", req.posted);
-    g.stopState = 1;
-    g.stopAt = Seconds();
-    g.stopNote = T(req.posted ? LocaleKey::StopAsked : LocaleKey::StopNoWindow);
+    g.stopModExpected = ModExpected(bin);
+    bool pending = false;
+    for (const GameProc& t : g.stopTargets) {
+        sc_offline::stop_channel::Waiter w;
+        // The process handle ends the wait if the game dies; a reused id (other creation time) counts as gone.
+        HANDLE h = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, t.pid);
+        FILETIME created{}, exited{}, kernel{}, user{};
+        if (h && !(GetProcessTimes(h, &created, &exited, &kernel, &user) && FileTimeU64(created) == t.created)) { CloseHandle(h); h = nullptr; }
+        sc_offline::stop_channel::Begin(w, t.pid, h);
+        if (w.finished) LogStopOutcome(w); else pending = true;
+        g.stopWait.push_back(w);
+    }
+    if (pending) {
+        g.stopState = 3;
+        g.stopAt = Seconds();
+        g.stopNote = T(LocaleKey::StopSaving);
+        return;
+    }
+    EndStopWait();
+    CloseGameWindows();
 }
 
-// Called every loop: the confirm only appears while the game is still up after kStopWaitSeconds.
+// Called every loop. In state 3: finish the wait for the mod, then close the window(s). In state 1: the confirm
+// only appears while the game is still up after kStopWaitSeconds.
 static void TickStop() {
     Gui& g = g_gui;
+    if (g.stopState == 3) {
+        bool all = true;
+        for (auto& w : g.stopWait) {
+            if (w.finished) continue;
+            if (sc_offline::stop_channel::Poll(w, g_stopAckWaitMs)) LogStopOutcome(w); else all = false;
+        }
+        if (!all) return;
+        EndStopWait();
+        CloseGameWindows();
+        return;
+    }
     if (g.stopState != 1 || !g.gameUp || Seconds() - g.stopAt < kStopWaitSeconds) return;
     g.stopState = 2;
     g.stopNote.clear();
@@ -3653,7 +3720,10 @@ static void DrawHome(float x0, float y0, float x1, float y1) {
         return;
     }
     if (!g.question.empty()) { DrawAnswerButtons(ImVec2(bx, ay), bw); return; }
-    if (g.gameUp) {   // Play becomes Stop while the game runs
+    if (g.gameUp && g.stopState == 3) {   // the mod is saving: Stop waits for its answer before closing the window
+        UiButton("Saving##act", ImVec2(bx, ay), ImVec2(bw, bh), kAction, false, -1, T(LocaleKey::StopSaving));
+        UiSpinner(ImVec2(bx + Px(20), ay + Px(21)), Px(7), Px(2.0f), kUiActionText);
+    } else if (g.gameUp) {   // Play becomes Stop while the game runs
         if (UiButton("Stop##act", ImVec2(bx, ay), ImVec2(bw, bh), kAction, true, kIcoStop, T(LocaleKey::Stop))) g.action = kActStop;
     } else if (!g.running.empty()) {
         const std::string label = "Running " + Narrow(g.running) + "##act";
@@ -4677,7 +4747,7 @@ static void RunAction() {
     case kActSettings: ShowPage(g.page == 3 ? 0 : 3); break;
     case kActIni: ShellExecuteW(g.wnd, L"open", L"notepad.exe", (L"\"" + g.here + L"\\sc-offline.ini\"").c_str(), nullptr, SW_SHOWNORMAL); break;
     case kActRepair: RunCommand(L"uninstall"); break;   // the old Uninstall: the mod out, the PC changes undone
-    case kActStop: StopGame(); break;
+    case kActStop: StopGame(); break;   // answers at once; the wait for the mod is polled by TickStop
     case kActEndYes: EndGame(); break;
     case kActEndNo: StopLog("End answered: no; the game is left running"); g.stopState = 0; g.stopNote.clear(); break;
     case kActRefresh: StartStatusRefresh(); break;
@@ -4923,6 +4993,7 @@ static int RunGui() {
         if (IsIconic(wnd) || g.occluded) wait = 250;
         else if (!g.animating) wait = 500;
         else if (!g.focused) wait = 66;
+        if (g.stopState == 3 && (!wait || wait > 50)) wait = 50;   // notice the mod's answer promptly
         if (wait) MsgWaitForMultipleObjectsEx(0, nullptr, wait, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
         MSG m;
         while (PeekMessageW(&m, nullptr, 0, 0, PM_REMOVE)) {
