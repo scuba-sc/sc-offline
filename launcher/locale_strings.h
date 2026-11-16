@@ -5,10 +5,7 @@
     X(Play, "launcher.action.play", "Play") \
     X(Running, "launcher.action.running", "Running {command}") \
     X(FormatUnavailable, "launcher.text.unavailable", "Text could not be displayed.") \
-    X(Status, "launcher.action.status", "Status") \
     X(Update, "launcher.action.update", "Update") \
-    X(Install, "launcher.action.install", "Install") \
-    X(Uninstall, "launcher.action.uninstall", "Uninstall") \
     X(Yes, "launcher.action.yes", "Yes") \
     X(No, "launcher.action.no", "No") \
     X(Copy, "launcher.action.copy", "Copy") \
@@ -44,9 +41,9 @@
     X(UnsafeRunning, "launcher.status.unsafe_running", "Not safe to go online") \
     X(RunningDetail, "launcher.status.running_detail", "Star Citizen is running. When it closes, sc-offline takes the mod out and undoes its PC changes.") \
     X(UnsafeLeftovers, "launcher.status.unsafe_leftovers", "Not safe to go online yet") \
-    X(UndoDetail, "launcher.status.undo_detail", "Click Uninstall to undo: {items}") \
+    X(UndoDetail, "launcher.status.undo_detail", "Click Repair to undo: {items}") \
     X(UnknownFolder, "launcher.status.unknown_folder", "Game folder not known yet") \
-    X(UnknownFolderDetail, "launcher.status.unknown_folder_detail", "Click Status or Play to find it. No PC changes are left over.") \
+    X(UnknownFolderDetail, "launcher.status.unknown_folder_detail", "Play looks for it, or press the check-again button. No PC changes are left over.") \
     X(SafeOnline, "launcher.status.safe_online", "Safe to go online") \
     X(SafeDetail, "launcher.status.safe_detail", "The mod is out of the game folder and no PC changes are left.") \
     X(DiscordHint, "launcher.hint.discord", "Show \"Playing sc-offline\" on your Discord profile from the next Play") \
@@ -104,4 +101,49 @@
     X(DiscordOff, "launcher.output.discord_off", "Discord status off: from the next Play, nothing is shown on Discord.") \
     X(DiscordError, "launcher.output.discord_error", "couldn't change data\\plugins\\discord\\disabled (is the folder read-only?)") \
     X(ChildDone, "launcher.output.child_done", "Done.") \
-    X(ChildFinished, "launcher.output.child_finished", "Exit code {code}; see above.")
+    X(ChildFinished, "launcher.output.child_finished", "Exit code {code}; see above.") \
+    X(Stop, "launcher.action.stop", "Stop") \
+    X(Repair, "launcher.action.repair", "Repair: undo PC changes") \
+    X(Delete, "launcher.action.delete", "Delete") \
+    X(Keep, "launcher.action.keep", "Keep") \
+    X(AlwaysDelete, "launcher.action.always_delete", "Always delete") \
+    X(NeverDelete, "launcher.action.never_delete", "Never delete") \
+    X(OpenIni, "launcher.action.open_ini", "Edit sc-offline.ini") \
+    X(RefreshHint, "launcher.hint.refresh", "Check again") \
+    X(StatusGame, "launcher.status.game", "Game") \
+    X(StatusMod, "launcher.status.mod", "Mod") \
+    X(StatusPcChanges, "launcher.status.pc_changes", "PC changes") \
+    X(StatusNetwork, "launcher.status.network", "Network") \
+    X(StatusEac, "launcher.status.eac", "Anti-cheat") \
+    X(StatusPlugins, "launcher.status.plugins", "Plugins") \
+    X(StatusChecking, "launcher.status.checking", "Checking...") \
+    X(GameFound, "launcher.status.game_found", "Found, build unknown") \
+    X(GameFoundBuild, "launcher.status.game_found_build", "Found, {build}") \
+    X(GameNotFound, "launcher.status.game_not_found", "Not found yet") \
+    X(ModInstalled, "launcher.status.mod_installed", "Installed in the game folder") \
+    X(ModNotInstalled, "launcher.status.mod_not_installed", "Not installed") \
+    X(PcNone, "launcher.status.pc_none", "None left") \
+    X(PcLeft, "launcher.status.pc_left", "Left over: {items}") \
+    X(PcRecord, "launcher.status.pc_record", "A record of earlier PC changes is still there.") \
+    X(NetBlocked, "launcher.status.net_blocked", "Blocked while you play") \
+    X(NetOpen, "launcher.status.net_open", "Not blocked (block_network = off)") \
+    X(NetWine, "launcher.status.net_wine", "Handled by sc-offline.sh") \
+    X(EacOnAuto, "launcher.status.eac_on_auto", "On; turned off while you play") \
+    X(EacOn, "launcher.status.eac_on", "On; turn it off before playing") \
+    X(EacOff, "launcher.status.eac_off", "Off") \
+    X(EacNone, "launcher.status.eac_none", "Not installed") \
+    X(PluginsCount, "launcher.status.plugins_count", "{enabled} of {total} enabled") \
+    X(StatusPluginsOff, "launcher.status.plugins_off", "All off (plugins = off)") \
+    X(RepairTitle, "launcher.repair.title", "Changes are still on this PC") \
+    X(RepairHint, "launcher.repair.hint", "Takes the mod out and undoes the firewall rule, hosts line and EAC rename.") \
+    X(RepairNothing, "launcher.repair.nothing", "Nothing to repair.") \
+    X(LogsLabel, "launcher.settings.logs_label", "Game logs after a session") \
+    X(LogsAsk, "launcher.settings.logs_ask", "Ask each time") \
+    X(LogsHint, "launcher.settings.logs_hint", "Only this session's files are deleted. Same as clean_logs in sc-offline.ini.") \
+    X(LogsSaved, "launcher.settings.logs_saved", "Saved. Applies after the next game session.") \
+    X(LogsWriteError, "launcher.settings.logs_write_error", "Couldn't write sc-offline.ini; set clean_logs there by hand.") \
+    X(StopAsked, "launcher.stop.asked", "Asked Star Citizen to close. If it is still open in a minute, you can end it.") \
+    X(StopNoWindow, "launcher.stop.no_window", "No Star Citizen window found to close. If it is still running in a minute, you can end it.") \
+    X(EndQuestion, "launcher.stop.end_question", "End the game process?") \
+    X(EndDone, "launcher.stop.end_done", "Ended the game process.") \
+    X(EndFailed, "launcher.stop.end_failed", "Couldn't end the game process.")

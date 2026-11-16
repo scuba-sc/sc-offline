@@ -67,7 +67,7 @@ Details and the list of owed in-game checks: [Status](docs/status.md).
 
 ## Go back online
 
-The launcher records its session changes and arranges cleanup when the game exits. After a crash or power loss, **close the game**, check **Status**, and use **Uninstall** if anything remains. Check again before returning online.
+The launcher records its session changes and arranges cleanup when the game exits. After a crash or power loss, **close the game**; the launcher window then shows a **Repair** banner (also under Settings as **Repair: undo PC changes**). Press it, or run `uninstall`, if anything remains. Check again before returning online.
 
 ```powershell
 .\sc-offline.exe status

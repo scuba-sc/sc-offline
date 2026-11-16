@@ -11,9 +11,9 @@ sc-offline.exe [play|install|uninstall|status|update|help] [--game <folder>] [--
 | Command | What it does |
 | --- | --- |
 | `play` | The default from a terminal (a double-click opens the [window](#the-window)). Copies the mod in, starts the game, takes the mod out when the game closes. |
-| `install` | Copies the mod in and leaves it there, for starting the game some other way. Run `uninstall` before going online. |
-| `uninstall` | Takes the mod out, puts back anything it replaced, and undoes leftover [PC changes](#pc-changes). Refuses while the game is running. |
-| `status` | Runs the checks below and changes nothing. |
+| `install` | Copies the mod in and leaves it there, for starting the game some other way. Run `uninstall` before going online. Command line only: the [window](#the-window) has no Install button. |
+| `uninstall` | Takes the mod out, puts back anything it replaced, and undoes leftover [PC changes](#pc-changes). Refuses while the game is running. The window's **Repair: undo PC changes** runs it. |
+| `status` | Runs the [checks below](#checks-it-runs-every-time) and is read-only: it writes no file (not `data\launcher.log`, not `data\game-path.txt`), doesn't migrate `discord_presence`, doesn't settle an interrupted update, doesn't open the folder picker and makes no network request (no update check). If the game folder can't be found it says so; `play` still remembers what it finds. The window's Status panel runs the same checks. |
 | `update` | Checks GitHub for a newer sc-offline and offers to install it; see [Updates](#updates). |
 | `help` | Prints the usage. |
 
@@ -27,37 +27,56 @@ sc-offline.exe [play|install|uninstall|status|update|help] [--game <folder>] [--
 
 Exit codes: `0` ok · `1` error · `2` Easy Anti-Cheat is active · `3` the game is running. The helper's own codes, in `launcher.log`: `5` a PC change failed.
 
-Everything the launcher prints also goes to `data\launcher.log` (rewritten each run; the helper appends to it).
+Everything the launcher prints also goes to `data\launcher.log` (rewritten each run; the helper appends to it), except for `status`, which writes nothing.
 
 ## The window
 
-A double-click (no arguments, the exe's own console) opens a 720×328 window instead of the console run. It is
+A double-click (no arguments, the exe's own console) opens a 720×376 window instead of the console run. It is
 drawn with ImGui on Direct3D 11 (the vendored `src/third_party/imgui`, the copy the mod's menu uses). If
 Direct3D 11 isn't available, it says so and tells you to run `sc-offline.exe play` from a terminal. Under Wine the
 console run stays the default; `--window` opens the window anyway.
 
-The sidebar has three pages:
+The sidebar has three pages (the fourth, Settings, opens from the top bar):
 
-- **Home**: the *Launcher* list (**Play**, **Status**, **Update**, **Install**, **Uninstall**) with one button below it
-  for the picked row, and the *Status* banner. Each command runs `sc-offline.exe <command>` as a hidden child with
-  `SC_OFFLINE_GUI=1`, so the window and the CLI share one code path. The child's `[y/N]` questions turn the button
-  into **Yes** / **No** (or press Y / N). Commands are disabled while one runs and while the game runs (except
-  **Status**); **Uninstall** only when something is left to undo.
+- **Home**: the *Status* panel on the left and the *Actions* on the right. **Play** and **Update** run
+  `sc-offline.exe <command>` as a hidden child with `SC_OFFLINE_GUI=1`, so the window and the CLI share one code
+  path. The child's `[y/N]` questions turn the buttons into **Yes** / **No** (or press Y / N); the session-log
+  question has four answers, **Delete**, **Keep**, **Always delete** and **Never delete** (see
+  [Session logs](#session-logs)). **Play** and **Update** are disabled while a command runs and while the game runs.
+  - **Stop**: while the game runs, **Play** becomes **Stop**. It posts WM_CLOSE to the visible top-level window(s)
+    of this install's `StarCitizen.exe` (the game folder the panel found; it never touches another install). The play
+    command that started the game keeps waiting for it, so the usual cleanup runs when the game exits: the mod out,
+    the PC changes undone. Nothing terminates the game automatically. If it is still running 60 seconds after Stop,
+    the Actions card asks **"End the game process?"**; only **Yes** ends that process (the one that was asked to
+    close, checked by its creation time), **No** leaves it alone and **Stop** can be pressed again.
+  - **Repair banner**: when `%ProgramData%\sc-offline\pc-changes.txt` holds a record and the game is not running
+    (after a crash), a banner across the top of the page lists what is left and has the **Repair: undo PC changes**
+    button, which runs `uninstall`.
+  - **Status panel**: the same read-only checks as `sc-offline.exe status`: the game folder and build, whether the
+    mod is installed, PC changes left over, whether the network is blocked while you play, Easy Anti-Cheat, and how
+    many plugins are enabled. It is checked when the window opens, after the game exits (and after a command or a
+    change in what is left over) and when you press the refresh icon in its header, on a background thread; it
+    never polls. The game folder comes from `game =` in `sc-offline.ini`, else the usual places (the same search as
+    `status`). Nothing is written.
 - **Plugins**: see [below](#the-plugins-page).
-- **Output**: what the running command prints, with a **Copy** button. **Status** and **Update** switch to it.
+- **Output**: what the running command prints, with a **Copy** button. **Update** and **Repair** switch to it.
 
 The top bar has the **Discord** switch (the Discord plugin, `data\plugins\discord`, used from the next Play), **Settings**
-(opens `sc-offline.ini` in Notepad), **Logs** (opens `data`), minimize and close. Drag the empty part of the bar to
-move the window.
+(the Settings page), **Logs** (opens `data`), minimize and close. Drag the empty part of the bar to move the window.
 
-The banner uses only cheap checks: the game folder from `game =` or `data\game-path.txt`, the
-`sc-offline.installed` marker or sc-offline's `dinput8.dll` in Bin64, and `%ProgramData%\sc-offline\pc-changes.txt`.
-It refreshes every 1.5 seconds, including while **Play** is running, and after every command. Hover it for the
-detail:
+The **Settings** page has **Repair: undo PC changes** (enabled when something is left to undo and the game isn't
+running), the three-way **Game logs after a session** choice (**Ask each time**, **Always delete**, **Never delete**:
+`clean_logs` in `sc-offline.ini`), and **Edit sc-offline.ini**, which opens the file in Notepad. The language switch
+stays in the top bar.
+
+The status line above the panel's rows uses only cheap checks: the game folder from `game =`, `data\game-path.txt`
+or what the panel found, the `sc-offline.installed` marker or sc-offline's `dinput8.dll` in Bin64, and
+`%ProgramData%\sc-offline\pc-changes.txt`. It refreshes every 1.5 seconds, including while **Play** is running, and
+after every command. Hover it for the detail:
 
 - **Safe to go online**: nothing of the mod is in Bin64 and no PC changes are left;
 - **Not safe to go online** / **yet**: the game is running, or it lists what is left;
-- **Game folder not known yet**: click **Status** or **Play** to find it.
+- **Game folder not known yet**: **Play** looks for it, or press the refresh icon.
 
 After **Update** applies a new version, the window restarts itself. With any argument, the console run is
 unchanged.
@@ -135,7 +154,7 @@ against them. No new permission or live IPC path is part of this scaffold.
 2. **Game updated?** The game version from `<channel>\build_manifest.id` (or `StarCitizen.exe`'s size and date),
    compared with `data\game-build.txt` from your last play. If it changed, a game update may have broken the mod.
 3. **Leftovers.** If the mod is still in the game folder while the game isn't running (a crash, or `install`), it
-   says so and tells you to run `uninstall`.
+   says so and tells you to run `uninstall` (in the window, **Repair**).
 4. **PC changes left over.** If a previous run's changes (below) are still recorded in
    `%ProgramData%\sc-offline\pc-changes.txt`, it lists them. `play` asks whether to undo them and stop,
    or play and undo everything afterwards.
@@ -176,8 +195,8 @@ against them. No new permission or live IPC path is part of this scaffold.
    mod out, even if you closed the launcher window first. Ctrl+C in the launcher window is ignored; close the
    game instead.
 
-If the PC crashes mid-game, the mod stays in the game folder. The next `play` or `status` notices; run
-`sc-offline.exe uninstall` before going online.
+If the PC crashes mid-game, the mod stays in the game folder. The next `play` or `status` notices, and the window
+shows its Repair banner; use **Repair** or run `sc-offline.exe uninstall` before going online.
 
 ## PC changes
 
@@ -193,15 +212,15 @@ While you play, the helper changes three things outside the game folder and undo
 - Each change is written to `%ProgramData%\sc-offline\pc-changes.txt` the moment it is made, and only recorded
   changes are undone. A hosts line or `.bak` you made yourself is never touched.
 - If a step fails, the helper undoes what it already did and the game doesn't start.
-- After a crash the record stays. `status` lists it, `uninstall` undoes it, and `play` offers to.
+- After a crash the record stays. `status` lists it (read-only), `uninstall` undoes it (**Repair** in the window), and `play` offers to.
 
 ### Updates
 
-On `play` and `status` the launcher asks GitHub for the newest release of `scuba-sc/sc-offline`
+On `play` the launcher asks GitHub for the newest release of `scuba-sc/sc-offline`
 (3-second timeout; no network just skips it). With `update_channel = stable` (the default) only full
 releases are offered; `update_channel = prerelease` also offers pre-releases (test builds). Drafts, older
 versions and tags that aren't plain numbers are never offered. If a newer one exists, `play` asks
-**"Update now?"** and `status` tells you to run `sc-offline.exe update`. It won't update while
+**"Update now?"**. `status` makes no network request; run `sc-offline.exe update` to check on demand. It won't update while
 `StarCitizen.exe` is running.
 
 An update:
@@ -307,9 +326,15 @@ Start `sc-offline.exe` with normal rights. An elevated launcher attempts to use 
 
 When the game closes, the launcher lists the logs the game wrote during this session: `<channel>\Game.log`,
 new files in `<channel>\logbackups`, and new files under `<channel>\Crashes`. It asks **"Delete these
-files?"** and then **"Are you sure?"**; anything but `y` both times keeps them. Files older than the session
+files?"**. The answers are `y` (delete; one more **"Are you sure?"** follows), `n` or a bare Enter (keep), `always`
+(delete now, and after every session without asking) and `never` (keep, and never ask again); in the window they
+are the buttons **Delete**, **Keep**, **Always delete** and **Never delete**. Anything unclear keeps the files.
+**Always** and **Never** write `clean_logs = always` or `clean_logs = never` into `sc-offline.ini`; every other
+line and comment in the file stays as it is. With `always` only this session's files are deleted, still through
+the same administrator prompt when the game folder refuses a plain delete. Files older than the session
 (for example from online play) are never touched, and neither are `data\mod.log` and `data\launcher.log`.
-Keep `Game.log` if you want to report a bug. Set `clean_logs = off` in `sc-offline.ini` to skip the question.
+Keep `Game.log` if you want to report a bug. Set `clean_logs = never` in `sc-offline.ini` (or on the Settings
+page) to skip the question; `ask` brings it back.
 - Under Wine none of this runs; `sc-offline.sh` handles hosts there, and the firewall rule doesn't apply.
 - The firewall rule cuts the game's network for the session. It doesn't hide anything already on disk, such as
   logs or the renamed EAC file while you play.
@@ -332,10 +357,10 @@ launcher read the INI file; game acceptance remains pending.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `game` | (found automatically) | Your Star Citizen folder. You can point at `Roberts Space Industries`, at `StarCitizen`, at the channel folder, or at the folder that holds `StarCitizen`. |
-| `check_updates` | `on` | Check GitHub for a newer release on `play` and `status` and offer to install it. |
+| `check_updates` | `on` | Check GitHub for a newer release on `play` and offer to install it. |
 | `update_channel` | `stable` | `stable`: only full releases are offered. `prerelease`: pre-releases (test builds) are offered too. |
 | `crash_reports` | `on` | After a crash, offer a redacted log bundle and the bug form. See [Crash reports](#crash-reports). |
-| `clean_logs` | `ask` | After the game closes, list this session's game logs and ask (twice) before deleting them. `off` skips it. |
+| `clean_logs` | `ask` | After the game closes: `ask` lists this session's game logs and asks before deleting them (Delete asks twice; the question also offers Always and Never, which write `always` or `never` here); `always` deletes them without asking; `never` keeps them and doesn't ask. The older `on` (= `ask`) and `off` (= `never`) still work. |
 | `channel` | `LIVE` | Which install to use when `game` points above it: `LIVE`, `PTU`, `EPTU`, and so on. |
 | `boot_map` | `PU_All` | `PU_All` loads every star system, so Travel can reach Pyro and Nyx. |
 | `start_ship` | `DRAK_Cutlass_Black` | Retained legacy startup ship request, parsed and passed to the host. The current external spawn module does not implement destination startup; this key does not select an ordinary menu spawn or enable boarding. |

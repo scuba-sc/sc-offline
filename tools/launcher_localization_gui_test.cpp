@@ -89,8 +89,9 @@ int wmain(int argc, wchar_t** argv) {
         ImGui::EndFrame();
     }
 
-    const char* controls[] = {"Play", "Status", "Update", "Install", "Uninstall", "Play##act",
-        "Yes", "No", "Reload##plug", "Turn on##plugson", "Open folder##plugempty",
+    const char* controls[] = {"Play", "Update", "Play##act", "Stop##act", "Repair##banner", "Repair##settings",
+        "Delete##logs", "Keep##logs", "Always##logs", "Never##logs", "Yes", "No",
+        "Reload##plug", "Turn on##plugson", "Open folder##plugempty",
         "Back##plugback", "Save##plugsave", "Reset##plugreset", "Copy"};
     for (const auto language : {Language::English, Language::Russian, Language::Auto}) {
         g_gui.locale.Select(language);

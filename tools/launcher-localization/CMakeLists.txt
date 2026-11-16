@@ -33,6 +33,8 @@ if(WIN32)
     "${CMAKE_CURRENT_BINARY_DIR}/native-fixtures")
   add_library(launcher_locale_sqlite STATIC ../../external/sco-core/third_party/sqlite/sqlite3.c)
   target_compile_definitions(launcher_locale_sqlite PRIVATE SQLITE_THREADSAFE=1)
+  # launcher.cpp includes <sqlite3.h>; the tests that include it need the vendored header's folder.
+  target_include_directories(launcher_locale_sqlite PUBLIC "${CMAKE_CURRENT_LIST_DIR}/../../external/sco-core/third_party/sqlite")
   add_executable(launcher_localization_gui_test ../launcher_localization_gui_test.cpp
     ../../src/third_party/imgui/imgui.cpp ../../src/third_party/imgui/imgui_draw.cpp
     ../../src/third_party/imgui/imgui_tables.cpp ../../src/third_party/imgui/imgui_widgets.cpp
@@ -53,6 +55,18 @@ if(WIN32)
   endif()
   target_link_libraries(launcher_plugin_settings_gui_test PRIVATE launcher_locale_sqlite
     d3d11 d3dcompiler dwmapi imm32 bcrypt shell32 shlwapi pathcch advapi32 ole32 winhttp user32 gdi32 comctl32)
+  add_executable(launcher_status_config_test ../launcher_status_config_test.cpp
+    ../../src/third_party/imgui/imgui.cpp ../../src/third_party/imgui/imgui_draw.cpp
+    ../../src/third_party/imgui/imgui_tables.cpp ../../src/third_party/imgui/imgui_widgets.cpp
+    ../../src/third_party/imgui/imgui_impl_win32.cpp ../../src/third_party/imgui/imgui_impl_dx11.cpp)
+  target_compile_definitions(launcher_status_config_test PRIVATE UNICODE _UNICODE _CONSOLE _CRT_SECURE_NO_WARNINGS)
+  if(MSVC)
+    target_compile_options(launcher_status_config_test PRIVATE /W3 /WX /utf-8 /EHsc /permissive- /sdl)
+  endif()
+  target_link_libraries(launcher_status_config_test PRIVATE launcher_locale_sqlite
+    d3d11 d3dcompiler dwmapi imm32 bcrypt shell32 shlwapi pathcch advapi32 ole32 winhttp user32 gdi32 comctl32)
+  add_test(NAME launcher_status_config COMMAND launcher_status_config_test
+    "${CMAKE_CURRENT_BINARY_DIR}/native-fixtures")
   add_test(NAME launcher_plugin_settings_gui COMMAND launcher_plugin_settings_gui_test
     "${CMAKE_CURRENT_BINARY_DIR}/native-fixtures")
   add_test(NAME launcher_localization_gui COMMAND launcher_localization_gui_test

@@ -20,8 +20,10 @@
 //      StarCitizen.exe is left, then takes the mod out, restores the backups and undoes the recorded
 //      PC changes. Because it is a
 //      separate process, closing this window early still cleans up.
-// install / uninstall do step 4's copy or its cleanup on their own; status does steps 1-2 only.
-// Everything printed also goes to data\launcher.log.
+// install / uninstall do step 4's copy or its cleanup on their own; status does steps 1-2 only and is
+// read-only: it writes no file (not data\launcher.log, not data\game-path.txt), migrates no setting
+// and makes no network request.
+// Everything else that is printed also goes to data\launcher.log.
 //
 // On Linux, sc-offline.sh runs this inside the game's Wine prefix (see that file).
 #include <windows.h>
@@ -158,14 +160,18 @@ static int FailCode(int code, const char* fmt, ...) {
 }
 #define Fail(...) FailCode(kExitError, __VA_ARGS__)
 
+// What to do with the game's logs from this session once the game closes (clean_logs).
+enum class LogChoice { Ask, Always, Never };
+
 // sc-offline.ini: `key = value` lines; a line starting with '#' is a comment. Unknown keys are reported, not ignored.
 struct Config {
     wstring game, channel = L"LIVE", bootMap = L"PU_All", startShip = L"DRAK_Cutlass_Black", start, registryProbe;
     sco::launcher::locale::Language language = sco::launcher::locale::Language::Auto;
     // What the helper changes on the PC while you play, and undoes when the game closes.
     bool firewall = true, eacHosts = true, eacRename = true;
-    // After the game closes: offer to delete the logs the game wrote during this session.
-    bool cleanLogs = true;
+    // After the game closes: ask about deleting the logs the game wrote during this session, always
+    // delete them, or never touch them.
+    LogChoice cleanLogs = LogChoice::Ask;
     // Check GitHub for a newer sc-offline release on play/status (issue #14).
     bool checkUpdates = true;
     // Which releases the update check offers: stable (full releases) or prerelease (issue #31, S5).
@@ -194,6 +200,21 @@ static bool ParseOnOff(const wstring& v, bool& out) {
     if (!_wcsicmp(v.c_str(), L"1") || !_wcsicmp(v.c_str(), L"on") || !_wcsicmp(v.c_str(), L"yes") || !_wcsicmp(v.c_str(), L"true")) { out = true; return true; }
     if (!_wcsicmp(v.c_str(), L"0") || !_wcsicmp(v.c_str(), L"off") || !_wcsicmp(v.c_str(), L"no") || !_wcsicmp(v.c_str(), L"false")) { out = false; return true; }
     return false;
+}
+
+// clean_logs: ask, always or never. The older on (= ask) and off (= never) still work.
+static bool ParseCleanLogs(const wstring& v, LogChoice& out) {
+    if (!_wcsicmp(v.c_str(), L"ask")) { out = LogChoice::Ask; return true; }
+    if (!_wcsicmp(v.c_str(), L"always")) { out = LogChoice::Always; return true; }
+    if (!_wcsicmp(v.c_str(), L"never")) { out = LogChoice::Never; return true; }
+    bool on = true;
+    if (!ParseOnOff(v, on)) return false;
+    out = on ? LogChoice::Ask : LogChoice::Never;
+    return true;
+}
+
+static const char* CleanLogsWord(LogChoice c) {
+    return c == LogChoice::Always ? "always" : c == LogChoice::Never ? "never" : "ask";
 }
 
 // multiplayer_allow: up to 8 private IPv4 ranges "a.b.c.d/n" (n 8 to 32, no host bits set), separated by
@@ -320,8 +341,7 @@ static bool ReadConfig(const wstring& path, Config& c) {
             else Out("[!] sc-offline.ini line %d: update_channel must be stable or prerelease\n", lineNo);
         }
         else if (!_wcsicmp(k.c_str(), L"clean_logs")) {
-            if (!_wcsicmp(v.c_str(), L"ask")) c.cleanLogs = true;
-            else if (!ParseOnOff(v, c.cleanLogs)) Out("[!] sc-offline.ini line %d: clean_logs must be ask or off\n", lineNo);
+            if (!ParseCleanLogs(v, c.cleanLogs)) Out("[!] sc-offline.ini line %d: clean_logs must be ask, always or never\n", lineNo);
         }
         else if (!_wcsicmp(k.c_str(), L"registry_probe")) c.registryProbe = v;
         else Out("[!] sc-offline.ini line %d: unknown key '%ls'\n", lineNo, k.c_str());
@@ -1360,15 +1380,61 @@ static bool AskYes(const char* question) {
     return line[0] == 'y' || line[0] == 'Y';
 }
 
-static void OfferToCleanLogs(const wstring& channelDir, ULONGLONG since) {
+// The answer to the session-log question: y deletes (after one more "sure?"), "always" deletes and
+// remembers that, "never" keeps and remembers that; anything else, a bare Enter included, keeps this once.
+enum class LogAnswer { Keep, Delete, Always, Never };
+
+static LogAnswer ParseLogAnswer(const char* line) {
+    while (*line == ' ' || *line == '\t') ++line;
+    std::string word;
+    for (; *line && *line != ' ' && *line != '\t' && *line != '\r' && *line != '\n'; ++line)
+        word += static_cast<char>(tolower(static_cast<unsigned char>(*line)));
+    if (word == "a" || word == "always") return LogAnswer::Always;
+    if (word == "never") return LogAnswer::Never;
+    return !word.empty() && word[0] == 'y' ? LogAnswer::Delete : LogAnswer::Keep;
+}
+
+static LogAnswer AskLogs(const char* question) {
+    std::printf("%s [y/N/always/never] ", question);
+    std::fflush(stdout);
+    char line[32] = {};
+    if (!std::fgets(line, sizeof(line), stdin)) return LogAnswer::Keep;
+    return ParseLogAnswer(line);
+}
+
+// Writes clean_logs = always|never into sc-offline.ini; every other line and comment stays as it is.
+static bool RememberLogChoice(const wstring& here, LogChoice choice) {
+    return SetIniValue(here + L"\\sc-offline.ini", "clean_logs", CleanLogsWord(choice));
+}
+
+// After the game closes. ask: list this session's logs and ask; always: delete them without asking;
+// never: do nothing. Either way only this session's files are touched.
+static void CleanSessionLogs(const wstring& here, const wstring& channelDir, ULONGLONG since, LogChoice mode, bool canAsk) {
+    if (mode == LogChoice::Never) return;
+    if (mode == LogChoice::Ask && !canAsk) { Out("Logs:     not asking (no console to answer in); run from a window to be asked\n"); return; }
     const std::vector<wstring> files = SessionLogs(channelDir, since);
     if (files.empty()) { Out("Logs:     the game wrote no logs this session\n"); return; }
     Out("\nThe game wrote these logs during this modded session:\n");
     for (const wstring& f : files) Out("    %ls\n", f.c_str());
-    Out("Deleting them removes the record of this session from your game folder. Keep Game.log if you\n"
-        "want to report a bug. Older logs are not touched. (clean_logs = off in sc-offline.ini skips this.)\n");
-    if (!AskYes("Delete these files?")) { Out("Logs:     kept\n"); return; }
-    if (!AskYes("Are you sure? They can't be recovered.")) { Out("Logs:     kept\n"); return; }
+    if (mode == LogChoice::Always) {
+        Out("clean_logs = always: deleting them without asking. Older logs are not touched.\n");
+    } else {
+        Out("Deleting them removes the record of this session from your game folder. Keep Game.log if you\n"
+            "want to report a bug. Older logs are not touched.\n"
+            "  y = delete   n = keep (the default)   always = delete now and after every session   never = keep, and don't ask again\n"
+            "  (clean_logs = ask, always or never in sc-offline.ini, or Settings in the window, changes this later.)\n");
+        const LogAnswer answer = AskLogs("Delete these files?");
+        if (answer == LogAnswer::Never) {
+            if (RememberLogChoice(here, LogChoice::Never)) Out("Logs:     kept; won't ask again (clean_logs = never)\n");
+            else Out("Logs:     kept; couldn't write sc-offline.ini, set clean_logs = never there by hand\n");
+            return;
+        }
+        if (answer == LogAnswer::Keep) { Out("Logs:     kept\n"); return; }
+        if (answer == LogAnswer::Always) {
+            if (RememberLogChoice(here, LogChoice::Always)) Out("[i] clean_logs = always saved; later sessions' logs are deleted without asking\n");
+            else Out("[!] couldn't write sc-offline.ini; set clean_logs = always there by hand\n");
+        } else if (!AskYes("Are you sure? They can't be recovered.")) { Out("Logs:     kept\n"); return; }
+    }
     int gone = 0, failed = 0, denied = 0;
     for (const wstring& f : files) {
         if (DeleteFileW(f.c_str())) ++gone;
@@ -1394,7 +1460,7 @@ static void OfferToCleanLogs(const wstring& channelDir, ULONGLONG since) {
     Out("Logs:     deleted %d file%s%s\n", gone, gone == 1 ? "" : "s", failed ? "; see above for the rest" : "");
 }
 
-// --delete-logs <channel folder> <since>: the elevated half of OfferToCleanLogs. Only acts on a
+// --delete-logs <channel folder> <since>: the elevated half of CleanSessionLogs. Only acts on a
 // real channel folder (Bin64\StarCitizen.exe inside) and only on this session's files there.
 static int DeleteSessionLogs(const wstring& channelDir, ULONGLONG since) {
     if (!IsFile(channelDir + L"\\Bin64\\" + kGameExe) || since == 0) return 4;
@@ -2488,6 +2554,98 @@ static CheckResult SelfChecks(const wstring& here, const Config& cfg, const Game
     return r;
 }
 
+// `status`: finds the game and runs the self-checks. Read-only, unlike play: nothing is written (no
+// data\launcher.log, no data\game-path.txt), the discord_presence setting is not migrated, no update
+// check goes out, no folder picker opens and a leftover update is not settled. Those stay with play and
+// update. The window's Status panel runs the same checks (CollectStatus).
+static int RunStatus(const wstring& here, const wstring& gameArg) {
+    Out("sc-offline launcher %s\n\n", SCO_VERSION);
+    Config cfg;
+    if (!ReadConfig(here + L"\\sc-offline.ini", cfg)) Out("[i] no sc-offline.ini next to this exe; using defaults\n");
+    wstring bin;
+    if (!gameArg.empty()) {
+        bin = ToBin64(gameArg, cfg.channel);
+        if (bin.empty()) return Fail("no %ls under --game %ls (channel %ls)", kGameExe, gameArg.c_str(), cfg.channel.c_str());
+    } else if (!cfg.game.empty()) {
+        bin = ToBin64(cfg.game, cfg.channel);
+        if (bin.empty()) return Fail("no %ls under game = %ls in sc-offline.ini (channel %ls)", kGameExe, cfg.game.c_str(), cfg.channel.c_str());
+    } else {
+        const std::vector<Found> found = DetectBin64(here, cfg.channel);
+        if (found.empty())
+            return Fail("couldn't find Star Citizen (%ls). Open sc-offline.ini and set\n"
+                        "    game = <your StarCitizen folder>\n"
+                        "or pass --game <folder>", cfg.channel.c_str());
+        bin = found.front().bin;
+        Out("[i] found the game %s\n", found.front().how);
+        for (size_t i = 1; i < found.size(); ++i)
+            Out("[i] also found %ls (set game = in sc-offline.ini to use it)\n", found[i].bin.c_str());
+    }
+    Out("Folder:   %ls\n", bin.c_str());
+    SelfChecks(here, cfg, GamePaths(bin));
+    Out("\n");
+    return kExitOk;
+}
+
+// What the window's Status panel shows: the same read-only checks, gathered into fields instead of printed.
+struct StatusReport {
+    bool checked = false;          // a check has finished
+    bool folderKnown = false;
+    wstring bin;                   // the game's Bin64 folder; Stop only touches this install's StarCitizen.exe
+    std::string build;             // "" when unknown
+    bool modInstalled = false;     // sc-offline's dinput8.dll or its marker is in Bin64
+    std::string pcLeft;            // the leftover PC-change record; "" when none
+    bool wine = false, networkBlocked = false, eacRename = false, pluginsOn = true;
+    Eac eac = Eac::NotInstalled;
+    int pluginsEnabled = 0, pluginsTotal = 0;
+};
+
+// The plugin folders the host would look at (a plugin.ini inside) and how many of them are not switched off.
+static void CountPlugins(const wstring& here, int& enabled, int& total) {
+    const wstring dir = here + L"\\data\\plugins";
+    enabled = total = 0;
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW((dir + L"\\*").c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == L'.') continue;
+        const wstring folder = dir + L"\\" + fd.cFileName;
+        if (!IsFile(folder + L"\\plugin.ini")) continue;
+        ++total;
+        if (GetFileAttributesW((folder + L"\\disabled").c_str()) == INVALID_FILE_ATTRIBUTES) ++enabled;
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+}
+
+// Read-only, like RunStatus: finds the game as `status` does (sc-offline.ini, then the usual places) and writes nothing.
+// Runs on a worker thread in the window, so it keeps off the UI state.
+static StatusReport CollectStatus(const wstring& here) {
+    StatusReport r;
+    Config cfg;
+    ReadConfig(here + L"\\sc-offline.ini", cfg);
+    wstring bin;
+    if (!cfg.game.empty()) bin = ToBin64(cfg.game, cfg.channel);
+    else {
+        const std::vector<Found> found = DetectBin64(here, cfg.channel);
+        if (!found.empty()) bin = found.front().bin;
+    }
+    r.wine = OnWine();
+    r.networkBlocked = cfg.firewall;
+    r.eacRename = cfg.eacRename;
+    r.pluginsOn = cfg.plugins;
+    r.eac = EacState();
+    if (!bin.empty()) {
+        const GamePaths p(bin);
+        const DllInfo d = Identify(p.dll);
+        r.folderKnown = true;
+        r.bin = bin;
+        r.build = GameBuild(bin);
+        r.modInstalled = IsFile(p.marker) || (d.present && d.ours);
+    }
+    r.pcLeft = PcChangesLeft();
+    CountPlugins(here, r.pluginsEnabled, r.pluginsTotal);
+    r.checked = true;
+    return r;
+}
 
 // --- Launcher window (issue #20) -----------------------------------------------------------
 // Double-clicking sc-offline.exe (no arguments, its own console) opens this window instead of the
@@ -2497,25 +2655,26 @@ static CheckResult SelfChecks(const wstring& here, const Config& cfg, const Game
 // streamed into the Output page, and its [y/N] questions are answered by the Yes/No buttons through
 // its stdin. The Plugins page manages data\plugins\<id>\ itself (see the section below).
 
-enum { kMsgOutput = WM_APP + 1, kMsgDone };
+enum { kMsgOutput = WM_APP + 1, kMsgDone, kMsgStatus };
 
-enum Action { kActNone, kActPlay, kActStatus, kActUpdate, kActInstall, kActUninstall, kActSettings, kActLogs,
-              kActYes, kActNo, kActCopy, kActMinimize, kActClose, kActPluginsDir, kActPluginsOn, kActDiscord };
+enum Action { kActNone, kActPlay, kActUpdate, kActStop, kActRepair, kActSettings, kActIni, kActLogs,
+              kActYes, kActNo, kActAlways, kActNever, kActEndYes, kActEndNo, kActRefresh, kActCopy,
+              kActMinimize, kActClose, kActPluginsDir, kActPluginsOn, kActDiscord };
 
 enum Icon { kIcoPlay, kIcoInstall, kIcoStatus, kIcoUpdate, kIcoHome, kIcoOutput, kIcoSettings, kIcoFolder,
-            kIcoPad, kIcoShield, kIcoBolt, kIcoCheck, kIcoMark, kIcoServer, kIcoUsers, kIcoMods, kIcoSearch };
+            kIcoPad, kIcoShield, kIcoBolt, kIcoCheck, kIcoMark, kIcoServer, kIcoUsers, kIcoMods, kIcoSearch, kIcoStop };
 
-// The home page's list: each row runs `sc-offline.exe <cmd>` as a hidden child (see RunCommand).
+// The home page's buttons: each runs `sc-offline.exe <cmd>` as a hidden child (see RunCommand). Status is a
+// panel (CollectStatus), not a command here; install and uninstall stay on the command line, and Repair (the
+// Settings page and the leftover banner) runs uninstall. While the game runs, Play turns into Stop.
 using LocaleKey = sco::launcher::locale::Key;
 struct GuiCommand { const char* id; LocaleKey label; const wchar_t* cmd; Action act; Icon icon; };
 static const GuiCommand kGuiCommands[] = {
     { "Play", LocaleKey::Play, L"play", kActPlay, kIcoPlay },
-    { "Status", LocaleKey::Status, L"status", kActStatus, kIcoStatus },
     { "Update", LocaleKey::Update, L"update", kActUpdate, kIcoUpdate },
-    { "Install", LocaleKey::Install, L"install", kActInstall, kIcoInstall },
-    { "Uninstall", LocaleKey::Uninstall, L"uninstall", kActUninstall, kIcoShield },
 };
-static const int kGuiCommandCount = int(ARRAYSIZE(kGuiCommands));
+// Stop asks the game to close (WM_CLOSE); only this long after that does the window offer to end the process.
+static const double kStopWaitSeconds = 60.0;
 
 static const ImU32 kUiBg          = IM_COL32(21, 21, 23, 255);
 static const ImU32 kUiSide        = IM_COL32(17, 17, 19, 255);
@@ -2531,13 +2690,11 @@ static const ImU32 kUiAccent      = IM_COL32(236, 236, 240, 255);
 static const ImU32 kUiAction      = IM_COL32(226, 226, 230, 255);
 static const ImU32 kUiActionHover = IM_COL32(255, 255, 255, 255);
 static const ImU32 kUiActionText  = IM_COL32(14, 14, 16, 255);
-static const ImU32 kUiBannerFrom  = IM_COL32(62, 62, 68, 255);
-static const ImU32 kUiBannerTo    = IM_COL32(31, 32, 37, 255);
 static const ImU32 kUiGreen       = IM_COL32(46, 196, 118, 255);
 static const ImU32 kUiRed         = IM_COL32(70, 70, 76, 255);
 static const ImU32 kUiWarn        = IM_COL32(255, 132, 104, 255);
 
-static const float kUiW = 720, kUiH = 328, kUiSideW = 72, kUiTop = 46, kUiPad = 18, kUiGap = 14;
+static const float kUiW = 720, kUiH = 376, kUiSideW = 72, kUiTop = 46, kUiPad = 18, kUiGap = 14;
 static const double kIntroSpin = 0.9, kIntroGrow = 0.42, kIntroFade = 0.3;
 
 // One `[settings]` line of a plugin.ini (sco-core sdk/docs/plugin-ini.md).
@@ -2561,6 +2718,9 @@ struct PluginEntry {
     std::vector<PluginSetting> settings;
 };
 
+// A StarCitizen.exe process: its id and creation time (a reused id is not mistaken for it later).
+struct GameProc { DWORD pid = 0; ULONGLONG created = 0; };
+
 struct Gui {
     HWND wnd = nullptr;
     HANDLE child = nullptr, childIn = nullptr;
@@ -2574,8 +2734,8 @@ struct Gui {
     bool jumpToEnd = false;
     std::string question;
     Action action = kActNone;
-    int sel = 0;
-    int page = 0;                // 0 home, 1 output, 2 plugins
+    int questionKind = 0;        // 0 yes/no, 1 the session-log question (delete, keep, always, never)
+    int page = 0;                // 0 home, 1 output, 2 plugins, 3 settings
     double contentSince = 0, introStart = 0, pageSince = 0;
     bool introDone = false, animating = false, focused = true, inFrame = false, sizing = false, occluded = false, dwmBorder = false;
     RECT splash{}, full{};
@@ -2604,6 +2764,15 @@ struct Gui {
     bool localeGlyphsChecked = false;
     bool folderKnown = false;
     std::vector<std::pair<LocaleKey, std::string>> leftovers;
+    bool pcLeft = false;         // %ProgramData%\sc-offline\pc-changes.txt holds a record: a crash left PC changes
+    LogChoice cleanLogs = LogChoice::Ask;
+    StatusReport status;         // the Status panel; refreshed on start, after the game exits and on the refresh icon
+    bool statusBusy = false, statusAgain = false;
+    // Stop: 1 = the game was asked to close and we are waiting, 2 = asking whether to end the process
+    int stopState = 0;
+    double stopAt = 0;
+    std::vector<GameProc> stopTargets;   // the StarCitizen.exe processes that were asked to close
+    std::string stopNote;
 };
 static Gui g_gui;
 
@@ -2629,6 +2798,27 @@ static void LoadLocale() {
         g.locale.LoadRussian(sco::launcher::locale::kBuiltinRussianCatalogue);
 }
 
+using Leftovers = std::vector<std::pair<LocaleKey, std::string>>;
+
+// What a leftover pc-changes.txt record says is still in place.
+static void AddPcItems(const std::string& rec, Leftovers& out) {
+    for (const FwRule& r : kFwRules) if (Field(rec, r.key) == "added") out.emplace_back(LocaleKey::LeftFirewall, Narrow(r.name));
+    if (Field(rec, "hosts") == "added") out.emplace_back(LocaleKey::LeftHosts, "");
+    if (Field(rec, "eac") == "renamed") out.emplace_back(LocaleKey::LeftEac, "");
+}
+
+// "the mod is still in Bin64; firewall rule ..." for the banner, the Settings page and the status panel.
+static std::string ItemsText(const Leftovers& items) {
+    std::string text;
+    for (const auto& item : items) {
+        if (!text.empty()) text += "; ";
+        text += item.first == LocaleKey::LeftFirewall ? F(item.first, {{"name", item.second}}) : T(item.first);
+    }
+    return text;
+}
+
+static std::string LeftoverItems() { return ItemsText(g_gui.leftovers); }
+
 static void RefreshLightText() {
     Gui& g = g_gui;
     if (g.gameUp) {
@@ -2636,13 +2826,7 @@ static void RefreshLightText() {
         g.lightDetail = T(LocaleKey::RunningDetail);
     } else if (!g.leftovers.empty()) {
         g.lightTitle = T(LocaleKey::UnsafeLeftovers);
-        std::string items;
-        for (const auto& leftover : g.leftovers) {
-            if (!items.empty()) items += "; ";
-            items += leftover.first == LocaleKey::LeftFirewall ?
-                F(leftover.first, {{"name", leftover.second}}) : T(leftover.first);
-        }
-        g.lightDetail = F(LocaleKey::UndoDetail, {{"items", items}});
+        g.lightDetail = F(LocaleKey::UndoDetail, {{"items", LeftoverItems()}});
     } else if (!g.folderKnown) {
         g.lightTitle = T(LocaleKey::UnknownFolder);
         g.lightDetail = T(LocaleKey::UnknownFolderDetail);
@@ -2671,18 +2855,23 @@ static double Seconds() {
     return double(c.QuadPart) / double(f.QuadPart);
 }
 
+static void StartStatusRefresh();
+
 // What the status banner shows. Uses only cheap facts (no drive search): the game folder from
-// sc-offline.ini or the one remembered from the last run.
+// sc-offline.ini, the one remembered from the last run, or the one the Status panel found.
 static void RefreshLight() {
     Gui& g = g_gui;
     g.lastRefresh = GetTickCount64();
+    const bool wasUp = g.gameUp, hadLeftovers = g.hasLeftovers, hadPc = g.pcLeft;
     Config cfg;
     { FILE* saved = g_log; g_log = nullptr; ReadConfig(g.here + L"\\sc-offline.ini", cfg); g_log = saved; }
+    g.cleanLogs = cfg.cleanLogs;
     g.discord = IsFile(g.here + L"\\data\\plugins\\discord\\plugin.ini") &&
                 GetFileAttributesW((g.here + L"\\data\\plugins\\discord\\disabled").c_str()) == INVALID_FILE_ATTRIBUTES;
     g.pluginsOn = cfg.plugins;
     wstring bin = cfg.game.empty() ? L"" : ToBin64(cfg.game, cfg.channel);
     if (bin.empty()) { std::vector<Found> f; FromRemembered(g.here, cfg.channel, f); if (!f.empty()) bin = f.front().bin; }
+    if (bin.empty() && cfg.game.empty() && g.status.folderKnown) bin = g.status.bin;
     g.leftovers.clear();
     if (!bin.empty()) {
         const GamePaths p(bin);
@@ -2690,15 +2879,34 @@ static void RefreshLight() {
         if (IsFile(p.marker) || (d.present && d.ours)) g.leftovers.emplace_back(LocaleKey::LeftMod, "");
     }
     const std::string pc = PcChangesLeft();
-    if (!pc.empty()) {
-        for (const FwRule& r : kFwRules) if (Field(pc, r.key) == "added") g.leftovers.emplace_back(LocaleKey::LeftFirewall, Narrow(r.name));
-        if (Field(pc, "hosts") == "added") g.leftovers.emplace_back(LocaleKey::LeftHosts, "");
-        if (Field(pc, "eac") == "renamed") g.leftovers.emplace_back(LocaleKey::LeftEac, "");
-    }
+    AddPcItems(pc, g.leftovers);
     g.hasLeftovers = !g.leftovers.empty();
+    g.pcLeft = !pc.empty();
     g.gameUp = GameRunning();
     g.folderKnown = !bin.empty();
+    if (!g.gameUp) { g.stopState = 0; g.stopNote.clear(); g.stopTargets.clear(); }
     RefreshLightText();
+    // The Status panel follows the game closing and what is left behind; it never polls on its own.
+    if (g.wnd && ((wasUp && !g.gameUp) || hadLeftovers != g.hasLeftovers || hadPc != g.pcLeft)) StartStatusRefresh();
+}
+
+// The Status panel's checks run on a worker thread (they hash a DLL, read the game folder and may search drives)
+// and come back as kMsgStatus.
+struct StatusJob { wstring here; HWND wnd; };
+static DWORD WINAPI StatusThread(void* p) {
+    const StatusJob job = *static_cast<StatusJob*>(p);
+    delete static_cast<StatusJob*>(p);
+    StatusReport* report = new StatusReport(CollectStatus(job.here));
+    if (!PostMessageW(job.wnd, kMsgStatus, 0, reinterpret_cast<LPARAM>(report))) delete report;
+    return 0;
+}
+
+static void StartStatusRefresh() {
+    Gui& g = g_gui;
+    if (!g.wnd) return;
+    if (g.statusBusy) { g.statusAgain = true; return; }
+    HANDLE t = CreateThread(nullptr, 0, StatusThread, new StatusJob{ g.here, g.wnd }, 0, nullptr);
+    if (t) { CloseHandle(t); g.statusBusy = true; }
 }
 
 static void IndexLines() {
@@ -2728,14 +2936,21 @@ static void AppendOutput(const std::wstring& w, bool parseQuestion = true) {
     if (!parseQuestion) return;
     g.tail += w;
     if (g.tail.size() > 600) g.tail.erase(0, g.tail.size() - 600);
-    const size_t q = g.tail.rfind(L"[y/N] ");
-    if (q != std::wstring::npos && q + 6 == g.tail.size()) {
+    // "[y/N] " is a yes/no question; "[y/N/always/never] " is the session-log question, answered by four buttons.
+    static const wchar_t kYesNo[] = L"[y/N] ", kLogs[] = L"[y/N/always/never] ";
+    const size_t qLogs = g.tail.rfind(kLogs), qYes = g.tail.rfind(kYesNo);
+    const bool logs = qLogs != std::wstring::npos && qLogs + (ARRAYSIZE(kLogs) - 1) == g.tail.size();
+    const bool yes = qYes != std::wstring::npos && qYes + (ARRAYSIZE(kYesNo) - 1) == g.tail.size();
+    if (logs || yes) {
+        const size_t q = logs ? qLogs : qYes;
         const size_t nl = g.tail.find_last_of(L'\n', q);
         const size_t start = nl == std::wstring::npos ? 0 : nl + 1;
         g.question = Narrow(g.tail.substr(start, q - start));
+        g.questionKind = logs ? 1 : 0;
         while (!g.question.empty() && g.question.back() == ' ') g.question.pop_back();
     } else {
         g.question.clear();
+        g.questionKind = 0;
     }
 }
 
@@ -2788,7 +3003,7 @@ static void RunCommand(const wchar_t* cmd) {
     g.child = pi.hProcess; g.childIn = inW; g.running = cmd;
     ClearOutput();
     AppendOutput(L"> sc-offline.exe " + wstring(cmd) + L"\n");
-    if (!wcscmp(cmd, L"status") || !wcscmp(cmd, L"update")) { g.page = 1; g.pageSince = Seconds(); }
+    if (!wcscmp(cmd, L"uninstall") || !wcscmp(cmd, L"update")) { g.page = 1; g.pageSince = Seconds(); }
     g.jumpToEnd = true;
     RefreshLight();
     HANDLE dup = nullptr;
@@ -2796,13 +3011,16 @@ static void RunCommand(const wchar_t* cmd) {
     CloseHandle(CreateThread(nullptr, 0, ReaderThread, new ReaderArgs{ outR, dup, g.wnd }, 0, nullptr));
 }
 
-static void Answer(bool yes) {
+// Types an answer to the child's question: y, n, or for the session-log question also always and never.
+static void AnswerText(const char* text) {
     Gui& g = g_gui;
     if (!g.childIn) return;
-    const char* a = yes ? "y\n" : "n\n"; DWORD put = 0;
-    WriteFile(g.childIn, a, 2, &put, nullptr);
-    AppendOutput(yes ? L"y\n" : L"n\n");
+    const std::string line = std::string(text) + "\n"; DWORD put = 0;
+    WriteFile(g.childIn, line.data(), static_cast<DWORD>(line.size()), &put, nullptr);
+    AppendOutput(Wide(line));
 }
+
+static void Answer(bool yes) { AnswerText(yes ? "y" : "n"); }
 
 static float Px(float v) { return v * g_gui.dpi; }
 static float Clamp01(float v) { return v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v; }
@@ -2946,6 +3164,7 @@ static void DrawIcon(Icon icon, ImVec2 c, float s, ImU32 col) {
         dl->AddCircle(P(-0.15f, -0.15f), 0.62f * s, col, 24, t);
         line({ P(0.32f, 0.32f), P(0.88f, 0.88f) });
         break;
+    case kIcoStop: dl->AddRectFilled(P(-0.7f, -0.7f), P(0.7f, 0.7f), col, 0.18f * s); break;
     }
 }
 
@@ -2999,23 +3218,37 @@ static bool UiButton(const char* idText, ImVec2 pos, ImVec2 size, Look look, boo
     return clicked && enabled;
 }
 
-static bool UiRow(const GuiCommand& c, ImVec2 pos, ImVec2 size, bool picked, bool enabled) {
-    ImGui::SetCursorScreenPos(pos);
-    const ImGuiID id = ImGui::GetID(c.id);
-    const bool clicked = ImGui::InvisibleButton(c.id, size);
-    const float h = Anim(id, ImGui::IsItemHovered() ? 1.0f : 0.0f), on = Anim(id + 1, picked ? 1.0f : 0.0f);
-    const float a = enabled ? 1.0f : 0.45f;
-    DrawIcon(c.icon, ImVec2(pos.x + Px(22), pos.y + size.y * 0.5f), Px(7), Col(Fade(Mix(Mix(kUiTextFaint, kUiTextDim, h), kUiAccent, on), a)));
-    Label(ImVec2(pos.x + Px(44), pos.y + (size.y - ImGui::GetFontSize()) * 0.5f), Fade(Mix(Mix(kUiTextDim, kUiTextBody, h), kUiText, on), a), Fit(T(c.label), size.x - Px(52), false).c_str());
-    return clicked;
-}
-
 static ImU32 LineColour(const char* b, const char* e) {
     auto starts = [&](const char* p) { const size_t n = strlen(p); return size_t(e - b) >= n && !strncmp(b, p, n); };
     if (starts("[!]") || starts("[finished")) return kUiWarn;
     if (starts("[+]") || starts("[done]")) return kUiGreen;
     if (starts("[i]") || starts("> ")) return kUiAccent;
     return kUiTextBody;
+}
+
+// The buttons that answer the child's question; returns the y below them. A yes/no question has Yes and No;
+// the session-log question has Delete, Keep, Always delete and Never delete (the last two are remembered in
+// sc-offline.ini by the child).
+static float DrawAnswerButtons(ImVec2 at, float width) {
+    Gui& g = g_gui;
+    const float bw = (width - Px(10)) * 0.5f, x2 = at.x + bw + Px(10);
+    if (g.questionKind == 1) {
+        // Four answers: two by two on the wide Output page, in one column in the narrow Actions card.
+        const bool column = width < Px(300);
+        const float bh = Px(column ? 36.0f : 42.0f), gap = Px(column ? 6.0f : 8.0f), cw = column ? width : bw;
+        const ImVec2 pos[4] = { at, column ? ImVec2(at.x, at.y + bh + gap) : ImVec2(x2, at.y),
+                                ImVec2(at.x, at.y + (bh + gap) * (column ? 2 : 1)),
+                                column ? ImVec2(at.x, at.y + (bh + gap) * 3) : ImVec2(x2, at.y + bh + gap) };
+        if (UiButton("Delete##logs", pos[0], ImVec2(cw, bh), kAction, true, kIcoCheck, T(LocaleKey::Delete))) g.action = kActYes;
+        if (UiButton("Keep##logs", pos[1], ImVec2(cw, bh), kPlain, true, -1, T(LocaleKey::Keep))) g.action = kActNo;
+        if (UiButton("Always##logs", pos[2], ImVec2(cw, bh), kPlain, true, -1, T(LocaleKey::AlwaysDelete))) g.action = kActAlways;
+        if (UiButton("Never##logs", pos[3], ImVec2(cw, bh), kPlain, true, -1, T(LocaleKey::NeverDelete))) g.action = kActNever;
+        return pos[3].y + bh;
+    }
+    const float bh = Px(42);
+    if (UiButton("Yes", at, ImVec2(bw, bh), kAction, true, kIcoCheck, T(LocaleKey::Yes))) g.action = kActYes;
+    if (UiButton("No", ImVec2(x2, at.y), ImVec2(bw, bh), kPlain, true, -1, T(LocaleKey::No))) g.action = kActNo;
+    return at.y + bh;
 }
 
 static float DrawQuestion(ImVec2 at, float width) {
@@ -3025,17 +3258,13 @@ static float DrawQuestion(ImVec2 at, float width) {
         Label(at, kUiText, Fit(g.question, width, false).c_str());
         at.y += ImGui::GetFontSize() + Px(10);
     }
-    const float bw = (width - Px(10)) * 0.5f, bh = Px(42);
-    if (UiButton("Yes", at, ImVec2(bw, bh), kAction, true, kIcoCheck, T(LocaleKey::Yes))) g.action = kActYes;
-    if (UiButton("No", ImVec2(at.x + bw + Px(10), at.y), ImVec2(bw, bh), kPlain, true, -1, T(LocaleKey::No))) g.action = kActNo;
-    return at.y + bh;
+    return DrawAnswerButtons(at, width);
 }
 
 static bool CommandEnabled(Action a) {
     const Gui& g = g_gui;
     const bool idle = g.running.empty();
-    if (a == kActStatus) return idle;                        // changes nothing
-    if (a == kActUninstall) return idle && !g.gameUp && g.hasLeftovers;   // only with something to undo
+    if (a == kActRepair) return idle && !g.gameUp && (g.hasLeftovers || g.pcLeft);   // only with something to undo
     return idle && !g.gameUp;
 }
 
@@ -3045,6 +3274,97 @@ static void ShowPage(int page) {
     g.page = page; g.pageSince = Seconds();
     g.jumpToEnd = page == 1;
     if (page == 2) { g.pluginsAt = 0; g.plugOpen.clear(); g.plugScroll = 0; }
+}
+
+static void PluginNote(const std::string& s);
+static bool NoteLive();
+
+// --- Stop: ask the game to close; only on a second confirm, end the process -------------------------
+// The play child that started the game keeps waiting for it, so a normal close runs the usual cleanup (the mod
+// out, the PC changes undone). Nothing here terminates a process by itself.
+
+// True when `proc` runs StarCitizen.exe from this install (bin, when known) or at least has that file name.
+static bool ImageIsGame(HANDLE proc, const wstring& bin) {
+    wchar_t path[MAX_PATH * 2];
+    DWORD n = ARRAYSIZE(path);
+    if (!QueryFullProcessImageNameW(proc, 0, path, &n)) return false;
+    const wstring p(path, n);
+    if (!bin.empty()) return !_wcsicmp(p.c_str(), (bin + L"\\" + kGameExe).c_str());
+    const size_t cut = p.find_last_of(L"\\/");
+    return !_wcsicmp(p.c_str() + (cut == wstring::npos ? 0 : cut + 1), kGameExe);
+}
+
+static std::vector<GameProc> FindGameProcs(const wstring& bin) {
+    std::vector<GameProc> found;
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return found;
+    PROCESSENTRY32W pe{}; pe.dwSize = sizeof(pe);
+    for (BOOL ok = Process32FirstW(snap, &pe); ok; ok = Process32NextW(snap, &pe)) {
+        if (_wcsicmp(pe.szExeFile, kGameExe)) continue;
+        HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pe.th32ProcessID);
+        if (!h) continue;   // can't be told apart (or closed) from here: leave it alone
+        FILETIME created{}, exited{}, kernel{}, user{};
+        if (ImageIsGame(h, bin) && GetProcessTimes(h, &created, &exited, &kernel, &user))
+            found.push_back({ pe.th32ProcessID, FileTimeU64(created) });
+        CloseHandle(h);
+    }
+    CloseHandle(snap);
+    return found;
+}
+
+struct CloseRequest { const std::vector<GameProc>* targets; int posted; };
+
+static BOOL CALLBACK PostCloseToGame(HWND w, LPARAM lp) {
+    CloseRequest* req = reinterpret_cast<CloseRequest*>(lp);
+    DWORD pid = 0;
+    GetWindowThreadProcessId(w, &pid);
+    if (!IsWindowVisible(w)) return TRUE;
+    for (const GameProc& t : *req->targets)
+        if (t.pid == pid) { if (PostMessageW(w, WM_CLOSE, 0, 0)) ++req->posted; break; }
+    return TRUE;
+}
+
+// Stop: WM_CLOSE to the game's top-level windows, then wait kStopWaitSeconds before offering to end it.
+static void StopGame() {
+    Gui& g = g_gui;
+    g.stopTargets = FindGameProcs(g.status.bin);
+    CloseRequest req{ &g.stopTargets, 0 };
+    EnumWindows(PostCloseToGame, reinterpret_cast<LPARAM>(&req));
+    g.stopState = 1;
+    g.stopAt = Seconds();
+    g.stopNote = T(req.posted ? LocaleKey::StopAsked : LocaleKey::StopNoWindow);
+}
+
+// Called every loop: the confirm only appears while the game is still up after kStopWaitSeconds.
+static void TickStop() {
+    Gui& g = g_gui;
+    if (g.stopState != 1 || !g.gameUp || Seconds() - g.stopAt < kStopWaitSeconds) return;
+    g.stopState = 2;
+    g.stopNote.clear();
+    ShowPage(0);
+}
+
+// The second confirm said yes: end the processes that were asked to close, no others. A process is only
+// ended when it still has the creation time and image it had at Stop (a reused process id is left alone).
+static void EndGame() {
+    Gui& g = g_gui;
+    g.stopState = 0;
+    g.stopNote.clear();
+    const std::vector<GameProc> targets = g.stopTargets.empty() ? FindGameProcs(g.status.bin) : g.stopTargets;
+    int ended = 0, failed = 0;
+    for (const GameProc& t : targets) {
+        HANDLE h = OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, t.pid);
+        if (!h) { ++failed; continue; }
+        FILETIME created{}, exited{}, kernel{}, user{};
+        DWORD code = 0;
+        if (GetExitCodeProcess(h, &code) && code != STILL_ACTIVE) { CloseHandle(h); continue; }   // already gone
+        const bool same = t.created && GetProcessTimes(h, &created, &exited, &kernel, &user) &&
+                          FileTimeU64(created) == t.created && ImageIsGame(h, g.status.bin);
+        if (same && TerminateProcess(h, 1)) ++ended; else ++failed;
+        CloseHandle(h);
+    }
+    g.stopTargets.clear();
+    PluginNote(T(failed || !ended ? LocaleKey::EndFailed : LocaleKey::EndDone));
 }
 
 // A 34 x 18 switch with its top-left at lo; on is 0..1.
@@ -3129,56 +3449,129 @@ static void DrawControls(float W) {
     }
 }
 
-static void DrawHome(float x0, float y0, float x1) {
+// Text wrapped to `width`, in the dim colour; returns nothing, draws below `at`.
+static void WrappedNote(ImVec2 at, float width, const std::string& text, ImU32 col) {
+    ImGui::GetWindowDrawList()->AddText(ImGui::GetFont(), ImGui::GetFontSize(), at, Col(col), text.c_str(), nullptr, width);
+}
+
+// The prominent banner over the home page after a crash: PC changes (and maybe the mod) are still in place.
+static void DrawRepairBanner(ImVec2 lo, ImVec2 hi) {
     Gui& g = g_gui;
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    const float gap = Px(kUiGap), lw = std::floor((x1 - x0 - gap) * 0.52f), rx = x0 + lw + gap;
-    const float bannerH = Px(64), sBot = y0 + Px(44) + Px(14) + bannerH + Px(14);
-    const float aTop = sBot + gap, aBot = aTop + Px(44) + Px(14) + Px(42) + Px(14);
+    dl->AddRectFilled(lo, hi, Col(kUiCard), Px(10));
+    dl->AddRect(lo, hi, Col(kUiWarn, 0.85f), Px(10), 0, Px(1.5f));
+    const float bw = Px(260), bh = Px(38), tw = hi.x - lo.x - bw - Px(46), fs = ImGui::GetFontSize();
+    { UseFont f(g.bold); Label(ImVec2(lo.x + Px(16), lo.y + Px(11)), kUiWarn, Fit(T(LocaleKey::RepairTitle), tw, false).c_str()); }
+    const std::string items = g.hasLeftovers ? LeftoverItems() : std::string(T(LocaleKey::PcRecord));
+    Label(ImVec2(lo.x + Px(16), lo.y + Px(15) + fs), kUiTextBody, Fit(items, tw, false).c_str());
+    if (UiButton("Repair##banner", ImVec2(hi.x - Px(14) - bw, lo.y + (hi.y - lo.y - bh) * 0.5f), ImVec2(bw, bh), kAction,
+                 CommandEnabled(kActRepair), kIcoShield, T(LocaleKey::Repair))) g.action = kActRepair;
+}
 
-    const float y = UiCard(ImVec2(x0, y0), ImVec2(x0 + lw, aBot), kIcoPad, T(LocaleKey::Launcher)) + Px(10);
-    const float rh = Px(36), step = Px(40), rowX = x0 + Px(12), rowW = lw - Px(24);
-    const float hy = Anim(ImGui::GetID("##pick"), y + float(g.sel) * step, 20.0f);
-    dl->AddRectFilled(ImVec2(rowX, hy), ImVec2(rowX + rowW, hy + rh), Col(kUiRow), Px(8));
-    for (int i = 0; i < kGuiCommandCount; ++i) {
-        const GuiCommand& c = kGuiCommands[i];
-        const bool on = CommandEnabled(c.act);
-        if (UiRow(c, ImVec2(rowX, y + float(i) * step), ImVec2(rowW, rh), g.sel == i, on)) g.sel = i;
-        if (on && ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) g.action = c.act;
+// The Status panel: what `status` checks, read-only, refreshed on start, after the game exits and on the icon.
+static void DrawStatusCard(ImVec2 lo, ImVec2 hi) {
+    Gui& g = g_gui;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    float y = UiCard(lo, hi, kIcoShield, T(LocaleKey::StatusHeading));
+    {   // the refresh icon in the card's header
+        const float s = Px(26);
+        const ImVec2 p(hi.x - Px(12) - s, lo.y + Px(9));
+        ImGui::SetCursorScreenPos(p);
+        if (ImGui::InvisibleButton("##refresh", ImVec2(s, s)) && !g.statusBusy) g.action = kActRefresh;
+        const float h = Anim(ImGui::GetID("##refresh"), ImGui::IsItemHovered() ? 1.0f : 0.0f);
+        Tip(T(LocaleKey::RefreshHint));
+        dl->AddRectFilled(p, p + ImVec2(s, s), Col(kUiRow, h), Px(6));
+        if (g.statusBusy) UiSpinner(p + ImVec2(s, s) * 0.5f, Px(6), Px(1.6f), kUiAccent);
+        else DrawIcon(kIcoUpdate, p + ImVec2(s, s) * 0.5f, Px(6), Col(Mix(kUiTextDim, kUiText, h)));
     }
-
-    const float by = UiCard(ImVec2(rx, y0), ImVec2(x1, sBot), kIcoShield, T(LocaleKey::StatusHeading)) + Px(14);
-    {
-        const ImVec2 lo(rx + Px(14), by), hi(x1 - Px(14), by + bannerH);
-        const int v0 = dl->VtxBuffer.Size;
-        dl->AddRectFilled(lo, hi, Col(IM_COL32_WHITE), Px(8));
-        ImGui::ShadeVertsLinearColorGradientKeepAlpha(dl, v0, dl->VtxBuffer.Size, lo, ImVec2(hi.x, lo.y), kUiBannerFrom, kUiBannerTo);
-        const float fs = ImGui::GetFontSize();
-        { UseFont f(g.bold); Label(ImVec2(lo.x + Px(14), lo.y + Px(13)), kUiText, "Star Citizen"); }
-        Label(ImVec2(lo.x + Px(14), lo.y + Px(16) + fs), kUiTextBody, Fit(g.lightTitle, hi.x - lo.x - Px(28), false).c_str());
-        ImGui::SetCursorScreenPos(lo);
-        ImGui::InvisibleButton("##banner", hi - lo);
+    const float rowH = Px(25), px = lo.x + Px(18), vw = hi.x - lo.x - Px(36), labelW = Px(108), fs = ImGui::GetFontSize();
+    y += Px(10);
+    {   // the verdict (the light), with its detail in a tooltip
+        const ImU32 dot = (g.gameUp || g.hasLeftovers) ? kUiWarn : g.folderKnown ? kUiGreen : kUiTextDim;
+        dl->AddCircleFilled(ImVec2(px + Px(5), y + rowH * 0.5f), Px(4.5f), Col(dot), 16);
+        { UseFont f(g.bold); Label(ImVec2(px + Px(18), y + (rowH - fs) * 0.5f), kUiText, Fit(g.lightTitle, vw - Px(18), false).c_str()); }
+        ImGui::SetCursorScreenPos(ImVec2(px, y));
+        ImGui::InvisibleButton("##verdict", ImVec2(vw, rowH));
         Tip(g.lightDetail.c_str());
+        y += rowH + Px(3);
     }
+    const StatusReport& r = g.status;
+    auto row = [&](LocaleKey label, const std::string& value, ImU32 col) {
+        Label(ImVec2(px, y + (rowH - fs) * 0.5f), kUiTextDim, T(label));
+        Label(ImVec2(px + labelW, y + (rowH - fs) * 0.5f), col, Fit(value, vw - labelW, false).c_str());
+        ImGui::SetCursorScreenPos(ImVec2(px, y));
+        ImGui::PushID(static_cast<int>(label));
+        ImGui::InvisibleButton("##row", ImVec2(vw, rowH));   // the full text, when the row had to cut it
+        ImGui::PopID();
+        Tip(value.c_str());
+        y += rowH;
+    };
+    if (!r.checked) {
+        row(LocaleKey::StatusGame, T(LocaleKey::StatusChecking), kUiTextDim);
+        return;
+    }
+    std::string build = r.build;   // "4.7.0-live.123 (CL 123)": the panel has room for the version only
+    if (const size_t cl = build.find(" (CL "); cl != std::string::npos) build.resize(cl);
+    row(LocaleKey::StatusGame, r.folderKnown ? (build.empty() ? std::string(T(LocaleKey::GameFound)) : F(LocaleKey::GameFoundBuild, {{"build", build}}))
+                                             : std::string(T(LocaleKey::GameNotFound)), r.folderKnown ? kUiTextBody : kUiWarn);
+    row(LocaleKey::StatusMod, T(r.modInstalled ? LocaleKey::ModInstalled : LocaleKey::ModNotInstalled),
+        r.modInstalled && !g.gameUp ? kUiWarn : kUiTextBody);
+    Leftovers pcItems;
+    AddPcItems(r.pcLeft, pcItems);
+    row(LocaleKey::StatusPcChanges, r.pcLeft.empty() ? std::string(T(LocaleKey::PcNone)) :
+        F(LocaleKey::PcLeft, {{"items", pcItems.empty() ? std::string(T(LocaleKey::PcRecord)) : ItemsText(pcItems)}}),
+        r.pcLeft.empty() ? kUiTextBody : kUiWarn);
+    row(LocaleKey::StatusNetwork, T(r.wine ? LocaleKey::NetWine : r.networkBlocked ? LocaleKey::NetBlocked : LocaleKey::NetOpen),
+        r.wine || r.networkBlocked ? kUiTextBody : kUiWarn);
+    const bool eacOn = r.eac == Eac::Active;
+    row(LocaleKey::StatusEac, T(eacOn ? (r.eacRename && !r.wine ? LocaleKey::EacOnAuto : LocaleKey::EacOn) :
+                                r.eac == Eac::Disabled ? LocaleKey::EacOff : LocaleKey::EacNone),
+        eacOn && !(r.eacRename && !r.wine) ? kUiWarn : kUiTextBody);
+    row(LocaleKey::StatusPlugins, r.pluginsOn ? F(LocaleKey::PluginsCount, {{"enabled", std::to_string(r.pluginsEnabled)}, {"total", std::to_string(r.pluginsTotal)}})
+                                              : std::string(T(LocaleKey::StatusPluginsOff)), kUiTextBody);
+}
 
-    const float bw = x1 - rx - Px(28);
+static void DrawHome(float x0, float y0, float x1, float y1) {
+    Gui& g = g_gui;
+    const float gap = Px(kUiGap);
+    float top = y0;
+    if (g.pcLeft && !g.gameUp) {   // a crash left PC changes behind: the recovery path
+        const float bh = Px(60);
+        DrawRepairBanner(ImVec2(x0, top), ImVec2(x1, top + bh));
+        top += bh + gap;
+    }
+    const float lw = std::floor((x1 - x0 - gap) * 0.60f), rx = x0 + lw + gap;
+    DrawStatusCard(ImVec2(x0, top), ImVec2(x0 + lw, y1));
+
+    const float bw = x1 - rx - Px(28), bh = Px(42), bx = rx + Px(14);
+    const bool endAsk = g.stopState == 2;
     std::string title = T(LocaleKey::Actions);
-    if (!g.question.empty()) { UseFont f(g.bold); title = Fit(g.question, bw - Px(28), false); }
-    const float ay = UiCard(ImVec2(rx, aTop), ImVec2(x1, aBot), kIcoBolt, title.c_str()) + Px(14);
-    if (!g.question.empty()) {
+    if (endAsk) title = T(LocaleKey::EndQuestion);
+    else if (!g.question.empty()) { UseFont f(g.bold); title = Fit(g.question, bw - Px(28), false); }
+    const float ay = UiCard(ImVec2(rx, top), ImVec2(x1, y1), kIcoBolt, title.c_str()) + Px(14);
+    if (endAsk) {   // 60 s after Stop the game is still up: only now is ending the process offered
         const float hw = (bw - Px(10)) * 0.5f;
-        if (UiButton("Yes", ImVec2(rx + Px(14), ay), ImVec2(hw, Px(42)), kAction, true, kIcoCheck, T(LocaleKey::Yes))) g.action = kActYes;
-        if (UiButton("No", ImVec2(rx + Px(14) + hw + Px(10), ay), ImVec2(hw, Px(42)), kPlain, true, -1, T(LocaleKey::No))) g.action = kActNo;
+        if (UiButton("Yes##end", ImVec2(bx, ay), ImVec2(hw, bh), kAction, true, kIcoCheck, T(LocaleKey::Yes))) g.action = kActEndYes;
+        if (UiButton("No##end", ImVec2(bx + hw + Px(10), ay), ImVec2(hw, bh), kPlain, true, -1, T(LocaleKey::No))) g.action = kActEndNo;
+        return;
+    }
+    if (!g.question.empty()) { DrawAnswerButtons(ImVec2(bx, ay), bw); return; }
+    if (g.gameUp) {   // Play becomes Stop while the game runs
+        if (UiButton("Stop##act", ImVec2(bx, ay), ImVec2(bw, bh), kAction, true, kIcoStop, T(LocaleKey::Stop))) g.action = kActStop;
     } else if (!g.running.empty()) {
         const std::string label = "Running " + Narrow(g.running) + "##act";
         const std::string display = F(LocaleKey::Running, {{"command", Narrow(g.running)}});
-        UiButton(label.c_str(), ImVec2(rx + Px(14), ay), ImVec2(bw, Px(42)), kAction, false, -1, display.c_str());
-        UiSpinner(ImVec2(rx + Px(34), ay + Px(21)), Px(7), Px(2.0f), kUiActionText);
+        UiButton(label.c_str(), ImVec2(bx, ay), ImVec2(bw, bh), kAction, false, -1, display.c_str());
+        UiSpinner(ImVec2(bx + Px(20), ay + Px(21)), Px(7), Px(2.0f), kUiActionText);
     } else {
-        const GuiCommand& c = kGuiCommands[g.sel];
-        const std::string label = std::string(c.id) + "##act";
-        if (UiButton(label.c_str(), ImVec2(rx + Px(14), ay), ImVec2(bw, Px(42)), kAction, CommandEnabled(c.act), c.icon, T(c.label))) g.action = c.act;
+        const GuiCommand& c = kGuiCommands[0];
+        if (UiButton("Play##act", ImVec2(bx, ay), ImVec2(bw, bh), kAction, CommandEnabled(c.act), c.icon, T(c.label))) g.action = c.act;
     }
+    const GuiCommand& u = kGuiCommands[1];
+    const float uy = ay + bh + Px(10);
+    if (UiButton("Update##act", ImVec2(bx, uy), ImVec2(bw, bh), kPlain, CommandEnabled(u.act), u.icon, T(u.label))) g.action = u.act;
+    const std::string& note = !g.stopNote.empty() ? g.stopNote : NoteLive() ? g.note : std::string();
+    if (!note.empty()) WrappedNote(ImVec2(bx, uy + bh + Px(12)), bw, note, kUiTextDim);
 }
 
 static void Tip(const char* text) {
@@ -3999,6 +4392,57 @@ static void DrawOutputPage(float x0, float y0, float x1, float y1) {
     ImGui::PopStyleVar();
 }
 
+// --- Settings page ---------------------------------------------------------------------------
+// Repair (what the old Uninstall button did), what to do with the game's logs after a session, and the ini.
+
+static bool SelectLogChoice(LogChoice choice) {
+    Gui& g = g_gui;
+    if (!g.running.empty() || g.gameUp) return false;
+    if (!SetIniValue(g.here + L"\\sc-offline.ini", "clean_logs", CleanLogsWord(choice))) {
+        PluginNote(T(LocaleKey::LogsWriteError));
+        return false;
+    }
+    g.cleanLogs = choice;
+    PluginNote(T(LocaleKey::LogsSaved));
+    return true;
+}
+
+static void DrawSettings(float x0, float y0, float x1, float y1) {
+    Gui& g = g_gui;
+    float y = UiCard(ImVec2(x0, y0), ImVec2(x1, y1), kIcoSettings, T(LocaleKey::Settings)) + Px(16);
+    const float left = x0 + Px(18), right = x1 - Px(18), fs = ImGui::GetFontSize(), bh = Px(38), bw = Px(260);
+    const bool editable = g.running.empty() && !g.gameUp;
+
+    if (UiButton("Repair##settings", ImVec2(left, y), ImVec2(bw, bh), kPlain, CommandEnabled(kActRepair), kIcoShield, T(LocaleKey::Repair))) g.action = kActRepair;
+    {
+        const float hx = left + bw + Px(12);
+        const bool left = g.hasLeftovers || g.pcLeft;
+        const std::string hint = g.hasLeftovers ? LeftoverItems() : g.pcLeft ? std::string(T(LocaleKey::PcRecord)) : std::string(T(LocaleKey::RepairNothing));
+        Label(ImVec2(hx, y + (bh - fs) * 0.5f), left ? kUiWarn : kUiTextDim, Fit(hint, right - hx, false).c_str());
+    }
+    y += bh + Px(6);
+    Label(ImVec2(left, y), kUiTextDim, Fit(T(LocaleKey::RepairHint), right - left, false).c_str());
+    y += fs + Px(24);
+
+    { UseFont f(g.bold); Label(ImVec2(left, y), kUiText, T(LocaleKey::LogsLabel)); }
+    y += fs + Px(8);
+    const LogChoice choices[] = { LogChoice::Ask, LogChoice::Always, LogChoice::Never };
+    const LocaleKey labels[] = { LocaleKey::LogsAsk, LocaleKey::AlwaysDelete, LocaleKey::NeverDelete };
+    const char* ids[] = { "Ask##logs", "Always##logs", "Never##logs" };
+    const float cw = (right - left - 2 * Px(8)) / 3;
+    for (int i = 0; i < 3; ++i)
+        if (UiButton(ids[i], ImVec2(left + float(i) * (cw + Px(8)), y), ImVec2(cw, bh), g.cleanLogs == choices[i] ? kAction : kPlain,
+                     editable, g.cleanLogs == choices[i] ? kIcoCheck : -1, T(labels[i]))) SelectLogChoice(choices[i]);
+    y += bh + Px(6);
+    {
+        const std::string msg = !editable ? std::string(T(LocaleKey::CloseToEdit)) : NoteLive() ? g.note : std::string(T(LocaleKey::LogsHint));
+        Label(ImVec2(left, y), kUiTextDim, Fit(msg, right - left, false).c_str());
+    }
+    y += fs + Px(24);
+
+    if (UiButton("Ini##settings", ImVec2(left, y), ImVec2(bw, bh), kPlain, true, kIcoFolder, T(LocaleKey::OpenIni))) g.action = kActIni;
+}
+
 static void DrawUi() {
     Gui& g = g_gui;
     const ImGuiIO& io = ImGui::GetIO();
@@ -4027,8 +4471,9 @@ static void DrawUi() {
         const float slide = (1.0f - show) * Px(8) + (1.0f - pf) * Px(6);
         const float x0 = Px(kUiSideW) + Px(20), x1 = W - Px(kUiPad), y0 = Px(kUiTop) + slide, y1 = H - Px(kUiPad) + slide;
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, show * pf);
-        if (g.page == 0) DrawHome(x0, y0, x1);
+        if (g.page == 0) DrawHome(x0, y0, x1, y1);
         else if (g.page == 2) DrawPlugins(x0, y0, x1, y1);
+        else if (g.page == 3) DrawSettings(x0, y0, x1, y1);
         else DrawOutputPage(x0, y0, x1, y1);
         ImGui::PopStyleVar();
         ImGui::PopStyleVar();
@@ -4132,7 +4577,13 @@ static void RunAction() {
     g.action = kActNone;
     for (const GuiCommand& c : kGuiCommands) if (c.act == a && c.cmd) { RunCommand(c.cmd); return; }
     switch (a) {
-    case kActSettings: ShellExecuteW(g.wnd, L"open", L"notepad.exe", (L"\"" + g.here + L"\\sc-offline.ini\"").c_str(), nullptr, SW_SHOWNORMAL); break;
+    case kActSettings: ShowPage(g.page == 3 ? 0 : 3); break;
+    case kActIni: ShellExecuteW(g.wnd, L"open", L"notepad.exe", (L"\"" + g.here + L"\\sc-offline.ini\"").c_str(), nullptr, SW_SHOWNORMAL); break;
+    case kActRepair: RunCommand(L"uninstall"); break;   // the old Uninstall: the mod out, the PC changes undone
+    case kActStop: StopGame(); break;
+    case kActEndYes: EndGame(); break;
+    case kActEndNo: g.stopState = 0; g.stopNote.clear(); break;
+    case kActRefresh: StartStatusRefresh(); break;
     case kActLogs: {
         const wstring d = g.here + L"\\data"; CreateDirectoryW(d.c_str(), nullptr);
         ShellExecuteW(g.wnd, L"open", d.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
@@ -4165,6 +4616,8 @@ static void RunAction() {
     }
     case kActYes: Answer(true); break;
     case kActNo: Answer(false); break;
+    case kActAlways: AnswerText("always"); break;
+    case kActNever: AnswerText("never"); break;
     case kActCopy: ImGui::SetClipboardText(g.log.c_str()); break;
     case kActMinimize: ShowWindow(g.wnd, SW_MINIMIZE); break;
     case kActClose: PostMessageW(g.wnd, WM_CLOSE, 0, 0); break;
@@ -4212,11 +4665,21 @@ static LRESULT CALLBACK GuiProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
         if ((wp & 0xfff0) == SC_KEYMENU) return 0;
         break;
     case kMsgOutput: { std::wstring* w = (std::wstring*)lp; AppendOutput(*w); delete w; return 0; }
+    case kMsgStatus: {
+        StatusReport* report = reinterpret_cast<StatusReport*>(lp);
+        g.status = std::move(*report);
+        delete report;
+        g.statusBusy = false;
+        RefreshLight();
+        if (g.statusAgain) { g.statusAgain = false; StartStatusRefresh(); }
+        return 0;
+    }
     case kMsgDone: {
         const DWORD code = (DWORD)wp;
         if (g.child) { CloseHandle(g.child); g.child = nullptr; }
         if (g.childIn) { CloseHandle(g.childIn); g.childIn = nullptr; }
         g.question.clear();
+        g.questionKind = 0;
         g.running.clear();
         if (code == kExitRestart) {
             wchar_t self[MAX_PATH * 2]; GetModuleFileNameW(nullptr, self, ARRAYSIZE(self));
@@ -4227,6 +4690,7 @@ static LRESULT CALLBACK GuiProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
         AppendOutput(code == 0 ? L"\n[done] " + Wide(T(LocaleKey::ChildDone)) + L"\n" :
                      L"\n[finished] " + Wide(F(LocaleKey::ChildFinished, {{"code", std::to_string(code)}})) + L"\n", false);
         RefreshLight();
+        StartStatusRefresh();
         return 0;
     }
     case WM_CLOSE:
@@ -4354,6 +4818,7 @@ static int RunGui() {
     RenderFrame();
     ShowWindow(wnd, SW_SHOWNORMAL);
     g.introStart = Seconds();
+    StartStatusRefresh();   // the Status panel's first read-only check
 
     bool quit = false;
     while (!quit) {
@@ -4370,6 +4835,7 @@ static int RunGui() {
         }
         if (quit) break;
         if (GetTickCount64() - g.lastRefresh >= 1500) RefreshLight();
+        TickStop();
         if (!IsIconic(wnd)) RenderFrame();
         RunAction();
     }
@@ -4386,7 +4852,7 @@ static const char* kUsage =
     "  play       (default) copy the mod in, start the game, take the mod out when it closes\n"
     "  install    copy the mod in and leave it there; run `uninstall` before going online\n"
     "  uninstall  take the mod out and restore anything it replaced\n"
-    "  status     check the setup and report; changes nothing\n"
+    "  status     check the setup and report; read-only (no writes, no network)\n"
     "  update     check GitHub for a newer sc-offline and offer to install it (saves and ini kept)\n"
     "  help       show this\n"
     "\n"
@@ -4440,6 +4906,7 @@ int wmain(int argc, wchar_t** argv) {
     if (command == L"help") { std::printf("sc-offline launcher %s (%s)\n\n%s", SCO_VERSION, SCO_BASED_ON, kUsage); return kExitOk; }
 
     const wstring here = ExeDir();
+    if (command == L"status") return RunStatus(here, gameArg);   // before anything below that writes
     const wstring data = here + L"\\data";
     CreateDirectoryW(data.c_str(), nullptr);   // a fresh unzip may not have it yet
     std::string header = "sc-offline.exe";
@@ -4459,7 +4926,7 @@ int wmain(int argc, wchar_t** argv) {
         Out("[i] discord_presence = off: the Discord plugin is turned off (data\\plugins\\discord\\disabled)\n");
 
     // 0. Updates (issue #14). Never blocks play: no network, a timeout or any odd reply is just skipped.
-    if (command == L"update" || (cfg.checkUpdates && !dry && (command == L"play" || command == L"status"))) {
+    if (command == L"update" || (cfg.checkUpdates && !dry && command == L"play")) {
         const bool explicitUpdate = command == L"update";
         std::string why;
         const UpdateInfo u = CheckLatest(explicitUpdate ? 15000 : 3000, cfg.prereleases, &why);
@@ -4467,8 +4934,7 @@ int wmain(int argc, wchar_t** argv) {
             if (explicitUpdate) { Out("Update:   %s\n", why.c_str()); return why.rfind("up to date", 0) == 0 ? kExitOk : kExitError; }
         } else {
             Out("Update:   sc-offline %s is available (you have %s)\n", u.tag.c_str(), SCO_VERSION);
-            if (command == L"status") Out("          run `sc-offline.exe update` to install it\n");
-            else if (dry) Out("[dry-run] would download %s, check its SHA-256 and replace the program files\n", u.zipName.c_str());
+            if (dry) Out("[dry-run] would download %s, check its SHA-256 and replace the program files\n", u.zipName.c_str());
             else if (GameRunning()) Out("[!] close the game before updating\n");
             else if (!OwnsConsoleInput()) Out("          (not asking: no console to answer in)\n");
             else if (AskYes("Update now? Your saves and sc-offline.ini are kept.")) {
@@ -4527,7 +4993,6 @@ int wmain(int argc, wchar_t** argv) {
     // 2. Self-checks.
     const CheckResult checks = SelfChecks(here, cfg, g);
     Out("\n");
-    if (command == L"status") return kExitOk;
 
     const bool running = GameRunning();
     if (command == L"uninstall") {
@@ -4578,7 +5043,8 @@ int wmain(int argc, wchar_t** argv) {
         if (play) {
             Out("[dry-run] would start %ls\\%ls\n", bin.c_str(), kGameExe);
             Out("[dry-run] after the game closes: take the mod out, put back what was set aside, undo the PC changes\n");
-            if (cfg.cleanLogs) Out("[dry-run] then list this session's Game.log, logbackups and crash files and ask (twice) before deleting them\n");
+            if (cfg.cleanLogs == LogChoice::Ask) Out("[dry-run] then list this session's Game.log, logbackups and crash files and ask before deleting them\n");
+            else if (cfg.cleanLogs == LogChoice::Always) Out("[dry-run] then delete this session's Game.log, logbackups and crash files without asking (clean_logs = always)\n");
         }
         return kExitOk;
     }
@@ -4641,11 +5107,10 @@ int wmain(int argc, wchar_t** argv) {
         if (WaitForSingleObject(helper, 120000) == WAIT_OBJECT_0) {
             DWORD code = 1; GetExitCodeProcess(helper, &code);
             if (code == 0) Out("Mod:      removed from Bin64; PC changes undone. Safe to go online.\n");
-            else Out("[!] the helper couldn't undo everything (exit %lu); click Uninstall. See data\\launcher.log\n", code);
+            else Out("[!] the helper couldn't undo everything (exit %lu); use Repair in Settings or run `sc-offline.exe uninstall`. See data\\launcher.log\n", code);
         }
         if (cfg.crashReports && OwnsConsoleInput()) OfferCrashReport(here, ParentDir(bin), sessionStart, checks.gameBuild);
-        if (cfg.cleanLogs && OwnsConsoleInput()) OfferToCleanLogs(ParentDir(bin), sessionStart);
-        else if (cfg.cleanLogs) Out("Logs:     not asking (no console to answer in); run from a window to be asked\n");
+        CleanSessionLogs(here, ParentDir(bin), sessionStart, cfg.cleanLogs, OwnsConsoleInput());
     }
     if (WaitForSingleObject(helper, 0) != WAIT_OBJECT_0)
         Out("Mod:      the helper removes it from Bin64 and undoes the PC changes as this window closes.\n");

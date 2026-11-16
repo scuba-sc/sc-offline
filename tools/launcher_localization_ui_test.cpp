@@ -55,10 +55,11 @@ int main(int argc, char** argv) {
     ImGui::Begin("headless locale semantics", nullptr, ImGuiWindowFlags_NoSavedSettings);
     struct Control { const char* id; Key key; };
     const Control controls[] = {
-        {"Play", Key::Play}, {"Status", Key::Status}, {"Update", Key::Update},
-        {"Install", Key::Install}, {"Uninstall", Key::Uninstall},
-        {"Play##act", Key::Play}, {"Status##act", Key::Status}, {"Update##act", Key::Update},
-        {"Install##act", Key::Install}, {"Uninstall##act", Key::Uninstall},
+        {"Play", Key::Play}, {"Update", Key::Update}, {"Stop##act", Key::Stop},
+        {"Play##act", Key::Play}, {"Update##act", Key::Update},
+        {"Repair##banner", Key::Repair}, {"Repair##settings", Key::Repair},
+        {"Delete##logs", Key::Delete}, {"Keep##logs", Key::Keep},
+        {"Always##logs", Key::AlwaysDelete}, {"Never##logs", Key::NeverDelete},
         {"Yes", Key::Yes}, {"No", Key::No}, {"Reload##plug", Key::Reload},
         {"Turn on##plugson", Key::TurnOn}, {"Open folder##plugempty", Key::OpenFolder},
         {"Back##plugback", Key::Back}, {"Save##plugsave", Key::Save},
