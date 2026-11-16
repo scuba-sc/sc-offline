@@ -6,6 +6,7 @@
 #include "hooks.h"
 #include "teleport.h"
 #include "spawner.h"
+#include "ship_caps.h"
 #include "npc.h"
 #include "build.h"
 #include "cvars.h"
@@ -580,6 +581,8 @@ static void SetFeatureCaps() {
     SetCap("offline", g_offline);
     SetCap("teleport", false); // G2 mutation not approved; read tables remain independently available
     SetCap("npc", SpawnerReady());
+    if (const sco::Result r = SetShipSpawnCapability(SpawnerReady()); r != sco::Result::Ok)
+        Log("[!] capability spawn.ship: %s", sco::ResultName(r));
     SetCap("quantum", false); // movement remains REFUSE; external read commands have their own availability
     SetCap("contracts", ContractsReady());
 #ifndef SCO_ASOP_HOST_COMPOSITION
