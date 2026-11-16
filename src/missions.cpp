@@ -259,9 +259,12 @@ void ProcessMissions() {
     if (!live) return;
     if (stage == 0) {
         // The original sends the bare name; keep the ai_ form only for builds that register it.
+        // Set through the typed cvar path; the console runner refuses arbitrary commands.
         float v;
-        Menu_RunConsole(GetCVarNow("ai_SubsumptionEnableDebugNodes", v) && !GetCVarNow("SubsumptionEnableDebugNodes", v)
-                        ? "ai_SubsumptionEnableDebugNodes 1" : "SubsumptionEnableDebugNodes 1");
+        const char* cvar = GetCVarNow("ai_SubsumptionEnableDebugNodes", v) && !GetCVarNow("SubsumptionEnableDebugNodes", v)
+                               ? "ai_SubsumptionEnableDebugNodes" : "SubsumptionEnableDebugNodes";
+        if (SetCVarNow(cvar, 1.0f)) Log("[missions] AI debug nodes on (%s)", cvar);
+        else Log("[missions] AI debug nodes not set: %s not found / write not confirmed", cvar);
         stage = 1;
         return;
     }

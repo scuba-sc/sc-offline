@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Set the AI debug-nodes cvar without the console.** The mission loader wrote `SubsumptionEnableDebugNodes` through the console runner, which refuses arbitrary commands, so the line was always refused. It now sets the cvar through the typed cvar path and logs one `[missions] AI debug nodes` line with the outcome. Synthetic build only; **not run in game**.
+
 - **Move the Creative plugin to its own repository and ship it enabled.** `plugins/creative/` now lives in [`sc-creative`](https://github.com/scuba-sc/sc-creative) (history preserved) and is carried as the `external/sc-creative` submodule, pinned to a commit. The plugin build, the package preflight (`tools/check_package_tree.py` reads creative's commands from the submodule), the release profiles and CI use it from there; the creative proof is that repository's `tools/check_creative_sdk.py`, run from the submodule before staging. Creative no longer ships a `disabled` marker, so it loads by default. The Player tab (Loadout) and the Vehicles tab (Spawn) drop their creative controls (Noclip, God mode, Infinite ammo, Noclip speed, Infinite ship ammo) and no longer invoke `creative.*`; all five controls are on the Creative tab, so neither plugin depends on creative. Fresh clones need `git clone --recurse-submodules` (or `git submodule update --init`). Synthetic tests only; **not run in game**.
 
 - **Add a package preflight.** `tools/check_package_tree.py` inspects a staged package and fails when an enabled plugin invokes a command no enabled plugin registers, or when a list file an enabled plugin needs is in no enabled data pack (or in several). Static check; it does not show that anything loads or works in game.
