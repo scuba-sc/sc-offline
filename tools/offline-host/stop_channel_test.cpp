@@ -56,9 +56,9 @@ int main() {
     // Names: session-local, per process.
     wchar_t name[64];
     sc::EventName(name, L"stop", 4242);
-    CHECK(std::wstring(name) == L"Local\sc-offline-stop-4242");
+    CHECK(std::wstring(name) == L"Local\\sc-offline-stop-4242");
     sc::EventName(name, L"stopped", 4242);
-    CHECK(std::wstring(name) == L"Local\sc-offline-stopped-4242");
+    CHECK(std::wstring(name) == L"Local\\sc-offline-stopped-4242");
 
     // No mod in the process: nothing to open, and Poll without a channel does nothing.
     {
