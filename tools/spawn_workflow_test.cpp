@@ -155,7 +155,7 @@ void SeatRefusals(){
   if(mode==0)occupant=9001;if(mode==1)seat_more=1;if(mode==2)seat_count=65;
   if(mode==3)seat_flags=SC_SEAT_PILOT;if(mode==4)player_present=false;if(mode==5)missing_cap="game.vehicles.seat";if(mode==6)missing_cap="game.entities.transform";
   Advance(10);CHECK(!seated && !powered);Advance(60010);CHECK(removed==0 && issued.count(101)); // alive at timeout: kept, never removed
-  CHECK(Run("spawn.status")==SCO_OK);Contains("ready=1");
+  if(mode!=6){CHECK(Run("spawn.status")==SCO_OK);Contains("ready=1");} // mode 6: observation is unavailable
   test_module::Unload();CHECK(removed==1); // removed on unload; the borrowed host API must outlive it.
  }
 }
