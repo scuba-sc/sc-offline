@@ -247,7 +247,7 @@ int main() {
     // Retire racing a Poll that has claimed the work: the stopped event is never set before the work has ended,
     // and it is set once the dust settles whichever side wins. (Stress: the interleavings differ run to run.)
     for (unsigned round = 0; round < 300; ++round) {
-        const DWORD pid = TestPid(16 + (round % 8));
+        const DWORD pid = 0x7c000000u + (GetCurrentProcessId() & 0xffffu) * 512 + round;   // the channel keeps its handles: one name per round
         sc::HostChannel host;
         CHECK(host.Create(pid));
         wchar_t n[64];
