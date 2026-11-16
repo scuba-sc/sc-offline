@@ -73,8 +73,12 @@ The sidebar has three pages (the fourth, Settings, opens from the top bar):
   - **Status panel**: the same read-only checks as `sc-offline.exe status`: the game folder and build, whether the
     mod is installed, PC changes left over, whether the network is blocked while you play, Easy Anti-Cheat, and how
     many plugins are enabled. It is checked when the window opens, after the game exits (and after a command or a
-    change in what is left over) and when you press the refresh icon in its header, on a background thread; it
-    never polls. The game folder comes from `game =` in `sc-offline.ini`, else the usual places (the same search as
+    change in what is left over), whenever the game starts or stops or a command starts or ends, every 5 seconds
+    while the game or a command is running, and when you press the refresh icon in its header, on a background
+    thread. While you play, the Mod row reads "Installed (this session)" and PC changes "Applied for this session;
+    undone when the game closes" instead of a leftover warning. "The game is running" (Play becomes Stop, the
+    Status dot) means a `StarCitizen.exe` of this install's folder, the same rule Stop uses; a process of that name
+    in another folder is not counted (only the update's file swap stays cautious about any of them). The game folder comes from `game =` in `sc-offline.ini`, else the usual places (the same search as
     `status`). Nothing is written.
 - **Plugins**: see [below](#the-plugins-page).
 - **Output**: what the running command prints, with a **Copy** button. **Update** and **Repair** switch to it.

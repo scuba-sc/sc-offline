@@ -227,7 +227,10 @@ static void TestSessionLogs(const fs::path& root) {
     CHECK(Get(here / "sc-offline.ini") == ini);                                            // and the setting is not rewritten
 }
 
-// A harmless long-running stand-in for the game: a copy of ping.exe named StarCitizen.exe in <root>/<name>/Bin64.
+// A harmless short-lived stand-in for the game: a copy of ping.exe named StarCitizen.exe in <root>/<name>/Bin64.
+// A real launcher on the same PC would take it for the game while it lives, so it lives about 15 s at most
+// (ping -n 15) and every stand-in is ended by its handle: by Reap, or by the exit handler below when a CHECK
+// fails (CHECK exits without unwinding). The test asserts at its end that none is left.
 struct Dummy { fs::path bin; HANDLE process = nullptr; DWORD pid = 0; ULONGLONG created = 0; };
 
 static std::wstring Self() {
@@ -237,8 +240,13 @@ static std::wstring Self() {
     return std::wstring(buf, n);
 }
 
+static std::vector<HANDLE>& LiveStandIns() { static std::vector<HANDLE> live; return live; }
+static void ReapAllStandIns() {   // by handle only, never by image name
+    for (HANDLE h : LiveStandIns()) TerminateProcess(h, 1);
+}
+
 // A stand-in StarCitizen.exe: a renamed copy of `tool` (a system tool by default) started with `args`.
-static Dummy SpawnDummy(const fs::path& root, const char* name, fs::path tool = {}, std::wstring args = L"-n 120 127.0.0.1") {
+static Dummy SpawnDummy(const fs::path& root, const char* name, fs::path tool = {}, std::wstring args = L"-n 15 127.0.0.1") {
     Dummy d;
     d.bin = root / name / "Bin64";
     fs::create_directories(d.bin);
@@ -252,6 +260,9 @@ static Dummy SpawnDummy(const fs::path& root, const char* name, fs::path tool = 
     CloseHandle(pi.hThread);
     d.process = pi.hProcess;
     d.pid = pi.dwProcessId;
+    static const bool handlerSet = (std::atexit(ReapAllStandIns), true);
+    (void)handlerSet;
+    LiveStandIns().push_back(d.process);
     FILETIME c{}, e{}, k{}, u{};
     CHECK(GetProcessTimes(d.process, &c, &e, &k, &u));
     d.created = FileTimeU64(c);
@@ -262,7 +273,12 @@ static bool Alive(const Dummy& d) { return WaitForSingleObject(d.process, 0) == 
 
 // Ends a stand-in by its handle (never by image name) and waits for it.
 static void Reap(Dummy& d) {
-    if (d.process) { TerminateProcess(d.process, 1); WaitForSingleObject(d.process, 10000); CloseHandle(d.process); d.process = nullptr; }
+    if (d.process) {
+        TerminateProcess(d.process, 1); WaitForSingleObject(d.process, 10000);
+        auto& live = LiveStandIns();
+        live.erase(std::remove(live.begin(), live.end(), d.process), live.end());
+        CloseHandle(d.process); d.process = nullptr;
+    }
 }
 
 static bool Has(const std::vector<GameProc>& v, DWORD pid) {
@@ -282,6 +298,12 @@ static void TestStopTargets(const fs::path& root) {
     HANDLE self = GetCurrentProcess();
     CHECK(!ImageIsGame(self, a.bin.wstring()) && !ImageIsGame(a.process, L"") && ImageIsGame(a.process, a.bin.wstring()));
     CHECK(!ImageIsGame(a.process, b.bin.wstring()));
+    // The window's "game is running" is this install's exe, not any process of that name: another install's
+    // stand-in, an unknown folder and a folder without a process are all "not running"; the broad check (kept
+    // for the update's swap guard only) still sees any of them.
+    CHECK(GameRunningIn(a.bin.wstring()) && GameRunningIn(b.bin.wstring()));
+    CHECK(!GameRunningIn((root / "stop-none" / "Bin64").wstring()) && !GameRunningIn(L""));
+    CHECK(GameRunning());
 
     // EndTargets refuses a target whose creation time differs (a reused id), a target of another folder, and no bin.
     int ended = 0, failed = 0;
@@ -656,6 +678,41 @@ static void TestHomeState() {
     ResetHome();
 }
 
+// The Status panel during a play session: the mod and the PC changes read as this session, from the live light
+// state even when the last panel check is older than Play; and when a re-check is due.
+static void TestStatusRows() {
+    StatusReport r;
+    r.checked = true;
+    CHECK(ModRow(r, false, false).text == T(LocaleKey::ModNotInstalled) && !ModRow(r, false, false).warn);
+    r.modInstalled = true;
+    CHECK(ModRow(r, false, false).text == T(LocaleKey::ModInstalled) && ModRow(r, false, false).warn);   // left behind: a warning
+    CHECK(ModRow(r, true, false).text == T(LocaleKey::ModInstalledSession) && !ModRow(r, true, false).warn);
+    r.modInstalled = false;   // a panel check older than Play: the live state still says the mod is there
+    CHECK(ModRow(r, true, true).text == T(LocaleKey::ModInstalledSession) && !ModRow(r, true, true).warn);
+    CHECK(ModRow(r, true, false).text == T(LocaleKey::ModNotInstalled));
+    CHECK(PcRow(r, false, false).text == T(LocaleKey::PcNone) && !PcRow(r, false, false).warn);
+    CHECK(PcRow(r, true, true).text == T(LocaleKey::PcApplied) && !PcRow(r, true, true).warn);
+    CHECK(PcRow(r, false, true).text == T(LocaleKey::PcNone));   // not playing: the live flag alone is not shown here
+    r.pcLeft = "time=now
+";
+    CHECK(PcRow(r, false, true).warn && PcRow(r, false, true).text != T(LocaleKey::PcApplied));
+    CHECK(PcRow(r, true, true).text == T(LocaleKey::PcApplied) && !PcRow(r, true, true).warn);
+    CHECK(std::string(T(LocaleKey::ModInstalledSession)) == "Installed (this session)" &&
+          std::string(T(LocaleKey::PcApplied)) == "Applied for this session; undone when the game closes");
+
+    // Re-check on any change of the game, a command, the leftovers or the PC record; while playing every 5 s.
+    CHECK(!StatusRefreshWanted(false, false, false, false, false, false, false, false, 100000, 0));
+    CHECK(StatusRefreshWanted(false, true, false, false, false, false, false, false, 10, 10));
+    CHECK(StatusRefreshWanted(true, false, false, false, false, false, false, false, 10, 10));
+    CHECK(StatusRefreshWanted(false, false, false, true, false, false, false, false, 10, 10));
+    CHECK(StatusRefreshWanted(false, false, true, false, false, false, false, false, 10, 10));
+    CHECK(StatusRefreshWanted(false, true, false, false, false, true, false, false, 10, 10));
+    CHECK(StatusRefreshWanted(false, true, false, false, false, false, false, true, 10, 10));
+    CHECK(!StatusRefreshWanted(true, true, false, false, false, false, false, false, 4000, 0));
+    CHECK(StatusRefreshWanted(true, true, false, false, false, false, false, false, 5000, 0));
+    CHECK(StatusRefreshWanted(false, false, true, true, false, false, false, false, 5000, 0));
+}
+
 int wmain(int argc, wchar_t** argv) {
     if (argc == 3 && !wcscmp(argv[1], L"--standin-window")) return RunStandinWindow(argv[2]);   // the stand-in game of TestStopChannel
     CHECK(argc == 2 || argc == 3);
@@ -673,6 +730,8 @@ int wmain(int argc, wchar_t** argv) {
     TestLauncherLogAppend(owned);
     TestStopChannel(owned);
     TestHomeState();
+    TestStatusRows();
+    CHECK(LiveStandIns().empty());   // every stand-in was ended; none is left for a real launcher to find
     if (argc == 3) TestStatusExe(owned, fs::path(argv[2]));
     CHECK(fs::remove_all(owned) > 0);
     std::cout << "launcher status/config: " << checks << " checks passed; no child, helper, game or network command executed\n";

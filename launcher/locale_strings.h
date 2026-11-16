@@ -122,7 +122,9 @@
     X(GameNotFound, "launcher.status.game_not_found", "Not found yet") \
     X(ModInstalled, "launcher.status.mod_installed", "Installed in the game folder") \
     X(ModNotInstalled, "launcher.status.mod_not_installed", "Not installed") \
+    X(ModInstalledSession, "launcher.status.mod_installed_session", "Installed (this session)") \
     X(PcNone, "launcher.status.pc_none", "None left") \
+    X(PcApplied, "launcher.status.pc_applied", "Applied for this session; undone when the game closes") \
     X(PcLeft, "launcher.status.pc_left", "Left over: {items}") \
     X(PcRecord, "launcher.status.pc_record", "A record of earlier PC changes is still there.") \
     X(NetBlocked, "launcher.status.net_blocked", "Blocked while you play") \

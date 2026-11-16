@@ -1718,7 +1718,12 @@ static std::vector<Found> DetectBin64(const wstring& here, const wstring& channe
     return found;
 }
 
+// Any process named StarCitizen.exe, wherever it runs. Only for the update's SwapStaged guard, where being
+// conservative is the point (a PTU or another install's game may hold files under the staged swap). Everything
+// else asks GameRunningIn: a stand-in or another install's process must not read as "this game is running".
 // A failed snapshot counts as "running": the caller must never delete the mod early.
+static bool GameRunning();
+static bool GameRunningIn(const wstring& bin);
 static bool GameRunning() {
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snap == INVALID_HANDLE_VALUE) return true;
@@ -2378,7 +2383,7 @@ static int Helper(const wstring& op, const wstring& bin, DWORD parentPid, const 
     WaitForMultipleObjects(closed ? 2 : 1, waitFor, FALSE, INFINITE);
     if (closed) CloseHandle(closed);
     CloseHandle(parent);
-    while (GameRunning()) Sleep(2000);
+    while (GameRunningIn(g.bin)) Sleep(2000);
     const int taken = TakeMod(g, false);
     const bool hadPc = !PcChangesLeft().empty();
     const int undone = UndoPcChanges(false);
@@ -2531,7 +2536,7 @@ static CheckResult SelfChecks(const wstring& here, const Config& cfg, const Game
         Out("Installed: yes, %s%s%s\n", inGame.what.c_str(), haveMarker ? ", since " : "",
             haveMarker ? Field(marker, "time").c_str() : "");
     else Out("Installed: no; Bin64 has another mod's dinput8.dll (it is set aside while you play)\n");
-    if ((haveMarker || inGame.ours) && inGame.present && !GameRunning())
+    if ((haveMarker || inGame.ours) && inGame.present && !GameRunningIn(g.bin))
         Out("[!] the mod is still in the game folder (a crash, or `install`).\n"
             "    Run `sc-offline.exe uninstall` before going online.\n");
 
@@ -2541,7 +2546,7 @@ static CheckResult SelfChecks(const wstring& here, const Config& cfg, const Game
         r.pcLeftover = true;
         Out("[!] PC changes from a previous run (%s) are still in place:\n", Field(pcLeft, "time").c_str());
         DescribePcChanges(pcLeft);
-        if (!GameRunning()) Out("    Run `sc-offline.exe uninstall` to undo them before going online.\n");
+        if (!GameRunningIn(g.bin)) Out("    Run `sc-offline.exe uninstall` to undo them before going online.\n");
     }
     if (!OnWine()) Out("Network:  %s%s\n", cfg.firewall ? "blocked for StarCitizen.exe, RSI Launcher.exe and CrashHandler.exe while you play (block_network)"
                                                          : "NOT blocked (block_network = off)",
@@ -2747,6 +2752,9 @@ struct Gui {
     std::wstring tail;
     std::wstring running;
     bool hasLeftovers = false, gameUp = false;
+    bool modNow = false;         // live (every 1.5 s): the mod is in the game folder; the Status panel is only as fresh as its last check
+    bool statusRunning = false;  // a command ran at the last light refresh
+    ULONGLONG statusAt = 0;      // tick of the last Status check started
     std::string lightTitle, lightDetail;
     std::string log;
     std::vector<size_t> lines{ 0 };
@@ -2883,12 +2891,28 @@ static void StartStatusRefresh();
 static void EndStopWait();
 static void StopLog(const char* fmt, ...);   // the Stop/End steps in data\launcher.log
 
+// When the Status panel is re-checked (read-only; CollectStatus writes nothing): on any change of the game running,
+// a command running, what is left behind or the PC-change record, and every kStatusPlayRefreshMs while a play
+// session is on (the mod and the PC changes appear after the panel was last read).
+static const ULONGLONG kStatusPlayRefreshMs = 5000;
+static bool StatusRefreshWanted(bool wasUp, bool up, bool wasRunning, bool running, bool hadLeft, bool left, bool hadPc, bool pc,
+                                ULONGLONG now, ULONGLONG last) {
+    if (wasUp != up || wasRunning != running || hadLeft != left || hadPc != pc) return true;
+    return (up || running) && now - last >= kStatusPlayRefreshMs;
+}
+
+// The Mod and PC changes rows. During a play session the mod is in the game folder and the PC changes are
+// in place on purpose, so they read as this session, not as leftovers.
+struct StatusRow { std::string text; bool warn; };
+static StatusRow ModRow(const StatusReport& r, bool inPlay, bool modNow);
+static StatusRow PcRow(const StatusReport& r, bool inPlay, bool pcNow);
+
 // What the status banner shows. Uses only cheap facts (no drive search): the game folder from
 // sc-offline.ini, the one remembered from the last run, or the one the Status panel found.
 static void RefreshLight() {
     Gui& g = g_gui;
     g.lastRefresh = GetTickCount64();
-    const bool wasUp = g.gameUp, hadLeftovers = g.hasLeftovers, hadPc = g.pcLeft;
+    const bool wasUp = g.gameUp, hadLeftovers = g.hasLeftovers, hadPc = g.pcLeft, wasRunning = g.statusRunning;
     Config cfg;
     { FILE* saved = g_log; g_log = nullptr; ReadConfig(g.here + L"\\sc-offline.ini", cfg); g_log = saved; }
     g.cleanLogs = cfg.cleanLogs;
@@ -2907,8 +2931,9 @@ static void RefreshLight() {
     const std::string pc = PcChangesLeft();
     AddPcItems(pc, g.leftovers);
     g.hasLeftovers = !g.leftovers.empty();
+    g.modNow = !g.leftovers.empty() && g.leftovers.front().first == LocaleKey::LeftMod;
     g.pcLeft = !pc.empty();
-    g.gameUp = GameRunning();
+    g.gameUp = GameRunningIn(bin);   // this install's exe, as Stop finds it; with no folder known, not running
     g.folderKnown = !bin.empty();
     if (!g.gameUp) {
         if (g.stopState) StopLog("game exited (%s)", g.stopState == 2 ? "after the End confirm was shown" :
@@ -2918,7 +2943,9 @@ static void RefreshLight() {
     }
     RefreshLightText();
     // The Status panel follows the game closing and what is left behind; it never polls on its own.
-    if (g.wnd && ((wasUp && !g.gameUp) || hadLeftovers != g.hasLeftovers || hadPc != g.pcLeft)) StartStatusRefresh();
+    g.statusRunning = !g.running.empty();
+    if (g.wnd && StatusRefreshWanted(wasUp, g.gameUp, wasRunning, g.statusRunning, hadLeftovers, g.hasLeftovers, hadPc, g.pcLeft,
+                                     GetTickCount64(), g.statusAt)) StartStatusRefresh();
 }
 
 // The Status panel's checks run on a worker thread (they hash a DLL, read the game folder and may search drives)
@@ -2936,6 +2963,7 @@ static void StartStatusRefresh() {
     Gui& g = g_gui;
     if (!g.wnd) return;
     if (g.statusBusy) { g.statusAgain = true; return; }
+    g.statusAt = GetTickCount64();
     HANDLE t = CreateThread(nullptr, 0, StatusThread, new StatusJob{ g.here, g.wnd }, 0, nullptr);
     if (t) { CloseHandle(t); g.statusBusy = true; }
 }
@@ -3330,6 +3358,25 @@ static bool ImageIsGame(HANDLE proc, const wstring& bin) {
     return !_wcsicmp(FullPath(wstring(path, n)).c_str(), FullPath(bin + L"\\" + kGameExe).c_str());
 }
 
+// True when a process runs <bin>\StarCitizen.exe, this install's exe (the rule Stop uses). A failed snapshot counts
+// as running; with no bin nothing matches. A process that can't be opened is left out, as in FindGameProcs.
+static bool GameRunningIn(const wstring& bin) {
+    if (bin.empty()) return false;
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return true;
+    PROCESSENTRY32W pe{}; pe.dwSize = sizeof(pe);
+    bool hit = false;
+    for (BOOL ok = Process32FirstW(snap, &pe); ok && !hit; ok = Process32NextW(snap, &pe)) {
+        if (_wcsicmp(pe.szExeFile, kGameExe)) continue;
+        HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pe.th32ProcessID);
+        if (!h) continue;
+        hit = ImageIsGame(h, bin);
+        CloseHandle(h);
+    }
+    CloseHandle(snap);
+    return hit;
+}
+
 // The game folder Stop and End act on, resolved as play does: `game =` in sc-offline.ini when set (and then
 // only if it resolves), else what the Status panel found (remembered path, RSI Launcher records, usual folders,
 // drive search). Empty when unknown.
@@ -3629,6 +3676,19 @@ static void DrawRepairBanner(ImVec2 lo, ImVec2 hi) {
 }
 
 // The Status panel: what `status` checks, read-only, refreshed on start, after the game exits and on the icon.
+static StatusRow ModRow(const StatusReport& r, bool inPlay, bool modNow) {
+    if (inPlay && (r.modInstalled || modNow)) return { T(LocaleKey::ModInstalledSession), false };
+    return { T(r.modInstalled ? LocaleKey::ModInstalled : LocaleKey::ModNotInstalled), r.modInstalled };
+}
+
+static StatusRow PcRow(const StatusReport& r, bool inPlay, bool pcNow) {
+    if (inPlay && (!r.pcLeft.empty() || pcNow)) return { T(LocaleKey::PcApplied), false };
+    if (r.pcLeft.empty()) return { T(LocaleKey::PcNone), false };
+    Leftovers items;
+    AddPcItems(r.pcLeft, items);
+    return { F(LocaleKey::PcLeft, {{"items", items.empty() ? std::string(T(LocaleKey::PcRecord)) : ItemsText(items)}}), true };
+}
+
 static void DrawStatusCard(ImVec2 lo, ImVec2 hi) {
     Gui& g = g_gui;
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -3674,13 +3734,10 @@ static void DrawStatusCard(ImVec2 lo, ImVec2 hi) {
     if (const size_t cl = build.find(" (CL "); cl != std::string::npos) build.resize(cl);
     row(LocaleKey::StatusGame, r.folderKnown ? (build.empty() ? std::string(T(LocaleKey::GameFound)) : F(LocaleKey::GameFoundBuild, {{"build", build}}))
                                              : std::string(T(LocaleKey::GameNotFound)), r.folderKnown ? kUiTextBody : kUiWarn);
-    row(LocaleKey::StatusMod, T(r.modInstalled ? LocaleKey::ModInstalled : LocaleKey::ModNotInstalled),
-        r.modInstalled && !g.gameUp ? kUiWarn : kUiTextBody);
-    Leftovers pcItems;
-    AddPcItems(r.pcLeft, pcItems);
-    row(LocaleKey::StatusPcChanges, r.pcLeft.empty() ? std::string(T(LocaleKey::PcNone)) :
-        F(LocaleKey::PcLeft, {{"items", pcItems.empty() ? std::string(T(LocaleKey::PcRecord)) : ItemsText(pcItems)}}),
-        r.pcLeft.empty() ? kUiTextBody : kUiWarn);
+    const bool inPlay = g.gameUp || g.running == L"play";
+    const StatusRow mod = ModRow(r, inPlay, g.modNow), pc = PcRow(r, inPlay, g.pcLeft);
+    row(LocaleKey::StatusMod, mod.text, mod.warn ? kUiWarn : kUiTextBody);
+    row(LocaleKey::StatusPcChanges, pc.text, pc.warn ? kUiWarn : kUiTextBody);
     row(LocaleKey::StatusNetwork, T(r.wine ? LocaleKey::NetWine : r.networkBlocked ? LocaleKey::NetBlocked : LocaleKey::NetOpen),
         r.wine || r.networkBlocked ? kUiTextBody : kUiWarn);
     const bool eacOn = r.eac == Eac::Active;
@@ -5101,7 +5158,7 @@ int wmain(int argc, wchar_t** argv) {
         } else {
             Out("Update:   sc-offline %s is available (you have %s)\n", u.tag.c_str(), SCO_VERSION);
             if (dry) Out("[dry-run] would download %s, check its SHA-256 and replace the program files\n", u.zipName.c_str());
-            else if (GameRunning()) Out("[!] close the game before updating\n");
+            else if (GameRunningIn(g.bin)) Out("[!] close the game before updating\n");
             else if (!OwnsConsoleInput()) Out("          (not asking: no console to answer in)\n");
             else if (AskYes("Update now? Your saves and sc-offline.ini are kept.")) {
                 if (ApplyUpdate(here, u)) {
@@ -5160,7 +5217,7 @@ int wmain(int argc, wchar_t** argv) {
     const CheckResult checks = SelfChecks(here, cfg, g);
     Out("\n");
 
-    const bool running = GameRunning();
+    const bool running = GameRunningIn(g.bin);
     if (command == L"uninstall") {
         if (running) return FailCode(kExitRunning, "%ls is running. Close it first.", kGameExe);
         if (dry) return (TakeMod(g, true) | UndoPcChanges(true)) ? kExitError : kExitOk;
@@ -5266,7 +5323,7 @@ int wmain(int argc, wchar_t** argv) {
         Out("\nPlaying. When the game closes, the mod is removed from Bin64.\n");
         WaitForSingleObject(pi.hProcess, INFINITE);
         CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
-        while (GameRunning()) Sleep(2000);   // the game can hand over to a second StarCitizen.exe
+        while (GameRunningIn(g.bin)) Sleep(2000);   // the game can hand over to a second StarCitizen.exe
         // Take the mod out and undo the PC changes now, before any question below: a question
         // left unanswered must not keep the game folder modded or the firewall rules in place.
         if (closed) SetEvent(closed);
