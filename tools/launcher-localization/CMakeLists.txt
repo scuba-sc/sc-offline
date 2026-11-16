@@ -67,6 +67,12 @@ if(WIN32)
     d3d11 d3dcompiler dwmapi imm32 bcrypt shell32 shlwapi pathcch advapi32 ole32 winhttp user32 gdi32 comctl32)
   add_test(NAME launcher_status_config COMMAND launcher_status_config_test
     "${CMAKE_CURRENT_BINARY_DIR}/native-fixtures")
+  # With the built launcher (-DSC_OFFLINE_EXE=<sc-offline.exe>) the same test also runs its `status` in a scratch folder.
+  set(SC_OFFLINE_EXE "" CACHE FILEPATH "Built sc-offline.exe for the status-writes-nothing proof")
+  if(SC_OFFLINE_EXE)
+    add_test(NAME launcher_status_exe COMMAND launcher_status_config_test
+      "${CMAKE_CURRENT_BINARY_DIR}/native-fixtures" "${SC_OFFLINE_EXE}")
+  endif()
   add_test(NAME launcher_plugin_settings_gui COMMAND launcher_plugin_settings_gui_test
     "${CMAKE_CURRENT_BINARY_DIR}/native-fixtures")
   add_test(NAME launcher_localization_gui COMMAND launcher_localization_gui_test

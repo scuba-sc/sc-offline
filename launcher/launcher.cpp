@@ -1238,26 +1238,39 @@ static bool DropIniKey(const wstring& iniPath, const char* key) {
     return WriteAll(iniPath, out);
 }
 
-// Sets `key = value` in sc-offline.ini: replaces the first uncommented line for the key, or appends one.
+// Sets `key = value` in sc-offline.ini: every uncommented line for the key gets the value (the reader keeps
+// the last one, so a duplicate must not outvote it), or one is appended. Every other line stays byte for byte.
+// A file that exists but can't be read is left alone and the call fails; a missing file is created.
 static bool SetIniValue(const wstring& iniPath, const char* key, const char* value) {
     std::string text;
-    ReadAll(iniPath, text);
-    const std::string line = std::string(key) + " = " + value;
-    for (size_t pos = 0; pos < text.size();) {
-        size_t nl = text.find('\n', pos); if (nl == std::string::npos) nl = text.size();
-        const size_t b = text.find_first_not_of(" \t", pos);
-        if (b < nl && !_strnicmp(text.c_str() + b, key, strlen(key))) {
-            size_t after = b + strlen(key);
-            while (after < nl && (text[after] == ' ' || text[after] == '\t')) ++after;
-            if (after < nl && text[after] == '=') {
-                size_t end = nl; if (end > pos && text[end - 1] == '\r') --end;
-                return WriteAll(iniPath, text.substr(0, pos) + line + text.substr(end));
-            }
-        }
-        pos = nl + 1;
+    if (!ReadAll(iniPath, text)) {
+        const DWORD err = GetLastError();
+        if (err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND) return false;
+        text.clear();
     }
-    if (!text.empty() && text.back() != '\n') text += "\r\n";
-    return WriteAll(iniPath, text + "\r\n" + line + "\r\n");
+    const std::string line = std::string(key) + " = " + value;
+    std::string out;
+    bool found = false;
+    for (size_t pos = 0; pos < text.size();) {
+        size_t nl = text.find('\n', pos);
+        const size_t end = nl == std::string::npos ? text.size() : nl + 1;
+        size_t body = end;   // the line without its ending
+        if (body > pos && text[body - 1] == '\n') --body;
+        if (body > pos && text[body - 1] == '\r') --body;
+        const size_t b = text.find_first_not_of(" \t", pos);
+        bool match = false;
+        if (b < body && !_strnicmp(text.c_str() + b, key, strlen(key))) {
+            size_t after = b + strlen(key);
+            while (after < body && (text[after] == ' ' || text[after] == '\t')) ++after;
+            match = after < body && text[after] == '=';
+        }
+        if (match) { out += line; out.append(text, body, end - body); found = true; }
+        else out.append(text, pos, end - pos);
+        pos = end;
+    }
+    if (found) return WriteAll(iniPath, out);
+    if (!out.empty() && out.back() != '\n') out += "\r\n";
+    return WriteAll(iniPath, out + "\r\n" + line + "\r\n");
 }
 
 // --- Crash reports (issue #18) -------------------------------------------------------------
@@ -3264,7 +3277,7 @@ static float DrawQuestion(ImVec2 at, float width) {
 static bool CommandEnabled(Action a) {
     const Gui& g = g_gui;
     const bool idle = g.running.empty();
-    if (a == kActRepair) return idle && !g.gameUp && (g.hasLeftovers || g.pcLeft);   // only with something to undo
+    // Repair runs uninstall, which is safe to repeat: usable whenever nothing runs and the game is closed.
     return idle && !g.gameUp;
 }
 
@@ -3283,15 +3296,30 @@ static bool NoteLive();
 // The play child that started the game keeps waiting for it, so a normal close runs the usual cleanup (the mod
 // out, the PC changes undone). Nothing here terminates a process by itself.
 
-// True when `proc` runs StarCitizen.exe from this install (bin, when known) or at least has that file name.
+// True when `proc` runs <bin>\StarCitizen.exe, this install's exe. With no bin nothing matches: a bare file
+// name would also match a PTU or another install's process.
+static wstring FullPath(const wstring& p) {   // forward slashes and .. resolved, as the process's own image path has them
+    wchar_t buf[MAX_PATH * 2];
+    const DWORD n = GetFullPathNameW(p.c_str(), ARRAYSIZE(buf), buf, nullptr);
+    return n && n < ARRAYSIZE(buf) ? wstring(buf, n) : p;
+}
+
 static bool ImageIsGame(HANDLE proc, const wstring& bin) {
+    if (bin.empty()) return false;
     wchar_t path[MAX_PATH * 2];
     DWORD n = ARRAYSIZE(path);
     if (!QueryFullProcessImageNameW(proc, 0, path, &n)) return false;
-    const wstring p(path, n);
-    if (!bin.empty()) return !_wcsicmp(p.c_str(), (bin + L"\\" + kGameExe).c_str());
-    const size_t cut = p.find_last_of(L"\\/");
-    return !_wcsicmp(p.c_str() + (cut == wstring::npos ? 0 : cut + 1), kGameExe);
+    return !_wcsicmp(FullPath(wstring(path, n)).c_str(), FullPath(bin + L"\\" + kGameExe).c_str());
+}
+
+// The game folder Stop and End act on, resolved as play does: `game =` in sc-offline.ini when set (and then
+// only if it resolves), else what the Status panel found (remembered path, RSI Launcher records, usual folders,
+// drive search). Empty when unknown.
+static wstring StopBin() {
+    const Gui& g = g_gui;
+    Config cfg;
+    { FILE* saved = g_log; g_log = nullptr; ReadConfig(g.here + L"\\sc-offline.ini", cfg); g_log = saved; }
+    return cfg.game.empty() ? g.status.bin : ToBin64(cfg.game, cfg.channel);
 }
 
 static std::vector<GameProc> FindGameProcs(const wstring& bin) {
@@ -3324,10 +3352,18 @@ static BOOL CALLBACK PostCloseToGame(HWND w, LPARAM lp) {
     return TRUE;
 }
 
-// Stop: WM_CLOSE to the game's top-level windows, then wait kStopWaitSeconds before offering to end it.
+// Stop: WM_CLOSE to the game's top-level windows, then wait kStopWaitSeconds before offering to end it. The
+// processes of this install are recorded as targets whether or not they have a window yet (loading); End only
+// ever touches those. Refuses when the game folder isn't known or no process of it is found.
 static void StopGame() {
     Gui& g = g_gui;
-    g.stopTargets = FindGameProcs(g.status.bin);
+    g.stopTargets.clear();
+    g.stopState = 0;
+    g.stopNote.clear();
+    const wstring bin = StopBin();
+    if (bin.empty()) { PluginNote(T(LocaleKey::StopNoFolder)); return; }
+    g.stopTargets = FindGameProcs(bin);
+    if (g.stopTargets.empty()) { PluginNote(T(LocaleKey::StopNoProcess)); return; }
     CloseRequest req{ &g.stopTargets, 0 };
     EnumWindows(PostCloseToGame, reinterpret_cast<LPARAM>(&req));
     g.stopState = 1;
@@ -3344,25 +3380,31 @@ static void TickStop() {
     ShowPage(0);
 }
 
-// The second confirm said yes: end the processes that were asked to close, no others. A process is only
-// ended when it still has the creation time and image it had at Stop (a reused process id is left alone).
-static void EndGame() {
-    Gui& g = g_gui;
-    g.stopState = 0;
-    g.stopNote.clear();
-    const std::vector<GameProc> targets = g.stopTargets.empty() ? FindGameProcs(g.status.bin) : g.stopTargets;
-    int ended = 0, failed = 0;
+// Ends exactly the given processes. One is only ended when it still has the creation time recorded at Stop and
+// still runs <bin>\StarCitizen.exe (a reused process id, or a process of another folder, is refused). A process
+// that has already exited counts as ended.
+static void EndTargets(const std::vector<GameProc>& targets, const wstring& bin, int& ended, int& failed) {
     for (const GameProc& t : targets) {
         HANDLE h = OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, t.pid);
         if (!h) { ++failed; continue; }
         FILETIME created{}, exited{}, kernel{}, user{};
         DWORD code = 0;
-        if (GetExitCodeProcess(h, &code) && code != STILL_ACTIVE) { CloseHandle(h); continue; }   // already gone
+        if (GetExitCodeProcess(h, &code) && code != STILL_ACTIVE) { ++ended; CloseHandle(h); continue; }   // already gone
         const bool same = t.created && GetProcessTimes(h, &created, &exited, &kernel, &user) &&
-                          FileTimeU64(created) == t.created && ImageIsGame(h, g.status.bin);
+                          FileTimeU64(created) == t.created && ImageIsGame(h, bin);
         if (same && TerminateProcess(h, 1)) ++ended; else ++failed;
         CloseHandle(h);
     }
+}
+
+// The second confirm said yes: end the processes that were asked to close at Stop, no others. With no
+// recorded target nothing is ended (no fresh scan).
+static void EndGame() {
+    Gui& g = g_gui;
+    g.stopState = 0;
+    g.stopNote.clear();
+    int ended = 0, failed = g.stopTargets.empty() ? 1 : 0;
+    EndTargets(g.stopTargets, StopBin(), ended, failed);
     g.stopTargets.clear();
     PluginNote(T(failed || !ended ? LocaleKey::EndFailed : LocaleKey::EndDone));
 }
@@ -3535,7 +3577,9 @@ static void DrawHome(float x0, float y0, float x1, float y1) {
     Gui& g = g_gui;
     const float gap = Px(kUiGap);
     float top = y0;
-    if (g.pcLeft && !g.gameUp) {   // a crash left PC changes behind: the recovery path
+    // pc-changes.txt also exists during every healthy Play (the play command is running then), so the banner
+    // only shows when no command runs and the game is closed: what is left is from a crash.
+    if (g.pcLeft && !g.gameUp && g.running.empty()) {
         const float bh = Px(60);
         DrawRepairBanner(ImVec2(x0, top), ImVec2(x1, top + bh));
         top += bh + gap;

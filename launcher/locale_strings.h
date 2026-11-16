@@ -144,6 +144,8 @@
     X(LogsWriteError, "launcher.settings.logs_write_error", "Couldn't write sc-offline.ini; set clean_logs there by hand.") \
     X(StopAsked, "launcher.stop.asked", "Asked Star Citizen to close. If it is still open in a minute, you can end it.") \
     X(StopNoWindow, "launcher.stop.no_window", "No Star Citizen window found to close. If it is still running in a minute, you can end it.") \
+    X(StopNoFolder, "launcher.stop.no_folder", "Can't tell which game to stop: the game folder isn't known yet.") \
+    X(StopNoProcess, "launcher.stop.no_process", "No Star Citizen process of this install was found to stop.") \
     X(EndQuestion, "launcher.stop.end_question", "End the game process?") \
     X(EndDone, "launcher.stop.end_done", "Ended the game process.") \
     X(EndFailed, "launcher.stop.end_failed", "Couldn't end the game process.")

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Launcher logic that needs no window and no game: the clean_logs setting and its writer, the session-log
-// answers, the read-only `status` command and the Status panel's checks, and the Repair/Stop gating. The real
-// launcher source is included, so these are the shipped functions. No child, helper, game or network call runs.
+// answers, the read-only `status` command and the Status panel's checks, the Repair gating and Stop's target
+// selection. The real launcher source is included, so these are the shipped functions. An optional second
+// argument is the built sc-offline.exe: its `status` is then run in a scratch folder and must change nothing.
+// No helper, game or network call runs; the stand-in processes are renamed copies of a system tool, ended by handle.
 #define wmain sco_launcher_unused_entrypoint
 #include "../launcher/launcher.cpp"
 #undef wmain
@@ -104,6 +106,26 @@ static void TestIniWriter(const fs::path& root) {
     CHECK(after.compare(0, text.size(), text) == 0 && after.find("clean_logs = always") != std::string::npos);
     Config appended;
     CHECK(ReadConfig((bare / "sc-offline.ini").wstring(), appended) && appended.cleanLogs == LogChoice::Always && appended.plugins);
+
+    // Duplicate uncommented lines: the reader keeps the last one, so every one must carry the saved value.
+    const fs::path dup = root / "dup";
+    Put(dup / "sc-offline.ini", "clean_logs = ask\r\nplugins = on\r\n  CLEAN_LOGS=off\r\n# clean_logs = ask\r\nclean_logs = never");
+    CHECK(RememberLogChoice(dup.wstring(), LogChoice::Always));
+    CHECK(Get(dup / "sc-offline.ini") == "clean_logs = always\r\nplugins = on\r\nclean_logs = always\r\n# clean_logs = ask\r\nclean_logs = always");
+    Config duplicated;
+    CHECK(ReadConfig((dup / "sc-offline.ini").wstring(), duplicated) && duplicated.cleanLogs == LogChoice::Always);
+
+    // An ini that exists but can't be read is never replaced with a one-line file.
+    const fs::path locked = root / "locked";
+    const std::string precious = "game = X:\\Games\r\n# my notes\r\nplugins = off\r\n";
+    Put(locked / "sc-offline.ini", precious);
+    HANDLE hold = CreateFileW((locked / "sc-offline.ini").c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    CHECK(hold != INVALID_HANDLE_VALUE);                                      // no sharing: ReadAll fails
+    CHECK(!RememberLogChoice(locked.wstring(), LogChoice::Never));
+    CloseHandle(hold);
+    CHECK(Get(locked / "sc-offline.ini") == precious);
+    CHECK(RememberLogChoice(locked.wstring(), LogChoice::Never));              // readable again: it works
+    CHECK(Get(locked / "sc-offline.ini").compare(0, precious.size(), precious) == 0);
 }
 
 // A game folder the launcher accepts: <root>/game/LIVE/Bin64/StarCitizen.exe, and a build_manifest.id beside it.
@@ -203,6 +225,147 @@ static void TestSessionLogs(const fs::path& root) {
     CHECK(Get(here / "sc-offline.ini") == ini);                                            // and the setting is not rewritten
 }
 
+// A harmless long-running stand-in for the game: a copy of ping.exe named StarCitizen.exe in <root>/<name>/Bin64.
+struct Dummy { fs::path bin; HANDLE process = nullptr; DWORD pid = 0; ULONGLONG created = 0; };
+
+static Dummy SpawnDummy(const fs::path& root, const char* name) {
+    Dummy d;
+    d.bin = root / name / "Bin64";
+    fs::create_directories(d.bin);
+    const fs::path tool = fs::path(EnvOr(L"SystemRoot", L"C:\\Windows")) / "System32" / "ping.exe";
+    CHECK(fs::exists(tool));
+    fs::copy_file(tool, d.bin / "StarCitizen.exe");
+    wstring cmd = L"\"" + (d.bin / "StarCitizen.exe").wstring() + L"\" -n 120 127.0.0.1";
+    STARTUPINFOW si{}; si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    CHECK(CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi));
+    CloseHandle(pi.hThread);
+    d.process = pi.hProcess;
+    d.pid = pi.dwProcessId;
+    FILETIME c{}, e{}, k{}, u{};
+    CHECK(GetProcessTimes(d.process, &c, &e, &k, &u));
+    d.created = FileTimeU64(c);
+    return d;
+}
+
+static bool Alive(const Dummy& d) { return WaitForSingleObject(d.process, 0) == WAIT_TIMEOUT; }
+
+// Ends a stand-in by its handle (never by image name) and waits for it.
+static void Reap(Dummy& d) {
+    if (d.process) { TerminateProcess(d.process, 1); WaitForSingleObject(d.process, 10000); CloseHandle(d.process); d.process = nullptr; }
+}
+
+static bool Has(const std::vector<GameProc>& v, DWORD pid) {
+    for (const GameProc& p : v) if (p.pid == pid) return true;
+    return false;
+}
+
+static void TestStopTargets(const fs::path& root) {
+    Gui& g = g_gui;
+    Dummy a = SpawnDummy(root, "stop-a"), b = SpawnDummy(root, "stop-b");   // two installs, each with a StarCitizen.exe
+    // Target selection is by the exact image path of this bin, never by file name.
+    std::vector<GameProc> found = FindGameProcs(a.bin.wstring());
+    CHECK(found.size() == 1 && found[0].pid == a.pid && found[0].created == a.created);
+    CHECK(Has(FindGameProcs(b.bin.wstring()), b.pid) && !Has(FindGameProcs(b.bin.wstring()), a.pid));
+    CHECK(FindGameProcs(L"").empty());                                          // no folder: nothing matches
+    CHECK(FindGameProcs((root / "stop-none" / "Bin64").wstring()).empty());     // a folder with no process
+    HANDLE self = GetCurrentProcess();
+    CHECK(!ImageIsGame(self, a.bin.wstring()) && !ImageIsGame(a.process, L"") && ImageIsGame(a.process, a.bin.wstring()));
+    CHECK(!ImageIsGame(a.process, b.bin.wstring()));
+
+    // EndTargets refuses a target whose creation time differs (a reused id), a target of another folder, and no bin.
+    int ended = 0, failed = 0;
+    GameProc stale = found[0]; stale.created += 12345;
+    EndTargets({ stale }, a.bin.wstring(), ended, failed);
+    CHECK(ended == 0 && failed == 1 && Alive(a) && Alive(b));
+    ended = failed = 0;
+    EndTargets(found, b.bin.wstring(), ended, failed);                          // a's process, b's folder
+    CHECK(ended == 0 && failed == 1 && Alive(a) && Alive(b));
+    ended = failed = 0;
+    EndTargets(found, L"", ended, failed);
+    CHECK(ended == 0 && failed == 1 && Alive(a));
+
+    // The Stop button's path. The ini names install a, so a is the game; b is another install.
+    const fs::path here = root / "stop-here";
+    Put(here / "sc-offline.ini", "game = " + a.bin.parent_path().string() + "\r\n");
+    g.here = here.wstring();
+    g.status = StatusReport{};
+    CHECK(_wcsicmp(StopBin().c_str(), a.bin.wstring().c_str()) == 0 || fs::equivalent(fs::path(StopBin()), a.bin));
+    g.gameUp = true;
+    StopGame();                       // no windows exist for either process: still recorded, so End can find it
+    CHECK(g.stopState == 1 && g.stopTargets.size() == 1 && g.stopTargets[0].pid == a.pid);
+    CHECK(g.stopNote == T(LocaleKey::StopNoWindow));
+    CHECK(Alive(a) && Alive(b));      // asking to close ended nothing
+    g.stopAt -= kStopWaitSeconds + 1;
+    TickStop();
+    CHECK(g.stopState == 2);          // 60 s later the confirm is offered
+    EndGame();                        // the confirm said yes
+    CHECK(WaitForSingleObject(a.process, 10000) == WAIT_OBJECT_0);
+    CHECK(Alive(b));                  // another install's process was never touched
+    CHECK(g.stopState == 0 && g.stopTargets.empty() && g.note == T(LocaleKey::EndDone));
+
+    // End with no recorded target does not scan for one.
+    EndGame();
+    CHECK(Alive(b) && g.note == T(LocaleKey::EndFailed));
+
+    // No folder known (no game = and no panel result): Stop refuses and touches nothing.
+    Put(here / "sc-offline.ini", "# no game here\r\n");
+    g.status = StatusReport{};
+    CHECK(StopBin().empty());
+    StopGame();
+    CHECK(g.stopState == 0 && g.stopTargets.empty() && g.note == T(LocaleKey::StopNoFolder) && Alive(b));
+    // A game = that doesn't resolve also refuses, even if the panel found something else.
+    Put(here / "sc-offline.ini", "game = " + (root / "nowhere").string() + "\r\n");
+    g.status.bin = b.bin.wstring(); g.status.folderKnown = true;
+    CHECK(StopBin().empty());
+    StopGame();
+    CHECK(g.stopState == 0 && Alive(b));
+    // The panel's folder is used when the ini names none (remembered path / detection).
+    Put(here / "sc-offline.ini", "# no game here\r\n");
+    StopGame();
+    CHECK(g.stopTargets.size() == 1 && g.stopTargets[0].pid == b.pid && Alive(b));   // recorded, not ended
+    g.stopState = 0; g.stopTargets.clear(); g.gameUp = false; g.status = StatusReport{};
+
+    Reap(a); Reap(b);
+}
+
+// The built sc-offline.exe, copied into a scratch folder with a minimal package layout: `status` must leave the
+// whole folder byte-identical (this covers the order of things in wmain, which RunStatus alone can't).
+static void TestStatusExe(const fs::path& root, const fs::path& exe) {
+    const fs::path here = root / "exe-here";
+    const fs::path bin = MakeGame(root / "exe-game");
+    fs::create_directories(here);
+    fs::copy_file(exe, here / "sc-offline.exe");
+    Put(here / "sc-offline.ini", "game = " + bin.parent_path().parent_path().string() + "\r\ncheck_updates = on\r\ndiscord_presence = off\r\n");
+    Put(here / "data" / "plugins" / "discord" / "plugin.ini", "name = Discord\r\n");
+    Put(here / "data" / "ships.txt", "ship\r\n");
+    const auto before = Snapshot(here);
+    wstring cmd = L"\"" + (here / "sc-offline.exe").wstring() + L"\" status";
+    STARTUPINFOW si{}; si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    CHECK(CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, here.c_str(), &si, &pi));
+    CloseHandle(pi.hThread);
+    const DWORD waited = WaitForSingleObject(pi.hProcess, 60000);
+    if (waited != WAIT_OBJECT_0) TerminateProcess(pi.hProcess, 1);               // by handle: it is our own child
+    CHECK(waited == WAIT_OBJECT_0);
+    DWORD code = 99;
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hProcess);
+    CHECK(code == 0);
+    CHECK(Snapshot(here) == before);
+    CHECK(!fs::exists(here / "data" / "launcher.log") && !fs::exists(here / "data" / "game-path.txt"));
+    // And with no data folder at all.
+    fs::remove_all(here / "data");
+    const auto bare = Snapshot(here);
+    cmd = L"\"" + (here / "sc-offline.exe").wstring() + L"\" status";
+    PROCESS_INFORMATION p2{};
+    CHECK(CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, here.c_str(), &si, &p2));
+    CloseHandle(p2.hThread);
+    CHECK(WaitForSingleObject(p2.hProcess, 60000) == WAIT_OBJECT_0);
+    CloseHandle(p2.hProcess);
+    CHECK(Snapshot(here) == bare && !fs::exists(here / "data"));
+}
+
 static void ResetHome() {
     Gui& g = g_gui;
     g.running.clear(); g.tail.clear(); g.question.clear(); g.questionKind = 0;
@@ -212,8 +375,8 @@ static void ResetHome() {
 static void TestHomeState() {
     Gui& g = g_gui;
     ResetHome();
-    // Repair (the old Uninstall) needs something left to undo and no game; the crash banner shows the same condition.
-    CHECK(!CommandEnabled(kActRepair));
+    // Repair (uninstall, safe to repeat) is usable whenever no command runs and the game is closed, leftovers or not.
+    CHECK(CommandEnabled(kActRepair));
     g.pcLeft = true;
     CHECK(CommandEnabled(kActRepair));
     g.pcLeft = false; g.hasLeftovers = true;
@@ -238,7 +401,7 @@ static void TestHomeState() {
 }
 
 int wmain(int argc, wchar_t** argv) {
-    CHECK(argc == 2);
+    CHECK(argc == 2 || argc == 3);
     SetEnvironmentVariableW(L"SC_OFFLINE_GUI", L"1");   // a failing `status` must not wait for Enter in a console
     fs::path owned(argv[1]);
     owned /= L"status-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64());
@@ -249,7 +412,9 @@ int wmain(int argc, wchar_t** argv) {
     TestStatusReadOnly(owned);
     TestStatusReport(owned);
     TestSessionLogs(owned);
+    TestStopTargets(owned);
     TestHomeState();
+    if (argc == 3) TestStatusExe(owned, fs::path(argv[2]));
     CHECK(fs::remove_all(owned) > 0);
     std::cout << "launcher status/config: " << checks << " checks passed; no child, helper, game or network command executed\n";
     return 0;

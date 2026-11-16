@@ -44,13 +44,14 @@ The sidebar has three pages (the fourth, Settings, opens from the top bar):
   question has four answers, **Delete**, **Keep**, **Always delete** and **Never delete** (see
   [Session logs](#session-logs)). **Play** and **Update** are disabled while a command runs and while the game runs.
   - **Stop**: while the game runs, **Play** becomes **Stop**. It posts WM_CLOSE to the visible top-level window(s)
-    of this install's `StarCitizen.exe` (the game folder the panel found; it never touches another install). The play
+    of this install's `StarCitizen.exe`: the game folder is resolved as Play does (`game =`, else the folder the panel
+    found), and Stop refuses when it isn't known; it never touches another install (PTU, another folder). The play
     command that started the game keeps waiting for it, so the usual cleanup runs when the game exits: the mod out,
     the PC changes undone. Nothing terminates the game automatically. If it is still running 60 seconds after Stop,
     the Actions card asks **"End the game process?"**; only **Yes** ends that process (the one that was asked to
     close, checked by its creation time), **No** leaves it alone and **Stop** can be pressed again.
   - **Repair banner**: when `%ProgramData%\sc-offline\pc-changes.txt` holds a record and the game is not running
-    (after a crash), a banner across the top of the page lists what is left and has the **Repair: undo PC changes**
+    (after a crash; not while a command such as Play runs), a banner across the top of the page lists what is left and has the **Repair: undo PC changes**
     button, which runs `uninstall`.
   - **Status panel**: the same read-only checks as `sc-offline.exe status`: the game folder and build, whether the
     mod is installed, PC changes left over, whether the network is blocked while you play, Easy Anti-Cheat, and how
@@ -64,8 +65,8 @@ The sidebar has three pages (the fourth, Settings, opens from the top bar):
 The top bar has the **Discord** switch (the Discord plugin, `data\plugins\discord`, used from the next Play), **Settings**
 (the Settings page), **Logs** (opens `data`), minimize and close. Drag the empty part of the bar to move the window.
 
-The **Settings** page has **Repair: undo PC changes** (enabled when something is left to undo and the game isn't
-running), the three-way **Game logs after a session** choice (**Ask each time**, **Always delete**, **Never delete**:
+The **Settings** page has **Repair: undo PC changes** (enabled whenever no command runs and the game is closed; it
+says "Nothing to repair" when there is nothing), the three-way **Game logs after a session** choice (**Ask each time**, **Always delete**, **Never delete**:
 `clean_logs` in `sc-offline.ini`), and **Edit sc-offline.ini**, which opens the file in Notepad. The language switch
 stays in the top bar.
 
