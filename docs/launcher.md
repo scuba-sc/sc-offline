@@ -27,7 +27,7 @@ sc-offline.exe [play|install|uninstall|status|update|help] [--game <folder>] [--
 
 Exit codes: `0` ok · `1` error · `2` Easy Anti-Cheat is active · `3` the game is running. The helper's own codes, in `launcher.log`: `5` a PC change failed.
 
-Everything the launcher prints also goes to `data\launcher.log` (rewritten each run; the helper appends to it), except for `status`, which writes nothing.
+Everything the launcher prints also goes to `data\launcher.log` (a new file each run: the previous one is kept as `launcher.log.1`, replacing any older `.1`, so the last session's Stop and End lines survive one more run; the helper appends to it), except for `status`, which writes nothing.
 
 ## The window
 

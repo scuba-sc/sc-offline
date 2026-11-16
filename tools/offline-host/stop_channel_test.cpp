@@ -232,6 +232,56 @@ int main() {
         CHECK(runs == 1);
     }
 
+    // Retired before the channel was created (the closure came early): Create answers at once and keeps it retired.
+    {
+        const DWORD pid = TestPid(9);
+        sc::HostChannel host;
+        Fake fake;
+        host.Retire();
+        CHECK(host.Create(pid));
+        const sc::Request r = sc::RequestStop(pid, 5000);
+        CHECK(r.outcome == sc::Outcome::Acknowledged && r.elapsedMs < 1000);
+        CHECK(!host.Poll([&] { fake.LauncherWork(); }) && fake.closures == 0);   // still retired: no work
+    }
+
+    // Retire racing a Poll that has claimed the work: the stopped event is never set before the work has ended,
+    // and it is set once the dust settles whichever side wins. (Stress: the interleavings differ run to run.)
+    for (unsigned round = 0; round < 300; ++round) {
+        const DWORD pid = TestPid(16 + (round % 8));
+        sc::HostChannel host;
+        CHECK(host.Create(pid));
+        wchar_t n[64];
+        sc::EventName(n, L"stopped", pid);
+        HANDLE stopped = OpenEventW(SYNCHRONIZE, FALSE, n);
+        HANDLE stop = OpenEventW(EVENT_MODIFY_STATE, FALSE, (sc::EventName(n, L"stop", pid), n));
+        CHECK(stopped && stop);
+        std::atomic<bool> started{false}, ended{false}, early{false}, go{false};
+        std::thread observer([&] {
+            while (!ended) {
+                if (WaitForSingleObject(stopped, 0) == WAIT_OBJECT_0 && started && !ended) early = true;
+            }
+        });
+        std::thread retirer([&] {
+            while (!go) {}
+            for (unsigned spin = round % 50; spin; --spin) {}
+            host.Retire();
+        });
+        SetEvent(stop);
+        go = true;
+        host.Poll([&] {
+            started = true;
+            for (volatile unsigned i = 0; i < 20000; ++i) {}   // the exit work takes a moment
+            ended = true;
+        });
+        if (!started) ended = true;   // retired first: no work, the observer may stop
+        retirer.join();
+        observer.join();
+        CHECK(!early);
+        CHECK(WaitForSingleObject(stopped, 1000) == WAIT_OBJECT_0);
+        CloseHandle(stop);
+        CloseHandle(stopped);
+    }
+
     std::puts("stop channel: all checks passed");
     return 0;
 }

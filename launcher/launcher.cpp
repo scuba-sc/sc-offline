@@ -125,9 +125,12 @@ static void Out(const char* fmt, ...) {
 
 static void OpenLog(const wstring& dataDir, bool append, const char* header) {
     const wstring file = dataDir + L"\\launcher.log";
-    // One truncation at the start of a run, then every writer appends: the window's Stop/End lines are appended
-    // to this file while the play child (or this process) has it open, and must not be overwritten by it.
-    if (!append) { if (FILE* t = _wfsopen(file.c_str(), L"w", _SH_DENYNO)) std::fclose(t); }
+    // A new run starts a new file; the previous one (the last session's Stop/End lines among it) is kept as
+    // launcher.log.1, replacing any older one. If it can't be renamed (another process holds it open) this run
+    // appends to it instead of wiping it. Every writer appends, so the window's Stop/End lines, appended while
+    // the play child has the file open, are not overwritten. `status` never gets here.
+    if (!append && GetFileAttributesW(file.c_str()) != INVALID_FILE_ATTRIBUTES)
+        MoveFileExW(file.c_str(), (file + L".1").c_str(), MOVEFILE_REPLACE_EXISTING);
     g_log = _wfsopen(file.c_str(), L"a", _SH_DENYNO);
     if (!g_log) return;
     SYSTEMTIME t; GetLocalTime(&t);
@@ -1724,6 +1727,7 @@ static std::vector<Found> DetectBin64(const wstring& here, const wstring& channe
 // A failed snapshot counts as "running": the caller must never delete the mod early.
 static bool GameRunning();
 static bool GameRunningIn(const wstring& bin);
+static bool GameMayBeRunningIn(const wstring& bin);
 static bool GameRunning() {
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snap == INVALID_HANDLE_VALUE) return true;
@@ -2383,7 +2387,7 @@ static int Helper(const wstring& op, const wstring& bin, DWORD parentPid, const 
     WaitForMultipleObjects(closed ? 2 : 1, waitFor, FALSE, INFINITE);
     if (closed) CloseHandle(closed);
     CloseHandle(parent);
-    while (GameRunningIn(g.bin)) Sleep(2000);
+    while (GameMayBeRunningIn(g.bin)) Sleep(2000);
     const int taken = TakeMod(g, false);
     const bool hadPc = !PcChangesLeft().empty();
     const int undone = UndoPcChanges(false);
@@ -2536,7 +2540,7 @@ static CheckResult SelfChecks(const wstring& here, const Config& cfg, const Game
         Out("Installed: yes, %s%s%s\n", inGame.what.c_str(), haveMarker ? ", since " : "",
             haveMarker ? Field(marker, "time").c_str() : "");
     else Out("Installed: no; Bin64 has another mod's dinput8.dll (it is set aside while you play)\n");
-    if ((haveMarker || inGame.ours) && inGame.present && !GameRunningIn(g.bin))
+    if ((haveMarker || inGame.ours) && inGame.present && !GameMayBeRunningIn(g.bin))
         Out("[!] the mod is still in the game folder (a crash, or `install`).\n"
             "    Run `sc-offline.exe uninstall` before going online.\n");
 
@@ -2546,7 +2550,7 @@ static CheckResult SelfChecks(const wstring& here, const Config& cfg, const Game
         r.pcLeftover = true;
         Out("[!] PC changes from a previous run (%s) are still in place:\n", Field(pcLeft, "time").c_str());
         DescribePcChanges(pcLeft);
-        if (!GameRunningIn(g.bin)) Out("    Run `sc-offline.exe uninstall` to undo them before going online.\n");
+        if (!GameMayBeRunningIn(g.bin)) Out("    Run `sc-offline.exe uninstall` to undo them before going online.\n");
     }
     if (!OnWine()) Out("Network:  %s%s\n", cfg.firewall ? "blocked for StarCitizen.exe, RSI Launcher.exe and CrashHandler.exe while you play (block_network)"
                                                          : "NOT blocked (block_network = off)",
@@ -3350,16 +3354,47 @@ static wstring FullPath(const wstring& p) {   // forward slashes and .. resolved
     return n && n < ARRAYSIZE(buf) ? wstring(buf, n) : p;
 }
 
-static bool ImageIsGame(HANDLE proc, const wstring& bin) {
-    if (bin.empty()) return false;
-    wchar_t path[MAX_PATH * 2];
-    DWORD n = ARRAYSIZE(path);
-    if (!QueryFullProcessImageNameW(proc, 0, path, &n)) return false;
-    return !_wcsicmp(FullPath(wstring(path, n)).c_str(), FullPath(bin + L"\\" + kGameExe).c_str());
+// A file's identity (volume serial + index), so a junction, a subst drive or an 8.3 spelling of the same folder
+// compares equal where the resolved path text does not. 1 = identified, 0 = no such file, -1 = couldn't tell.
+struct FileId { DWORD volume = 0, high = 0, low = 0; };
+static int FileIdentity(const wstring& path, FileId& id) {
+    HANDLE f = CreateFileW(path.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                           FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f == INVALID_HANDLE_VALUE) {
+        const DWORD e = GetLastError();
+        return e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND ? 0 : -1;
+    }
+    BY_HANDLE_FILE_INFORMATION info{};
+    const bool ok = GetFileInformationByHandle(f, &info) != FALSE;
+    CloseHandle(f);
+    if (!ok) return -1;
+    id = { info.dwVolumeSerialNumber, info.nFileIndexHigh, info.nFileIndexLow };
+    return 1;
 }
 
-// True when a process runs <bin>\StarCitizen.exe, this install's exe (the rule Stop uses). A failed snapshot counts
-// as running; with no bin nothing matches. A process that can't be opened is left out, as in FindGameProcs.
+enum class ImageMatch { Yes, No, Unknown };
+
+// Does `proc` run <bin>\StarCitizen.exe? Same path text, else the same file. No = certainly another file (or no such
+// exe in bin); Unknown = the image or the target could not be identified.
+static ImageMatch MatchImage(HANDLE proc, const wstring& bin) {
+    if (bin.empty()) return ImageMatch::No;
+    wchar_t path[MAX_PATH * 2];
+    DWORD n = ARRAYSIZE(path);
+    if (!QueryFullProcessImageNameW(proc, 0, path, &n)) return ImageMatch::Unknown;
+    const wstring image = FullPath(wstring(path, n)), target = FullPath(bin + L"\\" + kGameExe);
+    if (!_wcsicmp(image.c_str(), target.c_str())) return ImageMatch::Yes;
+    FileId a, b;
+    const int wanted = FileIdentity(target, b);
+    if (wanted == 0) return ImageMatch::No;
+    if (wanted != 1 || FileIdentity(image, a) != 1) return ImageMatch::Unknown;
+    return a.volume == b.volume && a.high == b.high && a.low == b.low ? ImageMatch::Yes : ImageMatch::No;
+}
+
+// Exact: only a certain match. Stop's target selection and End use this (refuse when unsure).
+static bool ImageIsGame(HANDLE proc, const wstring& bin) { return MatchImage(proc, bin) == ImageMatch::Yes; }
+
+// The window's "game is running": this install's exe, as Stop finds it (exact; a process that can't be opened or
+// identified is left out). With no bin nothing matches.
 static bool GameRunningIn(const wstring& bin) {
     if (bin.empty()) return false;
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -3372,6 +3407,33 @@ static bool GameRunningIn(const wstring& bin) {
         if (!h) continue;
         hit = ImageIsGame(h, bin);
         CloseHandle(h);
+    }
+    CloseHandle(snap);
+    return hit;
+}
+
+// The safety guards (double launch, uninstall/Repair, the waits for the game to hand over or close): conservative.
+// Any StarCitizen.exe that can't be opened or whose image can't be identified counts as running; only a process
+// certainly of another file does not. A failed snapshot counts as running too. No bin: any process of that name.
+static bool GameMayBeRunningIn(const wstring& bin) {
+    if (bin.empty()) return GameRunning();
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE) return true;
+    static DWORD lastNoted = 0;   // note each unidentifiable process once, not every 2 s of a wait loop
+    PROCESSENTRY32W pe{}; pe.dwSize = sizeof(pe);
+    bool hit = false;
+    for (BOOL ok = Process32FirstW(snap, &pe); ok && !hit; ok = Process32NextW(snap, &pe)) {
+        if (_wcsicmp(pe.szExeFile, kGameExe)) continue;
+        HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pe.th32ProcessID);
+        const ImageMatch m = h ? MatchImage(h, bin) : ImageMatch::Unknown;
+        if (h) CloseHandle(h);
+        if (m == ImageMatch::No) continue;
+        hit = true;
+        if (m == ImageMatch::Unknown && lastNoted != pe.th32ProcessID) {
+            lastNoted = pe.th32ProcessID;
+            Out("[i] a %ls (process %lu) could not be identified; counting the game as running\n", kGameExe,
+                static_cast<unsigned long>(pe.th32ProcessID));
+        }
     }
     CloseHandle(snap);
     return hit;
@@ -5217,7 +5279,7 @@ int wmain(int argc, wchar_t** argv) {
     const CheckResult checks = SelfChecks(here, cfg, g);
     Out("\n");
 
-    const bool running = GameRunningIn(g.bin);
+    const bool running = GameMayBeRunningIn(g.bin);
     if (command == L"uninstall") {
         if (running) return FailCode(kExitRunning, "%ls is running. Close it first.", kGameExe);
         if (dry) return (TakeMod(g, true) | UndoPcChanges(true)) ? kExitError : kExitOk;
@@ -5323,7 +5385,7 @@ int wmain(int argc, wchar_t** argv) {
         Out("\nPlaying. When the game closes, the mod is removed from Bin64.\n");
         WaitForSingleObject(pi.hProcess, INFINITE);
         CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
-        while (GameRunningIn(g.bin)) Sleep(2000);   // the game can hand over to a second StarCitizen.exe
+        while (GameMayBeRunningIn(g.bin)) Sleep(2000);   // the game can hand over to a second StarCitizen.exe
         // Take the mod out and undo the PC changes now, before any question below: a question
         // left unanswered must not keep the game folder modded or the firewall rules in place.
         if (closed) SetEvent(closed);

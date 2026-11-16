@@ -281,6 +281,22 @@ static void Reap(Dummy& d) {
     }
 }
 
+// A directory junction (no privilege needed), made by the system's own cmd.exe; removed with RemoveDirectoryW,
+// which takes the junction away and leaves its target alone.
+static bool MakeJunction(const fs::path& link, const fs::path& target) {
+    const fs::path cmdExe = fs::path(EnvOr(L"SystemRoot", L"C:\\Windows")) / "System32" / "cmd.exe";
+    wstring cmd = L"\"" + cmdExe.wstring() + L"\" /c mklink /J \"" + link.wstring() + L"\" \"" + target.wstring() + L"\"";
+    STARTUPINFOW si{}; si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    if (!CreateProcessW(nullptr, cmd.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) return false;
+    CloseHandle(pi.hThread);
+    DWORD code = 1;
+    WaitForSingleObject(pi.hProcess, 20000);
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hProcess);
+    return code == 0 && fs::exists(link);
+}
+
 static bool Has(const std::vector<GameProc>& v, DWORD pid) {
     for (const GameProc& p : v) if (p.pid == pid) return true;
     return false;
@@ -304,6 +320,23 @@ static void TestStopTargets(const fs::path& root) {
     CHECK(GameRunningIn(a.bin.wstring()) && GameRunningIn(b.bin.wstring()));
     CHECK(!GameRunningIn((root / "stop-none" / "Bin64").wstring()) && !GameRunningIn(L""));
     CHECK(GameRunning());
+    CHECK(GameMayBeRunningIn(a.bin.wstring()) && !GameMayBeRunningIn((root / "stop-none" / "Bin64").wstring()));
+
+    // The same install spelled through a junction: the resolved image path of the process does not equal that text,
+    // but it is the same file. Stop's selection, the window and the conservative guards all still see it, and the
+    // other install's process is still not matched.
+    {
+        const fs::path link = root / "stop-junction";
+        CHECK(MakeJunction(link, a.bin.parent_path()));
+        const wstring viaLink = (link / "Bin64").wstring();
+        CHECK(FullPath(viaLink) != FullPath(a.bin.wstring()));
+        CHECK(ImageIsGame(a.process, viaLink) && !ImageIsGame(b.process, viaLink));
+        const std::vector<GameProc> via = FindGameProcs(viaLink);
+        CHECK(via.size() == 1 && via[0].pid == a.pid);
+        CHECK(GameRunningIn(viaLink) && GameMayBeRunningIn(viaLink));
+        RemoveDirectoryW(link.c_str());
+        CHECK(!fs::exists(link) && fs::exists(a.bin / "StarCitizen.exe"));
+    }
 
     // EndTargets refuses a target whose creation time differs (a reused id), a target of another folder, and no bin.
     int ended = 0, failed = 0;
@@ -459,7 +492,8 @@ static void TestLauncherLogAppend(const fs::path& root) {
     Out("child line 3\n");
     std::fclose(g_log); g_log = nullptr;
     const std::string log = Get(data / "launcher.log");
-    CHECK(At(log, "old session") == std::string::npos);
+    CHECK(At(log, "old session") == std::string::npos);   // the previous run was set aside, not mixed in
+    CHECK(Get(data / "launcher.log.1") == "old session\n");
     CHECK(At(log, "child line 1") < At(log, "stop line 1") && At(log, "stop line 1") < At(log, "child line 2"));
     CHECK(At(log, "child line 2") < At(log, "stop line 2") && At(log, "stop line 2") < At(log, "child line 3"));
     // The helper appends too (append = true): still nothing is lost.
@@ -469,8 +503,42 @@ static void TestLauncherLogAppend(const fs::path& root) {
     Out("helper line 2\n");
     std::fclose(g_log); g_log = nullptr;
     const std::string both = Get(data / "launcher.log");
+    CHECK(Get(data / "launcher.log.1") == "old session\n");   // appending (the helper) rotates nothing
     CHECK(At(both, "child line 3") != std::string::npos && At(both, "stop line 3") != std::string::npos &&
           At(both, "helper line 2") != std::string::npos && At(both, "stop line 1") != std::string::npos);
+}
+
+// A new (non-status) run keeps the last session's lines, Stop/End among them, as launcher.log.1 and starts a new
+// file; a second new run replaces .1 with the session before it. `status` never touches either (it does not open
+// the log at all: TestStatusReadOnly).
+static void TestLogRotation(const fs::path& root) {
+    Gui& g = g_gui;
+    const fs::path here = root / "rot-here", data = here / "data";
+    g.here = here.wstring();
+    fs::create_directories(data);
+    OpenLog(data.wstring(), false, "run one");
+    CHECK(g_log && !fs::exists(data / "launcher.log.1"));   // no earlier file: nothing to keep
+    Out("session one\n");
+    StopLog("Stop pressed: session one");
+    std::fclose(g_log); g_log = nullptr;
+    OpenLog(data.wstring(), false, "run two");
+    Out("session two\n");
+    std::fclose(g_log); g_log = nullptr;
+    std::string kept = Get(data / "launcher.log.1"), now = Get(data / "launcher.log");
+    CHECK(At(kept, "session one") != std::string::npos && At(kept, "Stop pressed: session one") != std::string::npos);
+    CHECK(At(now, "session two") != std::string::npos && At(now, "session one") == std::string::npos);
+    OpenLog(data.wstring(), false, "run three");
+    std::fclose(g_log); g_log = nullptr;
+    kept = Get(data / "launcher.log.1");
+    CHECK(At(kept, "session two") != std::string::npos && At(kept, "session one") == std::string::npos);   // .1 is replaced
+    // A held-open file that can't be renamed is appended to, never wiped.
+    FILE* hold = _wfsopen((data / "launcher.log").c_str(), L"a", _SH_DENYNO);
+    CHECK(hold);
+    std::fputs("held line\n", hold); std::fflush(hold);
+    OpenLog(data.wstring(), false, "run four");
+    std::fclose(g_log); g_log = nullptr;
+    std::fclose(hold);
+    CHECK(At(Get(data / "launcher.log"), "held line") != std::string::npos);
 }
 
 static void TestStopChannel(const fs::path& root) {
@@ -727,6 +795,7 @@ int wmain(int argc, wchar_t** argv) {
     TestSessionLogs(owned);
     TestStopTargets(owned);
     TestLauncherLogAppend(owned);
+    TestLogRotation(owned);
     TestStopChannel(owned);
     TestHomeState();
     TestStatusRows();

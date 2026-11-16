@@ -33,8 +33,9 @@ public:
         HANDLE stop = CreateEventW(nullptr, TRUE, FALSE, name);
         if (!stop || GetLastError() == ERROR_ALREADY_EXISTS) return Fail(error, stopped, stop);
         stopped_ = stopped;
-        retired_.store(false, std::memory_order_relaxed);
         stop_.store(stop, std::memory_order_release);   // published last
+        // Retired before the channel existed (the closure was reached early): nothing to wait for, answer at once.
+        if (retired_.load()) SetEvent(stopped_);
         return true;
     }
     bool Created() const { return stop_.load(std::memory_order_acquire) != nullptr; }
@@ -49,8 +50,14 @@ public:
     // messages inside the work) or a call after Retire does nothing.
     template <class Work>
     bool Poll(Work&& work) {
-        if (!Created() || done_.load() || retired_.load() || running_.load() || !Requested()) return false;
-        running_.store(true);
+        if (!Created() || done_.load() || retired_.load() || !Requested()) return false;
+        if (running_.exchange(true)) return false;   // claimed by a running call (a re-entrant one)
+        if (retired_.load()) {
+            // Retired between the check and the claim: Retire may have seen the claim and left the answer to us.
+            running_.store(false);
+            SetEvent(stopped_);
+            return false;
+        }
         work();
         done_.store(true);
         running_.store(false);
