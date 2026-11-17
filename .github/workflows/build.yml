@@ -609,6 +609,18 @@ jobs:
       - name: Launcher UTF-8 text, glyphs and atomic language settings
         run: python tools/check_launcher_localization.py
 
+  # The read-only MCP server (`sc-offline.exe mcp`): protocol, tools and redaction over a fake platform; headless.
+  # The stdio proof against a built launcher (`python tools/check_launcher_mcp.py --exe <sc-offline.exe>`, which also
+  # proves the server writes nothing) is left for local use: this job builds no launcher.
+  launcher-mcp:
+    runs-on: windows-2025-vs2026
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: MCP protocol, tool schemas, log limits and redaction
+        run: python tools/check_launcher_mcp.py
+
   # Contracts: the built-in is gone (G1 refuses builtin inputs with early DataCore), so its
   # published-SDK proof is what stands between the feature and shipping nothing. Refuses in game
   # until the missions/economy providers land; no built-in fallback, no host-side tick.

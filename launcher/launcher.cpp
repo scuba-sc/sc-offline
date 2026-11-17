@@ -45,6 +45,8 @@
 #include <cstdio>
 #include <cstring>
 #include <cwctype>
+#include <fcntl.h>
+#include <io.h>
 #include <share.h>
 #include <ctime>
 #include <algorithm>
@@ -55,6 +57,7 @@
 #include "install_identity_win32.h"
 #include "localization_win32.h"
 #include "locale_ru_builtin.h"
+#include "mcp_server.h"
 #include "plugin_startup_snapshot.h"
 #include "../src/version.h"
 #include "../src/private_network_ranges.h"
@@ -5131,6 +5134,149 @@ static int RunGui() {
     return kExitOk;
 }
 
+// `mcp`: a read-only MCP server for AI agents on stdin/stdout (launcher/mcp_server.h has the protocol and the
+// four tools: status, plugins, logs, settings). It exposes no command or action. Like `status` it creates and
+// changes nothing (no data\ folder, no launcher.log, no network); the logs and the ini are opened for reading
+// with every sharing mode, so a running game is not disturbed. stdout carries only JSON-RPC lines: the launcher's
+// own Out() (used by ReadConfig and the game search) is pointed at stderr for the whole session.
+static void ReadFileRange(const wstring& path, size_t maxBytes, sco::launcher::mcp::LogRead& out) {
+    out.exists = out.skippedOlder = false;
+    out.error.clear();
+    out.bytes.clear();
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                           nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f == INVALID_HANDLE_VALUE) {
+        const DWORD e = GetLastError();
+        if (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND) return;
+        out.exists = true;
+        out.error = "the file could not be opened (Windows error " + std::to_string(e) + ")";
+        return;
+    }
+    out.exists = true;
+    LARGE_INTEGER size{};
+    if (!GetFileSizeEx(f, &size)) {
+        out.error = "the file size could not be read (Windows error " + std::to_string(GetLastError()) + ")";
+        CloseHandle(f);
+        return;
+    }
+    LARGE_INTEGER start{};
+    if ((unsigned long long)size.QuadPart > maxBytes) { start.QuadPart = size.QuadPart - (LONGLONG)maxBytes; out.skippedOlder = true; }
+    if (!SetFilePointerEx(f, start, nullptr, FILE_BEGIN)) {
+        out.error = "the file could not be read (Windows error " + std::to_string(GetLastError()) + ")";
+        CloseHandle(f);
+        return;
+    }
+    char buf[65536]; DWORD got = 0;
+    while (out.bytes.size() < maxBytes &&
+           ReadFile(f, buf, (DWORD)std::min<size_t>(sizeof(buf), maxBytes - out.bytes.size()), &got, nullptr) && got)
+        out.bytes.append(buf, got);
+    CloseHandle(f);
+}
+
+static int RunMcp(const wstring& here) {
+    using namespace sco::launcher;
+    // The protocol's stdout is a private copy of the real one; fd 1 (and so every printf) now goes to stderr.
+    std::fflush(stdout);
+    const int protocolOut = _dup(_fileno(stdout));
+    if (protocolOut < 0 || _dup2(_fileno(stderr), _fileno(stdout)) != 0) {
+        std::fprintf(stderr, "sc-offline mcp: stdout is not available\n");
+        return kExitError;
+    }
+    _setmode(protocolOut, _O_BINARY);
+    _setmode(_fileno(stdin), _O_BINARY);
+    std::fprintf(stderr, "sc-offline mcp: read-only server on stdio, %s\n", SCO_VERSION);
+
+    wstring gameBin;   // the game folder the last status check found: the game's Game.log sits next to it
+    mcp::Platform platform;
+    platform.version = SCO_VERSION;
+    const wstring profile = EnvOr(L"USERPROFILE", L"");
+    if (!profile.empty()) platform.profileRoots.push_back(Narrow(profile));
+
+    platform.status = [&] {
+        const StatusReport r = CollectStatus(here);
+        gameBin = r.bin;
+        mcp::StatusInfo s;
+        s.launcherVersion = SCO_VERSION;
+        s.gameFolderFound = r.folderKnown;
+        s.gameFolder = Narrow(r.bin);
+        s.gameBuild = r.build;
+        s.modInstalled = r.modInstalled;
+        s.eac = r.eac == Eac::Active ? "active" : r.eac == Eac::Disabled ? "disabled" : "not_installed";
+        s.networkBlocked = r.networkBlocked;
+        s.eacRename = r.eacRename;
+        s.pluginsSettingOn = r.pluginsOn;
+        s.pluginsEnabled = r.pluginsEnabled;
+        s.pluginsTotal = r.pluginsTotal;
+        s.pcChangesLeft = r.pcLeft;
+        s.wine = r.wine;
+        s.gameRunning = GameRunningIn(r.bin);   // this install's exe only; no game folder known: not running
+        return s;
+    };
+    platform.plugins = [&] {
+        std::vector<mcp::PluginFolder> folders;
+        const wstring dir = here + L"\\data\\plugins";
+        WIN32_FIND_DATAW fd;
+        HANDLE h = FindFirstFileW((dir + L"\\*").c_str(), &fd);
+        if (h == INVALID_HANDLE_VALUE) return folders;
+        do {
+            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == L'.') continue;
+            const wstring folder = dir + L"\\" + fd.cFileName;
+            if (!IsFile(folder + L"\\plugin.ini") || folders.size() >= 4096) continue;
+            mcp::LogRead ini;
+            ReadFileRange(folder + L"\\plugin.ini", 64 * 1024, ini);
+            mcp::PluginFolder p;
+            p.folder = Narrow(fd.cFileName);
+            p.iniText = ini.bytes;
+            p.disabled = GetFileAttributesW((folder + L"\\disabled").c_str()) != INVALID_FILE_ATTRIBUTES;
+            folders.push_back(std::move(p));
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+        return folders;
+    };
+    platform.readLog = [&](const std::string& log, size_t maxBytes) {
+        wstring path;
+        if (log == "mod") path = here + L"\\data\\mod.log";
+        else if (log == "launcher") path = here + L"\\data\\launcher.log";
+        else if (log == "launcher_previous") path = here + L"\\data\\launcher.log.1";
+        else {
+            if (gameBin.empty()) gameBin = CollectStatus(here).bin;
+            if (!gameBin.empty()) path = ParentDir(gameBin) + L"\\Game.log";
+        }
+        mcp::LogRead r;
+        r.path = Narrow(path);
+        if (!path.empty()) ReadFileRange(path, maxBytes, r);
+        return r;
+    };
+    platform.settings = [&] {
+        const wstring path = here + L"\\sc-offline.ini";
+        mcp::LogRead f;
+        ReadFileRange(path, 256 * 1024, f);
+        mcp::IniRead r;
+        r.path = Narrow(path);
+        r.exists = f.exists;
+        r.error = f.error;
+        r.text = f.bytes;
+        return r;
+    };
+
+    mcp::Server server(std::move(platform));
+    mcp::Serve(server,
+        [](char* buf, size_t n) {
+            const int got = _read(_fileno(stdin), buf, (unsigned)std::min<size_t>(n, 1u << 16));
+            return got > 0 ? (size_t)got : (size_t)0;   // end of input or a read error ends the session
+        },
+        [protocolOut](const std::string& line) {
+            const std::string out = line + "\n";
+            for (size_t at = 0; at < out.size();) {
+                const int put = _write(protocolOut, out.data() + at, (unsigned)std::min<size_t>(out.size() - at, 1u << 16));
+                if (put <= 0) return false;   // the client went away
+                at += (size_t)put;
+            }
+            return true;
+        });
+    return kExitOk;
+}
+
 static const char* kUsage =
     "usage: sc-offline.exe [command] [--game <folder>] [--dry-run] [--skip-eac-check]\n"
     "\n"
@@ -5138,6 +5284,7 @@ static const char* kUsage =
     "  install    copy the mod in and leave it there; run `uninstall` before going online\n"
     "  uninstall  take the mod out and restore anything it replaced\n"
     "  status     check the setup and report; read-only (no writes, no network)\n"
+    "  mcp        MCP server on stdin/stdout for AI agents; read-only (status, plugins, logs, settings)\n"
     "  update     check GitHub for a newer sc-offline and offer to install it (saves and ini kept)\n"
     "  help       show this\n"
     "\n"
@@ -5178,7 +5325,7 @@ int wmain(int argc, wchar_t** argv) {
         else if (!_wcsicmp(a, L"--console")) {}
         else if (!_wcsicmp(a, L"--skip-eac-check")) skipEac = true;
         else if (!sawCommand && (!_wcsicmp(a, L"play") || !_wcsicmp(a, L"install") || !_wcsicmp(a, L"uninstall") ||
-                                 !_wcsicmp(a, L"status") || !_wcsicmp(a, L"update") || !_wcsicmp(a, L"help"))) {
+                                 !_wcsicmp(a, L"status") || !_wcsicmp(a, L"update") || !_wcsicmp(a, L"help") || !_wcsicmp(a, L"mcp"))) {
             command = a; sawCommand = true;
         } else if (!_wcsicmp(a, L"--help") || !_wcsicmp(a, L"-h") || !_wcsicmp(a, L"/?")) {
             command = L"help"; sawCommand = true;
@@ -5192,6 +5339,10 @@ int wmain(int argc, wchar_t** argv) {
 
     const wstring here = ExeDir();
     if (command == L"status") return RunStatus(here, gameArg);   // before anything below that writes
+    if (command == L"mcp") {   // likewise: nothing may be written, and stdout belongs to the protocol
+        if (!gameArg.empty()) std::fprintf(stderr, "sc-offline mcp: --game is ignored; set game = in sc-offline.ini\n");
+        return RunMcp(here);
+    }
     const wstring data = here + L"\\data";
     CreateDirectoryW(data.c_str(), nullptr);   // a fresh unzip may not have it yet
     std::string header = "sc-offline.exe";

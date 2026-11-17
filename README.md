@@ -92,6 +92,7 @@ Build success and resolved signatures do not establish gameplay correctness. Out
 | [Architecture](docs/architecture.md) · [Status](docs/status.md) | Layer boundaries, migration progress and verification limits |
 | [Launcher](docs/launcher.md) · [Linux](docs/linux.md) | Setup, configuration, updates, recovery and experimental Wine support |
 | [Features](docs/features.md) · [Data files](docs/data-files.md) | User-facing capabilities, catalogs and saves |
+| [AI agents](docs/ai-agents.md) | Connect Claude, Codex, Cursor or VS Code to your install (`sc-offline.exe mcp`) and to the SDK and sandbox MCP servers |
 
 Offline play is the scope: no connection to CIG servers or online services, no anti-cheat bypass, no telemetry and no account or entitlement changes (see [CONTRIBUTING](CONTRIBUTING.md) and [SECURITY](SECURITY.md)). Optional co-presence lives separately in [sc-mp](https://github.com/scuba-sc/sc-mp); it and the optional [cross-game bridges](docs/bridges.md) are excluded from the standard release.
 

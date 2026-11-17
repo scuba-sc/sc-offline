@@ -5,7 +5,7 @@ The launcher starts the game with the mod and takes the mod out again when the g
 ## Commands
 
 ```text
-sc-offline.exe [play|install|uninstall|status|update|help] [--game <folder>] [--dry-run] [--skip-eac-check]
+sc-offline.exe [play|install|uninstall|status|mcp|update|help] [--game <folder>] [--dry-run] [--skip-eac-check]
 ```
 
 | Command | What it does |
@@ -14,6 +14,7 @@ sc-offline.exe [play|install|uninstall|status|update|help] [--game <folder>] [--
 | `install` | Copies the mod in and leaves it there, for starting the game some other way. Run `uninstall` before going online. Command line only: the [window](#the-window) has no Install button. |
 | `uninstall` | Takes the mod out, puts back anything it replaced, and undoes leftover [PC changes](#pc-changes). Refuses while the game is running. The window's **Repair: undo PC changes** runs it. |
 | `status` | Runs the [checks below](#checks-it-runs-every-time) and is read-only: it writes no file (not `data\launcher.log`, not `data\game-path.txt`), doesn't migrate `discord_presence`, doesn't settle an interrupted update, doesn't open the folder picker and makes no network request (no update check). If the game folder can't be found it says so; `play` still remembers what it finds. The window's Status panel runs the same checks. |
+| `mcp` | Runs a read-only [MCP server for AI agents](ai-agents.md) on stdin/stdout: status (the same checks as `status`), installed plugins, log tails and `sc-offline.ini`. Like `status` it writes nothing and makes no network request; it runs no command and changes no setting. |
 | `update` | Checks GitHub for a newer sc-offline and offers to install it; see [Updates](#updates). |
 | `help` | Prints the usage. |
 

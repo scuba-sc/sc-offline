@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-3.0-only
+cmake_minimum_required(VERSION 3.20)
+project(launcher_mcp_checks LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+enable_testing()
+add_executable(launcher_mcp_test ../launcher_mcp_test.cpp)
+add_test(NAME launcher_mcp COMMAND launcher_mcp_test)
+if(MSVC)
+  target_compile_options(launcher_mcp_test PRIVATE /W4 /WX)
+else()
+  target_compile_options(launcher_mcp_test PRIVATE -Wall -Wextra -Werror)
+endif()
