@@ -374,10 +374,17 @@ void Workflow(bool populated) {
         Require(submits==2 && sq42.outfit_index==-1,"old callback remains stale after the new generation is published");
         Select("loadout.sq42",sq42,101,0);
         async_cap=false; TickNow();
-        Require(sq42.flags.at(106)&SCO_WIDGET_DISABLED && sq42.flags.count(115),"outfit submission disabled without capability, with a plain notice");
+        Require(sq42.flags.count(115) && !sq42.flags.count(135) && !sq42.flags.count(101) && !sq42.flags.count(106) && !sq42.flags.count(137) && !sq42.flags.count(138) && sq42.flags.count(123) && sq42.flags.count(132),
+                "without the capability the outfit section is one plain notice and Ships and Objects stay");
         Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON); Require(submits==2,"forged unavailable outfit refused");
+        Select("loadout.sq42",sq42,101,0); Send("loadout.sq42",sq42,137,SCO_WIDGET_BUTTON); Send("loadout.sq42",sq42,138,SCO_WIDGET_BUTTON); Send("loadout.sq42",sq42,135,SCO_WIDGET_TEXT_INPUT,"");
+        Require(submits==2,"forged events for hidden outfit controls start nothing");
         async_cap=true; TickNow(); Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON);
         Require(submits==3 && captured.size()==1 && captured[0].slot==SC_LOADOUT_SLOT_HEAD && !std::strcmp(captured[0].item_class,"NewHelmet"),"selected outfit submitted");
+        async_cap=false; TickNow();
+        Require(sq42.flags.count(115) && sq42.flags.count(107) && sq42.flags.count(108) && !(sq42.flags.at(108)&SCO_WIDGET_DISABLED) && (sq42.flags.at(106)&SCO_WIDGET_DISABLED),
+                "async off with a job running keeps progress and Cancel, and the wear button is disabled");
+        async_cap=true; TickNow();
         Send("loadout.sq42",sq42,108,SCO_WIDGET_BUTTON); Require(cancels==3,"SQ42 releases job");
         auto before_bad_reload=sq42; files[1].bytes="[broken]\nnot a valid piece\n";
         char failure_reply[1024]{};

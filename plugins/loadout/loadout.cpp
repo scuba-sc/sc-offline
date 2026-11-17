@@ -868,8 +868,8 @@ void Publish() {
     // step 10: no buttons that only fail). A job already running keeps its progress and Cancel below.
     const bool can_equip=async_available || g.job;
     if (!can_equip) item_rows.clear();   // no gear picker is shown, so no gear row can be chosen
-    if (!async_available) add(SCO_WIDGET_LABEL,25,g.job ? "Changing gear from this menu has stopped working. You can still follow or cancel the change in progress."
-                                                       : "Changing gear from this menu is turned off in this build while it is being tested. Your gear is unchanged.");
+    if (!async_available) add(SCO_WIDGET_LABEL,25,g.job ? "Gear changes here have stopped working. You can still cancel the one in progress."
+                                                       : "Changing gear here is off in this build.");
     if (can_equip) {
     add(SCO_WIDGET_COLUMN,300,"Choose gear");
     under(300,SCO_WIDGET_TEXT_INPUT,1,"Search gear").text=g.filter.c_str();
@@ -974,7 +974,13 @@ void Publish() {
     else {
         // Outfit
         add(SCO_WIDGET_COLUMN,400,"Outfit");
-        if (!async_available) under(400,SCO_WIDGET_LABEL,115,"Changing outfits from this menu isn't available yet.");
+        // Same rule as the Gear page: without the async route nothing in this section can work, so it shows only
+        // why. A job already running keeps its progress and Cancel. Ships, Objects and the settings list do not
+        // need async and stay.
+        const bool can_wear=async_available || g.job;
+        if (!async_available) under(400,SCO_WIDGET_LABEL,115,g.job ? "Outfit changes here have stopped working. You can still cancel the one in progress."
+                                                                  : "Changing outfits here is off in this build.");
+        if (can_wear) {
         under(400,SCO_WIDGET_TEXT_INPUT,135,"Search outfits").text=g.outfit_filter.c_str();
         int32_t selected_row=-1;
         std::vector<size_t> outfit_matches;   // paged like the Player gear list: at most 64 rows per combo
@@ -989,6 +995,7 @@ void Publish() {
         under(401,SCO_WIDGET_BUTTON,137,"Previous page",g.outfit_page ? 0u : SCO_WIDGET_DISABLED);
         under(401,SCO_WIDGET_BUTTON,138,"Next page",static_cast<size_t>(g.outfit_page+1)*64<outfit_matches.size() ? 0u : SCO_WIDGET_DISABLED);
         under(400,SCO_WIDGET_BUTTON,106,"Wear selected outfit",selected_row>=0 && !g.job && async_available ? 0u : SCO_WIDGET_DISABLED);
+        }
         if (g.job || async_available) {
             under(400,SCO_WIDGET_LABEL,109,g.job_status);
             add(SCO_WIDGET_ROW,402,"").parent=400;

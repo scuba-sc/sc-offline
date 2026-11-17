@@ -63,7 +63,7 @@ enum : uint32_t { kRefresh = 10, kStatus = 11, kDiagnostics = 20, kInventory = 2
                   kActions = 22, kParameters = 23, kTable = 30, kActionName = 40,
                   kLookup = 41, kBrowseParams = 42, kRefreshCount = 43,
                   kPrevious = 50, kNext = 51, kTopRow = 2, kTabRow = 3, kSection = 4,
-                  kSearchRow = 5, kToolRow = 6, kPageRow = 7, kPageLabel = 52 };
+                  kSearchRow = 5, kToolRow = 6, kPageRow = 7, kPageLabel = 52, kView = 8 };
 const sco_widgets_v1* g_widgets = nullptr;
 bool g_panel = false;
 bool g_settings_subscribed = false;
@@ -354,7 +354,10 @@ bool RenderPanel() {
         addf("Inventory: %s", Word(g_snapshot.inventory_status));
         add(g_snapshot.sampled ? "Last update: refreshed by you" : "Last update: not refreshed yet");
     } else if (g_tab == kInventory) {
-        if (!g_snapshot.sampled || g_snapshot.inventory_status != SCO_OK) add("Inventory is not available. Press Refresh.");
+        // Say why there is nothing, and only point at Refresh when refreshing can help.
+        if (!g_snapshot.sampled) add("Not read yet. Press Refresh at the top of the page.");
+        else if (g_snapshot.inventory_status == SCO_UNAVAILABLE) add("Reading your inventory is turned off in this build.");
+        else if (g_snapshot.inventory_status != SCO_OK) add("The game did not return your inventory. Press Refresh at the top to try again.");
         else if (!g_snapshot.inventory.count) add("Inventory is empty.");
         else {
             const uint32_t total = g_snapshot.inventory.count;
@@ -385,6 +388,10 @@ bool RenderPanel() {
     if (pages) std::snprintf(page_text, sizeof(page_text), "Page %u of %u", g_page + 1, pages);
     const char* heading = g_tab == kInventory ? tr("inventory") : g_tab == kActions ? tr("actions") :
         g_tab == kParameters ? tr("parameters") : tr("diagnostics");
+    // A disabled button is barely dimmer, so the current view is also named in plain words.
+    char view_text[96]{};
+    const bool russian = locale && std::strcmp(locale, "ru") == 0;
+    std::snprintf(view_text, sizeof(view_text), "%s %s", russian ? "Сейчас открыто:" : "Viewing:", heading);
     sco_widget_node nodes[32]{};
     size_t count = 0;
     auto node = [&](uint32_t kind, uint32_t id, uint32_t parent, const char* label, uint32_t flags = 0) -> sco_widget_node& {
@@ -393,16 +400,17 @@ bool RenderPanel() {
         return n;
     };
     auto disabled_if = [](bool on) { return on ? static_cast<uint32_t>(SCO_WIDGET_DISABLED) : 0u; };
-    node(SCO_WIDGET_COLUMN, 1, 0, nullptr);
-    node(SCO_WIDGET_ROW, kTopRow, 1, nullptr);
+    // No outer column: an unlabelled container at the top of the page is a blank line above the first row.
+    node(SCO_WIDGET_ROW, kTopRow, 0, nullptr);
     node(SCO_WIDGET_BUTTON, kRefresh, kTopRow, tr("refresh"));
     node(SCO_WIDGET_LABEL, kStatus, kTopRow, g_widget_status);
-    node(SCO_WIDGET_ROW, kTabRow, 1, nullptr);
+    node(SCO_WIDGET_LABEL, kView, 0, view_text);
+    node(SCO_WIDGET_ROW, kTabRow, 0, nullptr);
     node(SCO_WIDGET_BUTTON, kDiagnostics, kTabRow, tr("diagnostics"), disabled_if(g_tab == kDiagnostics));
     node(SCO_WIDGET_BUTTON, kInventory, kTabRow, tr("inventory"), disabled_if(g_tab == kInventory));
     node(SCO_WIDGET_BUTTON, kActions, kTabRow, tr("actions"), disabled_if(g_tab == kActions));
     node(SCO_WIDGET_BUTTON, kParameters, kTabRow, tr("parameters"), disabled_if(g_tab == kParameters));
-    node(SCO_WIDGET_COLUMN, kSection, 1, heading);
+    node(SCO_WIDGET_COLUMN, kSection, 0, heading);
     if (g_tab == kActions) {
         node(SCO_WIDGET_ROW, kSearchRow, kSection, nullptr);
         // Lookup first: a text input fills the rest of its row, so a button after it would be pushed off.

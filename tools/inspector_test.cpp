@@ -61,7 +61,7 @@ void* widget_context = nullptr;
 int widget_sets = 0, widget_removes = 0;
 constexpr uint32_t W_REFRESH = 10, W_STATUS = 11, W_DIAGNOSTICS = 20, W_INVENTORY = 21, W_ACTIONS = 22,
     W_PARAMETERS = 23, W_TABLE = 30, W_ACTION_NAME = 40, W_LOOKUP = 41,
-    W_BROWSE = 42, W_COUNT = 43, W_PREVIOUS = 50, W_NEXT = 51, W_TOP_ROW = 2, W_TAB_ROW = 3,
+    W_BROWSE = 42, W_COUNT = 43, W_PREVIOUS = 50, W_NEXT = 51, W_TOP_ROW = 2, W_TAB_ROW = 3, W_VIEW = 8,
     W_SECTION = 4, W_SEARCH_ROW = 5, W_TOOL_ROW = 6, W_PAGE_ROW = 7, W_PAGE_LABEL = 52;
 uint32_t metadata_queries = 0;
 uint32_t metadata_calls = 0;
@@ -573,6 +573,9 @@ void InspectorLayoutAndPaging() {
     }
     CHECK(WidgetNode(W_TABLE)->parent == W_SECTION && WidgetNode(W_SECTION)->kind == SCO_WIDGET_COLUMN);
     CHECK(std::strcmp(WidgetNode(W_SECTION)->label, "Diagnostics") == 0);
+    // The current view is named in plain words, and no unlabelled container sits above the first row.
+    CHECK(WidgetNode(W_VIEW) && WidgetNode(W_VIEW)->kind == SCO_WIDGET_LABEL && std::strcmp(WidgetNode(W_VIEW)->label, "Viewing: Diagnostics") == 0);
+    CHECK(widget_nodes[0].id == W_TOP_ROW && widget_nodes[0].parent == 0 && !WidgetNode(1));
     CHECK(!WidgetNode(W_LOOKUP) && !WidgetNode(W_BROWSE) && !WidgetNode(W_PAGE_ROW));
     for (uint32_t n = 0; n < widget_node_count; ++n) {
         const std::string label = widget_nodes[n].label ? widget_nodes[n].label : "";
@@ -583,6 +586,7 @@ void InspectorLayoutAndPaging() {
     CHECK(WidgetNode(W_SEARCH_ROW) && WidgetNode(W_ACTION_NAME)->parent == W_SEARCH_ROW &&
           WidgetNode(W_LOOKUP)->parent == W_SEARCH_ROW);
     CHECK(WidgetNode(W_COUNT)->parent == W_TOOL_ROW && (WidgetNode(W_ACTIONS)->flags & SCO_WIDGET_DISABLED));
+    CHECK(std::strcmp(WidgetNode(W_VIEW)->label, "Viewing: Actions") == 0);
     // Parameters: browse sits in a row inside the section.
     WidgetEvent(W_PARAMETERS, SCO_WIDGET_BUTTON);
     CHECK(WidgetNode(W_BROWSE)->parent == W_TOOL_ROW && !WidgetNode(W_PAGE_ROW));
