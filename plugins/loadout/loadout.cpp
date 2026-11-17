@@ -868,7 +868,7 @@ void Publish() {
     add(SCO_WIDGET_COLUMN,300,"Choose gear");
     under(300,SCO_WIDGET_TEXT_INPUT,1,"Search gear").text=g.filter.c_str();
     auto& picker=under(300,SCO_WIDGET_COMBO,2,"Gear"); picker.items=options.empty() ? nullptr : options.data(); picker.item_count=static_cast<uint32_t>(options.size()); picker.index=-1;
-    add(SCO_WIDGET_ROW,301,"Gear list").parent=300;
+    add(SCO_WIDGET_ROW,301,"").parent=300;
     under(301,SCO_WIDGET_BUTTON,3,"Previous page",g.page ? 0u : SCO_WIDGET_DISABLED);
     under(301,SCO_WIDGET_BUTTON,4,"Next page",(g.page+1)*64<matches.size() ? 0u : SCO_WIDGET_DISABLED);
     under(301,SCO_WIDGET_BUTTON,8,"Refresh gear list");
@@ -876,7 +876,7 @@ void Publish() {
     text.push_back(g.equip.empty() ? "Selected: nothing yet" : "Selected: "+SelectionText());
     if (text.back().size()>250) text.back()=text.back().substr(0,247)+"...";
     under(300,SCO_WIDGET_LABEL,5,text.back().c_str());
-    add(SCO_WIDGET_ROW,302,"Gear actions").parent=300;
+    add(SCO_WIDGET_ROW,302,"").parent=300;
     under(302,SCO_WIDGET_BUTTON,27,"Equip selected gear",g.job || !async_available || g.equip.empty() ? SCO_WIDGET_DISABLED : 0u);
     under(302,SCO_WIDGET_BUTTON,7,"Clear selection",g.equip.empty() ? SCO_WIDGET_DISABLED : 0u);
     std::array<std::vector<const char*>,std::size(catalogue::kSlots)> curated_options;
@@ -927,7 +927,7 @@ void Publish() {
             slot.items=choices.data();slot.item_count=static_cast<uint32_t>(choices.size());slot.index=selected;chosen|=g.curated_picks[i]>0;
         }
     }
-    add(SCO_WIDGET_ROW,311,"Weapon actions").parent=310;
+    add(SCO_WIDGET_ROW,311,"").parent=310;
     under(311,SCO_WIDGET_BUTTON,221,"Equip chosen weapons",chosen&&!g.job&&async_available?0u:SCO_WIDGET_DISABLED);
     under(311,SCO_WIDGET_BUTTON,222,"Clear choices",chosen?0u:SCO_WIDGET_DISABLED);
     under(311,SCO_WIDGET_BUTTON,223,"Refresh weapon list");
@@ -936,7 +936,7 @@ void Publish() {
     if (g.job || async_available) {
         add(SCO_WIDGET_COLUMN,320,"Progress");
         under(320,SCO_WIDGET_LABEL,26,g.job_status);
-        add(SCO_WIDGET_ROW,321,"Progress actions").parent=320;
+        add(SCO_WIDGET_ROW,321,"").parent=320;
         under(321,SCO_WIDGET_BUTTON,23,"Check progress",g.job ? 0u : SCO_WIDGET_DISABLED);
         under(321,SCO_WIDGET_BUTTON,24,"Cancel equipping",g.job ? 0u : SCO_WIDGET_DISABLED);
     }
@@ -976,13 +976,13 @@ void Publish() {
             outfit_rows.push_back(outfit_matches[i]); text.push_back(Readable(g.lists.outfits[outfit_matches[i]].name)); options.push_back(text.back().c_str());
         }
         auto& outfit=under(400,SCO_WIDGET_COMBO,101,"Outfit"); outfit.items=options.empty() ? nullptr : options.data(); outfit.item_count=static_cast<uint32_t>(options.size()); outfit.index=selected_row;
-        add(SCO_WIDGET_ROW,401,"Outfit list").parent=400;
+        add(SCO_WIDGET_ROW,401,"").parent=400;
         under(401,SCO_WIDGET_BUTTON,137,"Previous page",g.outfit_page ? 0u : SCO_WIDGET_DISABLED);
         under(401,SCO_WIDGET_BUTTON,138,"Next page",static_cast<size_t>(g.outfit_page+1)*64<outfit_matches.size() ? 0u : SCO_WIDGET_DISABLED);
         under(400,SCO_WIDGET_BUTTON,106,"Wear selected outfit",selected_row>=0 && !g.job && async_available ? 0u : SCO_WIDGET_DISABLED);
         if (g.job || async_available) {
             under(400,SCO_WIDGET_LABEL,109,g.job_status);
-            add(SCO_WIDGET_ROW,402,"Outfit progress").parent=400;
+            add(SCO_WIDGET_ROW,402,"").parent=400;
             under(402,SCO_WIDGET_BUTTON,107,"Check progress",g.job ? 0u : SCO_WIDGET_DISABLED);
             under(402,SCO_WIDGET_BUTTON,108,"Cancel equipping",g.job ? 0u : SCO_WIDGET_DISABLED);
         }
@@ -1025,7 +1025,7 @@ void Publish() {
                 build_rows.push_back(i); text.push_back(Readable(g.lists.buildables[i])); builds.push_back(text.back().c_str());
             }
             auto& build=under(430,SCO_WIDGET_COMBO,130,"Object"); build.items=builds.empty() ? nullptr : builds.data(); build.item_count=static_cast<uint32_t>(builds.size()); build.index=build_row;
-            add(SCO_WIDGET_ROW,431,"Object list").parent=430;
+            add(SCO_WIDGET_ROW,431,"").parent=430;
             under(431,SCO_WIDGET_BUTTON,139,"Previous page",g.build_page ? 0u : SCO_WIDGET_DISABLED);
             under(431,SCO_WIDGET_BUTTON,140,"Next page",static_cast<size_t>(g.build_page+1)*64<g.lists.buildables.size() ? 0u : SCO_WIDGET_DISABLED);
             auto& ahead=under(430,SCO_WIDGET_SLIDER,131,"Distance ahead (m, 0 = at my feet)"); ahead.value=g.ahead; ahead.minimum=0; ahead.maximum=100;

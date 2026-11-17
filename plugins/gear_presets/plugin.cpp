@@ -161,12 +161,12 @@ void Publish() {
     // In the order a player uses it: check what you wear, save it, then compare or delete saved outfits.
     add(SCO_WIDGET_COLUMN,20,"Save what you're wearing");
     under(20,SCO_WIDGET_TEXT_INPUT,1,"Outfit name").text=g.name.c_str();
-    add(SCO_WIDGET_ROW,23,"Save actions").parent=20;
+    add(SCO_WIDGET_ROW,23,"").parent=20;
     under(23,SCO_WIDGET_BUTTON,2,"Check what I'm wearing");
     under(23,SCO_WIDGET_BUTTON,3,"Save outfit",g.fresh ? 0u : SCO_WIDGET_DISABLED);
     add(SCO_WIDGET_COLUMN,21,"Saved outfits");
     auto& picker=under(21,SCO_WIDGET_COMBO,5,"Saved outfit"); picker.items=names.empty()?nullptr:names.data(); picker.item_count=static_cast<uint32_t>(names.size()); picker.index=g.selection;
-    add(SCO_WIDGET_ROW,24,"Saved outfit actions").parent=21;
+    add(SCO_WIDGET_ROW,24,"").parent=21;
     under(24,SCO_WIDGET_BUTTON,6,"Compare with what I'm wearing",g.selection>=0 ? 0u : SCO_WIDGET_DISABLED);
     under(24,SCO_WIDGET_BUTTON,9,"Delete outfit",g.selection>=0 ? 0u : SCO_WIDGET_DISABLED);
     under(24,SCO_WIDGET_BUTTON,4,"Refresh list");
