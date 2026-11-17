@@ -864,7 +864,13 @@ void Publish() {
         text.push_back(ItemLabel(g.lists.items[row]));
         options.push_back(text.back().c_str()); item_rows.push_back(row);
     }
-    if (!async_available) add(SCO_WIDGET_LABEL,25,"Changing gear from this menu isn't available yet.");
+    // Without the game's async loadout route nothing on this page can work, so it shows only why (test card
+    // step 10: no buttons that only fail). A job already running keeps its progress and Cancel below.
+    const bool can_equip=async_available || g.job;
+    if (!can_equip) item_rows.clear();   // no gear picker is shown, so no gear row can be chosen
+    if (!async_available) add(SCO_WIDGET_LABEL,25,g.job ? "Changing gear from this menu has stopped working. You can still follow or cancel the change in progress."
+                                                       : "Changing gear from this menu is turned off in this build while it is being tested. Your gear is unchanged.");
+    if (can_equip) {
     add(SCO_WIDGET_COLUMN,300,"Choose gear");
     under(300,SCO_WIDGET_TEXT_INPUT,1,"Search gear").text=g.filter.c_str();
     auto& picker=under(300,SCO_WIDGET_COMBO,2,"Gear"); picker.items=options.empty() ? nullptr : options.data(); picker.item_count=static_cast<uint32_t>(options.size()); picker.index=-1;
@@ -879,12 +885,14 @@ void Publish() {
     add(SCO_WIDGET_ROW,302,"").parent=300;
     under(302,SCO_WIDGET_BUTTON,27,"Equip selected gear",g.job || !async_available || g.equip.empty() ? SCO_WIDGET_DISABLED : 0u);
     under(302,SCO_WIDGET_BUTTON,7,"Clear selection",g.equip.empty() ? SCO_WIDGET_DISABLED : 0u);
+    }
     std::array<std::vector<const char*>,std::size(catalogue::kSlots)> curated_options;
     std::array<std::vector<std::string>,std::size(catalogue::kSlots)> curated_labels;
     std::array<std::vector<int32_t>,std::size(catalogue::kSlots)> curated_rows;
     bool chosen=false;
     std::array<std::vector<weapon_types::Type>,2> type_rows;
     std::array<std::vector<const char*>,2> type_options;
+    if (can_equip) {
     add(SCO_WIDGET_COLUMN,310,"Weapons and tools");
     add(SCO_WIDGET_ROW,260,"").parent=310;   // the two weapon columns side by side, under the section heading
     constexpr size_t order[2][7]{{0,2,3,4,8,9,10},{1,5,6,7,11,12,13}};
@@ -903,9 +911,9 @@ void Publish() {
         for(size_t i=0;i<types.size();++i){labels.push_back(weapon_types::Label(types[i]));if(types[i]==g.weapon_type[group])type_index=static_cast<int32_t>(i);}
         auto& type=grouped(SCO_WIDGET_COMBO,244u+static_cast<uint32_t>(group),"Type");
         type.items=labels.data();type.item_count=static_cast<uint32_t>(labels.size());type.index=type_index;
-        grouped(SCO_WIDGET_TEXT_INPUT,240u+static_cast<uint32_t>(group),"Search weapons and tools").text=g.weapon_filters[group].c_str();
+        grouped(SCO_WIDGET_TEXT_INPUT,240u+static_cast<uint32_t>(group),"Find weapon").text=g.weapon_filters[group].c_str();
         for(const auto i:order[group]) {
-            if(i==order[group][1])grouped(SCO_WIDGET_TEXT_INPUT,242u+static_cast<uint32_t>(group),"Search attachments").text=g.attachment_filters[group].c_str();
+            if(i==order[group][1])grouped(SCO_WIDGET_TEXT_INPUT,242u+static_cast<uint32_t>(group),"Find attachment").text=g.attachment_filters[group].c_str();
             auto& choices=curated_options[i];choices.push_back("Keep current");
             auto& rows=curated_rows[i];rows={0};int32_t selected=0;
             if(g.curated) {
@@ -933,6 +941,7 @@ void Publish() {
     under(311,SCO_WIDGET_BUTTON,223,"Refresh weapon list");
     under(310,SCO_WIDGET_LABEL,224,"Anything left on Keep current stays as it is.");
     under(310,SCO_WIDGET_LABEL,225,g.curated_plain);
+    }
     if (g.job || async_available) {
         add(SCO_WIDGET_COLUMN,320,"Progress");
         under(320,SCO_WIDGET_LABEL,26,g.job_status);
