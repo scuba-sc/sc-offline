@@ -3,6 +3,7 @@
 #include "sc_loadout.h"
 #include "sco_content.h"
 #include "../picker.h"
+#include "readable_name.h"
 #include <array>
 #include <cstddef>
 #include <cstring>
@@ -48,15 +49,16 @@ inline std::string_view Alias(std::string_view value) {
     for(const auto& name:names)if(Same(value,name.cls))return name.label;
     return {};
 }
+// What the player reads. The raw class stays the identity that is sent; it is not shown.
 inline std::string Display(std::string_view value) {
     const auto alias=Alias(value);
-    return alias.empty()?std::string(value):std::string(alias)+" ["+std::string(value)+"]";
+    return alias.empty()?Readable(value):std::string(alias);
 }
 inline bool Contains(std::string_view text,std::string_view query) {
     return sco::picker::ContainsAsciiInsensitive(text,query);
 }
 inline bool Matches(std::string_view value,std::string_view query) {
-    return Contains(value,query)||Contains(Alias(value),query);
+    return Contains(value,query)||Contains(Alias(value),query)||Contains(Readable(value),query);
 }
 inline std::vector<int32_t> Rows(const std::vector<std::string>& classes,int32_t selected,std::string_view filter) {
     std::vector<int32_t> rows{0};

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Actual module, synthetic public providers; NOT Windows/game/effects evidence.
+#include "panel_dump.h"
 #include <sco_api.h>
 #include <sc_quantum.h>
 #include <sc_gamerules.h>
@@ -10,6 +11,7 @@
 #include <sc_relocation.h>
 #include <sc_spatial.h>
 #include <sco_storage.h>
+#include <algorithm>
 #include <array>
 #include <iterator>
 #ifdef NDEBUG
@@ -120,8 +122,16 @@ sc_gamerules_v1 rules{sizeof(rules),0,Rules,nullptr};
 sco_result Panel(sco_plugin*,const char* id,const char* title,const sco_widget_node* nodes,uint32_t n,uint32_t stride,sco_widget_event_fn fn,void* ctx) {
     assert(!std::strcmp(id,"quantum.travel") && !std::strcmp(title,"Travel")); assert(stride==sizeof(*nodes));
     if (panel_result!=SCO_OK) return panel_result; // public contract retains the prior panel/callback
+    { const auto why=sc_offline::panel_dump::Violation(nodes,n,stride); if (!why.empty()) std::printf("quantum.travel: %s\n",why.c_str()); assert(why.empty()); }
+    sc_offline::panel_dump::Record(id,title,nodes,n,stride);
     bool bookmarks=false,control=false;
+    std::vector<uint32_t> seen,chain; // sco_widgets.h: unique ids; parent is a preceding ROW/COLUMN; subtrees contiguous
     for (uint32_t i=0;i<n;++i) {
+        assert(nodes[i].id && std::find(seen.begin(),seen.end(),nodes[i].id)==seen.end()); seen.push_back(nodes[i].id);
+        if (!nodes[i].parent) chain.clear();
+        else { while (!chain.empty() && chain.back()!=nodes[i].parent) chain.pop_back(); assert(!chain.empty()); }
+        if (nodes[i].kind==SCO_WIDGET_ROW || nodes[i].kind==SCO_WIDGET_COLUMN) chain.push_back(nodes[i].id);
+        else assert(nodes[i].kind==SCO_WIDGET_LABEL || (nodes[i].label && nodes[i].label[0]));
         bookmarks |= nodes[i].id==3; control |= nodes[i].id==102;
         if (nodes[i].id==1) panel_status=nodes[i].label;
         if (nodes[i].id==3) {
@@ -129,7 +139,7 @@ sco_result Panel(sco_plugin*,const char* id,const char* title,const sco_widget_n
             for (uint32_t j=0;j<nodes[i].item_count;++j) bookmark_labels.emplace_back(nodes[i].items[j]);
         }
     }
-    assert(bookmarks && control); ++panels; event=fn; event_ctx=ctx; return SCO_OK;
+    assert(bookmarks); (void)control; /* the drive section is left out where the drive cannot be controlled; quantum-gamerules covers it */ ++panels; event=fn; event_ctx=ctx; return SCO_OK;
 }
 sco_result Remove(sco_plugin*,const char* id) { assert(!std::strcmp(id,"quantum.travel")); event=nullptr; event_ctx=nullptr; return SCO_OK; }
 sco_widgets_v1 widgets{};
@@ -225,10 +235,10 @@ void BookmarkWorkflow(sco_result(*load)(const sco_api*,sco_plugin*),void(*unload
     // Saving remains append-only: duplicate names and the existing schema/format survive.
     assert(Call("quantum.save_bookmark",&name,1)==SCO_OK&&bookmark_labels.size()==3&&selected_bookmark==-1);
     go(2,30);SelectBookmark(1);Send(9);
-    assert(bookmark_labels.size()==2&&bookmark_labels[0]=="A / Base"&&bookmark_labels[1]=="Unknown system / BASE");
+    assert(bookmark_labels.size()==2&&bookmark_labels[0]=="A / Base"&&bookmark_labels[1]=="BASE");
     const auto persisted=FileBytes(file);assert(persisted.find("spot 22.")==std::string::npos&&persisted.find("spot 11.")!=std::string::npos);
     reload();go(1,30);
-    assert(Call("quantum.delete_bookmark",&name,1)==SCO_OK&&bookmark_labels.size()==1&&bookmark_labels[0]=="Unknown system / BASE");
+    assert(Call("quantum.delete_bookmark",&name,1)==SCO_OK&&bookmark_labels.size()==1&&bookmark_labels[0]=="BASE");
     // Provider and capability refusal must never substitute another bookmark.
     seed(first+second);SelectBookmark(1);auto before=requests;relocation_cap=false;Send(15);assert(requests==before);relocation_cap=true;
     allow=0;Send(15);assert(requests==before);allow=1;
@@ -245,7 +255,7 @@ void BookmarkWorkflow(sco_result(*load)(const sco_api*,sco_plugin*),void(*unload
     Send(15);assert(requests==before); // fresh panel has no selection after collection mutation
     // Failed persistence retains both rows and the selected duplicate for an explicit retry.
     seed(first+second);SelectBookmark(1);const auto original=FileBytes(file);std::ofstream(file.string()+".new")<<"occupied";
-    Send(9);assert(bookmark_labels.size()==2&&selected_bookmark==1&&FileBytes(file)==original&&panel_status.find("Delete failed")!=std::string::npos);
+    Send(9);assert(bookmark_labels.size()==2&&selected_bookmark==1&&FileBytes(file)==original&&panel_status.find("Couldn't delete")!=std::string::npos);
     std::filesystem::remove(file.string()+".new");Send(9);assert(bookmark_labels.size()==1&&bookmark_labels[0]=="A / Base");
     // A failed set_panel leaves the old callback installed under the public contract.
     // It must remain inert until publication succeeds, even after data changes.

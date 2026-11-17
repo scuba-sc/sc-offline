@@ -130,14 +130,14 @@ void Lifecycle() {
     CHECK(Load(&api, owner) == SCO_OK); CHECK(commands.size() == 4);
     CHECK(std::strcmp(Query()->name, "npc") == 0);
     CHECK(SpawnOne() == SCO_OK && spawned == 1);
-    CHECK(Run("npc.observe") == SCO_OK); Contains("pending=1"); Contains("visible=0");
+    CHECK(Run("npc.observe") == SCO_OK); Contains("1 still appearing"); CHECK(reply.find("visible") == std::string::npos);
     streamed = true;
-    CHECK(Run("npc.observe") == SCO_OK); Contains("visible=1"); CHECK(transform_calls == 1);
+    CHECK(Run("npc.observe") == SCO_OK); Contains("1 visible"); CHECK(transform_calls == 1);
     CHECK(RemoveId(999) == SCO_NOT_FOUND && removed == 0);
     CHECK(RemoveId(101) == SCO_OK && removed == 1);
     CHECK(RemoveId(101) == SCO_NOT_FOUND && removed == 1);
     streamed = false;
-    CHECK(Run("npc.observe") == SCO_OK); Contains("removing=1");
+    CHECK(Run("npc.observe") == SCO_OK); Contains("1 being removed");
     Unload(); Unload(); CHECK(removed == 1);
     CHECK(Run("npc.observe") == SCO_UNAVAILABLE);
 }
@@ -177,7 +177,7 @@ void DeferredRemovalAndCleanup() {
     CHECK(Load(&api, owner) == SCO_OK); CHECK(SpawnOne() == SCO_OK);
     CHECK(!streamed); CHECK(RemoveId(101) == SCO_OK && removed == 1 && issued.empty()); // Pre-stream ticket.
     CHECK(despawn_attempts.at(101) == 1);
-    CHECK(Run("npc.observe") == SCO_OK); Contains("removing=1");
+    CHECK(Run("npc.observe") == SCO_OK); Contains("1 being removed");
     Unload(); Unload(); CHECK(removed == 1 && despawn_attempts.at(101) == 1);
     Reset(); api = Api(); CHECK(Load(&api, owner) == SCO_OK); CHECK(SpawnOne() == SCO_OK);
     remove_result = SCO_WRONG_THREAD;
@@ -229,9 +229,9 @@ void ProviderAndMemberNegatives() {
     entities.size = sizeof(entities); entities.alive = nullptr; CHECK(Run("npc.observe") == SCO_UNAVAILABLE); entities.alive = Alive;
     entities.get_transform = nullptr; CHECK(Run("npc.observe") == SCO_UNAVAILABLE); entities.get_transform = Transform;
     streamed = true; pose_pos[0] = std::numeric_limits<double>::infinity();
-    CHECK(Run("npc.observe") == SCO_OK); Contains("unknown=1"); Contains("visible=0");
+    CHECK(Run("npc.observe") == SCO_OK); Contains("1 couldn't be checked"); CHECK(reply.find("visible") == std::string::npos);
     pose_pos[0] = 1; transform_result = SCO_WRONG_THREAD;
-    CHECK(Run("npc.observe") == SCO_OK); Contains("unknown=1");
+    CHECK(Run("npc.observe") == SCO_OK); Contains("1 couldn't be checked");
     actors.size = offsetof(sc_actors_v1, despawn) + sizeof(actors.despawn) - 1;
     CHECK(RemoveId(101) == SCO_UNAVAILABLE && removed == 0); actors.size = sizeof(actors);
     Unload(); CHECK(removed == 1);

@@ -149,13 +149,13 @@ void Reservation() {
     Providers(); auto api = Api(); CHECK(test_module::Load(&api,owner) == SCO_OK);
     CHECK(Run("crew.fill","synthetic_actor") == SCO_OK);
     CHECK(Run("crew.sit","pilot 0") == SCO_FAILED);
-    CHECK(reply.find("reserved") != std::string::npos);
+    CHECK(reply.find("on their way") != std::string::npos);
     test_module::Unload(); commands.clear();
     Providers(); CHECK(test_module::Load(&api,owner) == SCO_OK);
     occupants[0] = 700;
     CHECK(Run("crew.sit","pilot 1") == SCO_OK);
     CHECK(Run("crew.sit","pilot 0") == SCO_OK);
-    CHECK(reply.find("Already seated") != std::string::npos);
+    CHECK(reply.find("already in that seat") != std::string::npos);
     uint32_t now = 1000; tick("tick",&now,nullptr);
     now = 3000; tick("tick",&now,nullptr);
     CHECK(seated == 0 && occupants[0] == 700 && occupants[1] == 0);
@@ -207,7 +207,7 @@ void Guards() {
 }
 void PartialForeignNoPlayer() {
     Providers(); partial = true; auto api = Api(); CHECK(test_module::Load(&api,owner) == SCO_OK);
-    CHECK(Run("crew.fill","synthetic_actor") == SCO_OK); CHECK(spawned == 1); CHECK(reply.find("partial seats=1") != std::string::npos);
+    CHECK(Run("crew.fill","synthetic_actor") == SCO_OK); CHECK(spawned == 1); CHECK(reply.find("Some seats weren't checked") != std::string::npos);
     CHECK(Run("crew.clear") == SCO_OK); CHECK(removed == 1); End();
     Providers(); unknown_usable = true; CHECK(test_module::Load(&api,owner) == SCO_OK);
     CHECK(Run("crew.fill","synthetic_actor") == SCO_FAILED); CHECK(spawned == 0);
@@ -220,7 +220,7 @@ void PartialForeignNoPlayer() {
     Providers(); player = false; CHECK(test_module::Load(&api,owner) == SCO_OK);
     CHECK(Run("crew.fill","synthetic_actor") == SCO_FAILED); CHECK(Run("crew.sit","pilot") == SCO_NOT_FOUND); CHECK(spawned == 0); End();
     Providers(); fail_spawn_at = 2; CHECK(test_module::Load(&api,owner) == SCO_OK);
-    CHECK(Run("crew.fill","synthetic_actor") == SCO_FAILED); CHECK(reply.find("Seating 1 owned") != std::string::npos);
+    CHECK(Run("crew.fill","synthetic_actor") == SCO_FAILED); CHECK(reply.find("Adding 1 crew member") != std::string::npos);
     CHECK(Run("crew.clear") == SCO_OK); CHECK(removed == 1); End();
     std::puts("PASS partial seats / unknown-unusable / foreign NPCs untouched / no player / partial spawn");
 }
@@ -239,7 +239,7 @@ void ReopenTimeoutPending() {
     now = 30000; tick("tick",&now,nullptr); CHECK(removed == 2); const auto calls = seated;
     remove_result = SCO_OK; now = 32000; tick("tick",&now,nullptr); CHECK(removed == 4 && seated == calls);
     now = 34000; tick("tick",&now,nullptr); CHECK(removed == 4);
-    CHECK(Run("crew.clear") == SCO_OK); CHECK(removed == 4); CHECK(reply.find("pending tickets=2") != std::string::npos); End();
+    CHECK(Run("crew.clear") == SCO_OK); CHECK(removed == 4); CHECK(reply.find("2 already being removed") != std::string::npos); End();
     // Accepted removals never make room in the finite session ticket budget.
     Providers(); CHECK(test_module::Load(&api,owner) == SCO_OK);
     for (int batch = 0; batch < 32; ++batch) { CHECK(Run("crew.fill","synthetic_actor") == SCO_OK); CHECK(Run("crew.clear") == SCO_OK); }

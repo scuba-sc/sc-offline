@@ -1,4 +1,8 @@
-# Teleport / quick-save and return
+# Saved spots (teleport): quick-save and return
+
+## The Saved spots page
+
+The menu page is titled **Saved spots** and has three sections, in the order a player uses them: **Save where you stand** (`Save this spot`, F7), **Go back to it** (`Go to saved spot`, F8; disabled until a spot is saved) and **Status**, which says in plain words what happened. The key hints show only when the plugin could bind F7/F8. The page keeps one quick-save slot, so there is no list or delete button; named saved spots live on the Travel page (quantum plugin). The old "inspect" button is gone from the page (it only printed internals); `teleport.inspect` remains as a command. Command replies and `mod.log` keep their technical wording; the page shows separate plain sentences.
 
 `teleport.save` (F7) is designed to capture where you are, read-only: the full pose and its observed zone ancestry through `game.spatial`. The external consumer uses sco-core's public **`game.relocation` 1.0** (`sc_relocation.h`) for return moves, and on a Core with the process-retained composition the product starts natively, loads this plugin and a move reports its own result; any other Core keeps the native-startup refusal. No move has been run in game. The consumer's synthetic SDK workflows remain useful for contract checks and do not establish game behavior. `teleport.inspect` reads the saved exact/partial restoration candidate without moving; root-only and stale matches refuse. `teleport.status` reports the saved state, the move switch, whether `game.relocation` is on and any move in progress when the module is run in a suitable test host.
 

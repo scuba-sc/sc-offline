@@ -108,7 +108,7 @@ void ProviderNegatives(){Reset();auto api=Api();CHECK(test_module::Load(&api,own
  for(const auto* name:{SC_SPAWN_SERVICE_NAME,SC_ENTITIES_NAME,SC_SPATIAL_SERVICE_NAME}) {
   absent=name;CHECK(Ship()==SCO_UNAVAILABLE && !spawned);null_success=true;CHECK(Ship()==SCO_UNAVAILABLE && !spawned);null_success=false;absent=nullptr;
  }
- absent=SC_ENTITIES_NAME;CHECK(Run("spawn.status")==SCO_UNAVAILABLE);Contains("ownership unchanged");absent=nullptr;
+ absent=SC_ENTITIES_NAME;CHECK(Run("spawn.status")==SCO_UNAVAILABLE);Contains("Can't check your ships");absent=nullptr;
  for(const char* cap:{"spawn.ship","game.entities.spawn"}) {missing_cap=cap;CHECK(Ship()==SCO_UNAVAILABLE && !spawned);}missing_cap=nullptr;
  classes.class_exists=nullptr;CHECK(Ship()==SCO_UNAVAILABLE);classes.class_exists=ClassExists;
  entities.spawn=nullptr;CHECK(Ship()==SCO_UNAVAILABLE);entities.spawn=Spawn;
@@ -155,19 +155,19 @@ void SeatRefusals(){
   if(mode==0)occupant=9001;if(mode==1)seat_more=1;if(mode==2)seat_count=65;
   if(mode==3)seat_flags=SC_SEAT_PILOT;if(mode==4)player_present=false;if(mode==5)missing_cap="game.vehicles.seat";if(mode==6)missing_cap="game.entities.transform";
   Advance(10);CHECK(!seated && !powered);Advance(60010);CHECK(removed==0 && issued.count(101)); // alive at timeout: kept, never removed
-  if(mode!=6){CHECK(Run("spawn.status")==SCO_OK);Contains("ready=1");} // mode 6: observation is unavailable
+  if(mode!=6){CHECK(Run("spawn.status")==SCO_OK);Contains("1 ready");} // mode 6: observation is unavailable
   test_module::Unload();CHECK(removed==1); // removed on unload; the borrowed host API must outlive it.
  }
 }
 void EntityIdsAndTimeout(){
  // Manual boarding: the player (entity id 7, actor id 9007) already sits in the requested seat.
  Reset();auto api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Options("pilot",false)==SCO_OK);visible=true;occupant=7;
- Advance(1);CHECK(seated==0);CHECK(Run("spawn.status")==SCO_OK);Contains("ready=1");Advance(60010);CHECK(removed==0);
+ Advance(1);CHECK(seated==0);CHECK(Run("spawn.status")==SCO_OK);Contains("1 ready");Advance(60010);CHECK(removed==0);
  // seat() gets the entity id (the fake's Seat checks it).
  Reset();api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Options("pilot",false)==SCO_OK);visible=true;Advance(1);CHECK(seated==1);
  // Player in a seat the plugin cannot match (unusable): the timeout must not remove the ship.
  Reset();api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Options("pilot",false)==SCO_OK);visible=true;seat_flags=SC_SEAT_PILOT;occupant=7;
- Advance(10);Advance(60010);CHECK(removed==0 && issued.count(101));CHECK(Run("spawn.status")==SCO_OK);Contains("ready=1");
+ Advance(10);Advance(60010);CHECK(removed==0 && issued.count(101));CHECK(Run("spawn.status")==SCO_OK);Contains("1 ready");
  Advance(120000);CHECK(removed==0);test_module::Unload();CHECK(removed==1);
  // A ship that never streamed in is still removed at the timeout.
  Reset();api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Options("pilot",false)==SCO_OK);
@@ -197,11 +197,11 @@ void HostAndCommandNegatives(){Reset();auto api=Api();
 void BoundedOwnership(){Reset();auto api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);
  for(int i=0;i<64;++i)CHECK(Ship()==SCO_OK);CHECK(Ship()==SCO_TOO_MANY && spawned==64);
  CHECK(Run("spawn.clear")==SCO_OK && removed==64 && issued.empty());CHECK(Ship()==SCO_TOO_MANY); // Removal tickets retained; no alive-based recycling.
- Advance(1);CHECK(Run("spawn.status")==SCO_OK);Contains("removing=64");test_module::Unload();CHECK(removed==64);
+ Advance(1);CHECK(Run("spawn.status")==SCO_OK);Contains("64 being removed");test_module::Unload();CHECK(removed==64);
 }
 void TimeoutCancel(){Reset();auto api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Options()==SCO_OK);
  Advance(0xfffffff0u);Advance(0x0000ea50u);CHECK(removed==1 && issued.empty()); // uint32 wrap, 60000 ms.
- CHECK(Run("spawn.status")==SCO_OK);Contains("removing=1");visible=true;Advance(0x0000ea60u);CHECK(!seated);
+ CHECK(Run("spawn.status")==SCO_OK);Contains("1 being removed");visible=true;Advance(0x0000ea60u);CHECK(!seated);
  Reset();api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Options()==SCO_OK);
  remove_result=SCO_WRONG_THREAD;CHECK(Id("spawn.cancel",101)==SCO_WRONG_THREAD);CHECK(issued.count(101));
  visible=true;Advance(5);CHECK(seated==0 && powered==0);remove_result=SCO_OK;Advance(1005);CHECK(issued.empty());
@@ -210,27 +210,27 @@ void TimeoutCancel(){Reset();auto api=Api();CHECK(test_module::Load(&api,owner)=
 sco_result Board(const char* seat,bool power,uint64_t id=101){sco_arg a[3]{};a[0].type=SCO_ARG_INT;a[0].v.i=std::bit_cast<int64_t>(id);a[1].type=SCO_ARG_STRING;a[1].v.s=seat;a[2].type=SCO_ARG_BOOL;a[2].v.i=power;return Run("spawn.board",a,3);}
 void BoardLaterAndStartup(){Reset();auto api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);
  CHECK(commands.count("spawn.board")==1 && commands.count("spawn.startup")==1);
- CHECK(Run("spawn.startup")==SCO_UNAVAILABLE);Contains("G2/G3");CHECK(spawned==0);
+ CHECK(Run("spawn.startup")==SCO_UNAVAILABLE);Contains("starting place");CHECK(spawned==0);
  CHECK(Options("none",true)==SCO_BAD_ARG && spawned==0);CHECK(Options("none",false)==SCO_OK);
  CHECK(Board("pilot",false,9001)==SCO_NOT_FOUND && seated==0);CHECK(Board("synthetic copilot",false)==SCO_OK);
- visible=true;Advance(1);CHECK(seated==1 && powered==0);linked=true;Advance(2);CHECK(Run("spawn.status")==SCO_OK);Contains("ready=1");
+ visible=true;Advance(1);CHECK(seated==1 && powered==0);linked=true;Advance(2);CHECK(Run("spawn.status")==SCO_OK);Contains("1 ready");
  test_module::Unload();CHECK(removed==1);
 }
 void Boarding(){Reset();auto api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);
  CHECK(commands.count("spawn.ship_options")==1);CHECK(Options()==SCO_OK);Advance(100);CHECK(seated==0 && powered==0);
- visible=true;Advance(200);CHECK(seated==1 && powered==0);CHECK(Run("spawn.status")==SCO_OK);Contains("boarding=1");
+ visible=true;Advance(200);CHECK(seated==1 && powered==0);CHECK(Run("spawn.status")==SCO_OK);Contains("1 getting in");
  Advance(250);CHECK(seated==1); // Accepted asynchronous link must not be reset every frame.
  linked=true;power_result=SCO_FAILED;Advance(300);CHECK(powered==1);power_result=SCO_OK;Advance(400);CHECK(powered==1);Advance(1300);CHECK(powered==2);
- CHECK(Run("spawn.status")==SCO_OK);Contains("ready=1");Advance(1400);CHECK(powered==2 && seated==1);
+ CHECK(Run("spawn.status")==SCO_OK);Contains("1 ready");Advance(1400);CHECK(powered==2 && seated==1);
  test_module::Unload();CHECK(removed==1);
 }
 void Lifecycle(){Reset();auto api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(!std::strcmp(test_module::Query()->name,"spawn"));
  CHECK(definitions.at("spawn.ship").size()==2);CHECK(!std::strcmp(definitions.at("spawn.ship")[0].name,"class"));CHECK(definitions.at("spawn.ship")[1].type==SCO_ARG_FLOAT);
- CHECK(Ship("invalid")==SCO_NOT_FOUND && spawned==0);CHECK(Ship()==SCO_OK && spawned==1);Contains("101");
- CHECK(Run("spawn.status")==SCO_OK);Contains("pending=1");visible=true;uint32_t now=1;CHECK(tick);tick("tick",&now,tick_ctx);
- CHECK(Run("spawn.status")==SCO_OK);Contains("ready=1");
+ CHECK(Ship("invalid")==SCO_NOT_FOUND && spawned==0);CHECK(Ship()==SCO_OK && spawned==1);Contains("Spawned synthetic ship");
+ CHECK(Run("spawn.status")==SCO_OK);Contains("1 appearing");visible=true;uint32_t now=1;CHECK(tick);tick("tick",&now,tick_ctx);
+ CHECK(Run("spawn.status")==SCO_OK);Contains("1 ready");
  CHECK(Id("spawn.remove",9001)==SCO_NOT_FOUND && removed==0);CHECK(Id("spawn.remove",101)==SCO_OK && removed==1);
- visible=false;CHECK(Run("spawn.status")==SCO_OK);Contains("removing=1");CHECK(Id("spawn.remove",101)==SCO_NOT_FOUND);
+ visible=false;CHECK(Run("spawn.status")==SCO_OK);Contains("1 being removed");CHECK(Id("spawn.remove",101)==SCO_NOT_FOUND);
  CHECK(Ship()==SCO_OK);test_module::Unload();test_module::Unload();CHECK(removed==2);CHECK(Run("spawn.status")==SCO_UNAVAILABLE);
  // Host deregistration/release is a stand-in, not real host guard evidence.
  commands.clear();tick=nullptr;test_module::Close();
@@ -239,7 +239,7 @@ void RefusedCleanupReload(){Reset();auto api=Api();api.log=CleanupLog;api.unsubs
  CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Ship()==SCO_OK);remove_result=SCO_WRONG_THREAD;
  test_module::Unload();CHECK(unsubscriptions==1 && cleanup_warnings==1 && removed==1 && issued.count(101));
  test_module::Unload();CHECK(unsubscriptions==1 && cleanup_warnings==1 && removed==1);
- remove_result=SCO_OK;CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Run("spawn.status")==SCO_OK);Contains("pending=0");
+ remove_result=SCO_OK;CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Run("spawn.status")==SCO_OK);Contains("haven't spawned any ships");
  CHECK(Id("spawn.remove",101)==SCO_NOT_FOUND && removed==1);test_module::Unload();CHECK(unsubscriptions==2 && removed==1);
 }
 }

@@ -120,6 +120,9 @@ inline sco_result Scan(const sc_game_spatial_v1* sp,std::vector<sc_game_zone>& o
 inline constexpr uint32_t relocation_timeout_ms=30000;
 inline constexpr const char* unavailable="Player relocation unavailable: game.relocation service or request is unavailable; not moved";
 inline constexpr const char* switched_off="Moving the player is off in this plugin's settings (relocation = false); not moved";
+// The same two refusals as a player reads them (the strings above stay for command replies and logs).
+inline constexpr const char* unavailable_plain="Travel isn't available in this game right now. You haven't moved.";
+inline constexpr const char* switched_off_plain="Travel is turned off in this plugin's settings. Turn on \"Allow moving the player\" to use it.";
 // Fresh capability and full member extents before every request; ticket unchanged on refusal.
 inline sco_result Relocate(const sco_api* api,const sc_relocation_v1* service,sco_plugin* self,const Pose& target,uint64_t& ticket) {
     if (!TRAVEL_FN(api,sco_api,has) || !api->has(SC_RELOCATION_NAME)) return SCO_UNAVAILABLE;
@@ -151,6 +154,19 @@ inline const char* ReasonText(uint32_t reason) {
     case SC_RELOCATION_REASON_FAULT: return "relocation provider fault";
     case SC_RELOCATION_REASON_NONE: return "no reason given";
     default: return "unknown reason";
+    }
+}
+// ReasonText for the page: no codes, no service names.
+inline const char* PlainReason(uint32_t reason) {
+    switch (reason) {
+    case SC_RELOCATION_REASON_TIMEOUT: return "it took too long";
+    case SC_RELOCATION_REASON_SESSION: return "your session or star system changed";
+    case SC_RELOCATION_REASON_SAFETY: return "travel isn't allowed right now";
+    case SC_RELOCATION_REASON_SYSTEM: return "that place is in a different star system";
+    case SC_RELOCATION_REASON_TRANSPORT: return "the game didn't start the move";
+    case SC_RELOCATION_REASON_FAULT: return "something went wrong in the game";
+    case SC_RELOCATION_REASON_NONE: return "no reason was given";
+    default: return "the reason isn't known";
     }
 }
 }

@@ -8,9 +8,10 @@ struct AsopPicker {
     uint64_t lease=0,key=0,pending=0;
     uint32_t page=0,base=0;
     bool ready=false,dirty=false,stale=false,releasing=false;
-    char message[200]="ASOP selection unavailable";
+    char message[200]="Your fleet list hasn't loaded yet.";
 } asop_picker;
 static uint32_t asop_epoch=0;
+constexpr const char* kAsopWaiting="Not sure the save worked; waiting for the game to answer.";
 const sc_asop_selection_v1* AsopTable() { return Open<sc_asop_selection_v1>(SC_ASOP_SELECTION_NAME); }
 #ifndef SC_ASOP_SELECTION_ROW_BUSY
 #define SC_ASOP_SELECTION_ROW_BUSY 0u // Older SDK: no busy rows reported.
@@ -45,11 +46,11 @@ bool AsopRows(const sc_asop_selection_v1* t,uint32_t kind,uint64_t revision,std:
 }
 bool AsopReload(bool refresh) {
     const auto* t=AsopTable();
-    if(!AsopHas(t)){std::snprintf(asop_picker.message,sizeof(asop_picker.message),"ASOP selection service unavailable");asop_picker.ready=false;return false;}
-    if(refresh && t->refresh(g.self)!=SCO_OK){std::snprintf(asop_picker.message,sizeof(asop_picker.message),"File refresh failed; selection unknown");asop_picker.ready=false;return false;}
+    if(!AsopHas(t)){std::snprintf(asop_picker.message,sizeof(asop_picker.message),"Your fleet list isn't available right now.");asop_picker.ready=false;return false;}
+    if(refresh && t->refresh(g.self)!=SCO_OK){std::snprintf(asop_picker.message,sizeof(asop_picker.message),"Couldn't reload your saved choice.");asop_picker.ready=false;return false;}
     sc_asop_selection_state state{};state.size=sizeof(state);
     if(t->state(g.self,&state)!=SCO_OK || !(state.flags&SC_ASOP_SELECTION_FILE_KNOWN)) {
-        std::snprintf(asop_picker.message,sizeof(asop_picker.message),"Selection file unavailable or invalid");asop_picker.ready=false;return false;
+        std::snprintf(asop_picker.message,sizeof(asop_picker.message),"Your saved choice can't be read.");asop_picker.ready=false;return false;
     }
     const auto previous=asop_picker.state;asop_picker.state=state;
     if(previous.session && previous.session!=state.session){asop_picker.lease=0;asop_picker.key=0;asop_picker.pending=0;asop_picker.releasing=false;}
@@ -57,12 +58,12 @@ bool AsopReload(bool refresh) {
     std::vector<uint32_t> file_flags,catalogue_flags;
     if(!AsopRows(t,SC_ASOP_SELECTION_ROWS_FILE,state.file_revision,file,&file_flags) ||
        !AsopRows(t,SC_ASOP_SELECTION_ROWS_CATALOGUE,state.catalogue_generation,catalogue,&catalogue_flags)) {
-        asop_picker.state=previous;asop_picker.ready=false;std::snprintf(asop_picker.message,sizeof(asop_picker.message),"Selection changed while loading; refresh again");return false;
+        asop_picker.state=previous;asop_picker.ready=false;std::snprintf(asop_picker.message,sizeof(asop_picker.message),"Your saved choice changed while loading. Reload it and try again.");return false;
     }
     asop_picker.draft=std::move(file);asop_picker.catalogue=std::move(catalogue);
     asop_picker.busy=std::move(catalogue_flags);
     asop_picker.ready=true;asop_picker.dirty=false;asop_picker.stale=false;asop_picker.page=0;
-    std::snprintf(asop_picker.message,sizeof(asop_picker.message),"%s; saved file only, native application unverified",(state.flags&SC_ASOP_SELECTION_FILE_PRESENT)?"Selection loaded":"Selection file absent");return true;
+    std::snprintf(asop_picker.message,sizeof(asop_picker.message),"%s",(state.flags&SC_ASOP_SELECTION_FILE_PRESENT)?"Loaded your saved choice.":"You haven't saved a choice yet.");return true;
 }
 void RenderAsop();
 // A release can be temporarily unavailable while the coordinator is busy.
@@ -86,7 +87,7 @@ void AsopEvent(const char* panel,const sco_widget_event* event,void*) {
     sc_asop_selection_state current{};current.size=sizeof(current);
     if(t->state(g.self,&current)!=SCO_OK || !(current.flags&SC_ASOP_SELECTION_FILE_KNOWN) ||
        current.session!=p.state.session || current.file_revision!=p.state.file_revision || current.catalogue_generation!=p.state.catalogue_generation) {
-        p.stale=true;std::snprintf(p.message,sizeof(p.message),"Selection changed externally; draft retained, refresh to reconcile");RenderAsop();return;
+        p.stale=true;std::snprintf(p.message,sizeof(p.message),"Your saved choice was changed elsewhere. Your edits are still here; reload to see the new choice.");RenderAsop();return;
     }
     if(event->kind==SCO_WIDGET_BUTTON) {
         if(action==2){
@@ -96,16 +97,16 @@ void AsopEvent(const char* panel,const sco_widget_event* event,void*) {
                 if(std::any_of(next.begin(),next.end(),[&](const std::string& x){return AsopEqual(x,name);}))continue;
                 if(i<p.busy.size() && (p.busy[i]&SC_ASOP_SELECTION_ROW_BUSY))continue;
                 if(next.size()>=SC_ASOP_SELECTION_MAX_CLASSES) {
-                    std::snprintf(p.message,sizeof(p.message),"Select all refused: selection limit would be exceeded; draft unchanged");
+                    std::snprintf(p.message,sizeof(p.message),"Can't select them all: that is more ships than you can choose.");
                     RenderAsop();return;
                 }
                 next.push_back(name);
             }
             if(next.size()!=p.draft.size()) {
                 p.draft=std::move(next);p.dirty=true;
-                std::snprintf(p.message,sizeof(p.message),"Available catalogue classes added; busy and unresolved names retained");
+                std::snprintf(p.message,sizeof(p.message),"Selected every ship you can. Ships in use stay as they are.");
             } else {
-                std::snprintf(p.message,sizeof(p.message),"No additional available catalogue classes to select; busy and unresolved names retained");
+                std::snprintf(p.message,sizeof(p.message),"Every ship you can select is already selected.");
             }
         }
         else if(action==3){
@@ -119,22 +120,22 @@ void AsopEvent(const char* panel,const sco_widget_event* event,void*) {
                 removed=true;
             }
             if(removed){p.draft=std::move(kept);p.dirty=true;}
-            if(removed)std::snprintf(p.message,sizeof(p.message),preserved?"Available classes deselected; busy and unresolved names retained":"Available classes deselected");
-            else std::snprintf(p.message,sizeof(p.message),preserved?"No available classes to deselect; busy and unresolved names retained":"No catalogue classes selected");
+            if(removed)std::snprintf(p.message,sizeof(p.message),preserved?"Cleared your choice. Ships in use stay selected.":"Cleared your choice.");
+            else std::snprintf(p.message,sizeof(p.message),preserved?"Nothing to clear. Ships in use stay selected.":"Nothing is selected.");
         }
         else if(action==4 && p.page>0)--p.page;
         else if(action==5 && (static_cast<size_t>(p.page)+1)*16<p.catalogue.size())++p.page;
         else if(action==6 && p.dirty) {
-            if(!p.lease && t->acquire(g.self,p.state.session,&p.lease)!=SCO_OK){std::snprintf(p.message,sizeof(p.message),"Another editor owns the lease");RenderAsop();return;}
-            if(p.key==std::numeric_limits<uint64_t>::max()){(void)AsopRelease(t);std::snprintf(p.message,sizeof(p.message),"Edit key exhausted");RenderAsop();return;}
+            if(!p.lease && t->acquire(g.self,p.state.session,&p.lease)!=SCO_OK){std::snprintf(p.message,sizeof(p.message),"Something else is changing your saved choice right now. Try again in a moment.");RenderAsop();return;}
+            if(p.key==std::numeric_limits<uint64_t>::max()){(void)AsopRelease(t);std::snprintf(p.message,sizeof(p.message),"Too many saves this session. Restart the game to save again.");RenderAsop();return;}
             std::vector<sc_asop_selection_class> classes(p.draft.size());
             for(size_t i=0;i<classes.size();++i){classes[i].size=sizeof(classes[i]);std::memcpy(classes[i].class_name,p.draft[i].c_str(),p.draft[i].size()+1);}
             sc_asop_selection_request request{};request.size=sizeof(request);request.session=p.state.session;request.file_revision=p.state.file_revision;
             std::memcpy(request.file_digest,p.state.file_digest,sizeof(request.file_digest));request.client_key=++p.key;
             request.classes=classes.empty()?nullptr:classes.data();request.count=static_cast<uint32_t>(classes.size());request.class_stride=sizeof(sc_asop_selection_class);
             uint64_t id_out=0;const auto result=t->replace(g.self,p.lease,&request,&id_out);
-            if(result==SCO_OK){p.pending=id_out;std::snprintf(p.message,sizeof(p.message),"Edit accepted; waiting for file commit");}
-            else { (void)AsopRelease(t); std::snprintf(p.message,sizeof(p.message),"Save refused (%u); draft retained",static_cast<unsigned>(result)); }
+            if(result==SCO_OK){p.pending=id_out;std::snprintf(p.message,sizeof(p.message),"Saving your choice...");}
+            else { (void)AsopRelease(t); std::snprintf(p.message,sizeof(p.message),"Couldn't save. Your edits are still here; try again."); }
         }
     } else if(event->kind==SCO_WIDGET_TOGGLE && action>=16 && action<32 && (event->value==0 || event->value==1)) {
         const size_t index=static_cast<size_t>(p.page)*16+(action-16);
@@ -143,7 +144,7 @@ void AsopEvent(const char* panel,const sco_widget_event* event,void*) {
         if(event->value && found==p.draft.end()){if(p.draft.size()>=SC_ASOP_SELECTION_MAX_CLASSES)return;p.draft.push_back(name);p.dirty=true;}
         else if(!event->value && found!=p.draft.end()){
             if(index<p.busy.size() && (p.busy[index]&SC_ASOP_SELECTION_ROW_BUSY)){
-                std::snprintf(p.message,sizeof(p.message),"Class in use by a stored or in-transit ship; deselect after retrieving it");
+                std::snprintf(p.message,sizeof(p.message),"That ship is in use (stored or on its way). Get it back first, then deselect it.");
             } else {p.draft.erase(found);p.dirty=true;}
         }
     } else return;
@@ -155,25 +156,46 @@ void RenderAsop() {
     auto& p=asop_picker;
     if(asop_epoch>std::numeric_limits<uint32_t>::max()-64){p.base=0;return;}
     p.base=(asop_epoch+=64);
+    const uint32_t b=p.base;
+    const uint32_t off=SCO_WIDGET_DISABLED;
+    const uint32_t disabled=(!p.ready || p.pending || p.stale || p.releasing)?off:0;
+    const size_t pages=std::max<size_t>(1,(p.catalogue.size()+15)/16);
+    char status[160];std::snprintf(status,sizeof(status),"Page %u of %zu. %zu selected.",p.page+1,pages,p.draft.size());
     std::vector<sco_widget_node> nodes;
-    nodes.push_back(Node(SCO_WIDGET_LABEL,p.base+7,p.message));
-    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+1,p.dirty?"Reload file (discard draft)":"Refresh selection",(p.pending || p.releasing)?SCO_WIDGET_DISABLED:0));
-    const uint32_t disabled=(!p.ready || p.pending || p.stale || p.releasing)?SCO_WIDGET_DISABLED:0;
-    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+2,"Select all available classes",disabled));
-    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+3,"Select none",disabled));
-    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+4,"Previous classes",disabled));
-    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+5,"Next classes",disabled));
-    nodes.push_back(Node(SCO_WIDGET_BUTTON,p.base+6,"Save selection",disabled || !p.dirty?SCO_WIDGET_DISABLED:0));
-    char status[160];std::snprintf(status,sizeof(status),"Page %u; selected %zu; native publication and observation unavailable",p.page+1,p.draft.size());
-    nodes.push_back(Node(SCO_WIDGET_LABEL,p.base+8,status));
+    // Ids are base+1..base+40 (the event handler's range): 1-8 and 16-31 are the controls, the rest are sections.
+    auto add=[&](uint32_t kind,uint32_t action,const char* label,uint32_t parent,uint32_t flags=0)->sco_widget_node& {
+        nodes.push_back(Node(kind,b+action,label,flags));nodes.back().parent=parent?b+parent:0;return nodes.back();};
+    add(SCO_WIDGET_COLUMN,9,"Ships to use",0);
+    add(SCO_WIDGET_LABEL,10,"Choose which ships from your in-game fleet to use.",9);
+    add(SCO_WIDGET_ROW,11,"",9);
+    add(SCO_WIDGET_BUTTON,2,"Select all",11,disabled);
+    add(SCO_WIDGET_BUTTON,3,"Select none",11,disabled);
+    std::vector<std::string> names;
     const size_t start=static_cast<size_t>(p.page)*16;
     for(size_t i=0;i<16 && start+i<p.catalogue.size();++i) {
-        const auto& name=p.catalogue[start+i];
-        const bool busy=start+i<p.busy.size() && (p.busy[start+i]&SC_ASOP_SELECTION_ROW_BUSY);
-        auto node=Node(SCO_WIDGET_TOGGLE,p.base+16+static_cast<uint32_t>(i),name.c_str(),busy?SCO_WIDGET_DISABLED:disabled);
-        node.value=std::any_of(p.draft.begin(),p.draft.end(),[&](const std::string& x){return AsopEqual(x,name);})?1:0;nodes.push_back(node);
+        std::string name=p.catalogue[start+i];
+        for(auto& ch:name)if(ch=='_')ch=' ';
+        if(start+i<p.busy.size() && (p.busy[start+i]&SC_ASOP_SELECTION_ROW_BUSY))name+=" (in use)";
+        names.push_back(std::move(name));
     }
-    (void)w->set_panel(g.self,"spawn.asop","ASOP selection",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(nodes[0]),AsopEvent,nullptr);
+    for(size_t i=0;i<names.size();++i) {
+        const auto& cls=p.catalogue[start+i];
+        const bool busy=start+i<p.busy.size() && (p.busy[start+i]&SC_ASOP_SELECTION_ROW_BUSY);
+        auto& node=add(SCO_WIDGET_TOGGLE,16+static_cast<uint32_t>(i),names[i].c_str(),9,busy?off:disabled);
+        node.value=std::any_of(p.draft.begin(),p.draft.end(),[&](const std::string& x){return AsopEqual(x,cls);})?1:0;
+    }
+    add(SCO_WIDGET_ROW,12,"",9);
+    add(SCO_WIDGET_BUTTON,4,"Previous",12,(disabled || !p.page)?off:0);
+    add(SCO_WIDGET_BUTTON,5,"Next",12,(disabled || (static_cast<size_t>(p.page)+1)*16>=p.catalogue.size())?off:0);
+    add(SCO_WIDGET_LABEL,8,status,9);
+    add(SCO_WIDGET_COLUMN,13,"Keep your choice",0);
+    add(SCO_WIDGET_ROW,14,"",13);
+    add(SCO_WIDGET_BUTTON,6,"Save choice",14,disabled || !p.dirty?off:0);
+    add(SCO_WIDGET_BUTTON,1,p.dirty?"Discard changes and reload":"Reload saved choice",14,(p.pending || p.releasing)?off:0);
+    add(SCO_WIDGET_LABEL,15,"Your choice is saved to a file. This version can't confirm the game uses it yet.",13);
+    add(SCO_WIDGET_COLUMN,32,"Last result",0);
+    add(SCO_WIDGET_LABEL,7,p.message,32);
+    (void)w->set_panel(g.self,"spawn.asop","Your own ships",nodes.data(),static_cast<uint32_t>(nodes.size()),sizeof(nodes[0]),AsopEvent,nullptr);
 }
 void PollAsop() {
     auto& p=asop_picker;
@@ -184,9 +206,9 @@ void PollAsop() {
     }
     if(!p.pending)return;
     if(!AsopHas(t)) {
-        if(std::strcmp(p.message,"Save outcome unknown; waiting for selection service")) {
+        if(std::strcmp(p.message,kAsopWaiting)) {
             p.stale=true;
-            std::snprintf(p.message,sizeof(p.message),"Save outcome unknown; waiting for selection service");
+            std::snprintf(p.message,sizeof(p.message),"%s",kAsopWaiting);
             RenderAsop();
         }
         return;
@@ -197,19 +219,19 @@ void PollAsop() {
         // A restarted provider invalidates the old lease and receipt. Never report
         // success or retry the write: the user must reload and reconcile the file.
         p.pending=0;p.stale=true;(void)AsopRelease(t);
-        std::snprintf(p.message,sizeof(p.message),"Save outcome unknown; draft retained, refresh to reconcile");RenderAsop();return;
+        std::snprintf(p.message,sizeof(p.message),"Not sure the save worked. Your edits are still here; reload to check.");RenderAsop();return;
     }
     if(result!=SCO_OK)return; // busy/unavailable is not evidence of a terminal result
     if(receipt.phase==SC_ASOP_SELECTION_FILE_COMMITTED){
         p.pending=0;(void)AsopRelease(t);
-        if(AsopReload(false))std::snprintf(p.message,sizeof(p.message),"Selection saved to file; native application unverified");
-        else std::snprintf(p.message,sizeof(p.message),"File saved; current selection could not be refreshed");
+        if(AsopReload(false))std::snprintf(p.message,sizeof(p.message),"Saved your choice.");
+        else std::snprintf(p.message,sizeof(p.message),"Saved, but couldn't reload your choice to check it.");
         RenderAsop();
     } else if(receipt.phase==SC_ASOP_SELECTION_EDIT_CONFLICT || receipt.phase==SC_ASOP_SELECTION_EDIT_UNKNOWN || receipt.phase==SC_ASOP_SELECTION_EDIT_REVOKED){
         p.pending=0;p.stale=true;(void)AsopRelease(t);
         if(receipt.phase==SC_ASOP_SELECTION_EDIT_CONFLICT && receipt.reason==SC_ASOP_SELECTION_REASON_BUSY)
-            std::snprintf(p.message,sizeof(p.message),"Save refused: a selected class is in use by a stored or in-transit ship; refresh to reconcile");
-        else std::snprintf(p.message,sizeof(p.message),"Save conflicted or is unknown; draft retained, refresh to reconcile");
+            std::snprintf(p.message,sizeof(p.message),"Couldn't save: a ship you selected is in use. Reload and try again.");
+        else std::snprintf(p.message,sizeof(p.message),"Couldn't save: the choice changed elsewhere, or the result is unknown. Your edits are still here; reload to check.");
         RenderAsop();
     }
 }
@@ -217,6 +239,6 @@ void StartAsop(){asop_picker={};AsopReload(false);RenderAsop();}
 void StopAsop(){const auto* t=AsopTable();if(asop_picker.lease && AsopHas(t))(void)t->release(g.self,asop_picker.lease);const auto* w=Open<sco_widgets_v1>(SCO_WIDGETS_NAME);if(HAS(w,sco_widgets_v1,remove_panel))(void)w->remove_panel(g.self,"spawn.asop");asop_picker={};}
 #else
 void PollAsop() {}
-void StartAsop() {const auto* w=Open<sco_widgets_v1>(SCO_WIDGETS_NAME);if(HAS(w,sco_widgets_v1,set_panel)){auto n=sco::picker::Node(SCO_WIDGET_LABEL,1,"ASOP selection unavailable on this SDK");(void)w->set_panel(g.self,"spawn.asop","ASOP selection",&n,1,sizeof(n),nullptr,nullptr);}}
+void StartAsop() {const auto* w=Open<sco_widgets_v1>(SCO_WIDGETS_NAME);if(HAS(w,sco_widgets_v1,set_panel)){auto n=sco::picker::Node(SCO_WIDGET_LABEL,1,"Ships from your in-game fleet can't be used with this version.");(void)w->set_panel(g.self,"spawn.asop","Your own ships",&n,1,sizeof(n),nullptr,nullptr);}}
 void StopAsop() {const auto* w=Open<sco_widgets_v1>(SCO_WIDGETS_NAME);if(HAS(w,sco_widgets_v1,remove_panel))(void)w->remove_panel(g.self,"spawn.asop");}
 #endif

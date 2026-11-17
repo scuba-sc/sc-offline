@@ -108,6 +108,7 @@ providers (not engine state):
 
 ```sh
 cmake -S plugins -B picker-build -DSCO_SDK_INCLUDE_DIR=<extracted-sdk>/include \
+  -DSCO_SDK_VERSION=<version> -DSCO_SDK_SHA256=<archive sha256> -DSCO_SDK_ARCHIVE=<sco-sdk-<version>.zip> \
   -DSCO_PICKER_TEST=ON -DSCO_WORKFLOW_TESTS=OFF
 cmake --build picker-build --target picker-module-test
 ctest --test-dir picker-build -R '^picker-module-workflow$' --output-on-failure

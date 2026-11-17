@@ -71,8 +71,10 @@ owner-release cleanup. Process termination is not a successful unload.
 
 ## UI and native lifecycle boundary
 
-The external NPCs panel uses public `sco.widgets`: shared catalog filtering/
-paging, manual archetype, count 1–10, Spawn, Observe and owned-ticket Remove/Clear.
+The external NPCs panel uses public `sco.widgets`, in sections: **Choose a character**
+(search, paged list, **Reload character list**, a typed character name), **Spawn them**
+(**How many**, 1–10, **Spawn characters**), **Characters you spawned** (a choice,
+**Remove character**, **Remove all my characters**, **Check on them**) and **Last result**.
 Crew uses the same SDK-only parser, with independent selection/ownership state.
 No NPC hotkey was previously registered; none is invented here. Legacy
 `src/npc.cpp` stays untouched and is never a fallback. No plugin ImGui coupling

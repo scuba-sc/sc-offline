@@ -98,6 +98,20 @@ void Filter(const char* text){Send(1,SCO_WIDGET_TEXT_INPUT,0,text);}
 void Select(uint32_t slot,int32_t row){Send(200+slot,SCO_WIDGET_COMBO,row);}
 void Button(uint32_t id){Send(id,SCO_WIDGET_BUTTON);}
 bool Disabled(uint32_t id){return (panel.nodes.at(id).flags&SCO_WIDGET_DISABLED)!=0;}
+std::string LabelOf(uint32_t id){const auto it=panel.nodes.find(id);return it==panel.nodes.end()?std::string():it->second.label;}
+std::string PlainJob(){return LabelOf(26);}
+std::string PlainStatus(){return LabelOf(14);}
+// Nothing a player reads may carry developer words: versions, ids, job or slot plumbing, raw class names.
+void NoDeveloperWords(const char* page){
+    static const char* const forbidden[]{"job","slot","(1.","requires","archetype","build.place","spawn.ship","orchestration","sdk","category %","unavailable]","unknown/","loadout 1","ascii","retained","payload","[","_"};
+    for(const auto& node:panel.nodes){
+        std::vector<std::string> words=node.second.options;words.push_back(node.second.label);
+        for(auto word:words){
+            for(auto& c:word)if(c>='A'&&c<='Z')c=static_cast<char>(c+('a'-'A'));
+            for(const char* bad:forbidden)if(word.find(bad)!=std::string::npos){std::fprintf(stderr,"loadout catalogue: %s shows '%s' (%s)\n",page,word.c_str(),bad);std::exit(1);}
+        }
+    }
+}
 void Tick(uint32_t delta=200){static uint32_t now=100000;now+=delta;Check(tick!=nullptr,"tick callback");tick("tick",&now,tickCtx);}
 }
 namespace {
@@ -111,22 +125,22 @@ void PickerWorkflow() {
     files={{"lists/loadout_slots.txt","[primary]\nmaker_rifle_alpha\nmaker_rifle_beta\nmaker_smg_alpha\nUnknownThing\n[sidearm]\nmaker_pistol_alpha_sniper_variant\nmaker_medgun_alpha\n[primary_optic]\nFixtureOptic\nOtherOptic\n[sidearm_optic]\nSideOptic\n"}};
     Check(Call("loadout.reload_slots")==SCO_OK,"synthetic picker catalogue reload");Tick();
     Check(panel.nodes.count(260)&&panel.nodes.count(244)&&panel.nodes.count(245),"grouped type/search controls absent");
-    Check(panel.nodes.at(260).kind==SCO_WIDGET_ROW&&panel.nodes.at(261).parent==260&&panel.nodes.at(262).parent==260,"two columns under one row");
+    Check(panel.nodes.at(260).kind==SCO_WIDGET_ROW&&panel.nodes.at(261).parent==260&&panel.nodes.at(262).parent==260,"two columns under one row");Check(panel.nodes.at(260).parent==310&&panel.nodes.at(310).kind==SCO_WIDGET_COLUMN,"weapon groups sit under the Weapons and tools section");NoDeveloperWords("weapon picker");
     for(uint32_t id:{200u,202u,203u,204u,208u,209u,210u,240u,242u,244u})Check(panel.nodes.at(id).parent==261,"primary controls grouped");
     for(uint32_t id:{201u,205u,206u,207u,211u,212u,213u,241u,243u,245u})Check(panel.nodes.at(id).parent==262,"secondary controls grouped");
     Check(panel.nodes.at(244).options==std::vector<std::string>{"All types","Rifles","Submachine guns","Other"},"only present primary types");
     Check(panel.nodes.at(245).options==std::vector<std::string>{"All types","Pistols","Medical devices"},"pistol sniper suffix remains pistol");
     Choose(244,"Rifles");Check(panel.nodes.at(200).options.size()==3,"rifle category");
-    Choose(245,"Pistols");Choose(201,"maker_pistol_alpha_sniper_variant");Choose(205,"SideOptic");
-    Choose(200,"maker_rifle_alpha");Choose(202,"FixtureOptic");Choose(200,"maker_rifle_beta");
+    Choose(245,"Pistols");Choose(201,"Maker pistol alpha sniper variant");Choose(205,"Side Optic");
+    Choose(200,"Maker rifle alpha");Choose(202,"Fixture Optic");Choose(200,"Maker rifle beta");
     Check(panel.nodes.at(202).index==0&&panel.nodes.at(201).index>0&&panel.nodes.at(205).index>0,"new primary clears own attachments only");
-    Choose(202,"FixtureOptic");Choose(244,"Submachine guns");
+    Choose(202,"Fixture Optic");Choose(244,"Submachine guns");
     Check(panel.nodes.at(200).index==0&&panel.nodes.at(202).index==0&&panel.nodes.at(205).index>0,"type exclusion clears own selection and attachments");
     Choose(244,"All types");Send(240,SCO_WIDGET_TEXT_INPUT,0,"BETA");
-    Check(panel.nodes.at(200).options==std::vector<std::string>{"Unchanged (omit slot)","maker_rifle_beta"},"case-insensitive independent primary search");
+    Check(panel.nodes.at(200).options==std::vector<std::string>{"Keep current","Maker rifle beta"},"case-insensitive independent primary search");
     Check(panel.nodes.at(201).index>0&&panel.nodes.at(201).options.size()==2,"secondary unchanged by primary search");
-    Send(242,SCO_WIDGET_TEXT_INPUT,0,"Other");Check(panel.nodes.at(202).options==std::vector<std::string>{"Unchanged (omit slot)","OtherOptic"},"independent attachment search");
-    Choose(202,"OtherOptic");Send(242,SCO_WIDGET_TEXT_INPUT,0,"no match");Check(panel.nodes.at(202).index>0,"selected attachment retained and visible through search");
+    Send(242,SCO_WIDGET_TEXT_INPUT,0,"Other");Check(panel.nodes.at(202).options==std::vector<std::string>{"Keep current","Other Optic"},"independent attachment search");
+    Choose(202,"Other Optic");Send(242,SCO_WIDGET_TEXT_INPUT,0,"no match");Check(panel.nodes.at(202).index>0,"selected attachment retained and visible through search");
     Choose(244,"Submachine guns");Check(panel.nodes.at(200).options.size()==1,"type and search intersect");
     auto old=panel;Send(240,SCO_WIDGET_TEXT_INPUT,0,"");const auto current=panel.nodes.at(244).index;
     sco_widget_event late{};late.size=sizeof(late);late.kind=SCO_WIDGET_COMBO;late.node_id=244;late.index=0;
@@ -150,45 +164,48 @@ int main(int argc,char** argv){
     Check(test_module::Load(&api,owner)==SCO_OK,"module load");
     if(argc==3&&!std::strcmp(argv[2],"--picker")){PickerWorkflow();return 0;}
     Check(panel.nodes.count(200)&&panel.nodes.count(213),"independent public-slot selectors published by actual module");
-    Check(panel.nodes[200].options==std::vector<std::string>{"Unchanged (omit slot)","FixtureWeapon"},"explicit parent catalogue options");
-    Check(panel.nodes[202].options==std::vector<std::string>{"Unchanged (omit slot)","FixtureOptic"},"explicit optic catalogue options");
-    Check(Disabled(220)&&Disabled(221),"all unchanged initially, no implicit mutation");Button(220);Check(!applies,"forged empty apply makes no mutation");
-    Select(2,1);Button(220);Check(applies==1&&applied_version==SC_LOADOUT_VERSION_1_1&&captured.size()==1&&captured[0].slot==SC_LOADOUT_SLOT_PRIMARY_OPTIC,"attachment alone omits unchanged parent");
-    Select(0,1);Button(220);Check(captured.size()==2&&captured[0].slot==8&&captured[1].slot==10,"parent-first ordering independent of click order");
-    Select(13,1);Button(220);Check(captured.size()==3&&captured[2].slot==21,"independent sidearm battery");
-    Select(0,0);Button(220);Check(captured.size()==2&&captured[0].slot==10,"Unchanged removes only request assignment, no clear/default");
-    auto stale=panel;Button(222);Check(Disabled(220),"clear selection only");const auto before=applies;Send(stale,220,SCO_WIDGET_BUTTON);Check(applies==before,"old publication cannot replay selection");
-    Select(0,1);Select(2,1);applyResult=SCO_FAILED;Button(220);Check(panel.nodes[14].label.find("applied=1/2")!=std::string::npos&&panel.nodes[14].label.find("item-missing")!=std::string::npos,"partial result surfaced without rollback");Check(applies==before+1,"no automatic retry");applyResult=SCO_OK;corruptReport=1;Button(220);Check(panel.nodes[14].label.find("Invalid loadout report")!=std::string::npos,"malformed provider report refused");corruptReport=0;
-    version=SC_LOADOUT_VERSION_1_0;auto oldApplies=applies;Button(220);Check(applies==oldApplies,"old provider no downgrade");version=SC_LOADOUT_VERSION_1_2;
-    applyCap=false;Button(220);Check(applies==oldApplies,"sync apply capability guard");applyCap=true;weaponsCap=false;Button(220);Check(applies==oldApplies,"sync weapons capability guard");
+    Check(panel.nodes[200].options==std::vector<std::string>{"Keep current","Fixture Weapon"},"explicit parent catalogue options");
+    Check(panel.nodes[202].options==std::vector<std::string>{"Keep current","Fixture Optic"},"explicit optic catalogue options");
+    Check(Disabled(221),"all unchanged initially, no implicit mutation");Button(221);Check(!submits&&!applies,"forged empty equip makes no request");
+    Check(panel.nodes.at(300).kind==SCO_WIDGET_COLUMN&&panel.nodes.at(310).kind==SCO_WIDGET_COLUMN&&panel.nodes.at(320).kind==SCO_WIDGET_COLUMN,"player page is grouped into Choose gear, Weapons and tools and Progress");
+    Check(!panel.nodes.count(6)&&!panel.nodes.count(20)&&!panel.nodes.count(21)&&!panel.nodes.count(22)&&!panel.nodes.count(220)&&panel.nodes.at(5).kind==SCO_WIDGET_LABEL,"synchronous equip buttons and typed slot entry are not on the page");
+    NoDeveloperWords("player");
+    Select(2,1);Button(221);Check(submits==1&&queried==SC_LOADOUT_VERSION_1_2&&captured.size()==1&&captured[0].slot==SC_LOADOUT_SLOT_PRIMARY_OPTIC,"attachment alone omits unchanged parent");Button(24);Check(cancels==1,"job released");
+    Select(0,1);Button(221);Check(captured.size()==2&&captured[0].slot==8&&captured[1].slot==10,"parent-first ordering independent of click order");Button(24);
+    Select(13,1);Button(221);Check(captured.size()==3&&captured[2].slot==21,"independent sidearm battery");Button(24);
+    Select(0,0);Button(221);Check(captured.size()==2&&captured[0].slot==10,"Keep current removes only the request assignment, no clear/default");Button(24);
+    auto stale=panel;Button(222);Check(Disabled(221),"clear choices only");const auto before=submits;Send(stale,221,SCO_WIDGET_BUTTON);Check(submits==before,"old publication cannot replay selection");
+    Select(0,1);Select(2,1);submits=cancels=0;
+    auto oldSubmits=submits;
+
     // Async admission is independently gated by game.loadout.async.
-    applyCap=false;asyncCap=true;Button(221);Check(submits==1&&queried==SC_LOADOUT_VERSION_1_2&&Disabled(220)&&Disabled(221),"curated job uses existing independent async route");
-    Button(220);Button(221);Check(applies==oldApplies&&submits==1,"retained job blocks new mutation");
+    applyCap=false;asyncCap=true;Button(221);Check(submits==1&&queried==SC_LOADOUT_VERSION_1_2&&Disabled(221),"curated job uses the async route, independent of the synchronous capabilities");
+    Button(221);Check(applies==0&&submits==1,"retained job blocks a second request");
     progress={};progress.size=sizeof(progress);progress.state=SC_LOADOUT_JOB_PENDING;progress.completed=1;progress.report=Report();progress.report.applied=1;progress.report.slots[1].status=SC_LOADOUT_UNAVAILABLE;
-    Button(23);Check(statuses==1&&panel.nodes[26].label.find("pending; completed=1/2")!=std::string::npos,"pending completed prefix only");
+    Button(23);Check(statuses==1&&PlainJob()=="Equipping: 1 of 2 done.","pending completed prefix only");
     // The live label is independently refreshed at most once per admitted 200 ms tick.
     const auto heldAppliesAtPoll=applies,heldSubmitsAtPoll=submits,heldCancelsAtPoll=cancels;
-    Button(222);const auto unrelated=panel.nodes[14].label;
-    Tick();Check(statuses==2&&panel.nodes[26].label.find("pending; completed=1/2")!=std::string::npos&&panel.nodes[14].label==unrelated,"fresh pending observation leaves unrelated status intact");
+    Button(222);const auto unrelated=PlainStatus();
+    Tick();Check(statuses==2&&PlainJob()=="Equipping: 1 of 2 done."&&PlainStatus()==unrelated,"fresh pending observation leaves unrelated status intact");
     progress.state=SC_LOADOUT_JOB_COMPLETE;progress.completed=2;progress.report.slots[1].status=SC_LOADOUT_ITEM_MISSING;progress.report.applied=1;
-    tick("tick",nullptr,tickCtx);Tick(0);Tick(199);Check(statuses==2&&panel.nodes[26].label.find("pending;")!=std::string::npos,"null, stale and sub-200ms ticks do not poll");
-    Tick(1);Check(statuses==3&&panel.nodes[26].label.find("complete; completed=2/2")!=std::string::npos&&panel.nodes[26].label.find("item-missing")!=std::string::npos,"terminal partial observation");
+    tick("tick",nullptr,tickCtx);Tick(0);Tick(199);Check(statuses==2&&PlainJob().find("Equipping:")==0,"null, stale and sub-200ms ticks do not poll");
+    Tick(1);Check(statuses==3&&PlainJob()=="Finished. Equipped 1 of 2 items; the rest couldn't be equipped.","terminal partial observation");
     progress.state=SC_LOADOUT_JOB_FAILED;progress.completed=1;progress.report.slots[1].status=SC_LOADOUT_APPLIED;
-    Tick();Check(panel.nodes[26].label.find("failed; completed=1/2")!=std::string::npos,"failed observation interprets only completed prefix");
-    statusResult=SCO_UNAVAILABLE;Tick();Check(panel.nodes[26].label.find("refused")!=std::string::npos&&panel.nodes[26].label.find("failed;")==std::string::npos,"refusal replaces previous observation");statusResult=SCO_OK;Tick();Check(panel.nodes[26].label.find("failed;")!=std::string::npos,"fresh status restored before withdrawal");
-    Button(23);Check(panel.nodes[26].label.find("failed;")!=std::string::npos&&panel.nodes[14].label==unrelated,"manual status preserves unrelated message");
-    loadoutTable=nullptr;Tick();Check(panel.nodes[26].label.find("unavailable")!=std::string::npos,"provider withdrawal replaces prior observation");
-    for(const auto& node:panel.nodes)Check(node.second.label.find("failed; completed=")==std::string::npos&&node.second.label.find("applied=")==std::string::npos,"manual progress is absent from all labels after withdrawal");
+    Tick();Check(PlainJob()=="Equipping failed. Equipped 1 of 2 items.","failed observation interprets only completed prefix");
+    statusResult=SCO_UNAVAILABLE;Tick();Check(PlainJob()=="Can't check progress right now.","refusal replaces previous observation");statusResult=SCO_OK;Tick();Check(PlainJob().find("Equipping failed")==0,"fresh status restored before withdrawal");
+    Button(23);Check(PlainJob().find("Equipping failed")==0&&PlainStatus()==unrelated,"manual status preserves unrelated message");
+    loadoutTable=nullptr;Tick();Check(PlainJob()=="Can't check progress right now.","provider withdrawal replaces prior observation");
+    for(const auto& node:panel.nodes)Check(node.second.label.find("Equipping failed")==std::string::npos&&node.second.label.find("Equipped")==std::string::npos,"manual progress is absent from all labels after withdrawal");
     loadoutTable=&loadout;
-    loadout.status=nullptr;Tick();Check(panel.nodes[26].label.find("unavailable")!=std::string::npos,"null status unavailable");loadout.status=Status;
-    for(uint32_t size=4;size<sizeof(loadout);++size){auto bytes=std::make_unique<unsigned char[]>(size);std::memcpy(bytes.get(),&loadout,size);std::memcpy(bytes.get(),&size,4);loadoutTable=bytes.get();const auto beforeStatus=statuses;Tick();Check(statuses==beforeStatus&&panel.nodes[26].label.find("unavailable")!=std::string::npos,"short 1.2 table never called");}loadoutTable=&loadout;
-    progress={};Tick();Check(panel.nodes[26].label.find("polling paused")!=std::string::npos,"zero report pauses polling");const auto pausedStatuses=statuses;
-    Tick();Tick();Check(statuses==pausedStatuses&&panel.nodes[26].label.find("polling paused")!=std::string::npos,"malformed report does not trigger repeated calls");
+    loadout.status=nullptr;Tick();Check(PlainJob()=="Can't check progress right now.","null status unavailable");loadout.status=Status;
+    for(uint32_t size=4;size<sizeof(loadout);++size){auto bytes=std::make_unique<unsigned char[]>(size);std::memcpy(bytes.get(),&loadout,size);std::memcpy(bytes.get(),&size,4);loadoutTable=bytes.get();const auto beforeStatus=statuses;Tick();Check(statuses==beforeStatus&&PlainJob()=="Can't check progress right now.","short 1.2 table never called");}loadoutTable=&loadout;
+    progress={};Tick();Check(PlainJob()=="Couldn't read progress. Cancel and try again.","zero report pauses polling");const auto pausedStatuses=statuses;
+    Tick();Tick();Check(statuses==pausedStatuses&&PlainJob()=="Couldn't read progress. Cancel and try again.","malformed report does not trigger repeated calls");
     progress.size=sizeof(progress);progress.state=SC_LOADOUT_JOB_PENDING;progress.completed=1;progress.report=Report();progress.report.applied=1;progress.report.slots[1].status=SC_LOADOUT_UNAVAILABLE;
-    asyncCap=false;Button(23);Check(statuses==pausedStatuses+1&&panel.nodes[26].label.find("pending;")!=std::string::npos&&panel.nodes[26].label.find("async unavailable; not live inventory")!=std::string::npos,"manual valid status after revocation resumes polling with capability context");
-    Tick();Check(statuses==pausedStatuses+2&&panel.nodes[26].label.find("pending;")!=std::string::npos,"polling resumes after manual valid inspection");
-    Check(applies==heldAppliesAtPoll&&submits==heldSubmitsAtPoll&&cancels==heldCancelsAtPoll&&Disabled(220),"observations have no mutation or release side effects");
-    Select(0,1);Select(2,1);asyncCap=false;Button(24);Check(cancels==1&&!Disabled(220)&&panel.nodes[26].label.find("No retained")!=std::string::npos,"cancel remains available after capability revocation");Button(221);Check(submits==1,"async revocation prevents new submit");
+    asyncCap=false;Button(23);Check(statuses==pausedStatuses+1&&PlainJob()=="Equipping: 1 of 2 done.","manual valid status after revocation resumes polling");
+    Tick();Check(statuses==pausedStatuses+2&&PlainJob()=="Equipping: 1 of 2 done.","polling resumes after manual valid inspection");
+    Check(applies==heldAppliesAtPoll&&submits==heldSubmitsAtPoll&&cancels==heldCancelsAtPoll&&Disabled(221),"observations have no mutation or release side effects");
+    Select(0,1);Select(2,1);asyncCap=false;Button(24);Check(cancels==1&&PlainJob().empty()&&Disabled(221),"cancel remains available after capability revocation");NoDeveloperWords("player (unavailable)");Check(panel.nodes.count(25)&&!panel.nodes.count(26),"without the capability the page says so and hides progress");Button(221);Check(submits==1,"async revocation prevents new submit");
     applyCap=weaponsCap=asyncCap=true;
     version=SC_LOADOUT_VERSION_1_1;Button(221);Check(submits==1,"old async version has no synchronous fallback");version=SC_LOADOUT_VERSION_1_2;
     for(uint32_t size=4;size<offsetof(sc_loadout_v1_2,cancel)+sizeof(loadout.cancel);++size){auto shortTable=std::make_unique<unsigned char[]>(size);std::memcpy(shortTable.get(),&loadout,size);std::memcpy(shortTable.get(),&size,4);loadoutTable=shortTable.get();Button(221);Check(submits==1,"curated async full member extent");}loadoutTable=&loadout;
@@ -196,21 +213,21 @@ int main(int argc,char** argv){
     auto reload=[&]{Check(Call("loadout.reload_slots")==SCO_OK,"reload copied slot catalogue");Tick();};
     files.push_back({"lists/items.txt","[helmet]\nFixtureAlpha\nFixtureBeta\n"});Check(Call("loadout.reload_lists")==SCO_OK,"copied legacy gear for shared-filter proof");Tick();
     files[0].bytes="[primary]\nFixtureAlpha\nFixtureBeta\nFixtureGamma\n";reload();const auto filterReads=reads;
-    Filter("bEtA");Check(panel.nodes[200].options==std::vector<std::string>{"Unchanged (omit slot)","FixtureBeta"},"shared filter is case-insensitive and uses original class");
-    Check(panel.nodes[2].options==std::vector<std::string>{"helmet: FixtureBeta"},"same shared filter narrows copied legacy gear browser");
-    Select(0,1);Filter("Gamma");Check(panel.nodes[200].options==std::vector<std::string>{"Unchanged (omit slot)","FixtureBeta","FixtureGamma"}&&panel.nodes[200].index==1,"nonmatching selected class remains visible with original identity");
-    Select(0,2);Button(220);Check(captured.size()==1&&!std::strcmp(captured[0].item_class,"FixtureGamma"),"filtered visible row maps to original third class");
+    Filter("bEtA");Check(panel.nodes[200].options==std::vector<std::string>{"Keep current","Fixture Beta"},"shared filter is case-insensitive and uses original class");
+    Check(panel.nodes[2].options==std::vector<std::string>{"Helmet: Fixture Beta"},"same shared filter narrows copied legacy gear browser");
+    Select(0,1);Filter("Gamma");Check(panel.nodes[200].options==std::vector<std::string>{"Keep current","Fixture Beta","Fixture Gamma"}&&panel.nodes[200].index==1,"nonmatching selected class remains visible with original identity");
+    Select(0,2);Button(221);Check(captured.size()==1&&!std::strcmp(captured[0].item_class,"FixtureGamma"),"filtered visible row maps to original third class");Button(24);
     stale=panel;Filter("Alpha");Send(stale,200,SCO_WIDGET_COMBO,1);Select(0,-1);Select(0,3);Select(0,0x7fffffff);Send(200,SCO_WIDGET_BUTTON);
-    Button(220);Check(!std::strcmp(captured[0].item_class,"FixtureGamma")&&panel.nodes[200].index==2,"changed-filter stale and malformed selections cannot rebind class");
-    Filter("no matches");Check(panel.nodes[200].options==std::vector<std::string>{"Unchanged (omit slot)","FixtureGamma"}&&!Disabled(220),"empty matches retain selected class and apply");
+    Button(221);Check(!std::strcmp(captured[0].item_class,"FixtureGamma")&&panel.nodes[200].index==2,"changed-filter stale and malformed selections cannot rebind class");Button(24);
+    Filter("no matches");Check(panel.nodes[200].options==std::vector<std::string>{"Keep current","Fixture Gamma"}&&!Disabled(221),"empty matches retain selected class and apply");
     const std::string longest(63,'x');Filter(longest.c_str());Check(panel.nodes[1].text==longest,"exact63byte printable filter accepted");
     const std::string oversized(64,'x');for(const char* bad:{oversized.c_str(),"bad\nfilter","\x7f","\xff",static_cast<const char*>(nullptr)}){Filter(bad);Check(panel.nodes[1].text==longest&&panel.nodes[200].index==1,"malformed/oversized filter preserves filter and picks");}
     char unterminated[64];std::memset(unterminated,'x',sizeof(unterminated));Filter(unterminated);Check(panel.nodes[1].text==longest,"unterminated filter is read only through the fixed63byte bound");
     Send(1,SCO_WIDGET_BUTTON,0,"Alpha");Check(panel.nodes[1].text==longest,"wrong filter event kind ignored");
     auto shortEvent=sco_widget_event{};shortEvent.size=sizeof(shortEvent)-1;shortEvent.node_id=1;shortEvent.kind=SCO_WIDGET_TEXT_INPUT;shortEvent.text="Alpha";panel.fn("loadout.player",&shortEvent,panel.ctx);Check(panel.nodes[1].text==longest,"short filter event ignored");
-    Filter("");Select(0,2);stale=panel;panelResult=SCO_FAILED;const auto filteredApplies=applies;Filter("Gamma");Send(stale,200,SCO_WIDGET_COMBO,1);Send(stale,220,SCO_WIDGET_BUTTON);Check(applies==filteredApplies,"failed filtered publication pauses stale callbacks");panelResult=SCO_OK;Tick();Button(220);Check(!std::strcmp(captured[0].item_class,"FixtureBeta"),"filter publication retry preserves exact selected class");
-    Button(221);Check(captured.size()==1&&!std::strcmp(captured[0].item_class,"FixtureBeta"),"filtered selection uses unchanged async route and raw class");Filter("Alpha");const auto heldApplies=applies;Button(220);Check(applies==heldApplies&&Disabled(221),"filter edits preserve retained job admission");Button(24);
-    Button(222);Filter("no matches");Check(panel.nodes[200].options.size()==1&&Disabled(200)&&Disabled(220),"no matches with no selection omits slot only");Check(reads==filterReads,"search, selection and jobs use copied catalogue without content reads");
+    Filter("");Select(0,2);stale=panel;panelResult=SCO_FAILED;const auto filteredSubmits=submits;Filter("Gamma");Send(stale,200,SCO_WIDGET_COMBO,1);Send(stale,221,SCO_WIDGET_BUTTON);Check(submits==filteredSubmits,"failed filtered publication pauses stale callbacks");panelResult=SCO_OK;Tick();Button(221);Check(!std::strcmp(captured[0].item_class,"FixtureBeta"),"filter publication retry preserves exact selected class");
+    Check(captured.size()==1&&!std::strcmp(captured[0].item_class,"FixtureBeta"),"filtered selection uses the async route and the raw class");Filter("Alpha");const auto heldSubmits=submits;Button(221);Check(submits==heldSubmits&&Disabled(221),"filter edits preserve retained job admission");Button(24);
+    Button(222);Filter("no matches");Check(panel.nodes[200].options.size()==1&&Disabled(200)&&Disabled(221),"no matches with no selection omits slot only");Check(reads==filterReads,"search, selection and jobs use copied catalogue without content reads");
     struct Alias{const char* cls;const char* label;uint32_t slot;};
     const Alias aliases[]{
         {"grin_multitool_01_mining","OreBit Mining Attachment",8},{"grin_multitool_01_cutter","OxyTorch Cutter Attachment",8},
@@ -222,26 +239,26 @@ int main(int argc,char** argv){
     files[0].bytes="[primary_tool_module]\n";for(const auto& alias:aliases)if(alias.slot==8)files[0].bytes+=std::string(alias.cls)+'\n';
     files[0].bytes+="[primary_tool_canister]\n";for(const auto& alias:aliases)if(alias.slot==9)files[0].bytes+=std::string(alias.cls)+'\n';
     Filter("");reload();
-    for(const auto& alias:aliases){Button(222);Filter(alias.label);const auto id=200+alias.slot;Check(panel.nodes[id].options==std::vector<std::string>{"Unchanged (omit slot)",std::string(alias.label)+" ["+alias.cls+"]"},"public friendly label remains paired with raw identity");Select(alias.slot,1);Button(220);Check(captured.size()==1&&!std::strcmp(captured[0].item_class,alias.cls),"friendly-name selection sends exact raw public class");}
+    for(const auto& alias:aliases){Button(222);Filter(alias.label);const auto id=200+alias.slot;Check(panel.nodes[id].options==std::vector<std::string>{"Keep current",std::string(alias.label)},"public friendly label replaces the raw identity on screen");Select(alias.slot,1);Button(221);Check(captured.size()==1&&!std::strcmp(captured[0].item_class,alias.cls),"friendly-name selection sends exact raw public class");Button(24);}
     Button(222);Filter("TRUHOLD");Check(panel.nodes[208].options.size()==2,"friendly alias matching ignores ASCII case");Filter("resource_salvage");Check(panel.nodes[209].options.size()==3,"raw canister identity remains searchable");
     Filter("");Button(222);files[1].bytes.clear();Check(Call("loadout.reload_lists")==SCO_OK,"clear synthetic legacy list snapshot");Tick();files.resize(1);
     std::string all;const char* names[]{"primary","sidearm","primary_optic","primary_barrel","primary_underbarrel","sidearm_optic","sidearm_barrel","sidearm_underbarrel","primary_tool_module","primary_tool_canister","primary_tool_battery","sidearm_tool_module","sidearm_tool_canister","sidearm_tool_battery"};
     for(const auto* name:names)all+=std::string("[")+name+"]\nSharedClass\n";
     files[0].bytes=all;reload();
     for(uint32_t i=0;i<14;++i)Select(i,1);
-    Button(220);Check(captured.size()==14,"all fourteen independent selections");
-    for(uint32_t i=0;i<14;++i)Check(captured[i].slot==8+i,"canonical parent-before-attachment order");
-    const auto loadedReads=reads;files[0].bytes="[primary]\nChanged\n";Button(220);Check(captured.size()==14&&reads==loadedReads,"widget selections own startup copies, no read on apply");
-    stale=panel;Check(Call("loadout.reload_slots")==SCO_OK,"explicit reload");oldApplies=applies;Send(stale,220,SCO_WIDGET_BUTTON);Check(applies==oldApplies,"reload invalidates old mapping before publication");Tick();Check(Disabled(220)&&panel.nodes[200].options[1]=="Changed","reload clears picks and installs new copied snapshot");
-    Select(0,1);stale=panel;panelResult=SCO_FAILED;Button(222);Send(stale,220,SCO_WIDGET_BUTTON);Check(applies==oldApplies,"failed publication pauses old actions");panelResult=SCO_OK;Tick();Check(Disabled(220),"publication retry retains clear selection");
+    Button(221);Check(captured.size()==14,"all fourteen independent selections");
+    for(uint32_t i=0;i<14;++i)Check(captured[i].slot==8+i,"canonical parent-before-attachment order");Button(24);
+    const auto loadedReads=reads;files[0].bytes="[primary]\nChanged\n";Button(221);Check(captured.size()==14&&reads==loadedReads,"widget selections own startup copies, no read on apply");Button(24);
+    stale=panel;Check(Call("loadout.reload_slots")==SCO_OK,"explicit reload");oldSubmits=submits;Send(stale,221,SCO_WIDGET_BUTTON);Check(submits==oldSubmits,"reload invalidates old mapping before publication");Tick();Check(Disabled(221)&&panel.nodes[200].options[1]=="Changed","reload clears picks and installs new copied snapshot");
+    Select(0,1);stale=panel;panelResult=SCO_FAILED;Button(222);Send(stale,221,SCO_WIDGET_BUTTON);Check(submits==oldSubmits,"failed publication pauses old actions");panelResult=SCO_OK;Tick();Check(Disabled(221),"publication retry retains clear selection");
     for(const std::string& bad:std::vector<std::string>{"Unsectioned\n","[optic]\nFixture\n","[PRIMARY]\nFixture\n","[primary] suffix\nFixture\n","[primary]\nNone\n","[primary]\nBad-Class\n","[primary]\nA\n[primary]\nB\n","[primary]\nA\na\n",std::string("[primary]\nA\n")+'\0',"[primary]\n"+std::string(96,'A')+"\n"}){
-        files[0].bytes=bad;Check(Call("loadout.reload_slots")!=SCO_OK,"malformed/ambiguous catalogue refuses atomically");Tick();Check(panel.nodes[200].options.size()==1&&Disabled(220),"failed reload clears old choices/picks");
+        files[0].bytes=bad;Check(Call("loadout.reload_slots")!=SCO_OK,"malformed/ambiguous catalogue refuses atomically");Tick();Check(panel.nodes[200].options.size()==1&&Disabled(221),"failed reload clears old choices/picks");
     }
     files[0].bytes="[primary]\n";for(unsigned i=0;i<255;++i)files[0].bytes+="Fixture"+std::to_string(i)+"\n";reload();Check(panel.nodes[200].options.size()==256,"exact255 plus unchanged obeys public combo limit");files[0].bytes+="Extra\n";Check(Call("loadout.reload_slots")==SCO_TOO_MANY,"256classes in one slot refused, not truncated");Tick();
     files[0].bytes.clear();unsigned total=0;
     for(unsigned section=0;section<12;++section){files[0].bytes+=std::string("[")+names[section]+"]\n";for(unsigned row=0;row<255&&total<3000;++row,++total)files[0].bytes+="Fixture"+std::to_string(row)+"\n";}
-    reload();Check(panel.nodes[225].label.find("3000 copied choices")!=std::string::npos,"exact3000 total catalogue choices");files[0].bytes+="Extra\n";Check(Call("loadout.reload_slots")==SCO_TOO_MANY,"3001total refuses atomically");Tick();
-    files[0].bytes.clear();while(files[0].bytes.size()+256<=SCO_CONTENT_MAX_FILE_BYTES)files[0].bytes+='#'+std::string(254,'x')+'\n';if(files[0].bytes.size()<SCO_CONTENT_MAX_FILE_BYTES)files[0].bytes+='#'+std::string(SCO_CONTENT_MAX_FILE_BYTES-files[0].bytes.size()-1,'x');reload();Check(panel.nodes[225].label.find("0 copied choices")!=std::string::npos,"exact1MiB copied input accepted");files[0].bytes+='x';Check(Call("loadout.reload_slots")==SCO_TOO_MANY,"1MiB plus one refused before partial parse");Tick();
+    reload();Check(panel.nodes[225].label.find("3000 weapons")!=std::string::npos,"exact3000 total catalogue choices");files[0].bytes+="Extra\n";Check(Call("loadout.reload_slots")==SCO_TOO_MANY,"3001total refuses atomically");Tick();
+    files[0].bytes.clear();while(files[0].bytes.size()+256<=SCO_CONTENT_MAX_FILE_BYTES)files[0].bytes+='#'+std::string(254,'x')+'\n';if(files[0].bytes.size()<SCO_CONTENT_MAX_FILE_BYTES)files[0].bytes+='#'+std::string(SCO_CONTENT_MAX_FILE_BYTES-files[0].bytes.size()-1,'x');reload();Check(panel.nodes[225].label.find("weapon list is empty")!=std::string::npos,"exact1MiB copied input accepted");files[0].bytes+='x';Check(Call("loadout.reload_slots")==SCO_TOO_MANY,"1MiB plus one refused before partial parse");Tick();
     files[0].bytes="";reload();Check(panel.nodes[200].options.size()==1&&Disabled(200),"empty catalogue valid and no mutation choices");
     files[0].bytes="[primary]\nFixture\n";files.push_back(files[0]);const auto readBefore=reads;Check(Call("loadout.reload_slots")==SCO_BAD_ARG&&reads==readBefore,"multiple exact Lists refuse without guessing");files.resize(1);Tick();
     for(const char* wrong:{"loadout_slots.txt","Lists/loadout_slots.txt","lists/loadout_slots.TXT","lists/nested/loadout_slots.txt"}){files[0].name=wrong;Check(Call("loadout.reload_slots")==SCO_NOT_FOUND,"canonical namespace exact");}files[0].name="lists/loadout_slots.txt";
@@ -252,16 +269,16 @@ int main(int argc,char** argv){
     endless=true;const auto beforeItems=items;Check(Call("loadout.reload_slots")==SCO_TOO_MANY&&items-beforeItems==SCO_CONTENT_MAX_ITEMS+1,"bounded content enumeration");endless=false;
     for(uint32_t size=4;size<offsetof(sco_content_v1,read)+sizeof(content.read);++size){auto bytes=std::make_unique<unsigned char[]>(size);std::memcpy(bytes.get(),&content,size);std::memcpy(bytes.get(),&size,4);contentTable=bytes.get();Check(Call("loadout.reload_slots")==SCO_UNAVAILABLE,"physically short content member refuses");}contentTable=&content;
     content.read=nullptr;Check(Call("loadout.reload_slots")==SCO_UNAVAILABLE,"null read callback");content.read=Read;contentPresent=false;Check(Call("loadout.reload_slots")==SCO_UNAVAILABLE,"missing content provider");contentPresent=true;
-    reload();Select(0,1);stale=panel;oldApplies=applies;test_module::Unload();Send(stale,220,SCO_WIDGET_BUTTON);Check(applies==oldApplies,"callback after unload inert");commands.clear();Check(test_module::Load(&api,owner)==SCO_OK,"module reload");Send(stale,220,SCO_WIDGET_BUTTON);Check(applies==oldApplies&&Disabled(220),"old cookie cannot target new loaded session");
-    if(argc==3){std::ifstream file(argv[2],std::ios::binary);Check(bool(file),"public seed catalogue file");files[0].bytes=std::string(std::istreambuf_iterator<char>(file),{});reload();unsigned count=0;for(uint32_t i=0;i<14;++i){count+=static_cast<unsigned>(panel.nodes[200+i].options.size()-1);Select(i,1);}Check(count==344,"all344 attributed seed choices parsed by actual module");Button(220);Check(captured.size()==14,"seed choices reach all14 public targets, no compatibility claim");}
-    Select(0,1);Button(221);Check(Disabled(220),"new curated job retained");progress={};progress.size=sizeof(progress);progress.state=SC_LOADOUT_JOB_COMPLETE;progress.report=Report();progress.completed=progress.report.count;progress.report.slots[0].status=SC_LOADOUT_ITEM_MISSING;--progress.report.applied;
-    Button(23);Check(panel.nodes[26].label.find("complete;")!=std::string::npos&&panel.nodes[26].label.find("item-missing")!=std::string::npos,"complete job with partial slot refusal is not whole-batch success");
-    throwLog=true;Button(23);throwLog=false;Check(panel.nodes[26].label.find("complete;")!=std::string::npos,"throwing logger cannot change status result or escape callback");
+    reload();Select(0,1);stale=panel;oldSubmits=submits;test_module::Unload();Send(stale,221,SCO_WIDGET_BUTTON);Check(submits==oldSubmits,"callback after unload inert");commands.clear();Check(test_module::Load(&api,owner)==SCO_OK,"module reload");Send(stale,221,SCO_WIDGET_BUTTON);Check(submits==oldSubmits&&Disabled(221),"old cookie cannot target new loaded session");
+    if(argc==3){std::ifstream file(argv[2],std::ios::binary);Check(bool(file),"public seed catalogue file");files[0].bytes=std::string(std::istreambuf_iterator<char>(file),{});reload();unsigned count=0;for(uint32_t i=0;i<14;++i){count+=static_cast<unsigned>(panel.nodes[200+i].options.size()-1);Select(i,1);}Check(count==344,"all344 attributed seed choices parsed by actual module");Button(221);Check(captured.size()==14,"seed choices reach all14 public targets, no compatibility claim");Button(24);}
+    Select(0,1);Button(221);Check(Disabled(221),"new curated job retained");progress={};progress.size=sizeof(progress);progress.state=SC_LOADOUT_JOB_COMPLETE;progress.report=Report();progress.completed=progress.report.count;progress.report.slots[0].status=SC_LOADOUT_ITEM_MISSING;--progress.report.applied;
+    Button(23);Check(PlainJob().find("Finished")==0,"complete job with partial slot refusal is not whole-batch success");
+    throwLog=true;Button(23);throwLog=false;Check(PlainJob().find("Finished")==0,"throwing logger cannot change status result or escape callback");
     uint32_t wrap=0xffffff80u;tick("tick",&wrap,tickCtx);const auto wrapStatuses=statuses;wrap=0x47u;tick("tick",&wrap,tickCtx);Check(statuses==wrapStatuses,"199ms across clock wrap does not poll");wrap=0x48u;tick("tick",&wrap,tickCtx);Check(statuses==wrapStatuses+1,"200ms across clock wrap polls once");
-    statusMode=2;const auto beforeRecursive=statuses;Tick();Check(statuses==beforeRecursive+1,"recursive tick and inspection cannot poll again");statusMode=1;Tick();Check(panel.nodes[26].label.find("unknown; polling paused")!=std::string::npos,"status exception clears observation and pauses");const auto afterException=statuses;Tick();Check(statuses==afterException,"exception does not repeatedly poll");statusMode=0;Button(23);Check(panel.nodes[26].label.find("complete;")!=std::string::npos,"manual inspection recovers after exception");
-    statusMode=3;Tick();statusMode=0;Tick();Check(panel.nodes[26].label.find("No retained")!=std::string::npos&&!Disabled(221),"status from a reentrantly released job is discarded");Button(221);Check(Disabled(221),"job can be retained again after release");
-    for(int mode:{4,5}){statusMode=mode;Tick();statusMode=0;Filter("");Check(Disabled(221)&&panel.nodes[26].label.find("waiting for a status")!=std::string::npos,"old response or exception cannot overwrite a same-id replacement");}
-    cancelResult=SCO_UNAVAILABLE;Button(24);Check(Disabled(220),"refused cancel retains job");cancelResult=SCO_OK;const auto cancelBefore=cancels;asyncCap=false;
+    statusMode=2;const auto beforeRecursive=statuses;Tick();Check(statuses==beforeRecursive+1,"recursive tick and inspection cannot poll again");statusMode=1;Tick();Check(PlainJob()=="Couldn't read progress. Cancel and try again.","status exception clears observation and pauses");const auto afterException=statuses;Tick();Check(statuses==afterException,"exception does not repeatedly poll");statusMode=0;Button(23);Check(PlainJob().find("Finished")==0,"manual inspection recovers after exception");
+    statusMode=3;Tick();statusMode=0;Tick();Check(PlainJob()=="Nothing is being equipped."&&!Disabled(221),"status from a reentrantly released job is discarded");Button(221);Check(Disabled(221),"job can be retained again after release");
+    for(int mode:{4,5}){statusMode=mode;Tick();statusMode=0;Filter("");Check(Disabled(221)&&PlainJob()=="Equipping: waiting for the game.","old response or exception cannot overwrite a same-id replacement");}
+    cancelResult=SCO_UNAVAILABLE;Button(24);Check(Disabled(221),"refused cancel retains job");cancelResult=SCO_OK;const auto cancelBefore=cancels;asyncCap=false;
     const auto beforeUnloadStatuses=statuses;auto savedTick=tick;auto savedTickCtx=tickCtx;
     test_module::Unload();Check(cancels==cancelBefore+1,"unload cancels retained job after capability revocation");uint32_t afterUnload=999999;savedTick("tick",&afterUnload,savedTickCtx);Check(statuses==beforeUnloadStatuses,"late tick cannot observe after unload");test_module::Close();std::printf("loadout curated catalogue: %u checks PASS; actual module, synthetic providers only\n",checks);
 }

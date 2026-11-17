@@ -152,6 +152,7 @@ add_library(dinput8 SHARED
   src/missions.cpp
   src/contracts.cpp
   src/menu.cpp
+  src/menu_shell.cpp   # the menu's look and page layout, shared with tools/menu_preview
   src/hotkeys.cpp
   # G1 admission evidence: firewall rule store + TCP table (decision core: admission_evidence.h).
   src/admission_probe.cpp

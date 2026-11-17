@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Headless menu size/file and actual pinned ImGui tab overflow regressions."""
+"""Headless menu size/file, pinned ImGui tab overflow and sidebar navigation regressions."""
 import argparse
 import os
 from pathlib import Path
@@ -21,6 +21,12 @@ def check(work, compiler):
                    cwd=work, check=True)
     subprocess.run([str(binary), str(work)], cwd=work, check=True)
     subprocess.run([str(binary), str(work), '--restore'], cwd=work, check=True)
+    # The sidebar model (src/menu_navigation.h): standard C++ only, no ImGui.
+    navigation = work / ('menu_navigation_test.exe' if os.name == 'nt' else 'menu_navigation_test')
+    subprocess.run([compiler, '-std=c++20', '-Wall', '-Wextra', '-Werror', '-I', str(ROOT / 'src'),
+                    str(ROOT / 'tools/menu_navigation_test.cpp'), '-o', str(navigation)],
+                   cwd=work, check=True)
+    subprocess.run([str(navigation), str(work)], cwd=work, check=True)
 
 
 def main():

@@ -1,5 +1,9 @@
 # Quantum control and Travel — SDK-only G8/G3 consumer
 
+## The Travel page
+
+Sections, in the order a player uses them: **Choose a destination** (search box, list, `Find nearby places`), **Set the height and go** (arrival height, `Travel to selected destination`), **Your saved spots** (list, `Go to selected spot`, `Delete selected spot`, name box, `Save this spot`), **Quantum drive** and **Status**. The Quantum drive section appears only when the drive can be controlled (or the controls are already on), so there are no buttons that can only refuse; Boost is disabled until the controls are on and the game's rules allow it. Page text is plain sentences; command replies and `mod.log` keep their technical wording. Removed from the page: `Inspect selected bookmark` (printed internals only), `Release quantum hold` (Boost turns into `Stop boost`) and `Refresh quantum state and GameRules` (the page refreshes itself). Those commands are unchanged.
+
 The external `quantum` folder owns commands, input policy and the retained **Travel** panel. It uses only extracted public SDK headers. The host does not compile/start its old `src/quantum.cpp` hooks, and its global quantum cvar keeper no longer runs. Legacy source is retained inactive; there is no built-in or private-pointer fallback when plugins are off.
 
 ## Approved controls and engine validation

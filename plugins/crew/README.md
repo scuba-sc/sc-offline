@@ -11,12 +11,17 @@ trusted process code, not a security sandbox.
 
 ## Public widget boundary
 
-The external Crew panel uses public `sco.widgets`: target/refresh the current
-ship, copied seat/occupant/usability rows, 32-seat pages, selected-seat Sit,
-Stand or Remove, add one owned NPC to a selected seat, fill/stand/clear owned
-crew and Flight Ready. Each action rereads public providers; per-seat removal
-refuses foreign/player/NPC-plugin occupants. Manual seat words keep `crew.sit`
-semantics; selected-seat actions use the fresh copied index, not ambiguous names.
+The external Crew panel uses public `sco.widgets`, in sections: **Your ship**
+(**Use my current ship**, **Get ship ready to fly**, **Update seat list**, a seat
+choice and a table of who is in each seat, 32 seats a page), **Choose a character to
+add** (search, paged list, a typed character name), **Add crew** (**Fill all empty
+seats**, **Add to selected seat**), **You and your crew** (**Sit in selected seat**,
+**Stand up person in seat**, **Remove crew in seat**, **Stand everyone up**,
+**Remove all my crew**) and **Last result**. The seat buttons wait for a seat choice.
+Each action rereads public providers; per-seat removal
+refuses foreign/player/NPC-plugin occupants. The panel has no free-text seat box;
+`crew.sit` still accepts seat words from the command line, and selected-seat actions
+use the fresh copied index, not ambiguous names.
 Crew and NPC share SDK-only catalog parsing/filtering/paging, not session IDs.
 Widgets/content ship in the pinned published SDK 2.4.0; SDK 2.0.0 predated
 them. No Windows rendering/gameplay result is claimed.

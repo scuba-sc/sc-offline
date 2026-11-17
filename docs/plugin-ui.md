@@ -2,32 +2,56 @@
 
 sc-offline's menu (**M**) is a shell over sco-core's `sco.ui` service ([sco-core docs/ui.md](https://github.com/scuba-sc/sco-core/blob/main/docs/ui.md)). Every feature tab is registered by its built-in plugin, and a plugin can add its own tab, overlay and hotkeys the same way. This page covers what sc-offline adds to sco-core's contract.
 
-## Tabs
+## Pages and the sidebar
 
-The menu shows the tabs registered through `sco.ui` by ascending `order`, ties in registration order, then sc-offline's own **Menu** tab, which is always last. A badge appears after the title, as in `UI probe (3)`. The built-ins' tabs and their orders:
+The menu is a sidebar of pages on the left and the open page on the right, with the status strip along the bottom. A page is a `sco.widgets` panel (what every shipped plugin uses), a `sco.ui` tab (ImGui drawing, below), or the menu's own **Menu settings**. Each page opens under a header: its name, then one line that says what it is for.
 
-| Order | Tab | Registered by | Id |
-| ---: | --- | --- | --- |
-| 100 | Player | `loadout` | `loadout.player` |
-| 200 | Travel | `quantum` | `quantum.travel` |
-| 300 | Vehicles | `spawn` | `spawn.vehicles` |
-| 400 | Crew | `crew` | `crew.crew` |
-| 500 | reserved (NPC UI pending SDK widgets) | — | — |
-| 600 | Build | `build` | `build.build` |
-| 650 | Multiplayer | `multiplayer` | `multiplayer.session` |
-| 700 | Squadron 42 | `loadout` | `loadout.sq42` |
-| — | Menu | sc-offline | (not in `sco.ui`) |
+[`src/menu_navigation.h`](../src/menu_navigation.h) decides where a page goes, by its id only (a title can't move a page). The pages sc-offline ships, in the order a player sees them:
 
-To put a tab between two of these, give it an order in between. An order above 700 puts it after Squadron 42 (the optional bridges' **Titanfall** and **Voxel** tabs take 800 and 810 in builds that include them). `teleport`, `contracts` and `mining` have no page of their own: their controls sit on the Player, Vehicles and Travel tabs, or they have no menu controls at all. The creative plugin has none either: the Player and Vehicles tabs' cheat checkboxes run its commands.
+| Section | Page | Id |
+| --- | --- | --- |
+| Character | Gear | `loadout.player` |
+| | Saved outfits | `gear_presets.main` |
+| Travel | Travel | `quantum.travel` |
+| | Saved spots | `teleport.travel` |
+| Ships & vehicles | Ships & vehicles (with **Your own ships**, `spawn.asop`, under it) | `spawn.vehicles` |
+| Build | Build | `build.picker` |
+| | Creative | `creative.panel` |
+| People | Crew | `crew.crew` |
+| | Characters | `npc.npcs` |
+| Squadron 42 | Squadron 42 | `loadout.sq42` |
+| Multiplayer | Multiplayer | `multiplayer.session` |
+| More plugins | any page sc-offline doesn't know, under the plugin's own title | |
+| More plugins | Titanfall link, Voxel link (optional bridges, off by default) | `titanlink.titanfall`, `voxel_bridge.voxel` |
+| Settings | Menu settings | (the menu's own) |
+| Developer | Inspector, UI probe (test plugin) | `inspector.main`, `ui_probe.main` |
 
-NPC is now an external command-first plugin (`npc.spawn`, `npc.observe`, `npc.remove`,
-`npc.clear`), with no tab or new ImGui coupling. Its old NPC menu is unavailable pending
-renderer-neutral widgets ([sco-core #139](https://github.com/scuba-sc/sco-core/issues/139));
-Crew retains its existing host archetype picker. Inspector is command-only too.
+Pages in **Developer** appear only when **Menu settings > Show developer pages** is on. The open page and that switch are remembered in `menu-view.ini`, next to `mod.log`. A badge appears after a page's name, as in `UI probe (3)`. A page sc-offline doesn't know goes under **More plugins**, after the known ones; its header line says which plugin added it. Unknown pages keep the order the host lists them in: `sco.ui` tabs by their `order`, then widget panels. Known pages always take the place the table above gives them, whatever their `order`.
+
+`teleport` (F7/F8), `contracts` and `mining` run mostly from keys and commands. `inspector` is read-only and for developers.
+
+## Writing a page for players
+
+Players open this menu in the middle of a game. Every page has to make sense to someone who has never seen the source, the SDK or the logs. These rules apply to every visible string: panel titles, labels, buttons, list rows, hints and status lines. Logs and command names keep their technical names.
+
+1. **Say what it does, in the player's words.** "Spawn ship", "Get in", "Remove all my ships". Buttons start with a verb. Sentence case.
+2. **No internals on screen.** No ids or command names (`build.place`, `spawn.ship_options`), capability names (`game.inventory.read`), versions (`(1.2)`, `requires loadout 1.1`), gate or task numbers (`G2`, `S1`), or words from the code: archetype, owned, ticket, session ticket, phase, catalog, pagination, payload, slot id, job, retained, preview, orchestration, SDK, adapter, GameRules. Show a game class name only where there is nothing better. Then clean it for reading (`PrettyBuildName`); the raw name can go in a tooltip on a page that submits 1.1 nodes.
+3. **No button that can only fail.** A control that can never work on this build is left out. A control that works only sometimes is shown disabled (`SCO_WIDGET_DISABLED`), with the reason in one plain sentence ("Choose a ship first.", "Ready to fly needs the pilot seat."): in its tooltip on a page that submits 1.1 nodes, otherwise as a label line right next to it. The shipped pages submit 1.0 nodes and use the label line.
+4. **Group the page.** Put related controls in a labelled `COLUMN` (it renders as a section heading), in the order the player uses them: choose, adjust, do, then manage what was made. Put buttons that belong together in one `ROW`. Keep the main action next to what it acts on.
+5. **Results speak plainly.** A status line says what happened and what to do next ("Spawned a Cutlass Black 30 m ahead. Press F to get in."). A refusal says why, without the internal reason code. On a page that submits 1.1 nodes, give problems severity `WARNING` or `ERROR`, so they don't read like normal text. Keep two texts for every result: the technical one for the command reply and `mod.log`, and the plain one for the page.
+6. **Lists the player chooses from** show readable names, with a search box above them when they are long.
+
+Three checks keep this true:
+
+- `tools/check_menu_wording.py` (CI) reads the string literals in the page sources for the internal words above. A technical string that never reaches a page goes in its allow-list, with the reason.
+- The plugins' workflow tests scan the words of every panel they receive, which covers the result sentences built at run time.
+- Every fixture that receives panels checks them against the host's tree rules ([`tools/panel_dump.h`](../tools/panel_dump.h)). The host refuses a tree that breaks them, and the page then disappears in game.
+
+To look at the pages without the game, run the workflow tests with `SCO_PANEL_DUMP=<file>`, then `python tools/menu_preview/run.py --dump <file> --out <folder>` (Windows). It draws every page with the menu's own shell, theme and widget renderer into PNG files. The content is the tests' synthetic data, so it is not a screenshot of the game.
 
 ## Drawing: ImGui through sc-offline's frame
 
-A draw callback gets `frame`, which is sc-offline's `ImGuiContext*`. It is valid **only during that call** and only on the game thread, the only thread sco-core runs draws on. The callback draws the tab's body inside the menu window, below the tab bar and above the status strip, and the window's scrolling child is already open. Overlays draw after the menu window, once per menu frame.
+A draw callback gets `frame`, which is sc-offline's `ImGuiContext*`. It is valid **only during that call** and only on the game thread, the only thread sco-core runs draws on. The callback draws the page's body inside the menu window, below the page header and above the status strip, and the page's scrolling child is already open. Overlays draw after the menu window, once per menu frame.
 
 ImGui is **optional for plugins**: commands, events, settings and hotkeys work without linking it. A plugin that cannot establish this host-specific drawing contract must skip tabs/overlays and keep its non-UI features working. The frozen `sco_api.h` 1.1 C ABI and `sco.ui` table cover callout registration and layout, **not** the memory behind `frame`. Sharing an `ImGuiContext*` is **third-party ABI coupling**, not compatibility across arbitrary ImGui versions.
 

@@ -35,7 +35,7 @@ def main(args):
     # specific public-consumer helper, not the wider product host tree.
     shutil.copy2(ROOT / 'plugins/picker.h', source / 'plugins/picker.h')
     (source / 'tools').mkdir()
-    for name in ('loadout_catalogue_test.cpp', 'workflow_module.h'):
+    for name in ('loadout_catalogue_test.cpp', 'workflow_module.h', 'panel_dump.h'):
         shutil.copy2(ROOT / 'tools' / name, source / 'tools' / name)
     (source / 'data').mkdir()
     shutil.copy2(ROOT / 'data/loadout_slots.txt', source / 'data/loadout_slots.txt')

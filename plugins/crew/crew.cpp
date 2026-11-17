@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstring>
 #include <cctype>
+#include <string>
 #include <cmath>
 #include <limits>
 namespace sco::features::crew {
@@ -54,8 +55,9 @@ template<class T> const T* Open(const char* name) {
     if (!HAS_FN(g.api,sco_api,query_service) || g.api->query_service(name,0x10000u,&out) != SCO_OK) return nullptr;
     return static_cast<const T*>(out);
 }
-sco_result Answer(sco_result r,char* reply,uint32_t size,const char* text) {
-    if (reply && size) std::snprintf(reply,size,"%s",text);
+// text goes to the log; shown (when given) is the plain sentence the player sees in the panel.
+sco_result Answer(sco_result r,char* reply,uint32_t size,const char* text,const char* shown = nullptr) {
+    if (reply && size) std::snprintf(reply,size,"%s",shown ? shown : text);
     if (HAS_FN(g.api,sco_api,log)) g.api->log(g.self,r == SCO_OK ? SCO_LOG_INFO : SCO_LOG_WARN,text);
     return r;
 }
@@ -127,17 +129,18 @@ bool Matches(const char* name,const char* words) {
 sco_result Target(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size) {
     const auto valid = Validate(args,n,false,reply,size); if (valid != SCO_OK) return valid;
     const auto* v = Open<sc_vehicles_v1>(SC_VEHICLES_SERVICE_NAME); uint64_t ship = 0;
-    if (!Cap("game.vehicles.seats") || !HAS_FN(v,sc_vehicles_v1,player_ship)) return Answer(SCO_UNAVAILABLE,reply,size,"game.vehicles unavailable");
+    if (!Cap("game.vehicles.seats") || !HAS_FN(v,sc_vehicles_v1,player_ship)) return Answer(SCO_UNAVAILABLE,reply,size,"game.vehicles unavailable","Ship controls aren't available right now.");
     const auto r = v->player_ship(&ship);
-    if (r != SCO_OK || !ship) return Answer(r == SCO_OK ? SCO_FAILED : r,reply,size,"No current ship");
-    g.pinned = ship; return Answer(SCO_OK,reply,size,"Targeting current ship (session only)");
+    if (r != SCO_OK || !ship) return Answer(r == SCO_OK ? SCO_FAILED : r,reply,size,"No current ship","You're not in a ship. Get into one first.");
+    g.pinned = ship; return Answer(SCO_OK,reply,size,"Targeting current ship (session only)","Now using your current ship.");
 }
 sco_result Power(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size) {
     const auto valid = Validate(args,n,false,reply,size); if (valid != SCO_OK) return valid;
     const auto* v = Open<sc_vehicles_v1>(SC_VEHICLES_SERVICE_NAME); uint64_t ship = 0;
-    if (!Cap("game.vehicles.flight_ready") || !HAS_FN(v,sc_vehicles_v1,power_on)) return Answer(SCO_UNAVAILABLE,reply,size,"Flight Ready unavailable");
+    if (!Cap("game.vehicles.flight_ready") || !HAS_FN(v,sc_vehicles_v1,power_on)) return Answer(SCO_UNAVAILABLE,reply,size,"Flight Ready unavailable","Can't get the ship ready to fly right now.");
     auto r = Ship(v,ship); if (r == SCO_OK) r = v->power_on(g.self,ship);
-    return Answer(r,reply,size,r == SCO_OK ? "Flight Ready requested" : "Flight Ready refused (ship authority/provider readiness)");
+    return Answer(r,reply,size,r == SCO_OK ? "Flight Ready requested" : "Flight Ready refused (ship authority/provider readiness)",
+                  r == SCO_OK ? "Asked the ship to get ready to fly." : "The ship wouldn't get ready to fly. Try again in a moment.");
 }
 sco_result FillSeats(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size,uint32_t selected=UINT32_MAX) {
     const auto valid = Validate(args,n,true,reply,size); if (valid != SCO_OK) return valid;
@@ -148,14 +151,14 @@ sco_result FillSeats(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t s
     if (!Cap("game.vehicles.seat") || !Cap("game.actors.spawn_npc") || !Cap("game.actors.despawn") ||
         !HAS_FN(v,sc_vehicles_v1,seat) || !HAS_FN(v,sc_vehicles_v1,seat_occupant) ||
         !HAS_FN(a,sc_actors_v1,spawn_npc) || !HAS_FN(a,sc_actors_v1,despawn) || !HAS_FN(sp,sc_spatial_v1,player_pose))
-        return Answer(SCO_UNAVAILABLE,reply,size,"Owned crew spawn/removal or seating unavailable");
+        return Answer(SCO_UNAVAILABLE,reply,size,"Owned crew spawn/removal or seating unavailable","Can't add crew right now.");
     sc_vehicle_seat seats[128]{}; uint64_t ship = 0; uint32_t count = 0,more = 0;
-    auto r = Seats(v,ship,seats,count,more); if (r != SCO_OK) return Answer(r,reply,size,"Ship seats unavailable");
+    auto r = Seats(v,ship,seats,count,more); if (r != SCO_OK) return Answer(r,reply,size,"Ship seats unavailable","Couldn't read this ship's seats. Get into a ship, then update the seat list.");
     const double unknown = std::numeric_limits<double>::quiet_NaN();
     double pos[3] = {unknown,unknown,unknown},rot[4] = {}; uint64_t zone = 0;
-    if (!sp->player_pose(pos,rot,&zone) || !zone) return Answer(SCO_FAILED,reply,size,"No fresh player pose");
+    if (!sp->player_pose(pos,rot,&zone) || !zone) return Answer(SCO_FAILED,reply,size,"No fresh player pose","Couldn't find where you are.");
     pos[0] += 1.5;
-    for (auto x : pos) if (!std::isfinite(x)) return Answer(SCO_BAD_ARG,reply,size,"Invalid player position");
+    for (auto x : pos) if (!std::isfinite(x)) return Answer(SCO_BAD_ARG,reply,size,"Invalid player position","Couldn't read your position.");
     uint32_t added = 0,skipped = 0; r = SCO_OK;
     for (uint32_t i = 0; i < count; ++i) {
         const auto& s = seats[i];
@@ -168,7 +171,11 @@ sco_result FillSeats(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t s
         *j = {Phase::seating,false,id,ship,s.index,g.now,g.now+750u,0}; ++added;
     }
     char text[192]; std::snprintf(text,sizeof(text),"Seating %u owned NPCs; skipped=%u; partial seats=%u; batch result=%u",added,skipped,more ? 1u : 0u,static_cast<unsigned>(r));
-    return Answer(r != SCO_OK ? r : added || !count ? SCO_OK : SCO_FAILED,reply,size,text);
+    std::string shown = added ? "Adding " + std::to_string(added) + (added == 1 ? " crew member" : " crew members") + " to empty seats." : "No crew added.";
+    if (skipped) shown += (added ? " Skipped " : " ") + std::to_string(skipped) + (skipped == 1 ? " seat that is taken or unusable." : " seats that are taken or unusable.");
+    if (r != SCO_OK) shown += " The game stopped early.";
+    if (more) shown += " Some seats weren't checked.";
+    return Answer(r != SCO_OK ? r : added || !count ? SCO_OK : SCO_FAILED,reply,size,text,shown.c_str());
 }
 sco_result Fill(const sco_arg* args,uint32_t n,void* ctx,char* reply,uint32_t size) {return FillSeats(args,n,ctx,reply,size);}
 sco_result SitSeat(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size,uint32_t selected=UINT32_MAX) {
@@ -176,10 +183,10 @@ sco_result SitSeat(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t siz
     if (std::strlen(args[0].v.s) > 47) return SCO_BAD_ARG;
     const auto* v = Open<sc_vehicles_v1>(SC_VEHICLES_SERVICE_NAME);
     const auto* a = Open<sc_actors_v1>(SC_ACTORS_NAME);
-    if (!Cap("game.vehicles.seat") || !HAS_FN(v,sc_vehicles_v1,seat) || !HAS_FN(v,sc_vehicles_v1,seat_occupant)) return Answer(SCO_UNAVAILABLE,reply,size,"Player seating unavailable");
-    uint64_t me = 0; auto r = Player(a,me); if (r != SCO_OK) return Answer(r,reply,size,"No local player actor");
+    if (!Cap("game.vehicles.seat") || !HAS_FN(v,sc_vehicles_v1,seat) || !HAS_FN(v,sc_vehicles_v1,seat_occupant)) return Answer(SCO_UNAVAILABLE,reply,size,"Player seating unavailable","Can't seat you right now.");
+    uint64_t me = 0; auto r = Player(a,me); if (r != SCO_OK) return Answer(r,reply,size,"No local player actor","Couldn't find your character.");
     sc_vehicle_seat seats[128]{}; uint64_t ship = 0; uint32_t count = 0,more = 0;
-    r = Seats(v,ship,seats,count,more); if (r != SCO_OK) return Answer(r,reply,size,"Ship seats unavailable");
+    r = Seats(v,ship,seats,count,more); if (r != SCO_OK) return Answer(r,reply,size,"Ship seats unavailable","Couldn't read this ship's seats. Get into a ship, then update the seat list.");
     for (uint32_t i = 0; i < count; ++i) {
         const auto& s = seats[i]; if ((selected==UINT32_MAX ? !Matches(s.name,args[0].v.s) : s.index!=selected) || !Usable(s)) continue;
         if (s.occupant_id == me) {
@@ -187,29 +194,31 @@ sco_result SitSeat(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t siz
             // The player is not owned crew, so dropping that job needs no cleanup.
             auto* pending = Actor(me);
             if (pending && pending->player && pending->phase == Phase::seating) *pending = {};
-            return Answer(SCO_OK,reply,size,"Already seated");
+            return Answer(SCO_OK,reply,size,"Already seated","You're already in that seat.");
         }
         const auto* mine = Actor(me);
         if (Reserved(ship,s.index) && (!mine || mine->ship != ship || mine->seat != s.index))
-            return Answer(SCO_FAILED,reply,size,"Seat reserved by a pending crew job; clear or wait first");
+            return Answer(SCO_FAILED,reply,size,"Seat reserved by a pending crew job; clear or wait first",
+                                "A crew member is already on their way to that seat. Wait a moment, or remove your crew first.");
         auto* crew = Actor(s.occupant_id);
-        if ((s.occupant_id || (s.flags & SC_SEAT_OCCUPIED)) && !Owned(crew)) return Answer(SCO_FAILED,reply,size,"Foreign/unknown occupant is not ours to move");
-        auto* j = Actor(me); if (!j) j = Free(); if (!j) return Answer(SCO_TOO_MANY,reply,size,"Crew session ticket budget full");
-        if (Owned(crew)) { r = Remove(*crew,a); if (r != SCO_OK) return Answer(r,reply,size,"Owned crew removal refused; retained for retry"); }
+        if ((s.occupant_id || (s.flags & SC_SEAT_OCCUPIED)) && !Owned(crew)) return Answer(SCO_FAILED,reply,size,"Foreign/unknown occupant is not ours to move","Someone else is in that seat, so you can't move them.");
+        auto* j = Actor(me); if (!j) j = Free(); if (!j) return Answer(SCO_TOO_MANY,reply,size,"Crew session ticket budget full","Too many crew actions this session. Remove your crew first.");
+        if (Owned(crew)) { r = Remove(*crew,a); if (r != SCO_OK) return Answer(r,reply,size,"Owned crew removal refused; retained for retry",
+                                                                                   "Couldn't move your crew member out of that seat right now. Try again."); }
         *j = {Phase::seating,true,me,ship,s.index,g.now,g.now,0};
-        return Answer(SCO_OK,reply,size,"Player seat request queued");
+        return Answer(SCO_OK,reply,size,"Player seat request queued","Moving you to that seat. This can take a few seconds.");
     }
-    return Answer(SCO_FAILED,reply,size,"No matching usable seat in copied batch");
+    return Answer(SCO_FAILED,reply,size,"No matching usable seat in copied batch","No usable seat matches. Choose a seat from the list.");
 }
 sco_result Sit(const sco_arg* args,uint32_t n,void* ctx,char* reply,uint32_t size) {return SitSeat(args,n,ctx,reply,size);}
 sco_result Stand(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size) {
     const auto valid = Validate(args,n,false,reply,size); if (valid != SCO_OK) return valid;
     const auto* v = Open<sc_vehicles_v1>(SC_VEHICLES_SERVICE_NAME);
     const auto* a = Open<sc_actors_v1>(SC_ACTORS_NAME);
-    if (!Cap("game.vehicles.seat") || !HAS_FN(v,sc_vehicles_v1,eject)) return Answer(SCO_UNAVAILABLE,reply,size,"Eject unavailable");
+    if (!Cap("game.vehicles.seat") || !HAS_FN(v,sc_vehicles_v1,eject)) return Answer(SCO_UNAVAILABLE,reply,size,"Eject unavailable","Can't make anyone stand up right now.");
     uint64_t me = 0; (void)Player(a,me);
     sc_vehicle_seat seats[128]{}; uint64_t ship = 0; uint32_t count = 0,more = 0;
-    auto r = Seats(v,ship,seats,count,more); if (r != SCO_OK) return Answer(r,reply,size,"Ship seats unavailable");
+    auto r = Seats(v,ship,seats,count,more); if (r != SCO_OK) return Answer(r,reply,size,"Ship seats unavailable","Couldn't read this ship's seats. Get into a ship, then update the seat list.");
     for (auto& j : g.jobs) if (j.ship == ship && j.phase == Phase::seating) { if (j.player) j = {}; else j.phase = Phase::seated; }
     uint32_t up = 0,foreign = 0;
     for (uint32_t i = 0; i < count; ++i) {
@@ -218,12 +227,15 @@ sco_result Stand(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size)
         else if (id || (seats[i].flags & SC_SEAT_OCCUPIED)) ++foreign;
     }
     char text[128]; std::snprintf(text,sizeof(text),"Stood up %u; foreign/unknown skipped=%u; partial seats=%u",up,foreign,more ? 1u : 0u);
-    return Answer(r,reply,size,text);
+    std::string shown = up ? "Stood up " + std::to_string(up) + "." : "Nobody to stand up.";
+    if (foreign) shown += " Left " + std::to_string(foreign) + (foreign == 1 ? " other seated person alone." : " other seated people alone.");
+    if (more) shown += " Some seats weren't checked.";
+    return Answer(r,reply,size,text,shown.c_str());
 }
 sco_result Clear(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size) {
     const auto valid = Validate(args,n,false,reply,size); if (valid != SCO_OK) return valid;
     const auto* v = Open<sc_vehicles_v1>(SC_VEHICLES_SERVICE_NAME); uint64_t ship = 0;
-    auto r = Ship(v,ship); if (r != SCO_OK) return Answer(r,reply,size,"Ship seats unavailable");
+    auto r = Ship(v,ship); if (r != SCO_OK) return Answer(r,reply,size,"Ship seats unavailable","Couldn't read this ship's seats. Get into a ship, then update the seat list.");
     const auto* a = Open<sc_actors_v1>(SC_ACTORS_NAME);
     uint32_t started = 0,pending = 0;
     for (auto& j : g.jobs) if (j.phase != Phase::empty && !j.player && j.ship == ship) {
@@ -231,7 +243,10 @@ sco_result Clear(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size)
         const auto removed = Remove(j,a); if (removed == SCO_OK) ++started; else r = removed;
     }
     char text[160]; std::snprintf(text,sizeof(text),"Removal started=%u; pending tickets=%u; world disappearance unconfirmed",started,pending);
-    return Answer(r,reply,size,text);
+    std::string shown = started ? "Removing " + std::to_string(started) + (started == 1 ? " crew member." : " crew members.") : "No crew left to remove.";
+    if (pending) shown += " " + std::to_string(pending) + " already being removed.";
+    if (r != SCO_OK) shown += " Some couldn't be removed yet. Try again.";
+    return Answer(r,reply,size,text,shown.c_str());
 }
 #include "picker.inc"
 void Tick(const char*,const void* data,void*) {

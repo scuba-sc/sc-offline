@@ -22,14 +22,22 @@ extents/nullness; the actual provider validates object names.
 ## Grouped Build and SQ42 picker
 
 The same external owner publishes `build.picker` through public `sco.widgets`
-1.0. It supplies categories, case-insensitive word search across all groups,
-64-row pages, selection, reach, preview/start/stop, near-player placement,
-Undo/Clear, and an SQ42 shortcut with in-front/ahead controls. Search labels
-include their group. Changing category, search or page clears the highlight, not the effective selection.
-The panel displays both independently. Labels
-are shortened only for display; commands receive the complete original value,
-including duplicate rows and any pipe characters. Build lists do not use the
-Loadout catalogue's pipe-field format.
+1.0, written for players (see "Writing a page for players" in docs/plugin-ui.md).
+Sections, in the order they are used: Choose an item (category, word search across
+all categories, 64-item pages, Squadron 42 shortcut), Adjust placement (distance in
+front of the player, plus the Squadron 42 in-front/distance settings when such an
+item is selected), Place, Things you placed (Undo last, Remove all) and Status.
+Names are cleaned for display only (prefix, `.socpak` and underscores removed;
+categories capitalised); commands receive the complete original value, including
+duplicate rows and any pipe characters. Panel messages are plain sentences; the
+command output and `mod.log` keep the technical text. Changing category, search or
+page clears the highlight, not the item chosen for aiming.
+
+The aim controls (Start/Stop aiming, Aim with this item, and the "Aiming with" line)
+are published only while the free-camera prerequisites are present, or while a
+camera lease is still held so it can be stopped. Otherwise the page says that
+aiming is not available yet and building is Place only. F6 still runs `build.toggle`.
+Build lists do not use the Loadout catalogue's pipe-field format.
 
 The picker reads exactly one enabled public `lists/buildables.txt` List using
 `sco.content` 1.0. Release staging and the CMake `build_catalog` component provide the

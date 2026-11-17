@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Synthetic public-service workflow; no renderer, host implementation or game.
 #include "loadout.h"
+#include "../../tools/panel_dump.h"
 #include "sco_content.h"
 #include "sc_loadout.h"
 #include "sco_widgets.h"
@@ -24,13 +25,14 @@ struct Panel {
     void* context = nullptr;
     unsigned accepted = 0;
     std::map<uint32_t,uint32_t> combos, flags;
-    std::vector<std::string> gear_labels, outfit_labels, ship_labels;
-    int outfit_index=-1, ship_index=-1, build_index=-1; std::string outfit_filter, ship_filter, status;
+    std::vector<std::string> gear_labels, outfit_labels, ship_labels, words;
+    int outfit_index=-1, ship_index=-1, build_index=-1; std::string outfit_filter, ship_filter, status, job;
 };
 std::vector<File> files;
 Panel player, sq42;
 unsigned rejected = 0, removed = 0, unsubscribed = 0;
 bool fail_sq=false; sco_command_fn reload_command=nullptr, items_command=nullptr, wear_command=nullptr; sco_event_fn tick_event=nullptr;
+bool spawn_listed=true, build_listed=true; sco_command spawn_command{}, build_command{};
 uint32_t tick_time=0;
 sco_content_v1 content{};
 sco_widgets_v1 widgets{};
@@ -41,9 +43,18 @@ unsigned submits=0, cancels=0; std::vector<sc_loadout_item> captured;
 sco_result Submit(sco_plugin*,const sc_loadout_request* request,uint64_t* job) {
     ++submits; captured.assign(request->items,request->items+request->count); *job=42; return SCO_OK;
 }
-sco_result Invoke(sco_plugin*,const char* name,const sco_arg* args,uint32_t count,sco_invoke_done,void*) {
+int places=0; sco_result place_result=SCO_OK; const char* place_reply="";
+sco_result Invoke(sco_plugin*,const char* name,const sco_arg* args,uint32_t count,sco_invoke_done done,void* context) {
+    if (!std::strcmp(name,"build.place")) { ++places; if (done) done(place_result,place_reply,context); return place_result; }
     if (std::strcmp(name,"spawn.ship_options") || count!=4 || args[0].type!=SCO_ARG_STRING || args[1].type!=SCO_ARG_FLOAT || args[2].type!=SCO_ARG_STRING || args[3].type!=SCO_ARG_BOOL) std::abort();
     ++spawns; spawn_class=args[0].v.s; spawn_height=args[1].v.f; spawn_seat=args[2].v.s; spawn_ready=args[3].v.i; return SCO_OK;
+}
+uint32_t ListCommands(const sco_command** out,uint32_t max) {
+    uint32_t count=0;
+    spawn_command.name="spawn.ship_options"; build_command.name="build.place";
+    if (spawn_listed && count<max) out[count++]=&spawn_command;
+    if (build_listed && count<max) out[count++]=&build_command;
+    return count;
 }
 sco_result Status(sco_plugin*,uint64_t,sc_loadout_job_report*) { return SCO_UNAVAILABLE; }
 sco_result Cancel(sco_plugin*,uint64_t job) { (void)job; ++cancels; return SCO_OK; }
@@ -74,15 +85,20 @@ sco_result Read(sco_plugin*,uint64_t id,void* out,uint32_t* size) {
     if (!bytes.empty()) std::memcpy(out,bytes.data(),bytes.size());
     *size=static_cast<uint32_t>(bytes.size()); return SCO_OK;
 }
-sco_result SetPanel(sco_plugin*,const char* id,const char*,const sco_widget_node* nodes,
+sco_result SetPanel(sco_plugin*,const char* id,const char* title,const sco_widget_node* nodes,
                     uint32_t count,uint32_t stride,sco_widget_event_fn event,void* context) {
     Require(nodes && count && stride==sizeof(sco_widget_node),"invalid panel extent");
-    std::map<uint32_t,uint32_t> combos, flags; std::vector<std::string> gear_labels, outfit_labels, ship_labels;
-    int outfit_index=-1, ship_index=-1, build_index=-1; std::string outfit_filter, ship_filter, status;
+    { const auto why=sc_offline::panel_dump::Violation(nodes,count,stride); if(!why.empty()) std::printf("%s: %s\n",id,why.c_str());
+      Require(why.empty(),"panel follows the sco.widgets tree rules"); sc_offline::panel_dump::Record(id,title,nodes,count,stride); }
+    std::map<uint32_t,uint32_t> combos, flags; std::vector<std::string> gear_labels, outfit_labels, ship_labels, words;
+    int outfit_index=-1, ship_index=-1, build_index=-1; std::string outfit_filter, ship_filter, status, job;
     for (uint32_t i=0;i<count;++i) {
         const auto& node=nodes[i];
         Require(node.size==sizeof(node),"invalid node extent");
         flags[node.id]=node.flags;
+        if(node.label) words.emplace_back(node.label);
+        for(uint32_t j=0;j<node.item_count && node.items;++j) if(node.items[j]) words.emplace_back(node.items[j]);
+        if(node.id==26 && node.label) job=node.label;
         if(node.id==101) { outfit_index=node.index; for(uint32_t j=0;j<node.item_count;++j) outfit_labels.emplace_back(node.items[j]); }
         if(node.id==135 && node.text) outfit_filter=node.text;
         if(node.id==14 && node.label) status=node.label;
@@ -104,7 +120,7 @@ sco_result SetPanel(sco_plugin*,const char* id,const char*,const sco_widget_node
     Require(!std::strcmp(id,"loadout.player") || !std::strcmp(id,"loadout.sq42"),"unexpected panel id");
     if(fail_sq && !std::strcmp(id,"loadout.sq42")) return SCO_FAILED;
     auto& panel=!std::strcmp(id,"loadout.player") ? player : sq42;
-    panel.event=event; panel.context=context; ++panel.accepted; panel.combos=std::move(combos); panel.flags=std::move(flags); panel.gear_labels=std::move(gear_labels); panel.outfit_labels=std::move(outfit_labels); panel.outfit_index=outfit_index; panel.outfit_filter=std::move(outfit_filter); panel.ship_labels=std::move(ship_labels); panel.ship_index=ship_index; panel.ship_filter=std::move(ship_filter); panel.status=std::move(status);
+    panel.event=event; panel.context=context; ++panel.accepted; panel.combos=std::move(combos); panel.flags=std::move(flags); panel.gear_labels=std::move(gear_labels); panel.outfit_labels=std::move(outfit_labels); panel.outfit_index=outfit_index; panel.outfit_filter=std::move(outfit_filter); panel.ship_labels=std::move(ship_labels); panel.ship_index=ship_index; panel.ship_filter=std::move(ship_filter); panel.status=std::move(status); panel.job=std::move(job); panel.words=std::move(words);
     panel.build_index=build_index;
     return SCO_OK;
 }
@@ -147,6 +163,16 @@ void TickNow() {
     tick_time+=250;
     tick_event("tick",&tick_time,nullptr);
 }
+// Nothing a player reads on either page may carry developer words: versions, ids, job or slot plumbing.
+void ReadableOnly(const Panel& panel,const char* page) {
+    static const char* const forbidden[]{"job","slot","(1.","requires","archetype","build.place","spawn.ship","orchestration","sdk",
+        "category %","unavailable]","unknown/","loadout 1","ascii","retained","payload","[","_"};
+    for (const auto& word:panel.words) {
+        std::string lower=word; for (auto& c:lower) if (c>='A' && c<='Z') c=static_cast<char>(c+('a'-'A'));
+        for (const char* bad:forbidden)
+            if (lower.find(bad)!=std::string::npos) { std::fprintf(stderr,"loadout widgets: %s shows '%s' (%s)\n",page,word.c_str(),bad); std::exit(1); }
+    }
+}
 void Workflow(bool populated) {
     files={{"fixture_armory","lists/items.txt","[helmet]\nFixtureHelmet\n[primary]\nFixtureGun\n"}};
     if (populated) {
@@ -161,29 +187,24 @@ void Workflow(bool populated) {
     }
     player={}; sq42={}; rejected=0; removed=0; unsubscribed=0; fail_sq=false; reload_command=nullptr; items_command=nullptr; wear_command=nullptr; tick_event=nullptr; tick_time=0; submits=0; cancels=0; captured.clear(); async_cap=provider=true; supported=SC_LOADOUT_VERSION_1_2; loadout.size=sizeof(loadout); loadout.submit=Submit; loadout.status=Status; loadout.cancel=Cancel;
     sco_api api{}; api.size=sizeof(api); api.major=SCO_API_MAJOR; api.minor=SCO_API_MINOR;
-    api.has=Has; api.register_command=Register; api.query_service=Query; api.invoke=Invoke; spawns=0;
+    api.has=Has; api.register_command=Register; api.query_service=Query; api.invoke=Invoke; api.list_commands=ListCommands; spawns=0; spawn_listed=build_listed=true;
     api.subscribe=Subscribe; api.unsubscribe=Unsubscribe;
     unsigned char owner=0; auto* self=reinterpret_cast<sco_plugin*>(&owner);
     Require(sco::features::loadout::Load(&api,self)==SCO_OK,"load failed");
     Require(!rejected && player.accepted==1 && sq42.accepted==1,"initial panels rejected");
     Require(items_command!=nullptr && reload_command!=nullptr && wear_command!=nullptr,"list commands registered");
     Require(player.combos.at(2)==2 && sq42.combos.empty(),"initial picker/confirmation mismatch");
-    Require(player.gear_labels.size()==2 && player.gear_labels[1].find("[requires 1.1]")!=std::string::npos,"weapon label reflects synchronous version requirement");
-    Require(player.status.find("fixture_armory/lists/items.txt")!=std::string::npos,"startup reports copied item source identity");
+    Require(player.gear_labels==std::vector<std::string>({"Helmet: Fixture Helmet","Primary: Fixture Gun"}),"gear rows read as a slot heading and a plain name");
+    Require(player.status.empty() && !player.flags.count(25),"a healthy start shows no status and no unavailable notice");
+    Require(player.flags.count(300) && player.flags.count(310) && player.flags.count(320),"player page is grouped into labelled sections");
+    ReadableOnly(player,"player");
     // The creative controls (node ids 10 to 13) live only on the Creative tab: the Player panel publishes none
     // of them, and a forged event for those ids reaches no command (Invoke aborts on any name but spawn.ship_options).
-    Require(!player.flags.count(10) && !player.flags.count(11) && !player.flags.count(12) && !player.flags.count(13) && player.flags.count(14),
-            "Player panel carries no creative controls and keeps its status line");
+    Require(!player.flags.count(10) && !player.flags.count(11) && !player.flags.count(12) && !player.flags.count(13),
+            "Player panel carries no creative controls");
     Send("loadout.player",player,10,SCO_WIDGET_TOGGLE); Send("loadout.player",player,11,SCO_WIDGET_TOGGLE);
     Send("loadout.player",player,12,SCO_WIDGET_TOGGLE); Value("loadout.player",player,13,SCO_WIDGET_SLIDER,100);
     Require(spawns==0 && !rejected,"forged creative events are ignored");
-    if(populated) {
-        Require(player.status.find("sq42_catalog/lists/outfits.txt")!=std::string::npos &&
-                player.status.find("build_catalog/lists/buildables.txt")!=std::string::npos,
-                "separate packs retain independent outfit and build source identities");
-    } else {
-        Require(player.status.find("outfits=0 from absent")!=std::string::npos,"absent outfit section stays explicitly absent");
-    }
     sco_arg item_filter{}; item_filter.type=SCO_ARG_STRING; item_filter.v.s="Fixture";
     char item_reply[1024]{};
     Require(items_command(&item_filter,1,nullptr,item_reply,sizeof(item_reply))==SCO_OK &&
@@ -199,12 +220,18 @@ void Workflow(bool populated) {
     Require(items_command(&item_filter,1,nullptr,item_reply,sizeof(item_reply))==SCO_OK &&
             std::strstr(item_reply,"helmet:FixtureHelmet") && !std::strstr(item_reply,"ProviderMutation"),
             "parsed list content remains owned after provider backing bytes mutate");
-    Require(player.gear_labels.size()==2 && player.gear_labels[0].find("FixtureHelmet")!=std::string::npos,
+    Require(player.gear_labels.size()==2 && player.gear_labels[0].find("Fixture Helmet")!=std::string::npos,
             "published picker rows remain owned after provider backing bytes mutate");
     files[0].bytes=original_bytes;
+    Require(player.flags.at(27)&SCO_WIDGET_DISABLED,"nothing selected disables Equip");
+    Select("loadout.player",player,2,0);
+    Require(!(player.flags.at(27)&SCO_WIDGET_DISABLED) && player.flags.count(26) && !player.flags.count(25),"a selection enables Equip");
     async_cap=false; Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"");
     Require(player.flags.at(27)&SCO_WIDGET_DISABLED,"capability disables submission");
+    Require(player.flags.count(25) && !player.flags.count(26) && !player.flags.count(24),"without the capability the page says so and hides the progress controls");
+    ReadableOnly(player,"player (unavailable)");
     Send("loadout.player",player,27,SCO_WIDGET_BUTTON); Require(submits==0,"forged unavailable submission refused");
+    Require(player.status=="Changing gear isn't available yet.","refusal reaches the panel as a plain sentence");
     async_cap=true; provider=false; Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"");
     Require(player.flags.at(27)&SCO_WIDGET_DISABLED,"missing provider disables submission");
     provider=true; supported=SC_LOADOUT_VERSION_1_1; Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"");
@@ -215,6 +242,8 @@ void Workflow(bool populated) {
     Require(player.flags.at(27)&SCO_WIDGET_DISABLED,"null member disables submission");
     loadout.status=Status; Send("loadout.player",player,1,SCO_WIDGET_TEXT_INPUT,"");
     Require(!(player.flags.at(27)&SCO_WIDGET_DISABLED),"available provider enables submission");
+    Send("loadout.player",player,7,SCO_WIDGET_BUTTON);
+    Require((player.flags.at(27)&SCO_WIDGET_DISABLED) && (player.flags.at(7)&SCO_WIDGET_DISABLED),"clearing the selection disables Equip and Clear");
     auto old=sq42; Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON);
     Require(submits==0,"spoiler gate refused outfit submission");
     Send("loadout.sq42",sq42,100,SCO_WIDGET_BUTTON);
@@ -222,6 +251,12 @@ void Workflow(bool populated) {
     Require(sq42.accepted==old.accepted+1,"stale SQ42 callback ignored");
     Require(!rejected && sq42.accepted==old.accepted+1,"SQ42 panel rejected after spoiler confirmation");
     Require(sq42.combos.at(101)==(populated ? 3u : 0u),"outfit picker count mismatch");
+    Require(sq42.flags.count(114) && !sq42.flags.count(110) && !sq42.flags.count(111) && !sq42.flags.count(112) && !sq42.flags.count(113),
+            "unreadable game settings are one plain line, not disabled toggles");
+    Require(sq42.flags.count(400) && sq42.flags.count(410) && sq42.flags.count(420) && sq42.flags.count(430) && !sq42.flags.count(115),
+            "Squadron 42 page is grouped into Outfit, Game settings, Ships and Objects");
+    Require(!sq42.flags.count(103) && !sq42.flags.count(104) && !sq42.flags.count(102) && !sq42.flags.count(133),"refusal-only visor and developer lines are gone");
+    ReadableOnly(sq42,"squadron 42");
     Require(sq42.combos.at(130)==(populated ? 1u : 0u),"build picker count mismatch");
     if(!populated) {
         sco_arg outfit_name{}; outfit_name.type=SCO_ARG_STRING; outfit_name.v.s="Missing outfit";
@@ -279,7 +314,9 @@ void Workflow(bool populated) {
     Select("loadout.player",player,2,0);
     Send("loadout.player",player,27,SCO_WIDGET_BUTTON);
     Require(submits==1 && captured.size()==1 && captured[0].slot==SC_LOADOUT_SLOT_HEAD && !std::strcmp(captured[0].item_class,"FixtureHelmet"),"selected gear submitted");
-    Require((player.flags.at(6)&SCO_WIDGET_DISABLED) && (player.flags.at(27)&SCO_WIDGET_DISABLED) && (sq42.flags.at(104)&SCO_WIDGET_DISABLED),"retained job disables sync and async controls");
+    Require((player.flags.at(27)&SCO_WIDGET_DISABLED) && (player.flags.at(221)&SCO_WIDGET_DISABLED) && (sq42.flags.at(106)&SCO_WIDGET_DISABLED),"retained job disables new equip requests");
+    Require(!(player.flags.at(24)&SCO_WIDGET_DISABLED) && player.job=="Equipping: waiting for the game." && player.status=="Equipping started. Progress shows below.","job progress and cancel are plain and enabled");
+    ReadableOnly(player,"player (job)");
     Send("loadout.player",player,27,SCO_WIDGET_BUTTON);
     Require(submits==1,"retained job refuses second submission");
     Send("loadout.player",player,24,SCO_WIDGET_BUTTON);
@@ -290,15 +327,15 @@ void Workflow(bool populated) {
         auto stale=sq42; Select("loadout.sq42",sq42,101,1);
         Require(sq42.outfit_index==1,"filtered source selection retained");
         Select("loadout.sq42",sq42,101,-1);
-        Require(sq42.outfit_index==-1 && (sq42.flags.at(102)&SCO_WIDGET_DISABLED) && (sq42.flags.at(106)&SCO_WIDGET_DISABLED),"deselection disables outfit actions");
-        Send("loadout.sq42",sq42,102,SCO_WIDGET_BUTTON); Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON);
+        Require(sq42.outfit_index==-1 && (sq42.flags.at(106)&SCO_WIDGET_DISABLED),"deselection disables outfit actions");
+        Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON);
         Require(submits==1,"forged deselected actions refused");
         Select("loadout.sq42",sq42,101,1);
         Select("loadout.sq42",stale,101,0);
         Require(sq42.outfit_index==1,"stale filtered callback ignored");
         Send("loadout.sq42",sq42,135,SCO_WIDGET_TEXT_INPUT,"none");
-        Require(sq42.combos.at(101)==0 && sq42.outfit_index==-1 && (sq42.flags.at(102)&SCO_WIDGET_DISABLED) && (sq42.flags.at(106)&SCO_WIDGET_DISABLED),"hidden selection disables apply");
-        Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON); Send("loadout.sq42",sq42,102,SCO_WIDGET_BUTTON);
+        Require(sq42.combos.at(101)==0 && sq42.outfit_index==-1 && (sq42.flags.at(106)&SCO_WIDGET_DISABLED),"hidden selection disables apply");
+        Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON);
         Require(submits==1,"forged hidden selection refused");
         Send("loadout.sq42",sq42,135,SCO_WIDGET_TEXT_INPUT,"FLIGHT");
         Require(sq42.outfit_index==1,"source selection survives filter changes");
@@ -336,10 +373,10 @@ void Workflow(bool populated) {
         Select("loadout.sq42",before_reload,101,0); Send("loadout.sq42",before_reload,106,SCO_WIDGET_BUTTON);
         Require(submits==2 && sq42.outfit_index==-1,"old callback remains stale after the new generation is published");
         Select("loadout.sq42",sq42,101,0);
-        async_cap=false; Send("loadout.sq42",sq42,105,SCO_WIDGET_BUTTON);
-        Require(sq42.flags.at(106)&SCO_WIDGET_DISABLED,"outfit submission disabled without capability");
+        async_cap=false; TickNow();
+        Require(sq42.flags.at(106)&SCO_WIDGET_DISABLED && sq42.flags.count(115),"outfit submission disabled without capability, with a plain notice");
         Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON); Require(submits==2,"forged unavailable outfit refused");
-        async_cap=true; Send("loadout.sq42",sq42,105,SCO_WIDGET_BUTTON); Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON);
+        async_cap=true; TickNow(); Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON);
         Require(submits==3 && captured.size()==1 && captured[0].slot==SC_LOADOUT_SLOT_HEAD && !std::strcmp(captured[0].item_class,"NewHelmet"),"selected outfit submitted");
         Send("loadout.sq42",sq42,108,SCO_WIDGET_BUTTON); Require(cancels==3,"SQ42 releases job");
         auto before_bad_reload=sq42; files[1].bytes="[broken]\nnot a valid piece\n";
@@ -394,6 +431,38 @@ void Workflow(bool populated) {
     Send("loadout.sq42",before_unload,106,SCO_WIDGET_BUTTON); Require(submits==(populated ? 3u : 1u),"unloaded callback ignored");
     Require(removed==2 && unsubscribed==1,"unload cleanup mismatch");
 }
+// Ships and objects are other features' commands: without them the page says so instead of offering a button that refuses.
+void MissingFeatures() {
+    files={{"fixture_armory","lists/items.txt","[helmet]\nFixtureHelmet\n"}};
+    files.push_back({"build_catalog","lists/buildables.txt","[sq42]\nNPC_Archetypes-Male-Human-MissionGivers-MilesEckhart\n"});
+    files[0].id=1; files[1].id=2;
+    player={}; sq42={}; rejected=0; removed=0; unsubscribed=0; fail_sq=false; reload_command=nullptr; items_command=nullptr; wear_command=nullptr; tick_event=nullptr; tick_time=0; async_cap=provider=true; supported=SC_LOADOUT_VERSION_1_2;
+    sco_api api{}; api.size=sizeof(api); api.major=SCO_API_MAJOR; api.minor=SCO_API_MINOR;
+    api.has=Has; api.register_command=Register; api.query_service=Query; api.invoke=Invoke; api.list_commands=ListCommands;
+    api.subscribe=Subscribe; api.unsubscribe=Unsubscribe;
+    unsigned char owner=0; auto* self=reinterpret_cast<sco_plugin*>(&owner);
+    spawn_listed=true; build_listed=true;
+    Require(sco::features::loadout::Load(&api,self)==SCO_OK,"missing-feature load failed");
+    Send("loadout.sq42",sq42,100,SCO_WIDGET_BUTTON);
+    Require(sq42.flags.count(123) && sq42.flags.count(132),"present features keep their buttons");
+    // build.place answers in technical words (its own page shows a plain sentence); this page must say the outcome plainly.
+    places=0; place_result=SCO_UNAVAILABLE; place_reply="Build ground placement unavailable: game.world missing/disabled; no private fallback";
+    Select("loadout.sq42",sq42,130,0); Send("loadout.sq42",sq42,132,SCO_WIDGET_BUTTON);
+    { bool plain=false, technical=false; for (const auto& word:sq42.words) { plain|=word=="Couldn't place that object here. Try somewhere else."; technical|=word.find("game.world")!=std::string::npos; }
+      Require(places==1 && plain && !technical,"a refused object placement shows a plain sentence, not build's technical reply"); }
+    place_result=SCO_OK; place_reply="Owned placement initiated; streaming unconfirmed"; Send("loadout.sq42",sq42,132,SCO_WIDGET_BUTTON);
+    { bool plain=false; for (const auto& word:sq42.words) plain|=word=="Placed the object. It can take a moment to appear.";
+      Require(places==2 && plain,"an accepted object placement shows a plain sentence"); }
+    spawn_listed=false; TickNow();
+    Require(!sq42.flags.count(123) && !sq42.flags.count(120) && sq42.flags.count(124) && sq42.flags.count(132),"missing ship feature replaces the ship controls with a plain line");
+    build_listed=false; TickNow();
+    Require(!sq42.flags.count(132) && !sq42.flags.count(130) && sq42.flags.count(141),"missing build feature replaces the object controls with a plain line");
+    ReadableOnly(sq42,"squadron 42 (features missing)");
+    spawn_listed=build_listed=true; TickNow();
+    Require(sq42.flags.count(132) && sq42.combos.at(130)==1,"features back: controls return");
+    Require(std::find(sq42.words.begin(),sq42.words.end(),"Male Human Mission Givers Miles Eckhart")!=sq42.words.end(),"raw object names are cleaned for reading");
+    sco::features::loadout::Unload();
+}
 // Long SQ42 outfit and buildable lists are paged 64 rows at a time (ids 137/138 and 139/140).
 std::string NumberedLines(const char* section,const char* prefix,unsigned count,bool outfits) {
     std::string text=section;
@@ -411,7 +480,7 @@ void Paging(unsigned outfits,unsigned builds) {
     files[0].id=1; files[1].id=2; files[2].id=3;
     player={}; sq42={}; rejected=0; removed=0; unsubscribed=0; fail_sq=false; reload_command=nullptr; items_command=nullptr; wear_command=nullptr; tick_event=nullptr; tick_time=0; async_cap=provider=true; supported=SC_LOADOUT_VERSION_1_2;
     sco_api api{}; api.size=sizeof(api); api.major=SCO_API_MAJOR; api.minor=SCO_API_MINOR;
-    api.has=Has; api.register_command=Register; api.query_service=Query; api.invoke=Invoke;
+    api.has=Has; api.register_command=Register; api.query_service=Query; api.invoke=Invoke; api.list_commands=ListCommands; spawn_listed=build_listed=true;
     api.subscribe=Subscribe; api.unsubscribe=Unsubscribe;
     unsigned char owner=0; auto* self=reinterpret_cast<sco_plugin*>(&owner);
     Require(sco::features::loadout::Load(&api,self)==SCO_OK,"paging load failed");
@@ -422,16 +491,16 @@ void Paging(unsigned outfits,unsigned builds) {
     Require(disabled(137),"no previous outfit page on the first page");
     Require(disabled(138)==(outfits<=64),"next outfit page exists only beyond 64 outfits");
     Select("loadout.sq42",sq42,101,0);
-    Require(sq42.outfit_index==0 && !disabled(102),"first outfit selected and wearable");
+    Require(sq42.outfit_index==0 && !disabled(106),"first outfit selected and wearable");
     if (outfits>64) {
         Send("loadout.sq42",sq42,138,SCO_WIDGET_BUTTON);
         Require(sq42.combos.at(101)==outfits-64,"second outfit page shows the remainder");
-        Require(sq42.outfit_index==-1 && disabled(102) && disabled(106),"selection off the page disables Wear and Submit");
+        Require(sq42.outfit_index==-1 && disabled(106),"selection off the page disables Wear");
         Require(!disabled(137) && disabled(138),"previous enabled and next disabled on the last outfit page");
         Send("loadout.sq42",sq42,138,SCO_WIDGET_BUTTON); // already last: a forged Next stays put
         Require(sq42.combos.at(101)==outfits-64 && !disabled(137),"a forged Next past the last page is ignored");
         Send("loadout.sq42",sq42,137,SCO_WIDGET_BUTTON);
-        Require(sq42.combos.at(101)==64 && sq42.outfit_index==0 && !disabled(102),"previous returns to the selected outfit");
+        Require(sq42.combos.at(101)==64 && sq42.outfit_index==0 && !disabled(106),"previous returns to the selected outfit");
     }
     // Buildables.
     Require(sq42.combos.at(130)==std::min(builds,64u),"first buildable page holds at most 64 rows");
@@ -456,5 +525,6 @@ int main() {
     widgets.size=sizeof(widgets); widgets.set_panel=SetPanel; widgets.remove_panel=RemovePanel;
     Workflow(false); Workflow(true);
     Paging(65,64); Paging(64,65); Paging(65,65);
+    MissingFeatures();
     std::puts("loadout widget workflow: PASS (synthetic public services; not run in game)");
 }

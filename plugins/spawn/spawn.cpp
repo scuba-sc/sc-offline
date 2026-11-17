@@ -31,8 +31,9 @@ template<class T> const T* Open(const char* name) {
     if (!HAS(g.api, sco_api, query_service) || g.api->query_service(name, 0x10000u, &out) != SCO_OK) return nullptr;
     return static_cast<const T*>(out);
 }
-sco_result Answer(sco_result r, char* out, uint32_t size, const char* text) {
-    if (out && size) std::snprintf(out,size,"%s",text);
+// text goes to the log; shown (when given) is the plain sentence the player sees in the panel.
+sco_result Answer(sco_result r, char* out, uint32_t size, const char* text, const char* shown = nullptr) {
+    if (out && size) std::snprintf(out,size,"%s",shown ? shown : text);
     if (g.api) g.api->log(g.self,r == SCO_OK ? SCO_LOG_INFO : SCO_LOG_WARN,text);
     return r;
 }
@@ -86,7 +87,8 @@ sco_result Ship(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     if (!args || n != 2 || (!out && size) || args[0].type != SCO_ARG_STRING || args[1].type != SCO_ARG_FLOAT ||
         !args[0].v.s || !*args[0].v.s || std::strlen(args[0].v.s)>63 ||
         !std::isfinite(args[1].v.f) || args[1].v.f<0 || args[1].v.f>10000)
-        return Answer(SCO_BAD_ARG,out,size,"Supply class (1 to 63 characters) and height (0 to 10000 m)");
+        return Answer(SCO_BAD_ARG,out,size,"Supply class (1 to 63 characters) and height (0 to 10000 m)",
+                      "Choose a ship and a height between 0 and 10000 m.");
     const auto* cls = Open<sc_spawn_service_v1>(SC_SPAWN_SERVICE_NAME);
     const auto* ent = Open<sc_entities_v1>(SC_ENTITIES_NAME);
     const auto* sp = Open<sc_spatial_v1>(SC_SPATIAL_SERVICE_NAME);
@@ -101,28 +103,34 @@ sco_result Ship(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     if (missing) {
         char text[160];
         std::snprintf(text,sizeof(text),"spawn unavailable: %s (class %s); no fallback",missing,args[0].v.s);
-        return Answer(SCO_UNAVAILABLE,out,size,text);
+        return Answer(SCO_UNAVAILABLE,out,size,text,"Ships can't be spawned right now.");
     }
-    if (g.count == kMaxTickets) return Answer(SCO_TOO_MANY,out,size,"Loaded-session ticket quota reached (including pending removal)");
-    if (!cls->class_exists(args[0].v.s)) return Answer(SCO_NOT_FOUND,out,size,"Not a spawnable class on this build");
+    if (g.count == kMaxTickets) return Answer(SCO_TOO_MANY,out,size,"Loaded-session ticket quota reached (including pending removal)",
+                                              "You've spawned as many ships as this session allows.");
+    if (!cls->class_exists(args[0].v.s)) return Answer(SCO_NOT_FOUND,out,size,"Not a spawnable class on this build",
+                                                       "That ship can't be spawned in this game version. Pick another ship.");
     const double nan = std::numeric_limits<double>::quiet_NaN();
     double p[3]{nan,nan,nan},q[4]{nan,nan,nan,nan}; uint64_t zone=0;
-    if (!sp->player_pose(p,q,&zone) || !zone) return Answer(SCO_NOT_FOUND,out,size,"No fresh player pose in a streamed zone");
+    if (!sp->player_pose(p,q,&zone) || !zone) return Answer(SCO_NOT_FOUND,out,size,"No fresh player pose in a streamed zone",
+                                                                    "Couldn't find where you are. Stand somewhere in the world and try again.");
     double norm=0;
-    for (auto v:p) if (!std::isfinite(v)) return Answer(SCO_BAD_ARG,out,size,"Player position not finite");
-    for (auto v:q) { if (!std::isfinite(v)) return Answer(SCO_BAD_ARG,out,size,"Player rotation not finite"); norm+=v*v; }
-    if (!std::isfinite(norm) || norm<=0) return Answer(SCO_BAD_ARG,out,size,"Player rotation invalid");
+    for (auto v:p) if (!std::isfinite(v)) return Answer(SCO_BAD_ARG,out,size,"Player position not finite","Couldn't read your position. Try again.");
+    for (auto v:q) { if (!std::isfinite(v)) return Answer(SCO_BAD_ARG,out,size,"Player rotation not finite","Couldn't read your position. Try again."); norm+=v*v; }
+    if (!std::isfinite(norm) || norm<=0) return Answer(SCO_BAD_ARG,out,size,"Player rotation invalid","Couldn't read your position. Try again.");
     for (auto& v:q) v/=std::sqrt(norm);
     p[2]+=args[1].v.f; // Existing height is an offset along the current zone's Z axis.
     if (!std::isfinite(p[2])) return SCO_BAD_ARG;
     uint64_t id=0; auto r=ent->spawn(g.self,args[0].v.s,zone,p,q,&id);
-    if (r!=SCO_OK) return Answer(r,out,size,"Provider refused owned ship spawn");
+    if (r!=SCO_OK) return Answer(r,out,size,"Provider refused owned ship spawn","The game refused to spawn that ship.");
     bool duplicate=false;
     for (uint32_t i=0;i<g.count;++i) if(g.tickets[i].id==id) duplicate=true;
-    if (!id || duplicate) return Answer(SCO_FAILED,out,size,"Provider returned zero/duplicate id; ownership must be reconciled by host release");
+    if (!id || duplicate) return Answer(SCO_FAILED,out,size,"Provider returned zero/duplicate id; ownership must be reconciled by host release",
+                                          "Something went wrong while spawning that ship.");
     g.tickets[g.count++]={id,Phase::Pending};
     char b[160]; std::snprintf(b,sizeof(b),"Owned ship id=%llu pending streaming; removed on unload",static_cast<unsigned long long>(id));
-    return Answer(SCO_OK,out,size,b);
+    std::string name(args[0].v.s); for (auto& c:name) if (c=='_') c=' ';
+    char shown[160]; std::snprintf(shown,sizeof(shown),"Spawned %s. It can take a moment to appear.",name.c_str());
+    return Answer(SCO_OK,out,size,b,shown);
 }
 bool BoardAvailable(bool power) {
     const auto* v=Open<sc_vehicles_v1>(SC_VEHICLES_SERVICE_NAME);
@@ -143,8 +151,9 @@ sco_result Options(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size)
        (args[3].v.i!=0 && args[3].v.i!=1)) return SCO_BAD_ARG;
     const bool board=std::strcmp(args[2].v.s,"none")!=0;
     const bool power=args[3].v.i!=0;
-    if(power && std::strcmp(args[2].v.s,"pilot")) return Answer(SCO_BAD_ARG,out,size,"Power requires pilot boarding");
-    if(board && (Busy() || !BoardAvailable(power))) return Answer(SCO_UNAVAILABLE,out,size,"Boarding busy or provider unavailable; no spawn requested");
+    if(power && std::strcmp(args[2].v.s,"pilot")) return Answer(SCO_BAD_ARG,out,size,"Power requires pilot boarding","Ready to fly needs the pilot seat.");
+    if(board && (Busy() || !BoardAvailable(power))) return Answer(SCO_UNAVAILABLE,out,size,"Boarding busy or provider unavailable; no spawn requested",
+                                                                      "Can't get in right now, so no ship was spawned. Wait a moment, or choose Stay outside.");
     auto r=Ship(args,2,nullptr,out,size);
     if(r==SCO_OK && board) {
         auto& t=g.tickets[g.count-1];std::snprintf(t.seat,sizeof(t.seat),"%s",args[2].v.s);t.power=power;
@@ -160,25 +169,27 @@ sco_result Board(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     for(uint32_t i=0;i<g.count;++i) {
         auto& t=g.tickets[i];
         if(t.id!=static_cast<uint64_t>(args[0].v.i) || t.phase==Phase::Removing || t.phase==Phase::Cancelling) continue;
-        if(Busy() || !BoardAvailable(args[2].v.i!=0)) return Answer(SCO_UNAVAILABLE,out,size,"Boarding busy or provider unavailable");
+        if(Busy() || !BoardAvailable(args[2].v.i!=0)) return Answer(SCO_UNAVAILABLE,out,size,"Boarding busy or provider unavailable","Can't get in right now. Wait a moment and try again.");
         std::snprintf(t.seat,sizeof(t.seat),"%s",args[1].v.s);t.power=args[2].v.i!=0;t.phase=Phase::Pending;t.clocked=false;t.seatTried=t.powerTried=false;
-        return Answer(SCO_OK,out,size,"Owned boarding queued; never removes foreign seat occupants");
+        return Answer(SCO_OK,out,size,"Owned boarding queued; never removes foreign seat occupants","Getting in. This can take a few seconds.");
     }
-    return Answer(SCO_NOT_FOUND,out,size,"Not a ship owned by this plugin");
+    return Answer(SCO_NOT_FOUND,out,size,"Not a ship owned by this plugin","That isn't a ship you spawned.");
 }
 sco_result Startup(const sco_arg*,uint32_t n,void*,char* out,uint32_t size) {
     if(!g.api) return SCO_UNAVAILABLE;
     if(n || (!out && size)) return SCO_BAD_ARG;
-    return Answer(SCO_UNAVAILABLE,out,size,"Destination startup unavailable: this plugin does not use G2/G3 player relocation/full-pose discovery yet; no private fallback");
+    return Answer(SCO_UNAVAILABLE,out,size,"Destination startup unavailable: this plugin does not use G2/G3 player relocation/full-pose discovery yet; no private fallback",
+                  "Choosing a starting place isn't available yet.");
 }
 sco_result Remove(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     if (!g.api) return SCO_UNAVAILABLE;
     if (!args || n!=1 || args[0].type!=SCO_ARG_INT || !args[0].v.i || (!out && size)) return SCO_BAD_ARG;
     for(uint32_t i=0;i<g.count;++i) if(g.tickets[i].id==static_cast<uint64_t>(args[0].v.i)) {
         auto r=RemoveTicket(g.tickets[i]);
-        return Answer(r,out,size,r==SCO_OK ? "Removal started; disappearance is not confirmed" : "Removal refused/already requested; no foreign deletion");
+        return Answer(r,out,size,r==SCO_OK ? "Removal started; disappearance is not confirmed" : "Removal refused/already requested; no foreign deletion",
+                      r == SCO_OK ? "Removing the ship. It can take a moment to disappear." : "Couldn't remove that ship right now. It may already be on its way out.");
     }
-    return Answer(SCO_NOT_FOUND,out,size,"Not a ship owned by this plugin");
+    return Answer(SCO_NOT_FOUND,out,size,"Not a ship owned by this plugin","That isn't a ship you spawned.");
 }
 sco_result Clear(const sco_arg*,uint32_t n,void*,char* out,uint32_t size) {
     if (!g.api) return SCO_UNAVAILABLE;
@@ -187,20 +198,37 @@ sco_result Clear(const sco_arg*,uint32_t n,void*,char* out,uint32_t size) {
     for(uint32_t i=0;i<g.count;++i) if(g.tickets[i].phase!=Phase::Removing) {
         auto r=RemoveTicket(g.tickets[i]); if(r!=SCO_OK && r!=SCO_NOT_FOUND) result=r;
     }
-    return Answer(result,out,size,"Owned ship cleanup requested; pending removal is not absence");
+    return Answer(result,out,size,"Owned ship cleanup requested; pending removal is not absence",
+                  result == SCO_OK ? "Removing all your ships. They can take a moment to disappear." : "Some ships couldn't be removed right now. Try again.");
+}
+// The plain word the panel shows for a ship's state.
+const char* PhaseWord(Phase p) {
+    switch(p){case Phase::Pending:return "appearing";case Phase::Boarding:return "getting in";case Phase::Power:return "starting up";
+        case Phase::Ready:return "ready";case Phase::Cancelling:case Phase::Removing:return "being removed";}
+    return "";
 }
 sco_result Status(const sco_arg*,uint32_t n,void*,char* out,uint32_t size) {
     if (!g.api) return SCO_UNAVAILABLE;
     if (n || (!out && size)) return SCO_BAD_ARG;
     const auto* ent=Open<sc_entities_v1>(SC_ENTITIES_NAME);
     if(!HAS(ent,sc_entities_v1,alive) || !g.api->has("game.entities.transform"))
-        return Answer(SCO_UNAVAILABLE,out,size,"Spawn observation unavailable; ownership unchanged");
+        return Answer(SCO_UNAVAILABLE,out,size,"Spawn observation unavailable; ownership unchanged","Can't check your ships right now.");
     uint32_t pending=0,ready=0,removing=0,boarding=0;
     for(uint32_t i=0;i<g.count;++i) {
-        switch(g.tickets[i].phase){case Phase::Pending:++pending;break;case Phase::Boarding:case Phase::Power:++boarding;break;case Phase::Cancelling:++pending;break;case Phase::Ready:++ready;break;case Phase::Removing:++removing;break;}
+        switch(g.tickets[i].phase){case Phase::Pending:++pending;break;case Phase::Boarding:case Phase::Power:++boarding;break;case Phase::Cancelling:case Phase::Removing:++removing;break;case Phase::Ready:++ready;break;}
     }
     char b[160];std::snprintf(b,sizeof(b),"Spawn status: pending=%u ready=%u removing=%u boarding=%u; ownership retained until removal/unload",pending,ready,removing,boarding);
-    return Answer(SCO_OK,out,size,b);
+    char shown[160]="You haven't spawned any ships.";
+    if(g.count) {
+        const struct {uint32_t n;const char* word;} parts[]={{ready,"ready"},{pending,"appearing"},{boarding,"getting in"},{removing,"being removed"}};
+        size_t used=static_cast<size_t>(std::snprintf(shown,sizeof(shown),"Your ships:"));
+        bool first=true;
+        for(const auto& part:parts) if(part.n && used<sizeof(shown)) {
+            used+=static_cast<size_t>(std::snprintf(shown+used,sizeof(shown)-used,"%s %u %s",first?"":",",part.n,part.word));first=false;
+        }
+        if(used<sizeof(shown)-1) std::snprintf(shown+used,sizeof(shown)-used,".");
+    }
+    return Answer(SCO_OK,out,size,b,shown);
 }
 bool Matches(const char* name,const char* filter) {
     // Every caller-supplied word must occur in the bounded copied seat name.

@@ -10,6 +10,7 @@
 #include "menu_frame_protocol.h"
 #include "menu_callback_admission.h"
 #include "menu_worker.h"
+#include "menu_shell.h"
 #include "common.h"
 #include "version.h"
 #include <atomic>
@@ -271,137 +272,6 @@ static void ShowMenu(bool show) {
     }
 }
 
-static bool ContainsNoCase(const char* s, const char* needle, size_t n) {
-    for (; *s; ++s) {
-        size_t i = 0;
-        while (i < n && s[i] && tolower(static_cast<unsigned char>(s[i])) == tolower(static_cast<unsigned char>(needle[i]))) ++i;
-        if (i == n) return true;
-    }
-    return false;
-}
-
-bool MatchesFilter(const char* name, const char* filter) {
-    for (const char* p = filter; *p; ) {
-        p += strspn(p, " _");
-        const size_t n = strcspn(p, " _");
-        if (n && !ContainsNoCase(name, p, n)) return false;
-        p += n;
-    }
-    return true;
-}
-
-// =============================================================================================
-// Look: dark Tegridy green. Soil-green behind everything, leaf green only on things you click,
-// tractor yellow for warnings. An optional background image sits under a
-// green wash so text stays readable.
-// =============================================================================================
-
-static ImVec4 Hex(uint32_t rgb, float a = 1.0f) {
-    return ImVec4(((rgb >> 16) & 0xFF) / 255.0f, ((rgb >> 8) & 0xFF) / 255.0f, (rgb & 0xFF) / 255.0f, a);
-}
-
-static const ImVec4 kSoil      = Hex(0x0E1811);   // deepest green, under the image
-static const ImVec4 kPanel     = Hex(0x172A1B);   // inputs, lists, status strip
-static const ImVec4 kPanelUp   = Hex(0x1F3523);   // hover
-static const ImVec4 kLine      = Hex(0x2F4B32);   // dividers, scrollbars
-static const ImVec4 kText      = Hex(0xE6EFDD);
-const ImVec4 kMuted     = Hex(0x9FB59A);
-const ImVec4 kLeaf      = Hex(0x86C64B);   // accent
-const ImVec4 kLeafDeep  = Hex(0x3E6B27);
-
-constexpr float kBodySize    = 17.0f;
-constexpr float kHeadingSize = 20.0f;
-
-static void ApplyTheme() {
-    ImGuiStyle& st = ImGui::GetStyle();
-    st.WindowPadding = ImVec2(16, 12);
-    st.FramePadding = ImVec2(9, 5);
-    st.ItemSpacing = ImVec2(8, 7);
-    st.ItemInnerSpacing = ImVec2(6, 4);
-    st.CellPadding = ImVec2(8, 4);
-    st.ScrollbarSize = 11;
-    st.WindowRounding = 0;
-    st.ChildRounding = 4;
-    st.FrameRounding = 4;
-    st.PopupRounding = 4;
-    st.GrabRounding = 4;
-    st.TabRounding = 4;
-    st.ScrollbarRounding = 4;
-    st.WindowBorderSize = 0;
-    st.PopupBorderSize = 1;
-    st.DisabledAlpha = 0.8f;   // ImGui's 0.6 over this dark green is unreadable
-    st.ChildBorderSize = 1;
-    st.FrameBorderSize = 1; // outlines checkboxes, inputs and combos against the dark panels
-    st.TabBorderSize = 0;
-    st.SeparatorTextBorderSize = 1;
-    st.SeparatorTextPadding = ImVec2(0, 6);
-    st.SeparatorTextAlign = ImVec2(0, 0.5f);
-
-    ImVec4* c = st.Colors;
-    c[ImGuiCol_Text]                 = kText;
-    c[ImGuiCol_TextDisabled]         = kMuted;
-    c[ImGuiCol_WindowBg]             = ImVec4(0, 0, 0, 0);          // the background is drawn underneath
-    c[ImGuiCol_ChildBg]              = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_PopupBg]              = Hex(0x1C3321, 1.0f);         // lighter than the soil-green window
-    c[ImGuiCol_Border]               = Hex(0x4F7F51);               // visible on popups and child panels
-    c[ImGuiCol_BorderShadow]         = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_FrameBg]              = Hex(0x172A1B, 0.88f);
-    c[ImGuiCol_FrameBgHovered]       = Hex(0x1F3523, 0.95f);
-    c[ImGuiCol_FrameBgActive]        = Hex(0x26412A, 1.0f);
-    c[ImGuiCol_TitleBg]              = Hex(0x0B140D, 0.95f);
-    c[ImGuiCol_TitleBgActive]        = Hex(0x0B140D, 0.95f);
-    c[ImGuiCol_TitleBgCollapsed]     = Hex(0x0B140D, 0.95f);
-    c[ImGuiCol_ScrollbarBg]          = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_ScrollbarGrab]        = kLine;
-    c[ImGuiCol_ScrollbarGrabHovered] = Hex(0x3C5E3F);
-    c[ImGuiCol_ScrollbarGrabActive]  = kLeafDeep;
-    c[ImGuiCol_CheckMark]            = kLeaf;
-    c[ImGuiCol_CheckboxSelectedBg]   = kLeafDeep;             // checked box; ImGui's default is stock blue
-    c[ImGuiCol_SliderGrab]           = kLeafDeep;
-    c[ImGuiCol_SliderGrabActive]     = kLeaf;
-    c[ImGuiCol_Button]               = Hex(0x1F3523, 0.92f);
-    c[ImGuiCol_ButtonHovered]        = Hex(0x2A4730);
-    c[ImGuiCol_ButtonActive]         = kLeafDeep;
-    c[ImGuiCol_Header]               = Hex(0x3F7A2A, 0.90f);        // selected row: leaf green, text stays above 4.5:1
-    c[ImGuiCol_HeaderHovered]        = Hex(0x2D5832, 1.0f);         // hovered row: clearly lighter than the panels
-    c[ImGuiCol_HeaderActive]         = Hex(0x4F9433, 1.0f);
-    c[ImGuiCol_Separator]            = kLine;
-    c[ImGuiCol_SeparatorHovered]     = kLeafDeep;
-    c[ImGuiCol_SeparatorActive]      = kLeaf;
-    c[ImGuiCol_ResizeGrip]           = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_Tab]                  = Hex(0x0B140D, 0.70f);
-    c[ImGuiCol_TabHovered]           = kPanelUp;
-    c[ImGuiCol_TabSelected]          = Hex(0x172A1B, 0.95f);
-    c[ImGuiCol_TabSelectedOverline]  = kLeaf;
-    c[ImGuiCol_TabDimmed]            = Hex(0x0B140D, 0.70f);
-    c[ImGuiCol_TabDimmedSelected]    = Hex(0x172A1B, 0.95f);
-    c[ImGuiCol_TableHeaderBg]        = Hex(0x172A1B, 0.95f);
-    c[ImGuiCol_TableBorderStrong]    = kLine;
-    c[ImGuiCol_TableBorderLight]     = Hex(0x2F4B32, 0.6f);
-    c[ImGuiCol_TableRowBg]           = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_TableRowBgAlt]        = Hex(0x172A1B, 0.35f);
-    c[ImGuiCol_TextSelectedBg]       = Hex(0x3E6B27, 0.7f);
-    c[ImGuiCol_NavCursor]            = kLeaf;
-}
-
-// Bahnschrift (DIN-style, ships with Windows 10+), then Segoe UI, then ImGui's own font.
-static void LoadFonts() {
-    ImGuiIO& io = ImGui::GetIO();
-    char dir[MAX_PATH] = "C:\\Windows";
-    GetWindowsDirectoryA(dir, sizeof(dir));
-    static const char* const kFonts[] = { "bahnschrift.ttf", "segoeui.ttf" };
-    ImFont* font = nullptr;
-    for (const char* name : kFonts) {
-        char path[MAX_PATH];
-        snprintf(path, sizeof(path), "%s\\Fonts\\%s", dir, name);
-        if (GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES) continue;
-        if ((font = io.Fonts->AddFontFromFileTTF(path, kBodySize)) != nullptr) break;
-    }
-    ImGuiStyle& st = ImGui::GetStyle();
-    st.FontSizeBase = font ? kBodySize : 13.0f;
-    st.FontScaleMain = font ? 1.0f : 1.3f;
-}
-
 // --- background image: data\menu_background.png / .jpg, decoded with Windows' own WIC ---------
 
 static ID3D11ShaderResourceView* g_bgSrv = nullptr;
@@ -493,54 +363,34 @@ static void DrawBackdrop() {
     dl->AddRectFilled(ImVec2(0, 0), size, ImGui::GetColorU32(ImVec4(kSoil.x, kSoil.y, kSoil.z, g_bgDarkness / 100.0f)));
 }
 
-// --- small building blocks ------------------------------------------------------------------
+// =============================================================================================
+// Pages: the open page and the developer switch
+// =============================================================================================
+//
+// Saved in menu-view.ini. The game thread changes them while it builds a frame; the menu thread
+// saves them after that frame is built and before it asks for the next one, so the two never touch
+// them at the same time (the frame protocol below).
 
-void SectionHeading(const char* title) {
-    ImGui::Dummy(ImVec2(0, 2));
-    ImGui::PushFont(nullptr, kHeadingSize);
-    ImGui::SeparatorText(title);
-    ImGui::PopFont();
+namespace Nav = sc_offline::menu_nav;
+static Nav::View g_view;
+static bool g_viewDirty = false;
+static char g_menuViewPath[MAX_PATH];
+
+static void SelectPage(const std::string& id) {
+    if (g_view.page == id) return;
+    g_view.page = id;
+    g_viewDirty = true;
 }
 
-void Hint(const char* text) {
-    ImGui::PushStyleColor(ImGuiCol_Text, kMuted);
-    ImGui::TextWrapped("%s", text);
-    ImGui::PopStyleColor();
-}
-
-bool PrimaryButton(const char* label, float height) {
-    ImGui::PushStyleColor(ImGuiCol_Button, kLeafDeep);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Hex(0x4F8732));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, kLeaf);
-    const bool pressed = ImGui::Button(label, ImVec2(-1, height));
-    ImGui::PopStyleColor(3);
-    return pressed;
-}
-
-float Columns(int n) {
-    return (ImGui::GetContentRegionAvail().x - (n - 1) * ImGui::GetStyle().ItemSpacing.x) / n;
-}
-
-bool SearchBox(const char* id, const char* hint, char* buf, size_t n) {
-    ImGui::SetNextItemWidth(-1);
-    return ImGui::InputTextWithHint(id, hint, buf, n);
-}
-
-void PrettyBuildName(char* out, size_t n, const char* name) {
-    static const char* const kPrefixes[] = { "PlayerDeco_", "Turret_Automated_", "BaseBuilding_Interactables_", "BaseBuilding_",
-                                             "PU_Human_Enemy_GroundCombat_NPC_", "PU_Human-", "NPC_Archetypes-", "AIShip_CrewProfiles-" };
-    if (const char* slash = strrchr(name, '/')) name = slash + 1;
-    for (const char* p : kPrefixes)
-        if (_strnicmp(name, p, strlen(p)) == 0) { name += strlen(p); break; }
-    strncpy_s(out, n, name, _TRUNCATE);
-    if (char* ext = strstr(out, ".socpak")) *ext = 0;
-    if (char* guid = strstr(out, "_{")) {
-        char tag[8];
-        snprintf(tag, sizeof(tag), " (%.4s)", guid + 2);
-        *guid = 0;
-        strncat_s(out, n, tag, _TRUNCATE);
+static void DrawDeveloperSwitch() {
+    SectionHeading("Developer pages");
+    bool developer = g_view.developer;
+    if (ImGui::Checkbox("Show developer pages", &developer)) {
+        g_view.developer = developer;
+        g_viewDirty = true;
     }
-    for (char* c = out; *c; ++c) if (*c == '_' || *c == '-') *c = ' ';
+    Hint("Adds pages for testing and finding bugs, such as the Inspector. They show raw game data "
+         "and are not needed to play.");
 }
 
 // =============================================================================================
@@ -556,6 +406,7 @@ static void DrawMenuTab() {
     } else {
         Hint("Menu settings are unavailable.");
     }
+    DrawDeveloperSwitch();
 #else
     SectionHeading("Background");
     if (g_bgSrv) {
@@ -575,8 +426,11 @@ static void DrawMenuTab() {
         ImGui::TextWrapped("%s", g_bgPath[0] ? g_bgPath : "data\\menu_background.png");
     }
 
+    DrawDeveloperSwitch();
+
     SectionHeading("About");
     Hint(SCO_TITLE " is a work in progress, " SCO_BASED_ON ".");
+    Hint("Press M or Esc to close this menu.");
     Hint("Bug reports: github.com/scuba-sc/sc-offline/issues");
 #endif
 }
@@ -590,11 +444,7 @@ static void DrawStatusStrip(float height) {
     char status[256];
     Menu_GetStatus(status, sizeof(status));
 #endif
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, Hex(0x0B140D, 0.92f));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 8));
-    ImGui::BeginChild("##status", ImVec2(0, height), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
-    const ImVec2 p = ImGui::GetWindowPos();
-    ImGui::GetWindowDrawList()->AddRectFilled(p, ImVec2(p.x + 4, p.y + height), ImGui::GetColorU32(kLeaf));
+    MenuBeginStatusStrip(height);
 #ifdef SCO_HOST_MENU_CLIENT
     if (g_widgetMenu.StatusReady() && sco::app::IsHostMenuPanel("menu.status")) {
         sco::widgets::ImGuiRenderer renderer(false);
@@ -606,13 +456,12 @@ static void DrawStatusStrip(float height) {
 #else
     ImGui::TextWrapped("%s", status);
 #endif
-    ImGui::EndChild();
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor();
+    MenuEndStatusStrip();
 }
 
 // =============================================================================================
-// The shell: sco.ui's tabs in order, then the Menu tab; overlays after the window
+// The shell: every page in the sidebar (menu_navigation.h), the open page beside it, the status
+// strip under both; overlays after the window
 // =============================================================================================
 
 static bool g_closeRequested = false;   // MenuClose(), during a frame
@@ -639,6 +488,20 @@ static void DrawPluginOverlays(void* frame) {
     ImGui::ErrorRecoveryTryToRecoverState(&state);
 }
 
+#ifdef SCO_WIDGETS_HOST_RENDERER
+// One plugin panel, under the same recovery as a tab. The page header already names it, so the
+// renderer doesn't repeat the title.
+static sco::Result DrawPanel(const char* id) {
+    ImGuiErrorRecoveryState state;
+    ImGui::ErrorRecoveryStoreState(&state);
+    sco::widgets::ImGuiRenderer renderer(false);
+    const auto result = sco::widgets::RenderPanel(id, renderer);
+    ImGui::ErrorRecoveryTryToRecoverState(&state);
+    if (result == sco::Result::Crashed) Log("[menu] widget panel %s crashed; owner disabled", id);
+    return result;
+}
+#endif
+
 static bool DrawMenu() {
     bool keepOpen = true;
     g_closeRequested = false;
@@ -650,60 +513,67 @@ static bool DrawMenu() {
                  ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
                  | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
 
-    const float statusHeight = ImGui::GetTextLineHeight() * 2 + 18;
-    const float bodyHeight = -(statusHeight + ImGui::GetStyle().ItemSpacing.y);
-    if (ImGui::BeginTabBar("##tabs", kMenuTabBarFlags)) {
-        auto body = [&](auto draw) {
-            if (ImGui::BeginChild("##body", ImVec2(0, bodyHeight))) draw();
-            ImGui::EndChild();
-        };
-        bool first = g_backToFirstTab;
-        g_backToFirstTab = false;
-        // By sco.ui order, ties in registration order. "###id" keeps a tab selected while its
-        // badge changes.
-        for (const sco::ui::TabInfo& t : sco::ui::Tabs()) {
-            std::string label = t.badge.empty() ? t.title : t.title + " (" + t.badge + ")";
-            label += "###" + t.id;
-            const ImGuiTabItemFlags flags = first ? ImGuiTabItemFlags_SetSelected : 0;
-            first = false;
-            if (ImGui::BeginTabItem(label.c_str(), nullptr, flags)) { body([&] { DrawPluginTab(t, frame); }); ImGui::EndTabItem(); }
-        }
+    // Every page there is now, wherever it comes from: sco.ui tabs (by sco.ui order, ties in
+    // registration order), then plugin panels, then the menu's own settings. menu_navigation.h
+    // decides the sections and the order the player sees.
+    std::vector<Nav::Page> pages;
+    int arrival = 0;
+    const std::vector<sco::ui::TabInfo> tabs = sco::ui::Tabs();
+    for (const sco::ui::TabInfo& t : tabs)
+        pages.push_back(Nav::Describe(t.id, t.title, t.badge, arrival++, Nav::Source::Tab));
 #ifdef SCO_WIDGETS_HOST_RENDERER
-        // Copied neutral panels are rendered on the same game-thread frame. The
-        // public widget dispatcher guards owner callbacks and rejects stale events.
-        const auto panels = sco::widgets::Panels();
-        const bool groupAsop = sc_offline::menu_panels::GroupAsop(panels);
-        for (const auto& panel : panels) {
-            if (groupAsop && sc_offline::menu_panels::IsAsop(panel)) continue;
+    // Copied neutral panels are rendered on the same game-thread frame. The
+    // public widget dispatcher guards owner callbacks and rejects stale events.
+    const auto panels = sco::widgets::Panels();
+    const bool groupAsop = sc_offline::menu_panels::GroupAsop(panels);
+    for (const auto& panel : panels) {
+        if (groupAsop && sc_offline::menu_panels::IsAsop(panel)) continue;
 #ifdef SCO_HOST_MENU_CLIENT
-            if (sco::app::IsHostMenuPanel(panel.id.c_str())) continue;
+        if (sco::app::IsHostMenuPanel(panel.id.c_str())) continue;
 #endif
-            const std::string label = panel.title + "###" + panel.id;
-            const ImGuiTabItemFlags flags = first ? ImGuiTabItemFlags_SetSelected : 0;
-            first = false;
-            if (ImGui::BeginTabItem(label.c_str(), nullptr, flags)) {
-                body([&] {
-                    ImGuiErrorRecoveryState state;
-                    ImGui::ErrorRecoveryStoreState(&state);
-                    sco::widgets::ImGuiRenderer renderer;
-                    const auto result = sco::widgets::RenderPanel(panel.id.c_str(), renderer);
-                    ImGui::ErrorRecoveryTryToRecoverState(&state);
-                    if (result == sco::Result::Crashed) Log("[menu] widget panel %s crashed; owner disabled", panel.id.c_str());
-                    if (result == sco::Result::Ok && groupAsop && sc_offline::menu_panels::IsVehicles(panel)) {
-                        ImGui::Separator();
-                        ImGui::ErrorRecoveryStoreState(&state);
-                        const auto asopResult = sco::widgets::RenderPanel("spawn.asop", renderer);
-                        ImGui::ErrorRecoveryTryToRecoverState(&state);
-                        if (asopResult == sco::Result::Crashed) Log("[menu] ASOP panel crashed; owner disabled");
-                    }
-                });
-                ImGui::EndTabItem();
-            }
-        }
-#endif
-        if (ImGui::BeginTabItem("Menu", nullptr, first ? ImGuiTabItemFlags_SetSelected : 0)) { body([&] { DrawMenuTab(); }); ImGui::EndTabItem(); }
-        ImGui::EndTabBar();
+        pages.push_back(Nav::Describe(panel.id, panel.title, "", arrival++, Nav::Source::Panel));
     }
+#endif
+    pages.push_back(Nav::Describe(Nav::kSettingsPage, "Menu", "", arrival++, Nav::Source::Settings));
+    pages = Nav::Arrange(std::move(pages), g_view.developer);
+
+    if (g_backToFirstTab) SelectPage(pages.front().id);   // never empty: Settings is always there
+    g_backToFirstTab = false;
+    const std::string current = Nav::Choose(pages, g_view.page);
+
+    struct PageContext {
+        const std::vector<sco::ui::TabInfo>* tabs;
+        void* frame;
+        bool groupAsop;
+    } context{&tabs, frame, false};
+#ifdef SCO_WIDGETS_HOST_RENDERER
+    context.groupAsop = groupAsop;
+#endif
+    const MenuPageFn drawPage = [](const Nav::Page& page, void* raw) {
+        const auto& ctx = *static_cast<PageContext*>(raw);
+        switch (page.source) {
+        case Nav::Source::Tab:
+            for (const sco::ui::TabInfo& t : *ctx.tabs)
+                if (t.id == page.id) { DrawPluginTab(t, ctx.frame); break; }
+            break;
+        case Nav::Source::Panel:
+#ifdef SCO_WIDGETS_HOST_RENDERER
+            if (DrawPanel(page.id.c_str()) == sco::Result::Ok && ctx.groupAsop && page.id == "spawn.vehicles") {
+                // The ships the player has in the game's own fleet, under the spawn list.
+                SectionHeading("Your own ships");
+                DrawPanel("spawn.asop");
+            }
+#endif
+            break;
+        case Nav::Source::Settings:
+            DrawMenuTab();
+            break;
+        }
+    };
+    const float statusHeight = MenuStatusStripHeight();
+    const float bodyHeight = ImGui::GetContentRegionAvail().y - statusHeight - ImGui::GetStyle().ItemSpacing.y;
+    const std::string clicked = MenuDrawShell(pages, current, bodyHeight, drawPage, &context);
+    if (!clicked.empty()) SelectPage(clicked);
     DrawStatusStrip(statusHeight);
     ImGui::End();
     // sc-offline has no surface over the game itself: overlays draw over the menu while it's open.
@@ -862,7 +732,7 @@ static bool InitializeMenuImGui() {
     ImGui::GetIO().MouseDrawCursor = true;
     ImGui::GetIO().ConfigErrorRecoveryEnableAssert = false;
     ImGui::GetIO().ConfigErrorRecoveryEnableTooltip = false;
-    ImGui::StyleColorsDark(); ApplyTheme(); LoadFonts();
+    ImGui::StyleColorsDark(); MenuApplyTheme(); MenuLoadFonts();
     return ImGui_ImplWin32_Init(g_wnd) && ImGui_ImplDX11_Init(g_device, g_context);
 }
 static void RecoverMenuImGuiThunk(void* context) {
@@ -901,6 +771,13 @@ static DWORD WINAPI MenuThread(LPVOID) {
         g_menuSizePath[0] = '\0';
         Log("[menu] size persistence unavailable: no configured mod-log directory");
     }
+    if (ModLogSibling(g_menuViewPath, sizeof(g_menuViewPath), "menu-view.ini")) {
+        g_view = Nav::LoadView(g_menuViewPath);
+        Log("[menu] view restore: page %s, developer pages %s",
+            g_view.page.empty() ? "(first)" : g_view.page.c_str(), g_view.developer ? "shown" : "hidden");
+    } else {
+        g_menuViewPath[0] = '\0';
+    }
     RECT game{};
     GetWindowRect(g_game, &game);
     const RECT initial = RestoreMenu(game.left + 60, game.top + 60, g_game);
@@ -930,8 +807,8 @@ static DWORD WINAPI MenuThread(LPVOID) {
     ImGui::GetIO().ConfigErrorRecoveryEnableAssert = false;
     ImGui::GetIO().ConfigErrorRecoveryEnableTooltip = false;
     ImGui::StyleColorsDark();
-    ApplyTheme();
-    LoadFonts();
+    MenuApplyTheme();
+    MenuLoadFonts();
     ImGui_ImplWin32_Init(g_wnd);
     ImGui_ImplDX11_Init(g_device, g_context);
 #endif
@@ -984,6 +861,12 @@ static DWORD WINAPI MenuThread(LPVOID) {
         if (!g_imguiUsable.load()) { g_typing = false; Sleep(50); continue; }
 #endif
         if (g_frame.TakeBuilt()) {
+            // The game thread is done with the view until the next request.
+            if (g_viewDirty) {
+                g_viewDirty = false;
+                if (g_menuViewPath[0] && !Nav::SaveView(g_menuViewPath, g_view))
+                    Log("[menu] couldn't save menu-view.ini; the open page will not persist");
+            }
             if (visible) {
                 const float clear[4] = { kSoil.x, kSoil.y, kSoil.z, 1.0f };
                 g_context->OMSetRenderTargets(1, &g_rtv, nullptr);

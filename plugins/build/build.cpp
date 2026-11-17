@@ -46,8 +46,9 @@ template<class T> const T* Open(const char* name) {
     if (!HAS(g.api, sco_api, query_service) || g.api->query_service(name, 0x10000u, &out) != SCO_OK) return nullptr;
     return static_cast<const T*>(out);
 }
-sco_result Reply(sco_result r, char* out, uint32_t size, const char* text) {
-    picker::Message(text);
+// `text` is the technical reply (command output and log); `plain` is the sentence the Build page shows.
+sco_result Reply(sco_result r, char* out, uint32_t size, const char* text, const char* plain) {
+    picker::Message(plain);
     if (out && size) std::snprintf(out, size, "%s", text);
     if (HAS(g.api, sco_api, log)) g.api->log(g.self, r == SCO_OK ? SCO_LOG_INFO : SCO_LOG_WARN, text);
     return r;
@@ -189,29 +190,33 @@ sco_result Place(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     if(!args || n!=2 || args[0].type!=SCO_ARG_STRING || args[1].type!=SCO_ARG_FLOAT || !args[0].v.s ||
        !*args[0].v.s || std::strlen(args[0].v.s)>SC_PREFABS_MAX_PATH || (!out&&size) ||
        !std::isfinite(args[1].v.f) || args[1].v.f<0 || args[1].v.f>100 || (Prefab(args[0].v.s)&&!Path(args[0].v.s)))
-        return Reply(SCO_BAD_ARG,out,size,"Supply class or canonical ObjectContainers/.../*.socpak and ahead 0..100 m");
-    if(g.count==kMax)return Reply(SCO_TOO_MANY,out,size,"Loaded-session placement quota (including removals) reached");
-    if(!WorldReady())return Reply(SCO_UNAVAILABLE,out,size,"Build ground placement unavailable: game.world missing/disabled; no private fallback");
+        return Reply(SCO_BAD_ARG,out,size,"Supply class or canonical ObjectContainers/.../*.socpak and ahead 0..100 m","That item can't be placed.");
+    if(g.count==kMax)return Reply(SCO_TOO_MANY,out,size,"Loaded-session placement quota (including removals) reached","You've reached the most things you can place. Remove some first.");
+    if(!WorldReady())return Reply(SCO_UNAVAILABLE,out,size,"Build ground placement unavailable: game.world missing/disabled; no private fallback","Can't place anything yet because the game world isn't ready.");
     double p[3],q[4];uint64_t zone=0;auto r=Pose(p,q,zone,args[1].v.f,true);
-    if(r!=SCO_OK)return Reply(r,out,size,"Fresh player/ground pose unavailable; no placement requested");
+    if(r!=SCO_OK)return Reply(r,out,size,"Fresh player/ground pose unavailable; no placement requested","Couldn't find where you're standing. Try again in a moment.");
     uint64_t id=0;Kind kind; r=Spawn(args[0].v.s,zone,p,q,true,id,kind);
-    if(r!=SCO_OK)return Reply(r,out,size,"Owned build provider refused placement; no private fallback");
-    if(!id)return Reply(SCO_FAILED,out,size,"Provider returned zero ID; host release must reconcile ownership");
+    if(r!=SCO_OK)return Reply(r,out,size,"Owned build provider refused placement; no private fallback",
+        r==SCO_NOT_FOUND?"The game doesn't have that item.":r==SCO_UNAVAILABLE?"Placing this kind of item isn't available right now.":"The game refused to place that item.");
+    if(!id)return Reply(SCO_FAILED,out,size,"Provider returned zero ID; host release must reconcile ownership","The game didn't create the item. Try again.");
     g.placed[g.count++]={id,0,kind,false};
-    return Reply(SCO_OK,out,size,"Owned placement initiated; streaming unconfirmed, undo authority retained while loaded; removed on unload");
+    char plain[256];std::snprintf(plain,sizeof(plain),"Placed %.120s, %.0f m ahead. It may take a moment to appear.",picker::PrettyName(args[0].v.s).c_str(),args[1].v.f);
+    return Reply(SCO_OK,out,size,"Owned placement initiated; streaming unconfirmed, undo authority retained while loaded; removed on unload",plain);
 }
 sco_result Undo(const sco_arg*,uint32_t n,void*,char* out,uint32_t size) {
     if(n || (!out&&size))return SCO_BAD_ARG;
     for(uint32_t i=g.count;i>0;--i)if(!g.placed[i-1].removing) {
         const auto r=Remove(g.placed[i-1]);
-        return Reply(r,out,size,r==SCO_OK?"Removal REQUESTED, not disappearance; receipt retained":"Owned removal refused; authority unchanged, no foreign fallback");
+        return Reply(r,out,size,r==SCO_OK?"Removal REQUESTED, not disappearance; receipt retained":"Owned removal refused; authority unchanged, no foreign fallback",
+            r==SCO_OK?"Removing the last thing you placed. It may take a moment to disappear.":"Couldn't remove it. Try again.");
     }
-    return Reply(SCO_OK,out,size,"Nothing retained to undo");
+    return Reply(SCO_OK,out,size,"Nothing retained to undo","You haven't placed anything yet.");
 }
 sco_result Clear(const sco_arg*,uint32_t n,void*,char* out,uint32_t size) {
     if(n || (!out&&size))return SCO_BAD_ARG;
     sco_result result=SCO_OK;for(uint32_t i=0;i<g.count;++i){const auto r=Remove(g.placed[i]);if(r!=SCO_OK)result=r;}
-    return Reply(result,out,size,"Owned cleanup requested; pending receipts do not confirm disappearance");
+    return Reply(result,out,size,"Owned cleanup requested; pending receipts do not confirm disappearance",
+        result!=SCO_OK?"Some of your things couldn't be removed. Try again.":g.count?"Removing everything you placed. It may take a moment to disappear.":"You haven't placed anything yet.");
 }
 bool ControlReady() {
     const auto* ctl=Open<sc_world_control_v1>(SC_WORLD_CONTROL_NAME);
@@ -224,11 +229,11 @@ bool ControlReady() {
 }
 sco_result Toggle(const sco_arg*,uint32_t n,void*,char* out,uint32_t size) {
     if(n || (!out&&size))return SCO_BAD_ARG;
-    if(g.active || g.lease)return Reply(Stop(),out,size,"Build stopped; preview cleanup/camera restore requested");
+    if(g.active || g.lease)return Reply(Stop(),out,size,"Build stopped; preview cleanup/camera restore requested","Stopped aiming.");
     if(!g.selected[0]) {
         const char* candidate=nullptr;
         for(const auto& row:picker::state.rows) if(ValidSelection(row.name.c_str())) { candidate=row.name.c_str(); break; }
-        if(!candidate)return Reply(SCO_UNAVAILABLE,out,size,"No admissible row in the loaded unique build catalogue; select explicitly or load a valid catalogue");
+        if(!candidate)return Reply(SCO_UNAVAILABLE,out,size,"No admissible row in the loaded unique build catalogue; select explicitly or load a valid catalogue","Choose an item from the list first.");
         std::snprintf(g.selected,sizeof(g.selected),"%s",candidate);
         g.clocked=false;g.suppressed=false;
     }
@@ -257,21 +262,21 @@ sco_result Toggle(const sco_arg*,uint32_t n,void*,char* out,uint32_t size) {
        !HAS(sp,sc_spatial_v1,world_to_local) || !HAS(sp,sc_spatial_v1,local_to_world) ||
        !capability("game.world.free_camera") || !capability("game.world.raycast_filtered") || !capability("game.world.raycast")) {
         if(!live())return SCO_UNAVAILABLE;
-        return Reply(SCO_UNAVAILABLE,out,size,"Build aim/freecam unavailable: G5 has no production adapter; no private fallback");
+        return Reply(SCO_UNAVAILABLE,out,size,"Build aim/freecam unavailable: G5 has no production adapter; no private fallback","Aiming with the free camera isn't available yet. Use Place instead.");
     }
     if(!live())return SCO_UNAVAILABLE;
     uint64_t lease=0;const auto r=ctl->camera_acquire(self,&lease);
     if(!live())return SCO_UNAVAILABLE; // Never use stale self/table; in-flight owner-release ordering is not established here.
-    if(r!=SCO_OK || !lease)return Reply(r==SCO_OK?SCO_FAILED:r,out,size,"Public free-camera lease refused; no fallback");
+    if(r!=SCO_OK || !lease)return Reply(r==SCO_OK?SCO_FAILED:r,out,size,"Public free-camera lease refused; no fallback","Couldn't start the free camera.");
     g.lease=lease;g.active=true;g.clocked=false;
-    return Reply(SCO_OK,out,size,"Build camera lease acquired; use build.select/aim/drop/rotate/reach");
+    return Reply(SCO_OK,out,size,"Build camera lease acquired; use build.select/aim/drop/rotate/reach","Aiming. Left-click places, R turns the item, [ and ] change the distance, Backspace undoes.");
 }
 sco_result Select(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     if(!args || n!=2 || args[0].type!=SCO_ARG_STRING || args[1].type!=SCO_ARG_FLOAT || !ValidSelection(args[0].v.s) ||
        !std::isfinite(args[1].v.f) || args[1].v.f<5 || args[1].v.f>300)return SCO_BAD_ARG;
-    const auto r=RemovePreviews();if(r!=SCO_OK&&r!=SCO_NOT_FOUND)return Reply(r,out,size,"Preview removal refused; selection unchanged");
+    const auto r=RemovePreviews();if(r!=SCO_OK&&r!=SCO_NOT_FOUND)return Reply(r,out,size,"Preview removal refused; selection unchanged","Couldn't clear the old preview. Try again.");
     std::snprintf(g.selected,sizeof(g.selected),"%s",args[0].v.s);g.reach=args[1].v.f;g.clocked=false;g.suppressed=false;
-    return Reply(SCO_OK,out,size,"Selection copied; aim/freecam still requires enabled public G5");
+    return Reply(SCO_OK,out,size,"Selection copied; aim/freecam still requires enabled public G5","Item chosen for aiming.");
 }
 sco_result Aim(double camera[3],double cameraRot[4],double p[3],double q[4],uint64_t& zone) {
     if(!g.active || !ControlReady())return SCO_UNAVAILABLE;
@@ -307,11 +312,12 @@ sco_result Aim(double camera[3],double cameraRot[4],double p[3],double q[4],uint
 sco_result AimCommand(const sco_arg*,uint32_t n,void*,char* out,uint32_t size) {
     if(n || (!out&&size))return SCO_BAD_ARG;
     double c[3],cq[4],p[3],q[4];uint64_t zone=0;
-    return Reply(Aim(c,cq,p,q,zone),out,size,"Aim requires enabled public G5 filtered rays/camera; no private fallback");
+    const auto r=Aim(c,cq,p,q,zone);
+    return Reply(r,out,size,"Aim requires enabled public G5 filtered rays/camera; no private fallback",r==SCO_OK?"Found where you are aiming.":"Aiming isn't available right now.");
 }
 sco_result Drop(const sco_arg*,uint32_t n,void*,char* out,uint32_t size) {
     if(n || (!out&&size))return SCO_BAD_ARG;
-    if(!g.active || !g.selected[0] || !ControlReady())return Reply(SCO_UNAVAILABLE,out,size,"No public aim preview available; G5 disabled/missing");
+    if(!g.active || !g.selected[0] || !ControlReady())return Reply(SCO_UNAVAILABLE,out,size,"No public aim preview available; G5 disabled/missing","Start aiming and choose an item first.");
     if(g.count==kMax)return SCO_TOO_MANY;
     uint64_t id=0;Kind kind=Kind::Entity;sco_result r;
     if(g.ghost) {
@@ -323,39 +329,43 @@ sco_result Drop(const sco_arg*,uint32_t n,void*,char* out,uint32_t size) {
         if(r==SCO_OK)r=Spawn(g.selected,zone,p,q,true,id,kind);
     }
     if(r==SCO_OK && id)g.placed[g.count++]={id,0,kind,false};
-    return Reply(r,out,size,"Placement initiation only; retained while loaded, removed on unload");
+    return Reply(r,out,size,"Placement initiation only; retained while loaded, removed on unload",
+        r==SCO_OK?"Placed it where you were aiming. It may take a moment to appear.":"Couldn't place it there. Try again.");
 }
 sco_result Rotate(const sco_arg*,uint32_t n,void*,char* out,uint32_t size) {
     if (n) return SCO_BAD_ARG;
     g.yaw = std::fmod(g.yaw + 45, 360);
     g.clocked = false;
     g.suppressed = false;
-    return Reply(SCO_OK,out,size,"Preview rotation advanced 45 degrees");
+    return Reply(SCO_OK,out,size,"Preview rotation advanced 45 degrees","Turned the item 45 degrees.");
 }
 sco_result Reach(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     if(!args||n!=1||args[0].type!=SCO_ARG_FLOAT||!std::isfinite(args[0].v.f)||args[0].v.f<5||args[0].v.f>300)return SCO_BAD_ARG;
-    g.reach=args[0].v.f;g.clocked=false;g.suppressed=false;return Reply(SCO_OK,out,size,"Preview reach updated");
+    g.reach=args[0].v.f;g.clocked=false;g.suppressed=false;{char plain[64];std::snprintf(plain,sizeof(plain),"Distance set to %.0f m.",g.reach);return Reply(SCO_OK,out,size,"Preview reach updated",plain);}
 }
 sco_result Camera(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     if(!args||n!=3)return SCO_BAD_ARG;
     sc_world_camera_step step{};step.size=sizeof(step);step.rotation_xyzw[3]=1;double norm=0;
     for(int i=0;i<3;++i){if(args[i].type!=SCO_ARG_FLOAT||!std::isfinite(args[i].v.f))return SCO_BAD_ARG;step.translation[i]=args[i].v.f;norm+=args[i].v.f*args[i].v.f;}
     if(!std::isfinite(norm)||norm>100)return SCO_BAD_ARG;
-    if(!g.active||!ControlReady())return Reply(SCO_UNAVAILABLE,out,size,"Public camera control disabled; no private input fallback");
+    if(!g.active||!ControlReady())return Reply(SCO_UNAVAILABLE,out,size,"Public camera control disabled; no private input fallback","Camera control isn't available right now.");
     const auto* ctl=Open<sc_world_control_v1>(SC_WORLD_CONTROL_NAME);
     if(!HAS(ctl,sc_world_control_v1,camera_step))return SCO_UNAVAILABLE;
     const auto r=ctl->camera_step(g.self,g.lease,&step);
-    if(r!=SCO_OK){(void)Stop();return Reply(r,out,size,"Camera step refused; stopped and requested public restore");}
-    return Reply(r,out,size,"Bounded public camera step requested");
+    if(r!=SCO_OK){(void)Stop();return Reply(r,out,size,"Camera step refused; stopped and requested public restore","The camera couldn't move, so aiming was stopped.");}
+    return Reply(r,out,size,"Bounded public camera step requested","Camera moved.");
 }
 uint32_t Count() {uint32_t count=0;for(uint32_t i=0;i<g.count;++i)if(!g.placed[i].removing)++count;return count;}
 int Active(){return g.active;}
-picker::Observation ObservePicker(){return {g.reach,g.active || g.lease!=0,Count(),g.count-Count(),g.selected};}
+picker::Observation ObservePicker(){return {g.reach,g.active || g.lease!=0,Count(),g.count-Count(),g.selected,ControlReady()};}
 const sc_offline_build_state_v1 kState{sizeof(sc_offline_build_state_v1),Count,Active};
 sco_result Status(const sco_arg*,uint32_t n,void*,char* out,uint32_t size) {
     if(n||(!out&&size))return SCO_BAD_ARG;
     char text[512];std::snprintf(text,sizeof(text),"Build retained=%u removal-requested=%u preview=%s; G5 aim/freecam %s; no across-reload persistence; %s",Count(),g.count-Count(),g.preview||g.ghost?"pending/streamed":"none",ControlReady()?"enabled":"unavailable (no production adapter)",picker::state.source);
-    return Reply(SCO_OK,out,size,text);
+    char plain[192];
+    if(Count()||g.count-Count())std::snprintf(plain,sizeof(plain),"You have placed %u thing%s and %u %s being removed.",Count(),Count()==1?"":"s",g.count-Count(),g.count-Count()==1?"is":"are");
+    else std::snprintf(plain,sizeof(plain),"You haven't placed anything yet.");
+    return Reply(SCO_OK,out,size,text,plain);
 }
 void Input() {
 #ifdef _WIN32
