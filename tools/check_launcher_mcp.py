@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -99,8 +100,14 @@ def make_install(folder):
              'entry = %s.dll\r\n' % (name, name, version, name)).encode())
         if disabled:
             (plugin / 'disabled').write_bytes(b'')
+    # A plugin.ini over 64 KiB with its id, name and version at the top: the head is what list_plugins reads.
+    big = folder / 'data' / 'plugins' / 'gamma'
+    big.mkdir(parents=True)
+    (big / 'plugin.ini').write_bytes(
+        b'id = gamma\r\nname = Plugin gamma\r\nversion = 3.0.0\r\n' + b'; padding\r\n' * (80 * 1024 // 11))
     (folder / 'data' / 'mod.log').write_bytes(
-        b'[mod] started\r\n[mod] data dir C:\\Users\\SomeName\\Games\\sc-offline\\data\r\n[mod] ready\r\n')
+        b'[mod] started\r\n[mod] data dir C:\\Users\\SomeName\\Games\\sc-offline\\data\r\n'
+        b'[mod] json {"dir":"C:\\\\Users\\\\bobsecretdouble\\\\AppData\\\\x"}\r\n[mod] ready\r\n')
 
 
 def check_exe(exe, work):
@@ -113,6 +120,12 @@ def check_exe(exe, work):
     env = dict(os.environ)
     env['USERPROFILE'] = r'C:\Users\SomeName'
     env.pop('SC_OFFLINE_GUI', None)
+
+    # An unknown argument next to `mcp` must not write usage or errors to stdout (it belongs to the protocol).
+    bogus = subprocess.run([str(install / 'sc-offline.exe'), 'mcp', 'bogus'], stdin=subprocess.DEVNULL,
+                           capture_output=True, env=env, cwd=str(install), timeout=60)
+    expect(bogus.stdout == b'' and bogus.returncode != 0 and b'unknown argument' in bogus.stderr,
+           'mcp bogus: stdout %r, exit %d, stderr %r' % (bogus.stdout[:200], bogus.returncode, bogus.stderr[:200]))
 
     session = Session(install / 'sc-offline.exe', env)
     try:
@@ -145,16 +158,18 @@ def run_session(session, install, before):
     expect(json.loads(status['content'][0]['text']) == body, 'get_status text differs from structuredContent')
     schema = next(t for t in tools if t['name'] == 'get_status')['outputSchema']
     expect(set(body) == set(schema['required']), 'get_status fields: %r' % sorted(body))
-    expect(body['plugins_total'] == 2 and body['plugins_enabled'] == 1, 'plugin counts: %r' % body)
+    expect(body['plugins_total'] == 3 and body['plugins_enabled'] == 2, 'plugin counts: %r' % body)
     expect(body['plugins_setting_on'] is True and body['eac'] in ('active', 'disabled', 'not_installed'), 'status: %r' % body)
     expect(isinstance(body['game_running'], bool) and isinstance(body['wine'], bool), 'status types: %r' % body)
 
     listing = session.call('list_plugins')['structuredContent']
     plugins = listing['plugins']
-    expect([p['folder'] for p in plugins] == ['alpha', 'beta'] and listing['count'] == 2, 'plugins: %r' % listing)
+    expect([p['folder'] for p in plugins] == ['alpha', 'beta', 'gamma'] and listing['count'] == 3, 'plugins: %r' % listing)
     expect(plugins[0]['enabled'] is True and plugins[1]['enabled'] is False, 'enabled flags: %r' % plugins)
     expect(plugins[0]['id'] == 'alpha' and plugins[0]['version'] == '1.0.0' and plugins[0]['entry'] == 'alpha.dll', 'fields')
     expect(plugins[0]['warnings'] == [] and plugins[1]['warnings'] == [], 'warnings: %r' % plugins)
+    expect(plugins[2]['id'] == 'gamma' and plugins[2]['name'] == 'Plugin gamma' and plugins[2]['version'] == '3.0.0' and
+           plugins[2]['warnings'] == [], 'a plugin.ini over 64 KiB must be read from its head: %r' % plugins[2])
 
     for log in ('mod', 'launcher', 'launcher_previous', 'game'):
         read = session.call('read_log', {'log': log})
@@ -164,10 +179,16 @@ def run_session(session, install, before):
         if log in ('launcher', 'launcher_previous'):   # the scratch install has no launcher logs; a real game's Game.log may exist
             expect(out['exists'] is False and out['lines'] == [], 'a missing log must read as empty: %r' % out)
     mod = session.call('read_log', {'log': 'mod', 'lines': 2})['structuredContent']
-    expect(mod['exists'] is True and mod['matched_lines'] == 3 and mod['truncated'] is True, 'mod log: %r' % mod)
+    expect(mod['exists'] is True and mod['matched_lines'] == 4 and mod['truncated'] is True, 'mod log: %r' % mod)
     expect(mod['lines'][-1] == '[mod] ready' and 'SomeName' not in json.dumps(mod), 'mod log lines: %r' % mod)
     found = session.call('read_log', {'log': 'mod', 'contains': 'DATA DIR'})['structuredContent']
     expect(found['lines'] == ['[mod] data dir %USERPROFILE%\\Games\\sc-offline\\data'], 'redaction: %r' % found)
+    # doubled (JSON-escaped) separators: redacted, and the account name cannot be probed with `contains`
+    escaped = session.call('read_log', {'log': 'mod', 'contains': 'bobsecretdouble'})['structuredContent']
+    expect(escaped['lines'] == [], 'contains must not see an account name: %r' % escaped)
+    shown = session.call('read_log', {'log': 'mod', 'contains': '[mod] json'})['structuredContent']
+    expect(len(shown['lines']) == 1 and 'bobsecretdouble' not in json.dumps(shown) and '<user>' in shown['lines'][0],
+           'escaped path: %r' % shown)
     expect(session.request('tools/call', {'name': 'read_log', 'arguments': {'log': 'mod', 'lines': 501}})['error']['code'] == -32602,
            'lines 501 must be refused')
     expect(session.request('tools/call', {'name': 'nope'})['error']['code'] == -32602, 'unknown tool')
@@ -181,12 +202,23 @@ def run_session(session, install, before):
     session.send_raw(b'{not json\n\n[1]\n')
     expect(session.read_line()['error']['code'] == -32700, 'parse error')
     expect(session.read_line()['error']['code'] == -32600, 'batch')
+    # ~80k distinct keys in under 1 MiB used to stall the parser for seconds: refused fast, the session goes on
+    keys = ','.join('"k%d":0' % i for i in range(80000))
+    line = ('{"jsonrpc":"2.0","id":1,"method":"ping",' + keys + '}').encode()
+    expect(len(line) < 1 << 20, 'the key flood must fit one line: %d' % len(line))
+    started = time.monotonic()
+    session.send_raw(line + b'\n')
+    flood = session.read_line()
+    elapsed = time.monotonic() - started
+    expect(flood['error']['code'] == -32700 and 'too many members' in flood['error']['message'], 'key flood: %r' % flood)
+    expect(elapsed < 1.0, 'the key flood took %.2f s' % elapsed)
+    expect(session.request('ping')['result'] == {}, 'the session must go on after the key flood')
     expect(session.close() == 0, 'EOF on stdin must exit 0')
     expect(b'SomeName' not in b''.join(session.stderr), 'stderr leaked the account name')
 
     after = snapshot(install)
     expect(after == before, 'the server changed the install folder: %r' % sorted(set(before.items()) ^ set(after.items())))
-    print('launcher mcp: stdio session passed; %d files and folders unchanged' % len(after))
+    print('launcher mcp: stdio session passed (key flood refused in %.3f s); %d files and folders unchanged' % (elapsed, len(after)))
 
 
 def main():

@@ -32,6 +32,8 @@ inline constexpr size_t kMaxFieldBytes = 256;        // a plugin.ini value
 inline constexpr size_t kMaxSettings = 1000;
 inline constexpr size_t kMaxSettingBytes = 1024;
 inline constexpr int kDefaultLines = 100;
+inline constexpr size_t kMaxMembers = 1024;          // most members one JSON object may hold (Value::Set scans them)
+inline constexpr size_t kMaxValues = 100000;         // most JSON values one message may hold
 
 // --- JSON ---------------------------------------------------------------------------------------
 
@@ -150,7 +152,7 @@ struct ParseResult {
 };
 
 // Strict RFC 8259: one value and nothing after it, UTF-8 text, \uXXXX escapes with paired surrogates,
-// no leading zeros, nesting at most kMaxDepth.
+// no leading zeros, nesting at most kMaxDepth, at most kMaxMembers members per object and kMaxValues values.
 class Parser {
 public:
     explicit Parser(const std::string& text) : s_(text) {}
@@ -169,6 +171,7 @@ private:
     const std::string& s_;
     size_t i_ = 0;
     std::string error_;
+    size_t values_ = 0;   // values parsed so far in this message
 
     std::string Describe(const std::string& what) const { return what + " at byte " + std::to_string(i_); }
     bool Fail(const std::string& what) { error_ = Describe(what); return false; }
@@ -183,6 +186,7 @@ private:
 
     bool ParseValue(Value& out, int depth) {
         if (i_ >= s_.size()) return Fail("unexpected end of input");
+        if (++values_ > kMaxValues) return Fail("too many values");
         const char c = s_[i_];
         if (c == '{') return ParseObject(out, depth + 1);
         if (c == '[') return ParseArray(out, depth + 1);
@@ -320,9 +324,11 @@ private:
         out = Value::Object();
         Ws();
         if (i_ < s_.size() && s_[i_] == '}') { ++i_; return true; }
+        size_t members = 0;
         for (;;) {
             Ws();
             if (i_ >= s_.size() || s_[i_] != '"') return Fail("expected a string key");
+            if (++members > kMaxMembers) return Fail("too many members");
             std::string key;
             if (!ParseString(key)) return false;
             Ws();
@@ -479,10 +485,38 @@ inline bool EqualsNoCase(const std::string& s, size_t at, const std::string& wor
     return true;
 }
 
+// Where a profile root or a `Users` path ends: the end of the run of slashes starting at i.
+inline size_t SlashRunEnd(const std::string& s, size_t i) {
+    while (i < s.size() && IsSlash(s[i])) ++i;
+    return i;
+}
+
+// The end of `root` matched at s[at], or npos. A run of slashes in either matches a run in the other (so
+// `C:\\Users\\x` in an escaped log still matches). Letters compare ASCII-case-insensitively only, so a
+// non-ASCII account name matches byte for byte.
+inline size_t MatchRoot(const std::string& s, size_t at, const std::string& root) {
+    size_t i = at;
+    for (size_t k = 0; k < root.size();) {
+        if (IsSlash(root[k])) {
+            const size_t e = SlashRunEnd(s, i);
+            if (e == i) return std::string::npos;
+            i = e;
+            k = SlashRunEnd(root, k);
+        } else {
+            if (i >= s.size() || LowerAscii(s[i]) != LowerAscii(root[k])) return std::string::npos;
+            ++i; ++k;
+        }
+    }
+    return i;
+}
+
 // Paths under the user's profile must not carry the account name out of the PC. First every
-// case-insensitive occurrence of a profile root (USERPROFILE) becomes %USERPROFILE%; then any remaining
-// <letter>:\Users\<name> or <letter>:/Users/<name> has its <name> replaced by <user> (the slash style is kept).
-// A name may hold spaces when a path separator follows it; otherwise it ends at the first space.
+// case-insensitive (ASCII only) occurrence of a profile root (USERPROFILE) becomes %USERPROFILE%; then the name in
+// any `Users` path component that follows a separator (C:\Users\x, /c/Users/x, \\?\C:\Users\x,
+// \Device\HarddiskVolume3\Users\x, \\host\c$\Users\x) is replaced by <user>. A run of \ or / counts as one
+// separator and is kept as written. A name may hold spaces when a separator follows it; otherwise it ends at the
+// next character that cannot be part of a path in a log (quote, < > |, comma, semicolon, closing bracket) or the
+// end of the line, which can hide more than the name.
 inline std::string Redact(const std::string& text, const std::vector<std::string>& profileRoots) {
     std::string s = text;
     for (std::string root : profileRoots) {
@@ -491,11 +525,17 @@ inline std::string Redact(const std::string& text, const std::vector<std::string
         std::string out;
         size_t i = 0;
         while (i < s.size()) {
-            const size_t end = i + root.size();
-            const bool boundary = end >= s.size() ||
-                !(std::isalnum(static_cast<unsigned char>(s[end])) || s[end] == '_' || s[end] == '-' || s[end] == '.' ||
-                  static_cast<unsigned char>(s[end]) >= 0x80);
-            if (boundary && EqualsNoCase(s, i, root)) { out += "%USERPROFILE%"; i = end; }
+            const size_t end = MatchRoot(s, i, root);
+            bool boundary = false;
+            if (end != std::string::npos) {
+                // The root ends the account name unless the name goes on: a letter, digit or non-ASCII byte, or
+                // '-' / '_' followed by one. '.' always ends it, so `bobsecret.` and `bobsecret.log` match.
+                const auto cont = [&](size_t k) {
+                    return k < s.size() && (std::isalnum(static_cast<unsigned char>(s[k])) || static_cast<unsigned char>(s[k]) >= 0x80);
+                };
+                boundary = end >= s.size() || !(cont(end) || ((s[end] == '-' || s[end] == '_') && cont(end + 1)));
+            }
+            if (boundary) { out += "%USERPROFILE%"; i = end; }
             else out += s[i++];
         }
         s = std::move(out);
@@ -503,25 +543,25 @@ inline std::string Redact(const std::string& text, const std::vector<std::string
     std::string out;
     size_t i = 0;
     while (i < s.size()) {
-        const bool drive = i + 9 <= s.size() && std::isalpha(static_cast<unsigned char>(s[i])) && s[i + 1] == ':' &&
-                           IsSlash(s[i + 2]) && EqualsNoCase(s, i + 3, "users") && IsSlash(s[i + 8]);
-        if (!drive) { out += s[i++]; continue; }
-        const size_t nameStart = i + 9;
-        size_t e = nameStart;
+        if (!IsSlash(s[i])) { out += s[i++]; continue; }
+        const size_t run = SlashRunEnd(s, i);
+        const bool users = EqualsNoCase(s, run, "users") && run + 5 < s.size() && IsSlash(s[run + 5]);
+        if (!users) { out.append(s, i, run - i); i = run; continue; }
+        const size_t nameStart = SlashRunEnd(s, run + 5);
+        out.append(s, i, nameStart - i);
         const auto stops = [&](char c) {
             return IsSlash(c) || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|' ||
                    static_cast<unsigned char>(c) < 0x20;
         };
+        size_t e = nameStart;
         while (e < s.size() && !stops(s[e])) ++e;
         size_t nameEnd = e;
         if (!(e < s.size() && IsSlash(s[e]))) {
             nameEnd = nameStart;
-            while (nameEnd < e && s[nameEnd] != ' ') ++nameEnd;
+            while (nameEnd < e && !std::strchr("',;)]}", s[nameEnd])) ++nameEnd;
         }
-        if (nameEnd == nameStart) { out.append(s, i, 9); i += 9; continue; }
-        out.append(s, i, 9);
-        out += "<user>";
         i = nameEnd;
+        if (nameEnd > nameStart) out += "<user>";
     }
     return out;
 }
@@ -544,6 +584,12 @@ struct StatusInfo {
     bool wine = false;
     bool gameRunning = false;
 };
+
+// The order list_plugins returns folders in: by name, ASCII-case-insensitive, then exact.
+inline bool FolderLess(const std::string& a, const std::string& b) {
+    const std::string x = LowerAscii(a), y = LowerAscii(b);
+    return x != y ? x < y : a < b;
+}
 
 struct PluginFolder {
     std::string folder;
@@ -894,8 +940,7 @@ private:
     ToolResult ListPlugins() const {
         std::vector<PluginFolder> folders = platform_.plugins ? platform_.plugins() : std::vector<PluginFolder>{};
         std::stable_sort(folders.begin(), folders.end(), [](const PluginFolder& a, const PluginFolder& b) {
-            const std::string x = LowerAscii(a.folder), y = LowerAscii(b.folder);
-            return x != y ? x < y : a.folder < b.folder;
+            return FolderLess(a.folder, b.folder);
         });
         const bool cut = folders.size() > kMaxPlugins;
         if (cut) folders.resize(kMaxPlugins);

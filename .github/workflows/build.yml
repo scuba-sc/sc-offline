@@ -610,8 +610,8 @@ jobs:
         run: python tools/check_launcher_localization.py
 
   # The read-only MCP server (`sc-offline.exe mcp`): protocol, tools and redaction over a fake platform; headless.
-  # The stdio proof against a built launcher (`python tools/check_launcher_mcp.py --exe <sc-offline.exe>`, which also
-  # proves the server writes nothing) is left for local use: this job builds no launcher.
+  # The stdio proof against a built launcher (`--exe`, which also proves the server writes nothing) runs in the
+  # job that builds sc-offline.exe, after "Verify binaries": this job builds no launcher.
   launcher-mcp:
     runs-on: windows-2025-vs2026
     steps:
@@ -816,6 +816,13 @@ jobs:
 
           if ($script:failed) { "$($script:failed) check(s) failed"; exit 1 }
           'all checks passed'
+
+      # The built launcher's read-only MCP server over stdio, in a scratch install: answers, redacts, writes nothing.
+      - name: Launcher MCP stdio proof
+        shell: pwsh
+        run: |
+          python tools/check_launcher_mcp.py --exe build/bin/Release/sc-offline.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # Release links without debug information, so there is no PDB to upload.
       - name: Upload DLL + launcher artifact

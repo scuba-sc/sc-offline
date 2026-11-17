@@ -5139,7 +5139,8 @@ static int RunGui() {
 // changes nothing (no data\ folder, no launcher.log, no network); the logs and the ini are opened for reading
 // with every sharing mode, so a running game is not disturbed. stdout carries only JSON-RPC lines: the launcher's
 // own Out() (used by ReadConfig and the game search) is pointed at stderr for the whole session.
-static void ReadFileRange(const wstring& path, size_t maxBytes, sco::launcher::mcp::LogRead& out) {
+// Reads at most maxBytes: the file's end (a log), or with fromHead its start (a plugin.ini); skippedOlder then means "more was left".
+static void ReadFileRange(const wstring& path, size_t maxBytes, sco::launcher::mcp::LogRead& out, bool fromHead = false) {
     out.exists = out.skippedOlder = false;
     out.error.clear();
     out.bytes.clear();
@@ -5160,7 +5161,10 @@ static void ReadFileRange(const wstring& path, size_t maxBytes, sco::launcher::m
         return;
     }
     LARGE_INTEGER start{};
-    if ((unsigned long long)size.QuadPart > maxBytes) { start.QuadPart = size.QuadPart - (LONGLONG)maxBytes; out.skippedOlder = true; }
+    if ((unsigned long long)size.QuadPart > maxBytes) {
+        if (!fromHead) start.QuadPart = size.QuadPart - (LONGLONG)maxBytes;
+        out.skippedOlder = true;
+    }
     if (!SetFilePointerEx(f, start, nullptr, FILE_BEGIN)) {
         out.error = "the file could not be read (Windows error " + std::to_string(GetLastError()) + ")";
         CloseHandle(f);
@@ -5213,24 +5217,33 @@ static int RunMcp(const wstring& here) {
         return s;
     };
     platform.plugins = [&] {
-        std::vector<mcp::PluginFolder> folders;
+        // Names first (cheap, up to 4096), sorted the way list_plugins sorts; only the first kMaxPlugins + 1 have their
+        // plugin.ini read, so memory stays small and the 256 returned are the first 256 by name. One more than
+        // kMaxPlugins tells list_plugins to set truncated.
+        std::vector<std::pair<std::string, wstring>> names;
         const wstring dir = here + L"\\data\\plugins";
         WIN32_FIND_DATAW fd;
         HANDLE h = FindFirstFileW((dir + L"\\*").c_str(), &fd);
-        if (h == INVALID_HANDLE_VALUE) return folders;
+        if (h == INVALID_HANDLE_VALUE) return std::vector<mcp::PluginFolder>{};
         do {
             if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == L'.') continue;
             const wstring folder = dir + L"\\" + fd.cFileName;
-            if (!IsFile(folder + L"\\plugin.ini") || folders.size() >= 4096) continue;
-            mcp::LogRead ini;
-            ReadFileRange(folder + L"\\plugin.ini", 64 * 1024, ini);
-            mcp::PluginFolder p;
-            p.folder = Narrow(fd.cFileName);
-            p.iniText = ini.bytes;
-            p.disabled = GetFileAttributesW((folder + L"\\disabled").c_str()) != INVALID_FILE_ATTRIBUTES;
-            folders.push_back(std::move(p));
+            if (!IsFile(folder + L"\\plugin.ini") || names.size() >= 4096) continue;
+            names.emplace_back(Narrow(fd.cFileName), folder);
         } while (FindNextFileW(h, &fd));
         FindClose(h);
+        std::stable_sort(names.begin(), names.end(), [](const auto& a, const auto& b) { return mcp::FolderLess(a.first, b.first); });
+        if (names.size() > mcp::kMaxPlugins + 1) names.resize(mcp::kMaxPlugins + 1);
+        std::vector<mcp::PluginFolder> folders;
+        for (const auto& n : names) {
+            mcp::LogRead ini;
+            ReadFileRange(n.second + L"\\plugin.ini", 64 * 1024, ini, true);   // the head: id, name and version come first
+            mcp::PluginFolder p;
+            p.folder = n.first;
+            p.iniText = ini.bytes;
+            p.disabled = GetFileAttributesW((n.second + L"\\disabled").c_str()) != INVALID_FILE_ATTRIBUTES;
+            folders.push_back(std::move(p));
+        }
         return folders;
     };
     platform.readLog = [&](const std::string& log, size_t maxBytes) {
@@ -5330,6 +5343,12 @@ int wmain(int argc, wchar_t** argv) {
         } else if (!_wcsicmp(a, L"--help") || !_wcsicmp(a, L"-h") || !_wcsicmp(a, L"/?")) {
             command = L"help"; sawCommand = true;
         } else {
+            bool mcpMode = false;   // `mcp` anywhere: stdout belongs to the protocol, so usage goes to stderr
+            for (int k = 1; k < argc; ++k) if (!_wcsicmp(argv[k], L"mcp")) mcpMode = true;
+            if (mcpMode) {   // no Fail(): it writes to stdout
+                std::fprintf(stderr, "%s[!] unknown argument '%ls'\n", kUsage, a);
+                return kExitError;
+            }
             std::printf("%s", kUsage);
             return Fail("unknown argument '%ls'", a);
         }

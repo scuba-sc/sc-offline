@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Portable checks for the read-only MCP server (launcher/mcp_server.h) over a fake platform: no files, no sockets.
 #include "../launcher/mcp_server.h"
+#include <chrono>
 #include <cstdlib>
 #include <iostream>
 
@@ -147,6 +148,11 @@ static void ParserChecks() {
     CHECK(ClipUtf8("a\xC3\xA9", 3) == "a\xC3\xA9");
 }
 
+// Raw-string arguments cannot go through CHECK (its stringizing turns the backslashes into escapes).
+#define REDACT_IS(in, roots, want) \
+    do { ++checks; if (Redact(in, roots) != (want)) { \
+        std::cerr << "FAIL " << __LINE__ << ": Redact(" << (in) << ") gave " << Redact(in, roots) << "\n"; std::exit(1); } } while (0)
+
 static void RedactChecks() {
     const std::vector<std::string> roots = {"C:\\Users\\Alex"};
     CHECK(Redact("C:\\Users\\Alex\\AppData\\x", roots) == "%USERPROFILE%\\AppData\\x");
@@ -155,7 +161,8 @@ static void RedactChecks() {
     CHECK(Redact("C:\\Users\\Bob\\x", roots) == "C:\\Users\\<user>\\x");
     CHECK(Redact("D:/Users/Bob/x", roots) == "D:/Users/<user>/x");
     CHECK(Redact("d:\\users\\Bob Smith\\x", roots) == "d:\\users\\<user>\\x");
-    CHECK(Redact("opened C:\\Users\\Bob and closed", roots) == "opened C:\\Users\\<user> and closed");
+    // no separator after the name: it ends at a character a path cannot hold in a log, so a spaced name is covered
+    CHECK(Redact("opened C:\\Users\\Bob and closed", roots) == "opened C:\\Users\\<user>");
     CHECK(Redact("\"C:\\Users\\Bob\" end", roots) == "\"C:\\Users\\<user>\" end");
     CHECK(Redact("C:\\Users\\Bob", roots) == "C:\\Users\\<user>");
     CHECK(Redact("C:\\Users\\", roots) == "C:\\Users\\");
@@ -165,6 +172,87 @@ static void RedactChecks() {
     CHECK(Redact("C:\\Users\\Alex", {"C:\\Users\\Alex\\"}) == "%USERPROFILE%");   // a trailing slash on the root
     CHECK(Redact("C:\\Users\\Alex\\x", {}) == "C:\\Users\\<user>\\x");
     CHECK(Redact("two C:\\Users\\A\\x C:\\Users\\B\\y", {}) == "two C:\\Users\\<user>\\x C:\\Users\\<user>\\y");
+
+    // a run of separators is one separator (escaped or JSON-quoted logs); the run is kept as written
+    REDACT_IS(R"(C:\\Users\\bobsecret\\AppData\\x)", {}, R"(C:\\Users\\<user>\\AppData\\x)");
+    REDACT_IS(R"(C:\\Users\\bobsecret\\AppData\\x)", roots, R"(C:\\Users\\<user>\\AppData\\x)");
+    REDACT_IS(R"(C:\\Users\\Alex\\AppData\\x)", roots, R"(%USERPROFILE%\\AppData\\x)");
+    REDACT_IS("C:/Users//bobsecret//x", {}, "C:/Users//<user>//x");
+
+    // a spaced name with no separator after it: up to the next character a log path cannot hold
+    REDACT_IS(R"(C:\Users\Jane Doe)", {}, R"(C:\Users\<user>)");
+    REDACT_IS(R"(see "C:\Users\Jane Doe" now)", {}, R"(see "C:\Users\<user>" now)");
+    REDACT_IS(R"(see 'C:\Users\Jane Doe' now)", {}, R"(see 'C:\Users\<user>' now)");
+    REDACT_IS(R"(f(C:\Users\Jane Doe) g)", {}, R"(f(C:\Users\<user>) g)");
+    REDACT_IS(R"([C:\Users\Jane Doe] {C:\Users\Jo Mo})", {}, R"([C:\Users\<user>] {C:\Users\<user>})");
+    REDACT_IS(R"(a C:\Users\Jane Doe, b C:\Users\Jo Mo; c)", {}, R"(a C:\Users\<user>, b C:\Users\<user>; c)");
+    REDACT_IS("C:\\Users\\Jane Doe\nnext line", {}, "C:\\Users\\<user>\nnext line");
+    REDACT_IS(R"(<C:\Users\Jane Doe>)", {}, R"(<C:\Users\<user>>)");
+    REDACT_IS(R"(C:\Users\Jane Doe|x)", {}, R"(C:\Users\<user>|x)");
+
+    // the profile root: a boundary after it is a separator, the end, or anything that cannot continue the name
+    const std::vector<std::string> odd = {R"(Z:\Profiles\bobsecret)"};
+    REDACT_IS(R"(Z:\Profiles\bobsecret.)", odd, "%USERPROFILE%.");
+    REDACT_IS(R"(Z:\Profiles\bobsecret.log)", odd, "%USERPROFILE%.log");
+    REDACT_IS(R"(Z:\Profiles\bobsecret-)", odd, "%USERPROFILE%-");
+    REDACT_IS(R"(Z:\Profiles\bobsecret_)", odd, "%USERPROFILE%_");
+    REDACT_IS(R"(Z:\Profiles\bobsecret, x)", odd, "%USERPROFILE%, x");
+    REDACT_IS(R"(Z:\Profiles\bobsecret)", odd, "%USERPROFILE%");
+    REDACT_IS(R"(Z:\Profiles\bobsecret\x)", odd, R"(%USERPROFILE%\x)");
+    REDACT_IS(R"(Z:\Profiles\bobsecret2\x)", odd, R"(Z:\Profiles\bobsecret2\x)");     // another account
+    REDACT_IS(R"(Z:\Profiles\bobsecret-two\x)", odd, R"(Z:\Profiles\bobsecret-two\x)");
+    REDACT_IS(R"(Z:\Profiles\bobsecret_two\x)", odd, R"(Z:\Profiles\bobsecret_two\x)");
+    REDACT_IS("Z:\\Profiles\\bobsecret\xC3\xA9", odd, "Z:\\Profiles\\bobsecret\xC3\xA9");
+
+    // a Users component after any separator, not only after a drive letter
+    REDACT_IS("/c/Users/erin/x", {}, "/c/Users/<user>/x");
+    REDACT_IS(R"(\Device\HarddiskVolume3\Users\frank\x)", {}, R"(\Device\HarddiskVolume3\Users\<user>\x)");
+    REDACT_IS(R"(\\?\C:\Users\gina\x)", {}, R"(\\?\C:\Users\<user>\x)");
+    REDACT_IS(R"(\\host\c$\Users\hank\x)", {}, R"(\\host\c$\Users\<user>\x)");
+    REDACT_IS("/mnt/c/users/Ivy Lee/x", {}, "/mnt/c/users/<user>/x");
+    REDACT_IS("/home/MyUsers/x", {}, "/home/MyUsers/x");   // only a component named Users
+    REDACT_IS("/usr/Users", {}, "/usr/Users");
+    REDACT_IS("/usr/Users/", {}, "/usr/Users/");
+    for (const char* secret : {"erin", "frank", "gina", "hank"})
+        CHECK(Redact(std::string("x /c/Users/") + secret + "/y \\\\?\\C:\\Users\\" + secret, {}).find(secret) == std::string::npos);
+}
+
+static void LimitChecks() {
+    Server s = MakeServer();
+    const std::string ping = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}";
+    const auto object = [](size_t keys) {
+        std::string line = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"";
+        for (size_t i = 0; i + 3 < keys; ++i) line += ",\"k" + std::to_string(i) + "\":0";
+        return line + "}";
+    };
+    // an object at the member cap parses; one more is refused, and the session goes on
+    CHECK(Parse(object(kMaxMembers)).ok);
+    const ParseResult over = Parse(object(kMaxMembers + 1));
+    CHECK(!over.ok && over.error.find("too many members") != std::string::npos);
+    // ~80k distinct keys in under 1 MiB: refused quickly (it used to take seconds), the next request still answers
+    {
+        const std::string big = object(80000);
+        CHECK(big.size() < kMaxLine);
+        const auto t0 = std::chrono::steady_clock::now();
+        const Value r = Json(Reply(s, big));
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+        CHECK(ErrorCode(r) == -32700 && Get(Get(r, "error"), "message").AsString().find("too many members") != std::string::npos);
+        CHECK(ms < 1000);
+        CHECK(Get(Json(Reply(s, ping)), "result").IsObject());
+    }
+    // too many values in one message, however they are spread
+    {
+        std::string arr = "[";
+        for (size_t i = 0; i + 1 < kMaxValues; ++i) arr += i ? ",1" : "1";
+        CHECK(Parse(arr + "]").ok);                       // exactly kMaxValues values
+        const ParseResult many = Parse(arr + ",1]");
+        CHECK(!many.ok && many.error.find("too many values") != std::string::npos);
+        const Value r = Json(Reply(s, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\",\"params\":" + arr + ",1]}"));
+        CHECK(ErrorCode(r) == -32700);
+        CHECK(Get(Json(Reply(s, ping)), "result").IsObject());
+    }
+    // a duplicate key still replaces the earlier one
+    CHECK(Get(Json("{\"a\":1,\"a\":2}"), "a").AsString() == "2");
 }
 
 static void NegotiationChecks() {
@@ -583,6 +671,11 @@ static void LogChecks() {
         CHECK(Lines(probe).empty());
         const Value& shown = Ok(s, Call(s, "read_log", "{\"log\":\"mod\",\"contains\":\"%userprofile%\"}"), "read_log");
         CHECK(Lines(shown).size() == 1);
+        // escaped (doubled) separators in a JSON-style log are redacted too, and the name cannot be probed
+        g_log = "path C:\\\\Users\\\\bobsecret\\\\AppData\\\\x\n";
+        const Value& esc = Ok(s, Call(s, "read_log", "{\"log\":\"mod\"}"), "read_log");
+        CHECK(Lines(esc) == std::vector<std::string>{"path C:\\\\Users\\\\<user>\\\\AppData\\\\x"});
+        CHECK(Lines(Ok(s, Call(s, "read_log", "{\"log\":\"mod\",\"contains\":\"bobsecret\"}"), "read_log")).empty());
     }
     // a tail of a larger file: the cut first line is dropped and the result says older content was not scanned
     {
@@ -631,6 +724,7 @@ static void ToolCallChecks() {
 
 int main() {
     ParserChecks();
+    LimitChecks();
     RedactChecks();
     NegotiationChecks();
     FramingChecks();
