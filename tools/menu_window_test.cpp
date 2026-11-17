@@ -161,12 +161,29 @@ static void Sizing() {
     CHECK(Load(file).width == Size{}.width && Load(file).height == Size{}.height);   // absent: the default
 }
 
+static void FrameAttributes() {
+    using namespace sc_offline::menu_window;
+    // Documented DWMWA_* values; the border is the menu theme green 0x4F7F51 as BGR.
+    CHECK(kDwmUseImmersiveDarkMode == 20 && kDwmWindowCornerPreference == 33 && kDwmBorderColor == 34);
+    CHECK(kDwmCornerDoNotRound == 1);
+    // Frame-less window: edges and corners resize, everything inside is client.
+    CHECK(HitTest(100, 100, 800, 600, 6) == kHitClient);
+    CHECK(HitTest(0, 300, 800, 600, 6) == kHitLeft && HitTest(799, 300, 800, 600, 6) == kHitRight);
+    CHECK(HitTest(400, 0, 800, 600, 6) == kHitTop && HitTest(400, 599, 800, 600, 6) == kHitBottom);
+    CHECK(HitTest(0, 0, 800, 600, 6) == kHitTopLeft && HitTest(799, 0, 800, 600, 6) == kHitTopRight);
+    CHECK(HitTest(0, 599, 800, 600, 6) == kHitBottomLeft && HitTest(799, 599, 800, 600, 6) == kHitBottomRight);
+    CHECK(HitTest(6, 6, 800, 600, 6) == kHitClient && HitTest(-1, 10, 800, 600, 6) == kHitClient);
+    CHECK(HitTest(5, 5, 0, 0, 6) == kHitClient);
+    CHECK(kMenuBorderColorRef == 0x517F4Fu);
+}
+
 int main(int argc, char** argv) {
     if (argc != 2 && argc != 3) return 2;
     const auto dir = std::filesystem::path(argv[1]) / "menu-window-fixture";
     std::filesystem::create_directories(dir);
     const auto file = dir / "menu-window.ini";
     using namespace sc_offline::menu_window;
+    FrameAttributes();
     if (argc == 3) {
         if (std::strcmp(argv[2], "--restore")) return 2;
         const Size restored = Load(file);

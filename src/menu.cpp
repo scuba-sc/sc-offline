@@ -200,6 +200,19 @@ static LRESULT CALLBACK MenuWndProc(HWND h, UINT msg, WPARAM w, LPARAM l) {
 #endif
         && ImGui_ImplWin32_WndProcHandler(h, msg, w, l)) return 1;
     switch (msg) {
+    case WM_NCCALCSIZE:
+        // No system frame: the client area is the whole window, so Windows paints no accent sizing border.
+        if (w) return 0;
+        break;
+    case WM_NCHITTEST: {
+        RECT r = {};
+        GetWindowRect(h, &r);
+        const int edge = Window::ScaleDpi(Window::kEdgeBase, Window::kBaseDpi, MenuDpi(h));
+        const int hit = Window::HitTest(static_cast<int>(static_cast<short>(LOWORD(l))) - r.left,
+                                        static_cast<int>(static_cast<short>(HIWORD(l))) - r.top,
+                                        r.right - r.left, r.bottom - r.top, edge);
+        return hit == Window::kHitClient ? HTCLIENT : hit;
+    }
     case WM_GETMINMAXINFO: {
         const RECT work = MenuWorkArea(h);
         const auto minimum = Window::Clamp({1, 1}, MenuBounds(work), MenuDpi(h));
@@ -502,6 +515,24 @@ static sco::Result DrawPanel(const char* id) {
 }
 #endif
 
+// Quiet the Windows 11 accent outline and dark-mode the frame. Every failure is ignored: Windows 10 and
+// Wine do not know these attributes and simply keep their default frame.
+static void StyleMenuFrame(HWND wnd) {
+    using SetAttr = HRESULT(WINAPI*)(HWND, DWORD, LPCVOID, DWORD);
+    const HMODULE dwm = LoadLibraryW(L"dwmapi.dll");
+    if (!dwm) return;
+    const auto set = reinterpret_cast<SetAttr>(reinterpret_cast<void*>(GetProcAddress(dwm, "DwmSetWindowAttribute")));
+    if (set) {
+        const BOOL dark = TRUE;
+        const DWORD corner = Window::kDwmCornerDoNotRound;
+        const COLORREF border = static_cast<COLORREF>(Window::kMenuBorderColorRef);
+        set(wnd, Window::kDwmUseImmersiveDarkMode, &dark, sizeof(dark));
+        set(wnd, Window::kDwmWindowCornerPreference, &corner, sizeof(corner));
+        set(wnd, Window::kDwmBorderColor, &border, sizeof(border));
+    }
+    FreeLibrary(dwm);
+}
+
 static bool DrawMenu() {
     bool keepOpen = true;
     g_closeRequested = false;
@@ -512,6 +543,15 @@ static bool DrawMenu() {
     ImGui::Begin(SCO_TITLE "###main", &keepOpen,
                  ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
                  | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar);
+    // A thin rule under the title row so the top reads as a deliberate title bar. The title bar fill and the
+    // rule keep to the theme greens and the DWM outline uses the same border green.
+    {
+        ImDrawList* const dl = ImGui::GetWindowDrawList();
+        const ImVec2 origin = ImGui::GetWindowPos();
+        const float y = origin.y + ImGui::GetFrameHeight();
+        dl->AddLine(ImVec2(origin.x, y), ImVec2(origin.x + ImGui::GetWindowWidth(), y),
+                    ImGui::GetColorU32(ImGuiCol_Border), 1.0f);
+    }
 
     // Every page there is now, wherever it comes from: sco.ui tabs (by sco.ui order, ties in
     // registration order), then plugin panels, then the menu's own settings. menu_navigation.h
@@ -790,6 +830,7 @@ static DWORD WINAPI MenuThread(LPVOID) {
     g_wnd = CreateWindowExW(WS_EX_TOPMOST | WS_EX_TOOLWINDOW, wc.lpszClassName, L"sc-offline", WS_POPUP | WS_THICKFRAME,
                             initial.left, initial.top, initial.right - initial.left, initial.bottom - initial.top,
                             nullptr, nullptr, wc.hInstance, nullptr);
+    if (g_wnd) StyleMenuFrame(g_wnd);
     g_frameBuilt = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     if (!g_wnd || !g_frameBuilt || !CreateDevice()) return 0;
 

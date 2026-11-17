@@ -24,6 +24,27 @@ struct EscapeInput {
         return true;
     }
 };
+// DWM frame attributes for the menu window (dwmapi DwmSetWindowAttribute). Without them a Windows 11
+// window with a resizable frame gets the system accent colour as an outline and a heavy line along its top.
+// The border is the theme border green (menu_shell.cpp ImGuiCol_Border 0x4F7F51) as a COLORREF (0x00BBGGRR).
+constexpr unsigned kDwmUseImmersiveDarkMode = 20;
+constexpr unsigned kDwmWindowCornerPreference = 33;
+constexpr unsigned kDwmBorderColor = 34;
+constexpr unsigned kDwmCornerDoNotRound = 1;   // the ImGui content is square, so the window is too
+constexpr unsigned long kMenuBorderColorRef = 0x517F4Fu;
+// The window has no system frame (WM_NCCALCSIZE gives the whole window to the client, so no accent-coloured
+// sizing border is drawn); edges are resized through WM_NCHITTEST. Hit codes are the Win32 HT* values.
+constexpr int kHitClient = 1, kHitLeft = 10, kHitRight = 11, kHitTop = 12, kHitTopLeft = 13,
+              kHitTopRight = 14, kHitBottom = 15, kHitBottomLeft = 16, kHitBottomRight = 17;
+constexpr int kEdgeBase = 5;   // resize edge thickness at 96 dpi; keeps the title bar close button (5 px down) clear
+// x,y in window coordinates (0,0 = top-left of the window); `edge` is already scaled to the monitor.
+inline int HitTest(int x, int y, int width, int height, int edge) {
+    if (width <= 0 || height <= 0 || x < 0 || y < 0 || x >= width || y >= height) return kHitClient;
+    const bool l = x < edge, r = x >= width - edge, t = y < edge, b = y >= height - edge;
+    if (t) return l ? kHitTopLeft : r ? kHitTopRight : kHitTop;
+    if (b) return l ? kHitBottomLeft : r ? kHitBottomRight : kHitBottom;
+    return l ? kHitLeft : r ? kHitRight : kHitClient;
+}
 // The saved size is the OUTER window rect (what GetWindowRect returns and SetWindowPos takes),
 // normalised to 96 dpi, so frame thickness and monitor scale never feed back into it.
 struct Size { int width = 1000, height = 800; };
