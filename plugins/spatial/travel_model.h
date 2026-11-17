@@ -116,6 +116,28 @@ inline sco_result Scan(const sc_game_spatial_v1* sp,std::vector<sc_game_zone>& o
     }
     return SCO_UNAVAILABLE;
 }
+// Already there: the player is within this many metres of the saved spot, so no move is requested.
+// game.relocation only completes when the player is within 0.05 m and facing within about 0.16 degrees
+// of the saved pose, so a player who stands at the spot but has turned slightly, or drifts a little,
+// would wait the whole 30 s timeout. 2 m is far below any move a player would notice (walking pace is
+// about 1.5 m/s) and far above the 6-decimal rounding of a saved position and ordinary standing drift.
+inline constexpr double already_there_metres=2.0;
+inline constexpr const char* already_there_plain="You are already at that spot.";
+// True when the player's current position, expressed in the saved spot's zone, is within
+// already_there_metres of the saved position. Any failed read answers false: the move goes ahead as before.
+inline bool AlreadyThere(const sc_spatial_v1* old,const sc_game_spatial_v1* sp,const Restoration& r) {
+    if (!TRAVEL_FN(old,sc_spatial_v1,player_pose) || !TRAVEL_FN(sp,sc_game_spatial_v1,pose_to_zone) || !r.pose.zone) return false;
+    Pose player;
+    if (!old->player_pose(player.pos,player.rot,&player.zone) || !player.zone || !Valid(player)) return false;
+    double pos[3]{},rot[4]{};
+    if (!sp->pose_to_zone(player.zone,r.pose.zone,player.pos,player.rot,pos,rot)) return false;
+    double d2=0;
+    for (int i=0;i<3;++i) {
+        if (!std::isfinite(pos[i])) return false;
+        const double d=pos[i]-r.pose.pos[i]; d2+=d*d;
+    }
+    return d2<=already_there_metres*already_there_metres;
+}
 // game.relocation 1.0 (sc_relocation.h): one request per move, tracked by ticket across ticks.
 inline constexpr uint32_t relocation_timeout_ms=30000;
 inline constexpr const char* unavailable="Player relocation unavailable: game.relocation service or request is unavailable; not moved";
@@ -159,7 +181,7 @@ inline const char* ReasonText(uint32_t reason) {
 // ReasonText for the page: no codes, no service names.
 inline const char* PlainReason(uint32_t reason) {
     switch (reason) {
-    case SC_RELOCATION_REASON_TIMEOUT: return "it took too long";
+    case SC_RELOCATION_REASON_TIMEOUT: return "the game didn't confirm you arrived in time";
     case SC_RELOCATION_REASON_SESSION: return "your session or star system changed";
     case SC_RELOCATION_REASON_SAFETY: return "travel isn't allowed right now";
     case SC_RELOCATION_REASON_SYSTEM: return "that place is in a different star system";

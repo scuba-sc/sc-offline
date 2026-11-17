@@ -56,6 +56,9 @@ sco_result Reply(sco_result r,char* out,uint32_t n,const std::string& text,const
     g.plain=plain.empty()?text:plain;
     return r;
 }
+// Puts the page's sentence on the host's status line. The host keeps one line for everything and never
+// clears it, so a plugin replaces its own old message by announcing the next one.
+void Announce() { if (TRAVEL_FN(g.api,sco_api,status) && !g.plain.empty()) g.api->status(g.self,g.plain.c_str()); }
 std::string Count(size_t n,const char* noun) { return std::to_string(n)+" "+noun+(n==1?"":"s"); }
 // "System / name" when the system is known; scanned places have none, so show the name alone.
 std::string Display(const std::string& system,const std::string& name) {
@@ -335,8 +338,9 @@ sco_result Move(const Pose& target,const std::string& label,char* out,uint32_t n
         return Reply(SCO_FAILED,out,n,"Cannot follow the move (tick subscription refused); request cancelled","Couldn't start the move. You haven't moved.");
     }
     g.ticking=true; g.ticket=ticket; g.moving=label;
-    return Reply(SCO_OK,out,n,"Moving to "+label+(note.empty()?"":" ["+note+"]")+" (game.relocation); arrival is reported when the game confirms it",
+    const auto started=Reply(SCO_OK,out,n,"Moving to "+label+(note.empty()?"":" ["+note+"]")+" (game.relocation); arrival is reported when the game confirms it",
         "Moving to "+label+". You'll see a message when you arrive.");
+    Announce(); return started;
 }
 sco_result SaveSpot(const sco_arg*,uint32_t,void*,char* out,uint32_t n) {
     Spot spot; const auto r=Capture(Open<sc_spatial_v1>(SC_SPATIAL_SERVICE_NAME),Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),spot);
@@ -345,13 +349,18 @@ sco_result SaveSpot(const sco_arg*,uint32_t,void*,char* out,uint32_t n) {
     const auto saved=g.store ? g.store.Put("spot",std::string_view(text)) : WriteFile(g.spawn,text);
     if (saved!=SCO_OK) return Reply(saved,out,n,"Quick-save storage failed; prior spot retained","Couldn't save your spot. Your earlier saved spot is unchanged.");
     g.saved=std::move(spot);
-    return Reply(SCO_OK,out,n,"Saved current spot (read-only capture; not moved)",g.key_go?"Saved this spot. Press F8 to come back to it.":"Saved this spot.");
+    const auto done=Reply(SCO_OK,out,n,"Saved current spot (read-only capture; not moved)",g.key_go?"Saved this spot. Press F8 to come back to it.":"Saved this spot.");
+    Announce(); return done;
 }
 sco_result GoSaved(const sco_arg*,uint32_t,void*,char* out,uint32_t n) {
     std::string why; if (Ready(why)!=SCO_OK) return Reply(SCO_UNAVAILABLE,out,n,why,PlainWhy(why));
     Restoration r; const auto found=Resolve(Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),g.saved,r);
     if (found!=SCO_OK) return Reply(found,out,n,"Saved spot unavailable (none saved, unloaded/expired metadata or root-only match); not moved",
         "Can't go there. Either nothing is saved yet, or that area isn't loaded now. You haven't moved.");
+    if (!g.ticket && AlreadyThere(Open<sc_spatial_v1>(SC_SPATIAL_SERVICE_NAME),Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),r)) {
+        const auto here=Reply(SCO_OK,out,n,"Already at the saved spot (within 2 m); not moved",already_there_plain);
+        Announce(); return here;
+    }
     return Move(r.pose,r.partial?"the area around your saved spot":"your saved spot",out,n,std::string(r.partial?"partial, level ":"exact, level ")+std::to_string(r.level));
 }
 // Panel actions keep the selected row's identity, even when display names repeat.
@@ -367,6 +376,10 @@ sco_result GoBookmarkAt(size_t index,char* out,uint32_t n) {
     const auto found=Resolve(Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),bookmark.spot,r);
     if (found!=SCO_OK) return Reply(found,out,n,"Bookmark pose unavailable (unloaded/expired metadata or root-only match); not moved",
         "Can't go to '"+bookmark.name+"' now. That area isn't loaded. You haven't moved.");
+    if (!g.ticket && AlreadyThere(Open<sc_spatial_v1>(SC_SPATIAL_SERVICE_NAME),Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),r)) {
+        const auto here=Reply(SCO_OK,out,n,"Already at saved spot '"+bookmark.name+"' (within 2 m); not moved",already_there_plain);
+        Announce(); return here;
+    }
     return Move(r.pose,"saved spot '"+bookmark.name+"'",out,n,std::string(r.partial?"partial, level ":"exact, level ")+std::to_string(r.level));
 }
 sco_result GoBookmark(const sco_arg* a,uint32_t count,void*,char* out,uint32_t n) {

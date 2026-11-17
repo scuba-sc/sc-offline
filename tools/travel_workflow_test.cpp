@@ -106,6 +106,17 @@ int main() {
     state=9; assert(Poll(&rel,nullptr,ticket,st)==SCO_FAILED && st.state==SC_RELOCATION_FAILED); // unknown state: output unchanged
     assert(Poll(&rel,nullptr,7,st)==SCO_NOT_FOUND && Poll(&rel,nullptr,0,st)==SCO_UNAVAILABLE);
     cap=false; assert(Relocate(&api,&rel,nullptr,s.z[1],ticket)==SCO_UNAVAILABLE && requests==1); // re-checked per request
+    // Already there: the player (1,0,2 in zone1) is within 2 m of the saved spot, so no move is requested.
+    sp.size=sizeof(sp); sp.find_zone=Find; sp.zone_record=Record; sp.pose_to_zone=Convert; Restoration near;
+    near.pose.zone=1; near.pose.pos[0]=1.5; near.pose.pos[1]=0; near.pose.pos[2]=2; assert(AlreadyThere(&old,&sp,near));
+    near.pose.pos[0]=2.9; assert(AlreadyThere(&old,&sp,near)); near.pose.pos[0]=3.1; assert(!AlreadyThere(&old,&sp,near));
+    near.pose.zone=2; near.pose.pos[0]=0; near.pose.pos[1]=2; near.pose.pos[2]=2; assert(AlreadyThere(&old,&sp,near)); // other zone frame
+    near.pose.pos[1]=5; assert(!AlreadyThere(&old,&sp,near));
+    near.pose.zone=0; assert(!AlreadyThere(&old,&sp,near)); near.pose.zone=1;
+    assert(!AlreadyThere(nullptr,&sp,near) && !AlreadyThere(&old,nullptr,near)); // missing service: move proceeds as before
+    const std::string timeout=PlainReason(SC_RELOCATION_REASON_TIMEOUT);
+    assert(timeout.find("too long")==std::string::npos && timeout.find("time")!=std::string::npos);
+    assert(std::string(already_there_plain)=="You are already at that spot.");
     assert(!ParseSpot("spot nan 0 0 bad\n",again));
     std::puts("travel model: nested rotated poses, legacy format, partial/root refusal, expiry, 256/64 bounded scan, partial/null tails, game.relocation request/status gating: PASS");
 }
