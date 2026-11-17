@@ -18,7 +18,7 @@ when it needs it; nothing listens on a port and nothing goes over the network.
 | Tool | Returns |
 | --- | --- |
 | `get_status` | The same checks as `sc-offline.exe status`: launcher version, game folder and build, whether the mod is installed, anti-cheat state, the network-block, EAC-rename and plugin settings, plugin counts, PC changes left to undo, Wine, and whether this install's game is running |
-| `list_plugins` | Every plugin folder under `data\plugins` with a `plugin.ini`: enabled or not, and its id, name, version, author, API, kind, entry and description, with warnings such as an id that does not match the folder |
+| `list_plugins` | Plugin folders under `data\plugins` with a `plugin.ini` (the first 256 by name, flagged when there are more): enabled or not, and its id, name, version, author, API, kind, entry and description, with warnings such as an id that does not match the folder |
 | `read_log` | The last lines (up to 500) of `data\mod.log`, `data\launcher.log`, the previous `launcher.log.1` or the game's `Game.log`, optionally only lines containing some text |
 | `get_settings` | The settings in `sc-offline.ini`, in file order |
 

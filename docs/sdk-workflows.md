@@ -13,8 +13,7 @@ and Contracts read-slice SDK proofs also pass their Linux module, trace,
 refusal and boundary checks. These use synthetic or absent providers; they are
 not Windows or game acceptance. The earlier MCP discovery transcript in the
 [RC2 receipt](../examples/sdk-mcp/rc2-validation.md) is historical; runtime MCP
-and in-game acceptance remain **NOT RUN**. In this cloud image `tools/check.sh`
-stops because MinGW-w64 headers are not installed.
+and in-game acceptance remain **NOT RUN**.
 
 The tutorial copier reads and writes source as UTF-8 explicitly. A Windows
 prepare-only regression with Python UTF-8 mode disabled passed and checked that
@@ -23,7 +22,7 @@ exercise the game.
 
 The newer [loadout/SQ42 consumer](../plugins/loadout/README.md) uses G6 typed
 equip, G7 **read-only** cvars, public copied content and optional widgets. Their
-headers ship in the pinned published SDK 2.4.0 (SDK 2.0.0 lacked them). Its build
+headers ship in the published SDK 2.4.0. Its build
 is separate from the published tutorial below; release staging is pending.
 No loadout built-in or legacy host fallback remains; quantum control is deferred.
 
@@ -34,14 +33,13 @@ The product CI runs that repository's `tools/check_creative_sdk.py` from the sub
 Its focused `creative-module-workflow` tests the actual module; reversible cleanup
 uses a synthetic provider release-hook stand-in, not Windows/game certification.
 
-Steps 1B/1C ship inspector and NPC as enabled external native plugins under
-`data/plugins/{inspector,npc}/`, not production built-ins. No host linkage,
-registration or fallback remains for either. Seven built-ins and six external
-features (npc, inspector, crew, spawn, creative, discord) preserve 13 baseline feature units;
-two optional bridges are separate. Neither `plugins = off` nor a disabled feature
-folder resurrects a hidden implementation. Creative ships enabled and launcher behavior is unchanged. Step 1D separately
-sets Discord folder metadata off and refuses presence pending privacy/transport
-approval; see [Discord review and proof](../plugins/discord/README.md).
+Inspector and NPC ship as enabled external native plugins under
+`data/plugins/{inspector,npc}/`, not as built-ins, with no host linkage,
+registration or fallback. The same holds for the other staged features: the host
+registers no built-in, and neither `plugins = off` nor a disabled folder brings a
+hidden implementation back. Discord ships with its folder disabled and refuses
+presence pending privacy and transport approval; see
+[Discord review and proof](../plugins/discord/README.md).
 
 The external modules use their feature sources and public SDK headers only, not
 private host registration, product version, host include trees or new ImGui inputs.
@@ -53,13 +51,12 @@ Use the published stable SDK 2.4.0 release, tag **`sdk-v2.4.0`**, combined
 plugin ABI 1.1 and Star Citizen game pack 0.8.0 are distinct versions. The
 published release manifest binds the archive to source
 `6106fa3639cbcc28f78a1ded8de2707de019f4d3`; its exact profile hashes are in
-[SDK coordinates](sdk-candidate.md). The embedded development host instead uses Core source
-`4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd`; the stable archive and its
-recorded checks are historical and do not certify this development pairing. Its
-matching unpublished combined archive is `sco-sdk-2.4.1-dev.3.zip`, SHA-256
-`f42b481269de82dc3c3c890e9311616335f5817cfb78a7a57b66b6cedc984a7b`.
-Use explicit candidate arguments below for this tuple; stable defaults remain unchanged. The
-stable release and all synthetic checks remain separate from gameplay acceptance.
+[SDK coordinates](sdk-candidate.md). The host instead builds from Core
+`4ba313da3ac76c887cda03772d6106452f33a5d4` (development SDK `2.4.1-dev.6`,
+unpublished); the stable archive and its recorded checks do not certify that pairing.
+No development archive digests are recorded for it yet. To run a proof against a
+development archive, pass the explicit candidate arguments below; the stable defaults
+do not change. Synthetic checks stay separate from gameplay acceptance.
 
 The expanded inspector uses that same published stable SDK by default; no older unpublished candidate
 lock is needed. The proof validates the archive and full extracted inventory before building.

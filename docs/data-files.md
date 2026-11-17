@@ -66,9 +66,9 @@ refuses them; there is no automatic import or raw-file fallback. Do not overwrit
 the bundled pack with your edits. Format and limits: [Build picker](../plugins/build/README.md#grouped-build-and-sq42-picker).
 
 `data/plugins/quantum_drive/plugin.ini` declares an ordinary `kind = data`
-pack, separate from native/built-in `quantum`. It has no entry or code dependency.
+pack, separate from the native `quantum` plugin. It has no entry or code dependency.
 `plugins = off`, a `disabled` marker, a missing/invalid manifest or discovery
-refusal leaves that pack stock; there is no synthesized built-in pack fallback.
+refusal leaves that pack stock; there is no synthesized pack fallback.
 Restart after installing, disabling or editing packs. The old
 `data/builtin/quantum` path is no longer consumed; user edits there must be copied
 explicitly to the new pack while stopped (back up both first). Do not load both
@@ -88,7 +88,7 @@ G14 supplies public copied list/script bytes via `sco.content` (4096 items,
 1 MiB/file, 16 MiB total). External spawn exposes `spawn.pack_list <ordinal>`
 for `lists/ships.txt` using only that table; duplicate files remain independently
 selectable. No plugin gets host paths, private ContentIndex access or script
-execution from this route. It is additive: **all seven base list files above stay
+execution from this route. It is additive: **the base list files above stay
 in place**, unchanged, with no automatic import, deletion or merge. Other feature
 pack formats are not newly claimed as supported.
 
@@ -143,14 +143,14 @@ What does **not** persist today:
 
 ## Saves
 
-The F7 / F8 spot and the Travel tab's saved spots are kept by the built-in plugins `teleport` and `quantum` in sco-core's `sco.storage` service: one SQLite database each in `data\storage\<built-in>.db`. A save there is all or nothing, so a crash keeps either the old save or the new one.
+The F7 / F8 spot and the Travel tab's saved spots are kept by the `teleport` and `quantum` plugins in sco-core's `sco.storage` service: one SQLite database each in `data\storage\<plugin>.db`. A save there is all or nothing, so a crash keeps either the old save or the new one.
 
 The old files are imported, not deleted:
 
 - `spawn.txt` and `bookmarks.txt` are read into storage the first time the game starts with this version (`[storage] imported spawn.txt into teleport` in `mod.log`) and are not written after that. They stay readable as they were. If one changes later (you copy one in from an older install, say), it is newer than what storage has seen and is imported again, replacing the saved spot or the saved spot list.
 - `wallet.txt` is the wallet's only store: no code opens `storage\contracts.db` today, so no such database is created. It is written when your balance changes and once more when the game closes, to a temporary file that then replaces it, so a crash leaves the old balance or the new one. Deleting `wallet.txt` takes you back to the starting amount from `OfflineDB\default_1.xml`.
 
-If storage can't be used (a built-in didn't load, or a database can't be opened or written), `mod.log` says so with a `[storage]` line and that feature reads and writes its `.txt` file as before. Delete the three files of a database (`.db`, `.db-wal`, `.db-shm`) while the game is closed to forget what it holds; the `.txt` file, if there is one, is imported again on the next start.
+If storage can't be used (the plugin didn't load, or a database can't be opened or written), `mod.log` says so with a `[storage]` line and that feature reads and writes its `.txt` file as before. Delete the three files of a database (`.db`, `.db-wal`, `.db-shm`) while the game is closed to forget what it holds; the `.txt` file, if there is one, is imported again on the next start.
 
 ## Developer test hooks
 

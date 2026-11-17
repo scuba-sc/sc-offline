@@ -1,10 +1,10 @@
 # Architecture: sc-offline on sco-core
 
-sc-offline is two things on top of [sco-core](https://github.com/scuba-sc/sco-core): the **host** that loads sco-core's kernel into Star Citizen, and the **reference consumer** of what sco-core publishes. The development host uses its exact Core gitlink and current plugin proofs require a matching development SDK; the published SDK 2.4.0 source and checksum-pinned archive are historical references: plugin ABI **1.1**, Star Citizen game pack **0.8.0**. Neither package checks nor a full Windows build certify gameplay. See [build.md](build.md) and [status.md](status.md).
+sc-offline is two things on top of [sco-core](https://github.com/scuba-sc/sco-core): the **host** that loads sco-core's kernel into Star Citizen, and the **reference consumer** of what sco-core publishes. The host builds from the exact Core gitlink (`external/sco-core`, currently `4ba313d`, development SDK `2.4.1-dev.6`: plugin ABI **1.1**, Star Citizen game pack **0.8.1**). External plugin proofs use the published SDK 2.4.0 archive (plugin ABI 1.1, game pack 0.8.0). Neither package checks nor a Windows build show gameplay. See [build.md](build.md) and [status.md](status.md).
 
 ## Loadout/SQ42 development boundary
 
-`plugins/loadout` is the external G6/G7 consumer; see its [build and limitations](../plugins/loadout/README.md). The legacy host loadout registration, compilation and fallback tick are removed; inactive sources are retained in `legacy/loadout`. Four SQ42 settings use public real reads and unknown/refusal states, never the separate unapproved cvar-write service. Its G6/G7, content and widgets headers ship in the pinned published SDK 2.4.0 (`sdk-v2.4.0`); loadout is not yet staged by the release workflow. Optional Player/SQ42 panels use `sco.widgets`, not product ImGui globals. Complete weapon/clothing/head/default parity and production typed engine adapters remain pending. Step 4C quantum migration is not approved; private boost/keeper paths are unchanged. Historical feature/default prose below predates this development boundary.
+`plugins/loadout` is the external G6/G7 consumer; see its [build and limitations](../plugins/loadout/README.md). The host no longer registers, compiles or ticks loadout code; the old sources are kept in `legacy/loadout`. Four SQ42 settings use public real reads and unknown/refusal states, never the separate unapproved cvar-write service. Its G6/G7, content and widgets headers ship in the pinned published SDK 2.4.0 (`sdk-v2.4.0`); loadout is not yet staged by the release workflow. Optional Player/SQ42 panels use `sco.widgets`, not product ImGui globals. Weapon, clothing, head and default parity and the production typed engine adapters are pending. Step 4C quantum migration is not approved; private boost/keeper paths are unchanged.
 
 ## Who owns what
 
@@ -19,11 +19,12 @@ Under `src/` nothing finds a game address by pattern: `tools/no-scans.sh` fails 
 ## Startup
 
 The bootstrap prepares the game-pack host composition with live OS admission
-evidence before engine mutation. The game pack owns startup, signature resolution,
-required quit/DataCore hooks and plugin tick admission. `Platform::gameServices`
+evidence before it changes the engine. The game pack owns startup, signature resolution,
+the quit and DataCore hooks, and plugin tick admission. `Platform::gameServices`
 enables the public services; the shell supplies no built-in feature inputs.
-External plugin folders load when `plugins = on`, subject to their manifests and
-capabilities. See [host composition](host-composition.md) for refusal boundaries.
+Plugin folders load when `plugins = on`, subject to their manifests and capabilities.
+Native startup needs a Core with the process-retained composition; see
+[host composition](host-composition.md) for that and the refusal boundaries.
 
 ## What each feature runs on
 
@@ -52,31 +53,33 @@ helpers do not provide a registration, linked consumer or feature tick fallback.
 
 The release stages 11 external feature folders: creative, discord, crew, spawn,
 build, mining, teleport, quantum, inspector, npc and contracts. Discord keeps
-its disabled marker; the other ten, including creative, ship enabled. Modules build
-independently from the checksum-verified published SDK, with no host-private
-include path. Loadout remains a development consumer. These assembly defaults do
-not prove that required production services are available or features work in
-game; see [status](status.md) and [candidate limits](sdk-candidate.md).
+its disabled marker; the other ten ship enabled. Each module builds on its own
+from the checksum-verified published SDK, with no host-private include path.
+Loadout is a development consumer and is not staged. Staging a folder enabled does
+not show that its services exist or that the feature works in game; see
+[status](status.md) and [SDK coordinates](sdk-candidate.md).
 
 ## The CI gates
 
-The host gates and isolated SDK-plugin jobs run on every pull request and every push to `main` ([build.yml](../.github/workflows/build.yml)); `release` runs on `v*` tags only.
+The workflow runs on pushes and pull requests to `main`, and on `v*` tags; `release` runs on tags only ([build.yml](../.github/workflows/build.yml)).
 
 | Job | Checks |
 | --- | --- |
 | `check` | `tools/check.sh` (clang parse against mingw-w64 headers, MSVC C2712 screen, baseline in `tools/check-baseline.txt`), the release-manifest tests, and that `src/third_party/imgui` matches the ImGui headers the SDK ships |
-| `build` | Release x64 host with MSVC; binaries checked with `dumpbin` and `mt`. NPC and inspector are built in separate SDK jobs against the checksum-verified published archive and staged for the release, not linked or registered in the host |
-| Optional bridges | Independent configurations; excluded from the standard host and release |
+| `build` | Release x64 host with MSVC; binaries checked with `dumpbin` and `mt`. The external modules are built in their own SDK jobs against the checksum-verified published archive and staged for the release; they are not linked into the host |
+| `launcher-mcp` | `tools/check_launcher_mcp.py`: portable protocol tests; the `build` job also runs it with `--exe` against the built launcher |
 | `no-scans` | No raw game scan under `src/` |
 | `sdk-headers` | Every file under `src/builtins/` and `plugins/` includes only SDK headers, its own files, or a header named in `tools/sdk-headers-allow.txt` |
 
 ### What the `sdk-headers` allow-list means
 
-The gate makes `src/builtins/` and `plugins/` consumers of the SDK zip's public headers. The creative plugin (now the `external/sc-creative` submodule) passed with **no** allow-list entry, and its own repository runs the equivalent public-header proof. The built-ins do not: the list names every non-SDK header a built-in includes, one reason per line, and it is long because **the built-ins still call sc-offline's own engines** (`src/spawner.cpp`, `build.cpp`, `teleport.cpp`, `loadout.cpp`, `quantum.cpp`, `contracts.cpp`, `npc.cpp`, `cvars.cpp`, the menu shell, the multiplayer session), or use the kernel directly where the SDK has no form yet (`sco/hook.h` and the `game.mining` rows for mining, `sco/net/session.h` for multiplayer). So the gate does **not** mean the built-ins are pure SDK plugins. It means nobody can add a new dependency unnoticed: a new include of a non-SDK header fails CI, the fix is a `game.*` service in sco-core and not a new line in the list, and a line whose includes are gone fails too, so the list only shrinks. The crew plugin still uses the built-in shell and shared NPC archetype picker. NPC and inspector sources live under `plugins/{npc,inspector}/`, with no host-header exceptions. Neither has host linkage or production built-in registration; `src/workflow_adapters.cpp` is removed. The external modules compile neither product UI nor new ImGui inputs. Legacy `src/npc.cpp` remains unchanged for remaining host consumers. See [SDK workflows](sdk-workflows.md).
+The gate makes `src/builtins/` and `plugins/` consumers of the SDK's public headers. The creative plugin (the `external/sc-creative` submodule) needs no allow-list entry, and its own repository runs the equivalent proof. The list names each non-SDK header the legacy sources under `src/builtins/` still include, one reason per line: those sources call sc-offline's own engines (`src/build.cpp`, `teleport.cpp`, `quantum.cpp`, `travel.cpp`, `npc.cpp`, the menu shell, the multiplayer session) or the kernel directly where the SDK has no form yet (`sco/net/session.h` for multiplayer). Of these sources the host compiles only `build_ui.cpp`.
+
+So passing the gate does not make the legacy code pure SDK code. It means nobody can add a new dependency unnoticed: a new include of a non-SDK header fails CI, the fix is a `game.*` service in sco-core and not a new line in the list, and a line whose includes are gone fails too, so the list only shrinks. NPC and inspector sources under `plugins/{npc,inspector}/` have no host-header exceptions and no host linkage. The external modules compile neither product UI nor new ImGui inputs. Legacy `src/npc.cpp` stays for the remaining host consumers. See [SDK workflows](sdk-workflows.md).
 
 ## Migration boundary
 
-The [owner decisions](decisions.md) retain **13** baseline feature units and **2** separately counted optional bridges. The eventual shell has zero feature built-ins and explicit folder enable semantics, not hidden fallbacks. Steps 1B/1C externalize inspector and NPC; nine built-ins still load with `plugins = off`. Four external features plus those nine preserve the 13-feature denominator, not 13/13 migration completion. Creative ships enabled. Step 1D separately makes Discord folder metadata off and refuses presence pending privacy/transport approval. The published stable SDK 2.4.0 carries renderer-neutral widgets (`sco_widgets.h`) and the Star Citizen host-source kit; the full host builds from its exact source pin, and neither package checks nor synthetic fixtures establish game behavior. The launcher and EAC/online refusal policy are unchanged. Normal consumer reload is not provider reload or gameplay certification; native faults require restart, not safe reload/recovery.
+The [owner decisions](decisions.md) retain **13** baseline feature units and **2** separately counted optional bridges. The host registers no feature built-ins; each feature is an external folder with its own enable switch, and there are no hidden fallbacks. Eleven of the 13 units are staged in the release; loadout is a development consumer and multiplayer is the separate sc-mp repository. Discord is staged off and refuses presence pending privacy and transport approval. The published SDK 2.4.0 carries the renderer-neutral widgets (`sco_widgets.h`) and the Star Citizen host-source kit. The launcher and EAC/online refusal policy are unchanged. Reloading a consumer plugin is not provider reload or gameplay evidence; native faults need a restart.
 
 ## Historical notes
 

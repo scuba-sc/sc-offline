@@ -1,8 +1,7 @@
 # Owned build module (SDK 2.4.0 consumer)
 
 Trusted native GPL-3.0-only feature, plugin ABI 1.1. This module requires public
-G4/G9 headers/services, which the pinned published sdk-v2.4.0 ships
-(sdk-v2.0.0 did not).
+G4/G9 headers/services, which the published sdk-v2.4.0 ships.
 
 ## Build and install
 

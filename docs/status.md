@@ -4,31 +4,28 @@
 
 With a Core that provides `Composition::ProcessRetained`, the product's native startup
 is enabled under retain-until-exit (module pinned and never unloaded, stop is closure,
-no restart). The Core now pinned in `external/sco-core` (`4ba313d`, which includes `94dffc5`) provides it, so
-activation is ON with the current pin; it is OFF only when building against an older Core.
-Compile, static source checks and synthetic host tests only. Not verified in game: that
-the game loads and behaves like the last shipped version, engine-object lifetime inside
-hooks, real hook behavior, and that starting the game services on the game thread
-(a documented deviation from the install-quiescence rule) is safe. See
-[host composition](host-composition.md).
+no restart). The Core pinned in `external/sco-core` (`4ba313d`, which includes `94dffc5`)
+provides it, so native startup is on with the current pin and off with an older Core,
+which keeps the refusal. Evidence so far is compile, static source checks and synthetic
+host tests. Not verified in game: that the game loads and behaves like the last shipped
+version, engine-object lifetime inside hooks, real hook behavior, and that starting the
+game services on the game thread (a documented deviation from the install-quiescence
+rule) is safe. See [host composition](host-composition.md).
 
 ## Current local development pairing
 
 The development gitlink selects Core `4ba313da3ac7…` (`94dffc5` plus three later Core commits),
 which adds the opt-in process-retained host composition, with the development SDK
-coordinate `2.4.1-dev.6`. [SDK coordinates](sdk-candidate.md) still records the
-earlier `2.4.1-dev.3` digests; archive digests for this pairing are not recorded
-there yet. Earlier stable/development receipts do not recertify it. The paired-source
-runner requires a new clean committed Offline identity before qualification. Native
-startup is ON with this pin (process-retained, retain-until-exit) and is OFF only
-when building against an older Core; ASOP composition remains refused. **Not run in
-game.**
+coordinate `2.4.1-dev.6`. [SDK coordinates](sdk-candidate.md) records only the
+earlier `2.4.1-dev.3` digests; none are recorded for this pairing yet, and earlier
+stable and development receipts do not recertify it. The paired-source runner requires
+a new clean committed Offline identity before qualification. ASOP composition remains
+refused. **Not run in game.**
 
 ## Historical stable SDK 2.4.0 consumer integration
 
-The current private development candidate uses the source in its exact Core
-gitlink and requires a matching development SDK. The historical stable results
-below do not certify the new pair. Native startup runs only on a Core with the process-retained composition; any other Core keeps the refusal.
+The development host uses the source in its exact Core gitlink. The stable results
+below do not certify that pair.
 
 The combined plugin archive is the published stable `sdk-v2.4.0` release, source
 `6106fa3639cbcc28f78a1ded8de2707de019f4d3`, SHA-256
@@ -45,9 +42,7 @@ traces, staged checkers and boundary controls. The separate development gear
 consumer's model, storage and actual-module fixtures pass against the matching
 stable host source and archive.
 These fixtures use synthetic or absent providers and do not certify production
-providers, renderer behavior, Windows/MSVC or game state. Product native startup
-is refused on a Core without the process-retained composition; on one with it,
-startup is native under retain-until-exit. Not run in game.
+providers, renderer behavior, Windows/MSVC or game state. Not run in game.
 
 ## v0.7.8.1 offline startup
 
@@ -67,9 +62,9 @@ Observed a second time by the maintainer, on a desktop session with the game run
 
 `data/plugins/teleport` and `data/plugins/quantum` are staged enabled. `tools/check_teleport_sdk.py` and `tools/check_quantum_sdk.py` pass against the published stable SDK 2.4.0 archive (`sdk-v2.4.0`), including the synthetic travel-model test, quantum actual-module workflow (player switch, `game.relocation` capability, one request, tick tracking to complete and failed), full compiler dependency traces, boundary negatives and the relocation red arm. The SDK checker has no game services and refuses unavailable moves. These are development-machine checks, not game tests.
 
-**NOT VERIFIED:** any move in game. Owed: F7 then F8 returning to the saved spot; `quantum.travel` arriving at the destination radius plus the altitude (placed along the destination zone's own +Z axis, never checked); `quantum.bookmark`; the arrival, failure and cancellation messages; the plugin `relocation` setting and `sc-offline.ini` `relocation = off` refusing moves; both plugins loading from the release folder on Windows. On a Core with the process-retained composition the product starts natively and a move reports its own result through `game.relocation`; any other Core keeps the native-startup refusal. Owner testing in game is still owed.
+**NOT VERIFIED:** any move in game. Owed: F7 then F8 returning to the saved spot; `quantum.travel` arriving at the destination radius plus the altitude (placed along the destination zone's own +Z axis, never checked); `quantum.bookmark`; the arrival, failure and cancellation messages; the plugin `relocation` setting and `sc-offline.ini` `relocation = off` refusing moves; both plugins loading from the release folder on Windows. Owner testing in game is still owed.
 
-**NOT VERIFIED:** the host switch in game. The pinned source declares `SetRelocationEnabled`, but host and plugin activation depend on the Core's composition (a Core without the process-retained composition keeps the native-startup refusal). Compilation with the switch does not establish a live control path or game behavior.
+**NOT VERIFIED:** the host switch in game. The pinned source declares `SetRelocationEnabled`, but compiling it does not establish a live control path or game behavior.
 
 ## Optional co-presence module
 
@@ -100,7 +95,7 @@ The release-pin smoke checks: offline startup was **observed once** for v0.7.8.1
 releases; owner Windows/in-game acceptance remains **NOT RUN**. No synthetic
 fixture or checker result certifies gameplay. Policy: [decisions.md](decisions.md).
 
-sco-core keeps the matching table for the `game.*` services, with the evidence level of each capability and what a run has to show: [docs/game/status.md](https://github.com/scuba-sc/sco-core/blob/4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd/docs/game/status.md) at the development pin. Read it for the service side (for example `game.actors.state`, `game.entities.query_radius`, `game.entities.watch` and `game.events.vehicle_seat` are held **off** until a run decides them). This page lists the sc-offline side: what each converted feature still needs checked. The steps are the ones in the bodies of [#95](https://github.com/scuba-sc/sc-offline/pull/95), [#97](https://github.com/scuba-sc/sc-offline/pull/97) and [#98](https://github.com/scuba-sc/sc-offline/pull/98); `mod.log` lines are quoted as those PRs wrote them.
+sco-core keeps the matching table for the `game.*` services, with the evidence level of each capability and what a run has to show: [docs/game/status.md](https://github.com/scuba-sc/sco-core/blob/4ba313da3ac76c887cda03772d6106452f33a5d4/docs/game/status.md) at the development pin. Read it for the service side (for example `game.actors.state`, `game.entities.query_radius`, `game.entities.watch` and `game.events.vehicle_seat` are held **off** until a run decides them). This page lists the sc-offline side: what each converted feature still needs checked. The steps are the ones in the bodies of [#95](https://github.com/scuba-sc/sc-offline/pull/95), [#97](https://github.com/scuba-sc/sc-offline/pull/97) and [#98](https://github.com/scuba-sc/sc-offline/pull/98); `mod.log` lines are quoted as those PRs wrote them.
 
 ## Step 7B: tutorial evidence ledger
 
@@ -110,8 +105,7 @@ fixtures, dependency traces and private-boundary negatives. The historical RC2
 MCP transcript is recorded separately in
 [its validation receipt](../examples/sdk-mcp/rc2-validation.md). Neither proof
 certifies Windows/MSVC, runtime host/session acceptance, installation, reload,
-actual provider cleanup or gameplay. The product activates native services and
-loads plugins only on a Core with the process-retained composition; any other Core keeps the refusal.
+actual provider cleanup or gameplay.
 
 ## Steps 1D/2A/2B: external features — Windows/game acceptance NOT RUN
 
@@ -122,7 +116,6 @@ stages 11 external native IDs (spawn, crew, build, mining, npc, inspector, telep
 Loadout has an external implementation not yet staged
 there, and multiplayer is unregistered at this revision: 13 baseline IDs remain.
 Two optional bridge modules and supporting data packs are counted separately.
-Older command fixtures used published SDK 2.0.0, not engine evidence.
 
 **Picker restoration (widgets since SDK 2.3.0):** external spawn, crew and npc own
 the Vehicles, Crew and NPCs panels through public `sco.widgets`. Shared public
@@ -132,8 +125,8 @@ identity; filtered pages and manual classes are available. The supporting
 are unchanged. The host renders neutral copied panels on its game-thread frame.
 The one `picker-module-workflow` fixture dynamically loads all three actual
 macOS modules and checks UI events against synthetic public providers; it is
-not renderer/game evidence. The pinned published SDK 2.4.0 (`sdk-v2.4.0`) ships widgets
-and content (`sdk-v2.0.0` did not); Windows rendering and game acceptance remain owed.
+not renderer/game evidence. The published SDK 2.4.0 (`sdk-v2.4.0`) ships widgets
+and content; Windows rendering and game acceptance remain owed.
 SQ42 ordinary ship shortcuts invoke `spawn.ship_options`; enemy-wing orchestration
 is deferred. Destination startup refuses G2/G3 without a private fallback. Owner
 checks still owe real classes/large seat lists, delayed streaming, board/power,

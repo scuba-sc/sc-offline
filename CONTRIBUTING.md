@@ -1,6 +1,6 @@
 # Contributing to sc-offline
 
-Thanks for helping. sc-offline is a Star Citizen offline mod: a mod menu plus a launcher that keeps the game offline while you play. Bug reports, fixes, docs and testing on your PC all help.
+sc-offline is a Star Citizen offline mod: a mod menu plus a launcher that keeps the game offline while you play. Bug reports, fixes, docs and testing on your PC all help.
 
 See [AGENTS.md](AGENTS.md#contributor-design-rules) for this repository's design rules and SDK contribution workflow, for human contributors and coding agents.
 
@@ -28,6 +28,7 @@ Questions and ideas: open an issue or ask in the [Discord](https://discord.gg/NJ
    - macOS or Linux: `tools/check.sh` must report `0 new` diagnostics. It isn't a build; CI's MSVC build is the real check.
    - `python3 tools/sdk-headers.py` must pass if you touched `src/builtins/` or `plugins/`: it checks public SDK dependencies and recorded legacy exceptions (see [docs/build.md](docs/build.md#include-and-scan-gates)). Do not add an exception for a new feature.
    - Touching the self-update: run `tools/update-test/run.sh` under Wine (see [docs/build.md](docs/build.md#self-update-tests-under-wine)).
+   - Touching `launcher/mcp_server.h` or the `mcp` command: `python tools/check_launcher_mcp.py` must pass (see [docs/ai-agents.md](docs/ai-agents.md#for-developers)).
 4. Test in game if you can, and say in the PR what you tested and what you didn't.
 5. Update the docs your change affects (`README.md`, `docs/`, `sc-offline.ini` comments) in the same PR.
 6. Add a line under the top section of [CHANGELOG.md](CHANGELOG.md) for anything a player would notice.

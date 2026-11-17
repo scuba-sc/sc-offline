@@ -2,8 +2,7 @@
 
 Current picker/copy-list installation and the one targeted module fixture:
 [Public pickers](../../docs/pickers.md). **These sources use `sco_widgets.h` and
-`sco_content.h`, which the pinned published `sdk-v2.4.0` ships** (`sdk-v2.0.0`
-did not). The obtain/proof recipes below use that archive.
+`sco_content.h`, which the published `sdk-v2.4.0` ships**. The obtain/proof recipes below use that archive.
 
 Trusted native code, **GPL-3.0-only**. SDK **2.4.0**, frozen plugin ABI **1.1**,
 Star Citizen game pack **0.8.0**. This source builds independently of the host.
@@ -16,7 +15,7 @@ Picker actions use the same command handlers/jobs, not legacy engine helpers.
 Keep `data/ships.txt` as the existing caller-supplied class list;
 `spawn.pack_list` additionally reads enabled `lists/ships.txt` through G14's
 public `sco.content` service. This addition requires `sco_content.h`, which the
-pinned published SDK 2.4.0 ships (SDK 2.0.0 predated it).
+published SDK 2.4.0 ships.
 There is no private-index or filesystem fallback.
 
 ## Build, check, install (three stages)

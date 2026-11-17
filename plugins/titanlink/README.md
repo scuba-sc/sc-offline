@@ -10,9 +10,9 @@ source removal and optional packaging composition are a separate integration ste
 
 1. Obtain a checksum-verified public SDK containing `sco.ipc` 1.0,
    `teleport.spatial` 1.0 and **`game.spatial` 1.0 / `pose_to_zone`**. ABI is 1.1.
-   This migration was tested with a local `integ/r1` legacy SDK archive. The pinned
-published sdk-v2.4.0-rc.2 ships `sco_ipc.h` and `sc_game_spatial.h` (with
-   `pose_to_zone`); no titanlink proof against that archive is claimed here.
+   This migration was tested with a local `integ/r1` legacy SDK archive. The published
+   `sdk-v2.4.0` archive ships `sco_ipc.h` and `sc_game_spatial.h` ([bridges](../../docs/bridges.md));
+   no titanlink proof against that archive is claimed here.
 2. Configure this folder **independently**, not inside the host CMake build:
 
    ```sh
