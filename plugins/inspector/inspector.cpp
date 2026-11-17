@@ -62,13 +62,25 @@ constexpr char kPanelId[] = "inspector.main";
 enum : uint32_t { kRefresh = 10, kStatus = 11, kDiagnostics = 20, kInventory = 21,
                   kActions = 22, kParameters = 23, kTable = 30, kActionName = 40,
                   kLookup = 41, kBrowseParams = 42, kRefreshCount = 43,
-                  kPrevious = 50, kNext = 51 };
+                  kPrevious = 50, kNext = 51, kTopRow = 2, kTabRow = 3, kSection = 4,
+                  kSearchRow = 5, kToolRow = 6, kPageRow = 7, kPageLabel = 52 };
 const sco_widgets_v1* g_widgets = nullptr;
 bool g_panel = false;
 bool g_settings_subscribed = false;
 uint32_t g_tab = kDiagnostics, g_page = 0;
 char g_query[SC_INPUT_ACTION_NAME_BYTES]{};
-char g_widget_status[128] = "Not sampled";
+char g_widget_status[160] = "Not refreshed yet. Press Refresh to read the game.";
+constexpr uint32_t kRowsPerPage = 8;
+const char* StatsPhrase(uint32_t result) {
+    return result == SCO_OK ? "are available" : result == SCO_FAILED ? "could not be read" : "are not available right now";
+}
+const char* Word(uint32_t result) {
+    return result == SCO_OK ? "available" : result == SCO_FAILED ? "could not be read" : "not available right now";
+}
+void SetRefreshedStatus() {
+    std::snprintf(g_widget_status, sizeof(g_widget_status), "Refreshed (update %llu). Player stats %s.",
+                  static_cast<unsigned long long>(g_snapshot.generation), StatsPhrase(g_snapshot.stats_status));
+}
 
 const char* Missing(sco_result result) { return result == SCO_UNAVAILABLE ? "unavailable" : "unknown"; }
 const char* Status(uint32_t result) {
@@ -270,8 +282,7 @@ void PanelEvent(const char* panel, const sco_widget_event* event, void* ctx) {
     const uint32_t id = event->node_id;
     if (event->kind == SCO_WIDGET_BUTTON && id == kRefresh) {
         Refresh();
-        std::snprintf(g_widget_status, sizeof(g_widget_status), "Snapshot %llu; stats=%s; manual",
-                      static_cast<unsigned long long>(g_snapshot.generation), Status(g_snapshot.stats_status));
+        SetRefreshedStatus();
     } else if (event->kind == SCO_WIDGET_BUTTON && id == kLookup) {
         sc_input_action_info value{}; value.size = sizeof(value);
         const auto* input = Service<sc_input_v1>(SC_INPUT_SERVICE_NAME, SC_INPUT_SERVICE_VERSION);
@@ -280,8 +291,8 @@ void PanelEvent(const char* panel, const sco_widget_event* event, void* ctx) {
             ? input->by_name(g_self, g_query, &value) : SCO_NOT_FOUND;
         if (result == SCO_OK && value.size >= sizeof(value) && ValidName(value.name, sizeof(value.name))) {
             g_snapshot.action = value; g_snapshot.action_valid = true;
-            std::snprintf(g_widget_status, sizeof(g_widget_status), "Action %s id=%u", value.name, value.id);
-        } else std::snprintf(g_widget_status, sizeof(g_widget_status), "Action lookup unavailable/not found");
+            std::snprintf(g_widget_status, sizeof(g_widget_status), "Found action %s (number %u).", value.name, value.id);
+        } else std::snprintf(g_widget_status, sizeof(g_widget_status), "No action found with that exact name.");
     } else if (event->kind == SCO_WIDGET_BUTTON && id == kBrowseParams) {
         g_snapshot.params_count = g_snapshot.params_total = 0;
         uint32_t offset = 0, all = 0;
@@ -296,22 +307,23 @@ void PanelEvent(const char* panel, const sco_widget_event* event, void* ctx) {
         }
         if (result == SCO_OK && all <= 256 && offset == all) {
             g_snapshot.params_count = offset; g_snapshot.params_total = all;
-            std::snprintf(g_widget_status, sizeof(g_widget_status), "Parameters %u/%u copied", offset, all);
+            std::snprintf(g_widget_status, sizeof(g_widget_status), "Loaded %u parameters.", all);
             g_tab = kParameters; g_page = 0;
-        } else std::snprintf(g_widget_status, sizeof(g_widget_status), "Parameter browse unavailable");
+        } else std::snprintf(g_widget_status, sizeof(g_widget_status), "Parameters are not available right now.");
     } else if (event->kind == SCO_WIDGET_BUTTON && id == kRefreshCount) {
         g_snapshot.action_count_valid = false;
         const auto* input = Service<sc_input_v1>(SC_INPUT_SERVICE_NAME, SC_INPUT_SERVICE_VERSION);
         uint32_t count = 0;
         if (HAS_FN(input, sc_input_v1, count) && input->count(g_self, &count) == SCO_OK) {
             g_snapshot.action_count = count; g_snapshot.action_count_valid = true;
-            std::snprintf(g_widget_status, sizeof(g_widget_status), "Named action count: %u", count);
-        } else std::snprintf(g_widget_status, sizeof(g_widget_status), "Action count unavailable");
+            std::snprintf(g_widget_status, sizeof(g_widget_status), "The game has %u named actions.", count);
+        } else std::snprintf(g_widget_status, sizeof(g_widget_status), "The action count is not available right now.");
     } else if (event->kind == SCO_WIDGET_BUTTON && (id == kPrevious || id == kNext)) {
-        const uint32_t total = g_tab == kInventory ? g_snapshot.inventory.count :
-            g_tab == kParameters ? g_snapshot.params_count : g_snapshot.action_count_valid ? 1u : 0u;
+        const uint32_t total = g_tab == kInventory ? (g_snapshot.inventory_status == SCO_OK ? g_snapshot.inventory.count : 0u) :
+            g_tab == kParameters ? g_snapshot.params_count : 0u;
+        const uint32_t pages = (total + kRowsPerPage - 1) / kRowsPerPage;
         if (id == kPrevious && g_page) --g_page;
-        if (id == kNext && g_page + 1 < total) ++g_page;
+        if (id == kNext && g_page + 1 < pages) ++g_page;
     } else if (event->kind == SCO_WIDGET_BUTTON && (id == kDiagnostics || id == kInventory || id == kActions || id == kParameters)) {
         g_tab = id; g_page = 0;
     } else if (event->kind == SCO_WIDGET_TEXT_INPUT && id == kActionName && event->text) {
@@ -323,53 +335,97 @@ void PanelEvent(const char* panel, const sco_widget_event* event, void* ctx) {
 
 bool RenderPanel() {
     if (!g_widgets || !g_panel) return false;
-    char row[4][256]{};
-    const char* cells[4] = {"", "", "", ""};
-    uint32_t cell_count = 1;
+    constexpr uint32_t kCellCount = 12;
+    char row[kCellCount][160]{};
+    const char* cells[kCellCount]{};
+    uint32_t cell_count = 0;
+    uint32_t pages = 0;
+    auto add = [&](const char* text) { if (cell_count < kCellCount) cells[cell_count++] = text; };
+    auto addf = [&](const char* format, auto... args) {
+        if (cell_count >= kCellCount) return;
+        std::snprintf(row[cell_count], sizeof(row[cell_count]), format, args...);
+        cells[cell_count] = row[cell_count]; ++cell_count;
+    };
     if (g_tab == kDiagnostics) {
-        std::snprintf(row[0], sizeof(row[0]), "Build: %s; player: %s; stats: %s",
-            Status(g_snapshot.build_status), Status(g_snapshot.player_status), Status(g_snapshot.stats_status));
-        std::snprintf(row[1], sizeof(row[1]), "GameRules: %s; inventory: %s; history: %s",
-            Status(g_snapshot.rules_status), Status(g_snapshot.inventory_status), g_snapshot.sampled ? "manual" : "Not sampled");
-        cells[0] = row[0]; cells[1] = row[1]; cell_count = 2;
+        addf("Game build: %s", Word(g_snapshot.build_status));
+        addf("Local player: %s", Word(g_snapshot.player_status));
+        addf("Player stats: %s", Word(g_snapshot.stats_status));
+        addf("Game rules: %s", Word(g_snapshot.rules_status));
+        addf("Inventory: %s", Word(g_snapshot.inventory_status));
+        add(g_snapshot.sampled ? "Last update: refreshed by you" : "Last update: not refreshed yet");
     } else if (g_tab == kInventory) {
-        if (!g_snapshot.sampled || g_snapshot.inventory_status != SCO_OK) cells[0] = "Inventory unavailable";
-        else if (!g_snapshot.inventory.count) cells[0] = "Inventory empty";
-        else if (g_page < g_snapshot.inventory.count) {
-            const auto& p = g_snapshot.inventory.ports[g_page];
-            std::snprintf(row[0], sizeof(row[0]), "Page %u/%u entity=%llu", g_page + 1, g_snapshot.inventory.count,
-                static_cast<unsigned long long>(p.entity_id)); cells[0] = row[0];
+        if (!g_snapshot.sampled || g_snapshot.inventory_status != SCO_OK) add("Inventory is not available. Press Refresh.");
+        else if (!g_snapshot.inventory.count) add("Inventory is empty.");
+        else {
+            const uint32_t total = g_snapshot.inventory.count;
+            pages = (total + kRowsPerPage - 1) / kRowsPerPage;
+            if (g_page >= pages) g_page = pages - 1;
+            for (uint32_t n = g_page * kRowsPerPage; n < total && n < (g_page + 1) * kRowsPerPage; ++n)
+                addf("Item %u of %u (id %llu)", n + 1, total,
+                     static_cast<unsigned long long>(g_snapshot.inventory.ports[n].entity_id));
         }
     } else if (g_tab == kParameters) {
-        if (g_page < g_snapshot.params_count) {
-            const auto& p = g_snapshot.params[g_page];
-            std::snprintf(row[0], sizeof(row[0]), "Definition %u/%u: %s [%s]", g_page + 1,
-                g_snapshot.params_total, p.name, p.group); cells[0] = row[0];
-        } else cells[0] = "Browse parameter definitions";
+        if (g_snapshot.params_count) {
+            const uint32_t total = g_snapshot.params_count;
+            pages = (total + kRowsPerPage - 1) / kRowsPerPage;
+            if (g_page >= pages) g_page = pages - 1;
+            for (uint32_t n = g_page * kRowsPerPage; n < total && n < (g_page + 1) * kRowsPerPage; ++n)
+                if (g_snapshot.params[n].group[0]) addf("%u. %s (%s)", n + 1, g_snapshot.params[n].name, g_snapshot.params[n].group);
+                else addf("%u. %s", n + 1, g_snapshot.params[n].name);
+        } else add("No parameters loaded yet. Press Browse parameters.");
     } else {
         if (g_snapshot.action_valid) {
-            std::snprintf(row[0], sizeof(row[0]), "Action %s id=%u", g_snapshot.action.name, g_snapshot.action.id); cells[0] = row[0];
-        } else if (g_snapshot.action_count_valid) {
-            std::snprintf(row[0], sizeof(row[0]), "Named action count: %u", g_snapshot.action_count); cells[0] = row[0];
-        } else cells[0] = "Lookup action by exact name";
+            addf("Action %s, number %u", g_snapshot.action.name, g_snapshot.action.id);
+        } else add("Type an exact action name and press Lookup.");
+        if (g_snapshot.action_count_valid) addf("The game has %u named actions.", g_snapshot.action_count);
     }
     const char* locale = Locale();
     auto tr = [&](const char* key) { return inspector_locale::Lookup(locale, key); };
-    sco_widget_node nodes[16]{};
-    auto node = [&](size_t i, uint32_t kind, uint32_t id, uint32_t parent, const char* label) {
-        nodes[i].size = sizeof(sco_widget_node); nodes[i].kind = kind; nodes[i].id = id;
-        nodes[i].parent = parent; nodes[i].label = label;
+    char page_text[48]{};
+    if (pages) std::snprintf(page_text, sizeof(page_text), "Page %u of %u", g_page + 1, pages);
+    const char* heading = g_tab == kInventory ? tr("inventory") : g_tab == kActions ? tr("actions") :
+        g_tab == kParameters ? tr("parameters") : tr("diagnostics");
+    sco_widget_node nodes[32]{};
+    size_t count = 0;
+    auto node = [&](uint32_t kind, uint32_t id, uint32_t parent, const char* label, uint32_t flags = 0) -> sco_widget_node& {
+        auto& n = nodes[count++];
+        n.size = sizeof(sco_widget_node); n.kind = kind; n.id = id; n.parent = parent; n.label = label; n.flags = flags;
+        return n;
     };
-    node(0,SCO_WIDGET_COLUMN,1,0,tr("title")); node(1,SCO_WIDGET_BUTTON,kRefresh,1,tr("refresh"));
-    node(2,SCO_WIDGET_LABEL,kStatus,1,g_widget_status); node(3,SCO_WIDGET_BUTTON,kDiagnostics,1,tr("diagnostics"));
-    node(4,SCO_WIDGET_BUTTON,kInventory,1,tr("inventory")); node(5,SCO_WIDGET_BUTTON,kActions,1,tr("actions"));
-    node(6,SCO_WIDGET_BUTTON,kParameters,1,tr("parameters")); node(7,SCO_WIDGET_TABLE,kTable,1,tr("results"));
-    nodes[7].columns = 1; nodes[7].items = cells; nodes[7].item_count = cell_count;
-    node(8,SCO_WIDGET_TEXT_INPUT,kActionName,1,tr("action_name")); nodes[8].text = g_query;
-    node(9,SCO_WIDGET_BUTTON,kLookup,1,tr("lookup")); node(10,SCO_WIDGET_BUTTON,kBrowseParams,1,tr("browse_parameters"));
-    node(11,SCO_WIDGET_BUTTON,kRefreshCount,1,tr("refresh_action_count"));
-    node(12,SCO_WIDGET_BUTTON,kPrevious,1,tr("previous")); node(13,SCO_WIDGET_BUTTON,kNext,1,tr("next"));
-    return g_widgets->set_panel(g_self,kPanelId,tr("title"),nodes,14,sizeof(sco_widget_node),PanelEvent,g_self) == SCO_OK;
+    auto disabled_if = [](bool on) { return on ? static_cast<uint32_t>(SCO_WIDGET_DISABLED) : 0u; };
+    node(SCO_WIDGET_COLUMN, 1, 0, nullptr);
+    node(SCO_WIDGET_ROW, kTopRow, 1, nullptr);
+    node(SCO_WIDGET_BUTTON, kRefresh, kTopRow, tr("refresh"));
+    node(SCO_WIDGET_LABEL, kStatus, kTopRow, g_widget_status);
+    node(SCO_WIDGET_ROW, kTabRow, 1, nullptr);
+    node(SCO_WIDGET_BUTTON, kDiagnostics, kTabRow, tr("diagnostics"), disabled_if(g_tab == kDiagnostics));
+    node(SCO_WIDGET_BUTTON, kInventory, kTabRow, tr("inventory"), disabled_if(g_tab == kInventory));
+    node(SCO_WIDGET_BUTTON, kActions, kTabRow, tr("actions"), disabled_if(g_tab == kActions));
+    node(SCO_WIDGET_BUTTON, kParameters, kTabRow, tr("parameters"), disabled_if(g_tab == kParameters));
+    node(SCO_WIDGET_COLUMN, kSection, 1, heading);
+    if (g_tab == kActions) {
+        node(SCO_WIDGET_ROW, kSearchRow, kSection, nullptr);
+        // Lookup first: a text input fills the rest of its row, so a button after it would be pushed off.
+        node(SCO_WIDGET_BUTTON, kLookup, kSearchRow, tr("lookup"));
+        node(SCO_WIDGET_TEXT_INPUT, kActionName, kSearchRow, tr("action_name")).text = g_query;
+    } else if (g_tab == kParameters) {
+        node(SCO_WIDGET_ROW, kToolRow, kSection, nullptr);
+        node(SCO_WIDGET_BUTTON, kBrowseParams, kToolRow, tr("browse_parameters"));
+    }
+    auto& table = node(SCO_WIDGET_TABLE, kTable, kSection, nullptr);
+    table.columns = 1; table.items = cells; table.item_count = cell_count;
+    if (pages) {
+        node(SCO_WIDGET_ROW, kPageRow, kSection, nullptr);
+        node(SCO_WIDGET_BUTTON, kPrevious, kPageRow, tr("previous"), disabled_if(g_page == 0));
+        node(SCO_WIDGET_LABEL, kPageLabel, kPageRow, page_text);
+        node(SCO_WIDGET_BUTTON, kNext, kPageRow, tr("next"), disabled_if(g_page + 1 >= pages));
+    }
+    if (g_tab == kActions) {
+        node(SCO_WIDGET_ROW, kToolRow, kSection, nullptr);
+        node(SCO_WIDGET_BUTTON, kRefreshCount, kToolRow, tr("refresh_action_count"));
+    }
+    return g_widgets->set_panel(g_self,kPanelId,tr("title"),nodes,static_cast<uint32_t>(count),
+                                sizeof(sco_widget_node),PanelEvent,g_self) == SCO_OK;
 }
 
 sco_result RefreshCommand(const sco_arg*, uint32_t nargs, void*, char* reply, uint32_t reply_size) {
@@ -377,8 +433,7 @@ sco_result RefreshCommand(const sco_arg*, uint32_t nargs, void*, char* reply, ui
     if (!g_api || !g_self) return SCO_UNAVAILABLE;
     if (!reply_size) return SCO_TOO_MANY;
     Refresh();
-    std::snprintf(g_widget_status, sizeof(g_widget_status), "Snapshot %llu; stats=%s; manual",
-                  static_cast<unsigned long long>(g_snapshot.generation), Status(g_snapshot.stats_status));
+    SetRefreshedStatus();
     RenderPanel();
     char text[256];
     std::snprintf(text, sizeof(text), "generation=%llu build=%s player=%s stats=%s gamerules=%s inventory=%s",
@@ -565,7 +620,7 @@ sco_result ActionResultCommand(const sc_input_v1* input, uint32_t id, const char
     if (!Reply(reply, reply_size, text)) return SCO_TOO_MANY;
     g_snapshot.action = value;
     g_snapshot.action_valid = true;
-    if (requested) std::snprintf(g_widget_status, sizeof(g_widget_status), "Action %s id=%u", value.name, value.id);
+    if (requested) std::snprintf(g_widget_status, sizeof(g_widget_status), "Found action %s (number %u).", value.name, value.id);
     return SCO_OK;
 }
 
@@ -677,7 +732,7 @@ sco_result Load(const sco_api* api, sco_plugin* self) {
     g_widgets = Widgets();
     if (r == SCO_OK && g_widgets) {
         g_widget_status[0] = '\0';
-        std::snprintf(g_widget_status, sizeof(g_widget_status), "Not sampled");
+        std::snprintf(g_widget_status, sizeof(g_widget_status), "Not refreshed yet. Press Refresh to read the game.");
         g_tab = kDiagnostics; g_page = 0; g_query[0] = '\0';
         g_panel = true;
         if (!RenderPanel()) { g_panel = false; g_widgets = nullptr; }
@@ -699,7 +754,7 @@ void Unload() {
     g_widgets = nullptr;
     g_panel = false;
     g_tab = kDiagnostics; g_page = 0; g_query[0] = '\0';
-    std::snprintf(g_widget_status, sizeof(g_widget_status), "Not sampled");
+    std::snprintf(g_widget_status, sizeof(g_widget_status), "Not refreshed yet. Press Refresh to read the game.");
     g_snapshot = {};
     g_provider_reads = 0;
 }

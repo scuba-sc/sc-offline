@@ -11,6 +11,7 @@
 #include "sco_widgets.h"
 #include "sco_settings.h"
 #include "../plugins/inspector/inspector_locale.h"
+#include "panel_dump.h"
 
 #include <cstddef>
 #if defined(INSPECTOR_EXTERNAL_TEST)
@@ -51,15 +52,17 @@ const sc_input_v1* input_service = nullptr;
 bool rules_tail_available = true;
 bool widgets_published = true;
 sco_widgets_v1 widget_fixture_table{};
-sco_widget_node widget_nodes[16]{};
-char widget_cells[16][256]{};
+sco_widget_node widget_nodes[32]{};
+char widget_cells[32][256]{};
+char widget_texts[32][256]{};
 uint32_t widget_node_count = 0;
 sco_widget_event_fn widget_callback = nullptr;
 void* widget_context = nullptr;
 int widget_sets = 0, widget_removes = 0;
 constexpr uint32_t W_REFRESH = 10, W_STATUS = 11, W_DIAGNOSTICS = 20, W_INVENTORY = 21, W_ACTIONS = 22,
     W_PARAMETERS = 23, W_TABLE = 30, W_ACTION_NAME = 40, W_LOOKUP = 41,
-    W_BROWSE = 42, W_COUNT = 43, W_PREVIOUS = 50, W_NEXT = 51;
+    W_BROWSE = 42, W_COUNT = 43, W_PREVIOUS = 50, W_NEXT = 51, W_TOP_ROW = 2, W_TAB_ROW = 3,
+    W_SECTION = 4, W_SEARCH_ROW = 5, W_TOOL_ROW = 6, W_PAGE_ROW = 7, W_PAGE_LABEL = 52;
 uint32_t metadata_queries = 0;
 uint32_t metadata_calls = 0;
 sc_gamerules_param_info param_fixtures[17]{};
@@ -75,7 +78,7 @@ bool write_outputs = true;
 int player_calls = 0, health_calls = 0, transform_calls = 0;
 int build_calls = 0, stats_calls = 0, rules_calls = 0, inventory_calls = 0;
 uint32_t inventory_fixture_count = 1, inventory_fixture_flags = 0;
-sc_inventory_port inventory_fixture_ports[3]{};
+sc_inventory_port inventory_fixture_ports[20]{};
 uint32_t build_record_size = sizeof(sc_game_build_info);
 float stat_value = 0.375f;
 float stat_values[SC_ACTOR_STAT_LAST_1_0 + 1] = {};
@@ -119,7 +122,7 @@ sco_result QueryService(const char* name, uint32_t version, const void** out) {
 sco_result WidgetSet(sco_plugin*, const char* id, const char* title, const sco_widget_node* nodes,
                      uint32_t count, uint32_t stride, sco_widget_event_fn fn, void* ctx) {
     CHECK(id && std::strcmp(id, "inspector.main") == 0 && title && std::strcmp(title, inspector_locale::Lookup(locale_value, "title")) == 0);
-    CHECK(nodes && count <= 16 && stride >= sizeof(sco_widget_node));
+    CHECK(nodes && count <= 32 && stride >= sizeof(sco_widget_node));
     for (uint32_t n = 0; n < count; ++n) {
         widget_nodes[n] = nodes[n];
         if (nodes[n].label) {
@@ -127,12 +130,12 @@ sco_result WidgetSet(sco_plugin*, const char* id, const char* title, const sco_w
             widget_nodes[n].label = widget_cells[n];
         }
         if (nodes[n].text) {
-            std::snprintf(widget_cells[n], sizeof(widget_cells[n]), "%s", nodes[n].text);
-            widget_nodes[n].text = widget_cells[n];
+            std::snprintf(widget_texts[n], sizeof(widget_texts[n]), "%s", nodes[n].text);
+            widget_nodes[n].text = widget_texts[n];
         }
         if (nodes[n].items && nodes[n].item_count) {
-            static const char* cells[16]{};
-            static char table_cells[16][256]{};
+            static const char* cells[32]{};
+            static char table_cells[32][256]{};
             for (uint32_t c = 0; c < nodes[n].item_count; ++c) {
                 std::snprintf(table_cells[c], sizeof(table_cells[c]), "%s", nodes[n].items[c]);
                 cells[c] = table_cells[c];
@@ -326,7 +329,7 @@ void RetainedWidgetWorkflow() {
     CHECK(Load(&api, owner) == SCO_OK);
     CHECK(diagnostic_service_queries == diagnostic_queries_before_load);
     CHECK(widget_service_queries == widget_queries_before_load + 1);
-    CHECK(widget_callback && widget_node_count == 14 && widget_sets > 0);
+    CHECK(widget_callback && widget_node_count == 11 && widget_sets > 0);
     CHECK(std::strcmp(WidgetNode(W_REFRESH)->label, "Refresh") == 0);
     CHECK(std::strcmp(inspector_locale::Lookup("ru", "results"), "Results") == 0);
     CHECK(std::strcmp(inspector_locale::Lookup("unsupported", "refresh"), "Refresh") == 0);
@@ -368,7 +371,7 @@ void RetainedWidgetWorkflow() {
     CHECK(TotalProviderReads() - reads == SC_ACTOR_STAT_LAST_1_0 + 4 &&
           diagnostic_service_queries - diagnostic_queries == 5 && metadata_calls == metadata);
     CHECK(WidgetNode(W_STATUS) && WidgetNode(W_STATUS)->label &&
-          std::strstr(WidgetNode(W_STATUS)->label, "Snapshot 1"));
+          std::strstr(WidgetNode(W_STATUS)->label, "update 1"));
     const uint64_t refreshed = TotalProviderReads();
     WidgetEvent(W_INVENTORY, SCO_WIDGET_BUTTON);
     WidgetEvent(W_NEXT, SCO_WIDGET_BUTTON);
@@ -388,11 +391,11 @@ void RetainedWidgetWorkflow() {
           std::strstr(WidgetNode(W_TABLE)->items[0], "valid"));
     WidgetEvent(W_NEXT, SCO_WIDGET_BUTTON);
     CHECK(WidgetNode(W_TABLE) && WidgetNode(W_TABLE)->items &&
-          std::strstr(WidgetNode(W_TABLE)->items[0], "enforce_group_qt"));
+          std::strstr(WidgetNode(W_TABLE)->items[0], "target_lock_linear_ai"));
     WidgetEvent(W_COUNT, SCO_WIDGET_BUTTON);
     CHECK(metadata_calls == metadata_before_lookup + 2 + 17 + 1);
     CHECK(WidgetNode(W_STATUS) && WidgetNode(W_STATUS)->label &&
-          std::strstr(WidgetNode(W_STATUS)->label, "Named action count"));
+          std::strstr(WidgetNode(W_STATUS)->label, "named actions"));
     const uint64_t reads_before_diagnostics = TotalProviderReads();
     const uint32_t metadata_before_diagnostics = metadata_calls;
     const int queries_before_diagnostics = diagnostic_service_queries;
@@ -409,10 +412,10 @@ void RetainedWidgetWorkflow() {
           metadata_calls == metadata_before_failed_refresh &&
           diagnostic_service_queries - queries_before_failed_refresh == 5);
     CHECK(WidgetNode(W_STATUS) && WidgetNode(W_STATUS)->label &&
-          std::strstr(WidgetNode(W_STATUS)->label, "Snapshot 2") &&
-          std::strstr(WidgetNode(W_STATUS)->label, "stats=unavailable"));
+          std::strstr(WidgetNode(W_STATUS)->label, "update 2") &&
+          std::strstr(WidgetNode(W_STATUS)->label, "not available"));
     CHECK(WidgetNode(W_TABLE) && WidgetNode(W_TABLE)->items &&
-          std::strstr(WidgetNode(W_TABLE)->items[0], "stats: unavailable"));
+          std::strstr(WidgetNode(W_TABLE)->items[2], "Player stats: not available"));
     disabled_capability = nullptr;
     auto old = widget_callback; auto ctx = widget_context;
     sco_widget_event forged{}; forged.size = sizeof(forged); forged.node_id = W_REFRESH; forged.kind = SCO_WIDGET_TOGGLE;
@@ -471,11 +474,12 @@ void RefreshResetsInventoryWidgetPage() {
     WidgetEvent(W_INVENTORY, SCO_WIDGET_BUTTON);
     WidgetEvent(W_NEXT, SCO_WIDGET_BUTTON);
     WidgetEvent(W_NEXT, SCO_WIDGET_BUTTON);
-    Contains(WidgetNode(W_TABLE)->items[0], "Page 3/3");
+    Contains(WidgetNode(W_TABLE)->items[2], "Item 3 of 3");
+    CHECK(WidgetNode(W_PAGE_ROW) && std::strcmp(WidgetNode(W_PAGE_LABEL)->label, "Page 1 of 1") == 0);
 
     inventory_fixture_count = 1;
     WidgetEvent(W_REFRESH, SCO_WIDGET_BUTTON);
-    Contains(WidgetNode(W_TABLE)->items[0], "Page 1/1 entity=901");
+    Contains(WidgetNode(W_TABLE)->items[0], "Item 1 of 1 (id 901)");
 
     inventory_fixture_count = 3;
     WidgetEvent(W_REFRESH, SCO_WIDGET_BUTTON);
@@ -484,17 +488,132 @@ void RefreshResetsInventoryWidgetPage() {
     inventory_fixture_count = 1;
     char reply[256]{};
     CHECK(Invoke("inspector.refresh", reply, sizeof(reply)) == SCO_OK);
-    Contains(WidgetNode(W_TABLE)->items[0], "Page 1/1 entity=901");
+    Contains(WidgetNode(W_TABLE)->items[0], "Item 1 of 1 (id 901)");
 
     inventory_fixture_count = 0;
     WidgetEvent(W_REFRESH, SCO_WIDGET_BUTTON);
-    Contains(WidgetNode(W_TABLE)->items[0], "Inventory empty");
+    Contains(WidgetNode(W_TABLE)->items[0], "Inventory is empty");
     inventory_fixture_count = 3;
     WidgetEvent(W_REFRESH, SCO_WIDGET_BUTTON);
-    Contains(WidgetNode(W_TABLE)->items[0], "Page 1/3");
+    Contains(WidgetNode(W_TABLE)->items[0], "Item 1 of 3");
     Unload();
     inventory_service = nullptr;
     inventory_fixture_count = 1;
+}
+// Only with SCO_INSPECTOR_PREVIEW_DIR set: writes the panel as it stands to <dir>/<name>.txt, a dump
+// for tools/menu_preview. Test-only; draws nothing and checks the tree rules the host applies.
+void SnapPanel(const char* name) {
+    const char* dir = std::getenv("SCO_INSPECTOR_PREVIEW_DIR");
+    if (!dir || !*dir) return;
+    const std::string path = std::string(dir) + "/" + name + ".txt";
+    std::remove(path.c_str());
+    const std::string setting = "SCO_PANEL_DUMP=" + path;
+#ifdef _WIN32
+    _putenv(setting.c_str());
+#else
+    putenv(const_cast<char*>(setting.c_str()));
+#endif
+    const auto why = sc_offline::panel_dump::Violation(widget_nodes, widget_node_count, sizeof(sco_widget_node));
+    CHECK(why.empty());
+    sc_offline::panel_dump::Record("inspector.main", "Inspector", widget_nodes, widget_node_count, sizeof(sco_widget_node));
+}
+void PreviewStates() {
+    using namespace entry;
+    if (!std::getenv("SCO_INSPECTOR_PREVIEW_DIR")) return;
+    auto api = Api();
+    InitWidgets(); widgets_published = true;
+    sc_actors_v1 a{}; a.size = sizeof(a); a.local_player = Player;
+    sc_game_build_v1 b{}; b.size = sizeof(b); b.read = BuildRead;
+    sc_actor_stats_v1 s{}; s.size = sizeof(s); s.read = StatRead;
+    sc_gamerules_v1 r{}; r.size = sizeof(r); r.read = RulesRead; r.list_params = RulesList;
+    sc_inventory_v1 i{}; i.size = sizeof(i); i.snapshot = InventoryRead;
+    sc_input_v1 input{}; input.size = sizeof(input); input.count = InputCount; input.by_name = InputByName;
+    actors = &a; build_service = &b; stats_service = &s; rules_service = &r;
+    inventory_service = &i; input_service = &input;
+    inventory_fixture_flags = 0;
+    for (uint32_t n = 0; n < 20; ++n) inventory_fixture_ports[n].entity_id = 1000 + n;
+    inventory_fixture_count = 20;
+    InitParamFixtures();
+    CHECK(Load(&api, owner) == SCO_OK);
+    SnapPanel("1-start");
+    WidgetEvent(W_REFRESH, SCO_WIDGET_BUTTON);
+    SnapPanel("2-diagnostics");
+    WidgetEvent(W_INVENTORY, SCO_WIDGET_BUTTON);
+    SnapPanel("3-inventory");
+    WidgetEvent(W_ACTIONS, SCO_WIDGET_BUTTON);
+    WidgetEvent(W_ACTION_NAME, SCO_WIDGET_TEXT_INPUT, "attack1");
+    WidgetEvent(W_LOOKUP, SCO_WIDGET_BUTTON);
+    WidgetEvent(W_COUNT, SCO_WIDGET_BUTTON);
+    SnapPanel("4-actions");
+    WidgetEvent(W_PARAMETERS, SCO_WIDGET_BUTTON);
+    WidgetEvent(W_BROWSE, SCO_WIDGET_BUTTON);
+    SnapPanel("5-parameters");
+    Unload();
+    actors = nullptr; build_service = nullptr; stats_service = nullptr;
+    rules_service = nullptr; inventory_service = nullptr; input_service = nullptr;
+}
+void InspectorLayoutAndPaging() {
+    using namespace entry;
+    auto api = Api();
+    InitWidgets(); widgets_published = true;
+    sc_inventory_v1 inventory{}; inventory.size = sizeof(inventory); inventory.snapshot = InventoryRead;
+    inventory_service = &inventory;
+    inventory_fixture_flags = 0;
+    for (uint32_t n = 0; n < 20; ++n) inventory_fixture_ports[n].entity_id = 1000 + n;
+    inventory_fixture_count = 20;
+    CHECK(Load(&api, owner) == SCO_OK);
+    // Refresh and the status sentence share one row; the four views share another.
+    CHECK(WidgetNode(W_TOP_ROW) && WidgetNode(W_TOP_ROW)->kind == SCO_WIDGET_ROW && !WidgetNode(W_TOP_ROW)->label);
+    CHECK(WidgetNode(W_REFRESH)->parent == W_TOP_ROW && WidgetNode(W_STATUS)->parent == W_TOP_ROW);
+    CHECK(WidgetNode(W_TAB_ROW) && WidgetNode(W_TAB_ROW)->kind == SCO_WIDGET_ROW);
+    const uint32_t views[] = {W_DIAGNOSTICS, W_INVENTORY, W_ACTIONS, W_PARAMETERS};
+    for (uint32_t view : views) {
+        CHECK(WidgetNode(view)->parent == W_TAB_ROW);
+        CHECK(((WidgetNode(view)->flags & SCO_WIDGET_DISABLED) != 0) == (view == W_DIAGNOSTICS));
+    }
+    CHECK(WidgetNode(W_TABLE)->parent == W_SECTION && WidgetNode(W_SECTION)->kind == SCO_WIDGET_COLUMN);
+    CHECK(std::strcmp(WidgetNode(W_SECTION)->label, "Diagnostics") == 0);
+    CHECK(!WidgetNode(W_LOOKUP) && !WidgetNode(W_BROWSE) && !WidgetNode(W_PAGE_ROW));
+    for (uint32_t n = 0; n < widget_node_count; ++n) {
+        const std::string label = widget_nodes[n].label ? widget_nodes[n].label : "";
+        CHECK(label.find("stats=") == std::string::npos && label.find("manual") == std::string::npos);
+    }
+    // Actions: search is one row, the count button sits in a row of its own.
+    WidgetEvent(W_ACTIONS, SCO_WIDGET_BUTTON);
+    CHECK(WidgetNode(W_SEARCH_ROW) && WidgetNode(W_ACTION_NAME)->parent == W_SEARCH_ROW &&
+          WidgetNode(W_LOOKUP)->parent == W_SEARCH_ROW);
+    CHECK(WidgetNode(W_COUNT)->parent == W_TOOL_ROW && (WidgetNode(W_ACTIONS)->flags & SCO_WIDGET_DISABLED));
+    // Parameters: browse sits in a row inside the section.
+    WidgetEvent(W_PARAMETERS, SCO_WIDGET_BUTTON);
+    CHECK(WidgetNode(W_BROWSE)->parent == W_TOOL_ROW && !WidgetNode(W_PAGE_ROW));
+    // Inventory paging: 20 items, 8 per page, Previous and Next share one row under the results.
+    WidgetEvent(W_REFRESH, SCO_WIDGET_BUTTON);
+    WidgetEvent(W_INVENTORY, SCO_WIDGET_BUTTON);
+    CHECK(WidgetNode(W_TABLE)->item_count == 8 && WidgetNode(W_TABLE)->columns == 1);
+    Contains(WidgetNode(W_TABLE)->items[0], "Item 1 of 20 (id 1000)");
+    CHECK(WidgetNode(W_PAGE_ROW) && WidgetNode(W_PREVIOUS)->parent == W_PAGE_ROW &&
+          WidgetNode(W_NEXT)->parent == W_PAGE_ROW && WidgetNode(W_PAGE_LABEL)->parent == W_PAGE_ROW);
+    CHECK(std::strcmp(WidgetNode(W_PAGE_LABEL)->label, "Page 1 of 3") == 0);
+    CHECK((WidgetNode(W_PREVIOUS)->flags & SCO_WIDGET_DISABLED) && !(WidgetNode(W_NEXT)->flags & SCO_WIDGET_DISABLED));
+    WidgetEvent(W_NEXT, SCO_WIDGET_BUTTON);
+    WidgetEvent(W_NEXT, SCO_WIDGET_BUTTON);
+    WidgetEvent(W_NEXT, SCO_WIDGET_BUTTON);
+    CHECK(std::strcmp(WidgetNode(W_PAGE_LABEL)->label, "Page 3 of 3") == 0);
+    CHECK(WidgetNode(W_TABLE)->item_count == 4);
+    Contains(WidgetNode(W_TABLE)->items[3], "Item 20 of 20 (id 1019)");
+    CHECK(!(WidgetNode(W_PREVIOUS)->flags & SCO_WIDGET_DISABLED) && (WidgetNode(W_NEXT)->flags & SCO_WIDGET_DISABLED));
+    WidgetEvent(W_PREVIOUS, SCO_WIDGET_BUTTON);
+    CHECK(std::strcmp(WidgetNode(W_PAGE_LABEL)->label, "Page 2 of 3") == 0);
+    // Parameters paging: 17 definitions give 3 pages.
+    sc_gamerules_v1 r{}; r.size = sizeof(r); r.list_params = RulesList; rules_service = &r;
+    InitParamFixtures();
+    WidgetEvent(W_PARAMETERS, SCO_WIDGET_BUTTON);
+    WidgetEvent(W_BROWSE, SCO_WIDGET_BUTTON);
+    CHECK(std::strcmp(WidgetNode(W_PAGE_LABEL)->label, "Page 1 of 3") == 0 && WidgetNode(W_TABLE)->item_count == 8);
+    Unload();
+    rules_service = nullptr; inventory_service = nullptr;
+    inventory_fixture_count = 1;
+    for (auto& port : inventory_fixture_ports) port = {};
 }
 void RegistersReadOnlyCommand() {
     using namespace entry;
@@ -1105,7 +1224,9 @@ int main(int argc, char** argv) {
 #endif
     RegistersReadOnlyCommand();
     RetainedWidgetWorkflow();
+    PreviewStates();
     RefreshResetsInventoryWidgetPage();
+    InspectorLayoutAndPaging();
     RefreshIsManualAndCopiesProviders();
     RefreshCommandValidationAndUnknownService();
     CachedDiagnosticCommands();
