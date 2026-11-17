@@ -10,6 +10,8 @@
 #include <sc_spatial.h>
 #include <cmath>
 #include <cstddef>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <map>
@@ -45,7 +47,14 @@ std::vector<std::string> invoked,names;
 std::vector<double> distances;
 sco_event_fn tick=nullptr;void* tickCtx=nullptr;
 void Log(sco_plugin*,sco_log_level,const char*) {}
-int Has(const char*) {return g5?1:0;}
+// Only capability names Core actually publishes answer: a plugin asking for a misspelt or invented name must
+// fail here, as it does against the real host (game.prefabs.spawn was such a name).
+int Has(const char* name) {
+    static const char* const known[]{"game.actors.spawn_npc","game.entities.spawn","game.entities.prefabs","game.world.free_camera","game.world.raycast","game.world.raycast_filtered"};
+    if(!g5||!name)return 0;
+    for(const char* k:known)if(!std::strcmp(k,name))return 1;
+    std::fprintf(stderr,"build picker test: unknown capability asked for: %s\n",name);std::exit(1);
+}
 sco_result Register(sco_plugin* self,const sco_command* c){Check(self==owner,"command owner");commands[c->name]=*c;return SCO_OK;}
 sco_result Provide(sco_plugin*,const char*,uint32_t,const void*){return SCO_OK;}
 sco_result Subscribe(sco_plugin*,const char*,sco_event_fn fn,void* ctx){tick=fn;tickCtx=ctx;return SCO_OK;}

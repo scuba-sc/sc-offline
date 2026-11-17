@@ -170,7 +170,7 @@ sco_result Spawn(const char* name,uint64_t zone,const double p[3],const double q
     if(Prefab(name)) {
         if(!Path(name))return SCO_BAD_ARG;
         const auto* prefab=Open<sc_prefabs_v1>(SC_PREFABS_NAME);
-        if(!HAS(prefab,sc_prefabs_v1,spawn) || !Cap("game.prefabs.spawn"))return SCO_UNAVAILABLE;
+        if(!HAS(prefab,sc_prefabs_v1,spawn) || !Cap("game.entities.prefabs"))return SCO_UNAVAILABLE; // Core's prefab capability (sc_prefabs.h, status registry)
         r=prefab->spawn(g.self,name,zone,p,q,&id);
     } else {
         const auto* cls=Open<sc_spawn_service_v1>(SC_SPAWN_SERVICE_NAME);
@@ -196,8 +196,13 @@ sco_result Place(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     double p[3],q[4];uint64_t zone=0;auto r=Pose(p,q,zone,args[1].v.f,true);
     if(r!=SCO_OK)return Reply(r,out,size,"Fresh player/ground pose unavailable; no placement requested","Couldn't find where you're standing. Try again in a moment.");
     uint64_t id=0;Kind kind; r=Spawn(args[0].v.s,zone,p,q,true,id,kind);
-    if(r!=SCO_OK)return Reply(r,out,size,"Owned build provider refused placement; no private fallback",
+    if(r!=SCO_OK) {
+        // Name the provider result and the route so a refusal in mod.log says why.
+        char why[160];std::snprintf(why,sizeof(why),"Owned build provider refused placement (result %d, %s route); no private fallback",
+                                    static_cast<int>(r),kind==Kind::Npc?"npc":Prefab(args[0].v.s)?"prefab":"entity");
+        return Reply(r,out,size,why,
         r==SCO_NOT_FOUND?"The game doesn't have that item.":r==SCO_UNAVAILABLE?"Placing this kind of item isn't available right now.":"The game refused to place that item.");
+    }
     if(!id)return Reply(SCO_FAILED,out,size,"Provider returned zero ID; host release must reconcile ownership","The game didn't create the item. Try again.");
     g.placed[g.count++]={id,0,kind,false};
     char plain[256];std::snprintf(plain,sizeof(plain),"Placed %.120s, %.0f m ahead. It may take a moment to appear.",picker::PrettyName(args[0].v.s).c_str(),args[1].v.f);
