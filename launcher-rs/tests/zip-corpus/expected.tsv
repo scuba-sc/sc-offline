@@ -1,0 +1,313 @@
+# kind	name	verdict	code	min_python	description
+zip	good-minimal	ok	-	-	folder entry, manifest, native entry, stored
+zip	good-no-directory-entries	ok	-	-	parent folder is implicit
+zip	good-deflated	ok	-	-	deflated members, moderate ratio
+zip	good-mixed-methods	ok	-	-	stored and deflated members together
+zip	good-lua-plugin	ok	-	-	kind lua
+zip	good-data-pack	ok	-	-	kind data, no entry
+zip	good-settings-block	ok	-	-	[settings] with every type
+zip	good-requires-list	ok	-	-	requires list
+zip	good-unknown-keys-and-sections	ok	-	-	unknown keys skipped, unknown section skipped
+zip	good-bom-and-crlf-manifest	ok	-	-	UTF-8 BOM, CRLF line ends, comment
+zip	good-unicode-entry-utf8-flag	ok	-	-	entry name with a non-ASCII letter, UTF-8 flag set
+zip	good-cp437-entry-name	ok	-	-	name without the UTF-8 flag decodes as cp437 (byte 0x82 is e-acute)
+zip	good-empty-file	ok	-	-	zero-byte member
+zip	good-empty-file-deflate-stream	ok	-	-	zero-byte member stored as an empty deflate stream
+zip	good-empty-file-64-extra-bytes	ok	-	-	zero-byte member with exactly 64 compressed bytes (the limit)
+zip	good-archive-comment	ok	-	-	archive comment
+zip	good-deep-directories	ok	-	-	nested directories
+zip	good-data-descriptor-flag	ok	-	-	flag bit 3 set, sizes known
+zip	good-unknown-extra-field	ok	-	-	unknown extra field is ignored
+zip	good-extra-7075-same-name	ok	-	-	unicode path extra field that repeats the name
+zip	good-extra-7075-wrong-crc	ok	-	-	unicode path extra field with a stale CRC is ignored
+zip	good-dos-attributes	ok	-	-	create system DOS, archive bit
+zip	good-gap-before-central-directory	ok	-	-	junk between the last member and the central directory
+zip	good-entry-case-exact	ok	-	-	entry matches case exactly
+zip	good-latin-names	ok	-	-	distinct non-ASCII names
+zip	good-dots-in-name	ok	-	-	dots inside a name
+zip	good-max-manifest-size	ok	-	-	plugin.ini of exactly 16384 bytes
+zip	good-max-segment-255	ok	-	-	one 255-byte path segment
+zip	good-max-path-1024	ok	-	-	path of exactly 1024 bytes
+zip	good-4096-entries	ok	-	-	exactly 4096 entries
+zip	bad-4097-entries	refuse	too-many-entries	-	4097 entries
+zip	good-collision-budget-just-under	ok	-	-	5 deep paths, under the 4 Mi prefix budget
+zip	bad-collision-budget-over	refuse	collision-budget	-	6 deep paths, over the 4 Mi prefix budget
+zip	bad-empty-file	refuse	archive-empty	-	zero-byte file
+zip	bad-too-short	refuse	too-short	-	shorter than an end record
+zip	bad-random-bytes	refuse	no-end-record	-	no ZIP structure
+zip	bad-eocd-comment-length-lies	refuse	no-end-record	-	end record says there is a comment, none follows
+zip	bad-trailing-bytes-after-eocd	refuse	no-end-record	-	bytes after the end record
+zip	bad-central-directory-size-mismatch	refuse	prepended-data	-	end record size is wrong
+zip	bad-central-directory-offset-wrong	refuse	prepended-data	-	end record offset is wrong
+zip	bad-prepended-data	refuse	prepended-data	-	bytes before the first member
+zip	bad-multi-disk-number	refuse	multi-disk	-	disk number 1
+zip	bad-multi-disk-cd-disk	refuse	multi-disk	-	central directory disk 1
+zip	bad-multi-disk-entry-counts	refuse	multi-disk	-	entries on this disk differ from total
+zip	bad-zip64-entry-count-marker	refuse	zip64	-	0xFFFF entry count
+zip	bad-zip64-offset-marker	refuse	zip64	-	0xFFFFFFFF central directory offset
+zip	bad-zip64-size-marker	refuse	zip64	-	0xFFFFFFFF central directory size
+zip	bad-zip64-member-compressed-size	refuse	zip64	-	member compressed size 0xFFFFFFFF
+zip	bad-zip64-member-size	refuse	zip64	-	member size 0xFFFFFFFF
+zip	bad-zip64-member-offset	refuse	zip64	-	member offset 0xFFFFFFFF
+zip	bad-zip64-locator-and-record	refuse	prepended-data	-	ZIP64 locator and record between the central directory and the end record
+zip	bad-central-directory-too-large	refuse	central-directory-too-large	-	declared central directory over 8 MiB
+zip	bad-central-directory-bad-signature	refuse	central-directory-record	-	first central record has a wrong signature
+zip	bad-central-directory-name-overruns	refuse	central-directory-truncated	-	last central record claims more name bytes than the directory holds
+zip	bad-central-directory-trailing-junk	refuse	central-directory-truncated	-	junk after the last central record, inside the declared size
+zip	bad-entry-count-too-small	refuse	entry-count-mismatch	-	end record counts 2, directory has 3
+zip	bad-entry-count-too-large	refuse	entry-count-mismatch	-	end record counts 4, directory has 3
+zip	bad-eocd-signature-inside-comment	refuse	end-record-ambiguous	-	comment holds an end record signature that Python would pick
+zip	bad-local-offset-beyond-directory	refuse	local-header-offset	-	member offset beyond the central directory
+zip	bad-local-offset-shared	refuse	shared-local-header	-	two members use the first local header
+zip	bad-local-header-signature	refuse	local-header	-	a local header has a wrong signature
+zip	bad-local-name-mismatch	refuse	local-header	-	local name differs from the central name
+zip	bad-local-name-flag-mismatch	refuse	local-header	-	central says UTF-8, local does not
+zip	bad-local-directory-name-mismatch	refuse	local-header	-	local name of a directory entry differs
+zip	bad-overlapping-entry	refuse	local-header	3.14	compressed size runs into the next local header
+zip	bad-encrypted-flag-bit0	refuse	encrypted	-	general purpose flag bit0
+zip	bad-encrypted-flag-bit6	refuse	encrypted	-	general purpose flag bit6
+zip	bad-encrypted-flag-bit13	refuse	encrypted	-	general purpose flag bit13
+zip	bad-patched-data-flag-bit5	refuse	local-header	-	flag bit 5 (compressed patched data)
+zip	bad-method-shrink	refuse	compression	-	method 1
+zip	bad-method-bzip2	refuse	compression	-	method 12
+zip	bad-method-lzma	refuse	compression	-	method 14
+zip	bad-method-aes	refuse	compression	-	method 99
+zip	bad-extract-version-64	refuse	extract-version	-	version needed 6.4 is beyond what zipfile accepts
+zip	bad-crc-stored	refuse	member-read	-	wrong CRC, stored
+zip	bad-crc-deflated	refuse	member-read	-	wrong CRC, deflated
+zip	bad-crc-empty-file	refuse	member-read	-	empty member, CRC not 0
+zip	bad-deflate-garbage	refuse	member-read	-	bytes that are not a deflate stream
+zip	bad-deflate-truncated	refuse	member-read	-	deflate stream cut short
+zip	bad-size-larger-than-stream	refuse	member-read	-	declared size is larger than the data
+zip	bad-stored-shorter-than-size	refuse	member-read	-	stored size is smaller than the declared size
+zip	bad-compression-ratio-bomb	refuse	compression-ratio	-	1 MiB of one byte, over 200:1
+zip	bad-zero-compressed-size	refuse	compression-ratio	-	size without compressed data
+zip	bad-empty-file-65-compressed-bytes	refuse	empty-file-data	-	empty member with 65 compressed bytes
+zip	bad-file-over-128-mib	refuse	file-too-large	-	declared size over 128 MiB
+zip	bad-total-over-512-mib	refuse	total-too-large	-	declared sizes add up to over 512 MiB
+zip	bad-directory-with-size	refuse	directory-not-empty	-	directory entry with data
+zip	bad-directory-with-crc	refuse	directory-not-empty	-	directory entry with a CRC
+zip	bad-manifest-missing	refuse	manifest-missing	-	no plugin.ini
+zip	bad-manifest-is-directory	refuse	manifest-missing	-	plugin.ini is a directory
+zip	bad-manifest-over-16-kib	refuse	manifest-too-large	-	plugin.ini of 16385 bytes
+zip	bad-two-root-folders	refuse	not-one-plugin-folder	-	two top-level folders
+zip	bad-file-at-root	refuse	not-one-plugin-folder	-	a file next to the plugin folder
+zip	bad-root-is-a-file	refuse	root-not-folder	-	the only entry is a file at the root
+zip	bad-root-file-and-folder	refuse	file-used-as-directory	-	a file named like the plugin folder
+zip	bad-entry-missing	refuse	entry-missing	-	declared entry is not in the archive
+zip	bad-entry-is-directory	refuse	entry-missing	-	declared entry is a directory
+zip	bad-entry-case-differs	refuse	entry-missing	-	declared entry differs in case
+zip	bad-manifest-id-differs-from-folder	refuse	manifest-id-mismatch	-	id does not match the folder
+zip	bad-manifest-id-reserved	refuse	manifest-invalid	-	reserved id
+zip	bad-manifest-syntax	refuse	manifest-invalid	-	line without =
+zip	bad-manifest-entry-not-utf8	refuse	manifest-entry-encoding	-	entry name holds a byte that is not UTF-8
+zip	bad-manifest-bad-setting	refuse	manifest-invalid	-	setting default is not a bool
+zip	bad-manifest-data-pack-with-entry	refuse	manifest-invalid	-	data pack names an entry
+zip	bad-path-absolute	refuse	unsafe-path	-	leading slash
+zip	bad-path-dotdot	refuse	unsafe-path	-	parent segment
+zip	bad-path-dot	refuse	unsafe-path	-	dot segment
+zip	bad-path-empty-segment	refuse	unsafe-path	-	empty segment
+zip	bad-path-drive	refuse	unsafe-path	-	drive letter
+zip	bad-path-stream	refuse	unsafe-path	-	alternate data stream
+zip	bad-path-trailing-dot	refuse	unsafe-path	-	trailing dot
+zip	bad-path-trailing-space	refuse	unsafe-path	-	trailing space
+zip	bad-path-char-question	refuse	unsafe-path	-	'?' in a name
+zip	bad-path-char-star	refuse	unsafe-path	-	'*' in a name
+zip	bad-path-char-quote	refuse	unsafe-path	-	'"' in a name
+zip	bad-path-char-less	refuse	unsafe-path	-	'<' in a name
+zip	bad-path-char-greater	refuse	unsafe-path	-	'>' in a name
+zip	bad-path-char-pipe	refuse	unsafe-path	-	'|' in a name
+zip	bad-path-device-con	refuse	unsafe-path	-	reserved device name 'CON'
+zip	bad-path-device-con-ext	refuse	unsafe-path	-	reserved device name 'con.txt'
+zip	bad-path-device-prn	refuse	unsafe-path	-	reserved device name 'PRN'
+zip	bad-path-device-aux	refuse	unsafe-path	-	reserved device name 'AUX'
+zip	bad-path-device-nul-ext	refuse	unsafe-path	-	reserved device name 'nul.txt'
+zip	bad-path-device-com1	refuse	unsafe-path	-	reserved device name 'COM1'
+zip	bad-path-device-lpt9	refuse	unsafe-path	-	reserved device name 'LPT9.log'
+zip	bad-path-device-com-sup1	refuse	unsafe-path	-	reserved device name 'COM¹'
+zip	bad-path-device-lpt-sup3	refuse	unsafe-path	-	reserved device name 'LPT³.x'
+zip	bad-path-device-conin	refuse	unsafe-path	-	reserved device name 'CONIN$.txt'
+zip	bad-path-device-conout	refuse	unsafe-path	-	reserved device name 'CONOUT$'
+zip	bad-path-device-dotless-i	refuse	unsafe-path	-	reserved device name 'CONıN$'
+zip	bad-path-control-01	refuse	unsafe-path	-	control character U+0001
+zip	bad-path-control-del	refuse	unsafe-path	-	DEL
+zip	bad-path-control-c1	refuse	unsafe-path	-	C1 control U+0085
+zip	bad-path-format-zwsp	refuse	unsafe-path	-	zero width space
+zip	bad-path-format-rlo	refuse	unsafe-path	-	right-to-left override
+zip	bad-path-format-bom	refuse	unsafe-path	-	byte order mark inside a name
+zip	bad-path-format-soft-hyphen	refuse	unsafe-path	-	soft hyphen
+zip	bad-path-too-long	refuse	unsafe-path	-	path over 1024 bytes
+zip	bad-path-segment-too-long	refuse	unsafe-path	-	segment over 255 bytes
+zip	bad-path-backslash	refuse	unsafe-path	-	backslash
+zip	bad-path-nul	refuse	nul-in-name	-	NUL inside a name
+zip	bad-path-invalid-utf8	refuse	name-encoding	-	UTF-8 flag set, name is not UTF-8
+zip	bad-path-slash-only	refuse	unsafe-path	-	a bare slash
+zip	bad-path-double-slash-directory	refuse	unsafe-path	-	directory name with empty segment
+zip	bad-mode-dir-on-file-name	refuse	mode-mismatch	-	directory mode on a file name
+zip	bad-mode-file-on-dir-name	refuse	mode-mismatch	-	file mode on a directory name
+zip	bad-duplicate-file	refuse	duplicate-path	-	same path twice
+zip	bad-duplicate-directory	refuse	duplicate-path	-	same directory twice
+zip	bad-file-and-directory	refuse	file-and-directory	-	file and directory, same path
+zip	bad-file-as-parent	refuse	file-used-as-directory	-	file is a parent
+zip	bad-collision-case	refuse	path-collision	-	case only
+zip	bad-collision-case-directory-prefix	refuse	path-collision	-	case only, in a directory prefix
+zip	bad-collision-case-root	refuse	path-collision	-	case only, in the root
+zip	bad-collision-nfd	refuse	path-collision	-	composed and decomposed e-acute
+zip	bad-collision-nfkc-ligature	refuse	path-collision	-	fi ligature and fi
+zip	bad-collision-nfkc-fullwidth	refuse	path-collision	-	fullwidth A and a
+zip	bad-collision-sharp-s	refuse	path-collision	-	sharp s and SS
+zip	bad-collision-kelvin	refuse	path-collision	-	Kelvin sign and k
+zip	bad-collision-final-sigma	refuse	path-collision	-	sigma and final sigma
+zip	bad-symlink	refuse	symlink	-	symbolic link
+zip	bad-special-fifo	refuse	special-entry	-	fifo
+zip	bad-special-chardev	refuse	special-entry	-	chardev
+zip	bad-special-blockdev	refuse	special-entry	-	blockdev
+zip	bad-special-socket	refuse	special-entry	-	socket
+zip	bad-dos-reparse-point	refuse	dos-attributes	-	DOS reparse point attribute
+zip	bad-dos-directory-flag-on-file	refuse	dos-attributes	-	DOS directory attribute on a file name
+zip	bad-extra-truncated	refuse	corrupt-extra	-	extra field longer than its data
+zip	bad-extra-7075-renames	refuse	unicode-path-extra	3.14	unicode path field gives a different name
+zip	bad-extra-7075-corrupt	refuse	unicode-path-extra	3.14	unicode path field shorter than 5 bytes
+zip	bad-extra-7075-invalid-utf8	refuse	unicode-path-extra	3.14	unicode path field is not UTF-8
+ini	ok-minimal	ok	-	-	smallest native manifest
+ini	ok-comments-bom-crlf	ok	-	-	BOM, CRLF, both comment marks
+ini	ok-unknown-keys-twice	ok	-	-	unknown key twice
+ini	ok-unknown-section	ok	-	-	unknown section skipped
+ini	ok-comment-needs-space	ok	-	-	# inside a word is text
+ini	ok-author	ok	-	-	author key
+ini	ok-lua	ok	-	-	kind lua
+ini	ok-data	ok	-	-	kind data
+ini	ok-api-max	ok	-	-	api at the limit
+ini	ok-api-leading-zeros	ok	-	-	api with leading zeros
+ini	ok-id-31	ok	-	-	31 character id (not a match for the folder, see below)
+ini	ok-entry-63	ok	-	-	63 byte entry
+ini	ok-entry-del	ok	-	-	DEL allowed in entry
+ini	ok-entry-high-bytes	ok	-	-	UTF-8 entry
+ini	ok-requires	ok	-	-	requires list
+ini	ok-requires-16	ok	-	-	16 requires
+ini	ok-settings-all-types	ok	-	-	every setting type
+ini	ok-settings-comments	ok	-	-	comments inside [settings]
+ini	ok-settings-32	ok	-	-	32 settings
+ini	ok-settings-int-edges	ok	-	-	int64 edges
+ini	ok-settings-float-forms	ok	-	-	float forms
+ini	ok-settings-enum-16	ok	-	-	16 enum choices
+ini	ok-settings-string-255	ok	-	-	255 byte string
+ini	ok-settings-label-help-max	ok	-	-	label 63, help 255
+ini	ok-settings-enum-space	ok	-	-	spaces inside enum list
+ini	ok-settings-key-spacing	ok	-	-	extra spaces
+ini	ok-section-spaces	ok	-	-	spaces inside [ settings ]
+ini	ok-max-size	ok	-	-	16384 bytes
+ini	bad-missing-id	refuse	-	-	id missing
+ini	bad-missing-name	refuse	-	-	name missing
+ini	bad-missing-version	refuse	-	-	version missing
+ini	bad-missing-api	refuse	-	-	api missing
+ini	bad-missing-kind	refuse	-	-	kind missing
+ini	bad-missing-entry	refuse	-	-	entry missing for native
+ini	bad-duplicate-key	refuse	-	-	name twice
+ini	bad-duplicate-key-spaced	refuse	-	-	id twice
+ini	bad-identity-after-other-section	refuse	-	-	keys after a section are not identity
+ini	bad-identity-after-settings	refuse	-	-	keys in [settings] are settings
+ini	bad-no-equals	refuse	-	-	line without =
+ini	bad-section-unclosed	refuse	-	-	[section without ]
+ini	bad-section-bracket-only	refuse	-	-	lone [
+ini	bad-settings-twice	refuse	-	-	two [settings]
+ini	bad-id-empty	refuse	-	-	empty id
+ini	bad-id-upper	refuse	-	-	upper case id
+ini	bad-id-dash	refuse	-	-	dash in id
+ini	bad-id-32	refuse	-	-	32 character id
+ini	bad-id-reserved-sco	refuse	-	-	reserved id sco
+ini	bad-id-reserved-host	refuse	-	-	reserved id host
+ini	bad-id-reserved-menu	refuse	-	-	reserved id menu
+ini	bad-id-reserved-game	refuse	-	-	reserved id game
+ini	bad-name-64	refuse	-	-	name over 63
+ini	bad-name-control	refuse	-	-	control char in name
+ini	bad-name-del	refuse	-	-	DEL in name
+ini	bad-version-32	refuse	-	-	version over 31
+ini	bad-author-64	refuse	-	-	author over 63
+ini	bad-api-one	refuse	-	-	api '1'
+ini	bad-api-trailing-dot	refuse	-	-	api '1.'
+ini	bad-api-leading-dot	refuse	-	-	api '.1'
+ini	bad-api-letters	refuse	-	-	api 'a.b'
+ini	bad-api-three	refuse	-	-	api '1.0.0'
+ini	bad-api-negative	refuse	-	-	api '1.-1'
+ini	bad-api-over	refuse	-	-	api '1.65536'
+ini	bad-api-six-digits	refuse	-	-	api '123456.0'
+ini	bad-api-empty	refuse	-	-	api ''
+ini	bad-kind-case	refuse	-	-	kind is case sensitive
+ini	bad-kind-unknown	refuse	-	-	unknown kind
+ini	bad-data-with-entry	refuse	-	-	data pack with entry
+ini	bad-data-with-settings	refuse	-	-	data pack with settings
+ini	bad-entry-empty	refuse	-	-	entry ''
+ini	bad-entry-dot	refuse	-	-	entry '.'
+ini	bad-entry-dotdot	refuse	-	-	entry '..'
+ini	bad-entry-slash	refuse	-	-	entry 'a/b'
+ini	bad-entry-backslash	refuse	-	-	entry 'a\\b'
+ini	bad-entry-colon	refuse	-	-	entry 'C:x'
+ini	bad-entry-star	refuse	-	-	entry 'a*'
+ini	bad-entry-question	refuse	-	-	entry 'a?'
+ini	bad-entry-quote	refuse	-	-	entry 'a"'
+ini	bad-entry-less	refuse	-	-	entry 'a<'
+ini	bad-entry-greater	refuse	-	-	entry 'a>'
+ini	bad-entry-pipe	refuse	-	-	entry 'a|'
+ini	bad-entry-64	refuse	-	-	entry 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+ini	bad-entry-control	refuse	-	-	entry 'a\x01b'
+ini	bad-requires-empty	refuse	-	-	requires ''
+ini	bad-requires-upper	refuse	-	-	requires 'Teleport'
+ini	bad-requires-leading-dot	refuse	-	-	requires '.a'
+ini	bad-requires-trailing-dot	refuse	-	-	requires 'a.'
+ini	bad-requires-double-dot	refuse	-	-	requires 'a..b'
+ini	bad-requires-empty-item	refuse	-	-	requires 'a,,b'
+ini	bad-requires-trailing-comma	refuse	-	-	requires 'a,'
+ini	bad-requires-leading-comma	refuse	-	-	requires ',a'
+ini	bad-requires-space-inside	refuse	-	-	requires 'a b'
+ini	bad-requires-duplicate	refuse	-	-	requires 'a,a'
+ini	bad-requires-64	refuse	-	-	requires 'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr'
+ini	bad-requires-17	refuse	-	-	17 requires
+ini	bad-too-big	refuse	-	-	16385 bytes
+ini	bad-nul-in-author	refuse	-	-	NUL byte in a value
+ini	bad-settings-no-equals	refuse	-	-	[settings] no-equals
+ini	bad-settings-upper-name	refuse	-	-	[settings] upper-name
+ini	bad-settings-empty-name	refuse	-	-	[settings] empty-name
+ini	bad-settings-no-type	refuse	-	-	[settings] no-type
+ini	bad-settings-unknown-type	refuse	-	-	[settings] unknown-type
+ini	bad-settings-quoted-type	refuse	-	-	[settings] quoted-type
+ini	bad-settings-declared-twice	refuse	-	-	[settings] declared-twice
+ini	bad-settings-bool-default	refuse	-	-	[settings] bool-default
+ini	bad-settings-default-no-value	refuse	-	-	[settings] default-no-value
+ini	bad-settings-default-twice	refuse	-	-	[settings] default-twice
+ini	bad-settings-unknown-field	refuse	-	-	[settings] unknown-field
+ini	bad-settings-min-on-bool	refuse	-	-	[settings] min-on-bool
+ini	bad-settings-int-default-float	refuse	-	-	[settings] int-default-float
+ini	bad-settings-int-default-big	refuse	-	-	[settings] int-default-big
+ini	bad-settings-int-min-above-max	refuse	-	-	[settings] int-min-above-max
+ini	bad-settings-int-default-above-max	refuse	-	-	[settings] int-default-above-max
+ini	bad-settings-int-default-below-min	refuse	-	-	[settings] int-default-below-min
+ini	bad-settings-int-min-text	refuse	-	-	[settings] int-min-text
+ini	bad-settings-int-overflow	refuse	-	-	[settings] int-overflow
+ini	bad-settings-int-underflow	refuse	-	-	[settings] int-underflow
+ini	bad-settings-int-20-digits	refuse	-	-	[settings] int-20-digits
+ini	bad-settings-float-nan	refuse	-	-	[settings] float-nan
+ini	bad-settings-float-inf	refuse	-	-	[settings] float-inf
+ini	bad-settings-float-hex	refuse	-	-	[settings] float-hex
+ini	bad-settings-float-leading-dot	refuse	-	-	[settings] float-leading-dot
+ini	bad-settings-float-trailing-dot	refuse	-	-	[settings] float-trailing-dot
+ini	bad-settings-float-overflow	refuse	-	-	[settings] float-overflow
+ini	bad-settings-float-min-above-max	refuse	-	-	[settings] float-min-above-max
+ini	bad-settings-string-unterminated	refuse	-	-	[settings] string-unterminated
+ini	bad-settings-string-stray-quote	refuse	-	-	[settings] string-stray-quote
+ini	bad-settings-string-text-after-quote	refuse	-	-	[settings] string-text-after-quote
+ini	bad-settings-string-256	refuse	-	-	[settings] string-256
+ini	bad-settings-label-empty	refuse	-	-	[settings] label-empty
+ini	bad-settings-help-empty	refuse	-	-	[settings] help-empty
+ini	bad-settings-label-64	refuse	-	-	[settings] label-64
+ini	bad-settings-help-256	refuse	-	-	[settings] help-256
+ini	bad-settings-enum-twice	refuse	-	-	[settings] enum-twice
+ini	bad-settings-enum-empty	refuse	-	-	[settings] enum-empty
+ini	bad-settings-enum-trailing-comma	refuse	-	-	[settings] enum-trailing-comma
+ini	bad-settings-enum-upper	refuse	-	-	[settings] enum-upper
+ini	bad-settings-enum-unclosed	refuse	-	-	[settings] enum-unclosed
+ini	bad-settings-enum-text-after	refuse	-	-	[settings] enum-text-after
+ini	bad-settings-enum-bad-default	refuse	-	-	[settings] enum-bad-default
+ini	bad-settings-enum-17	refuse	-	-	[settings] enum-17
+ini	bad-settings-33-settings	refuse	-	-	[settings] 33-settings
+ini	bad-settings-name-32	refuse	-	-	[settings] name-32

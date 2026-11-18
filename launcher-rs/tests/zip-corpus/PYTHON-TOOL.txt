@@ -1,0 +1,8 @@
+# The SDK files the corpus was agreed against. Checked by run_python.py.
+# Repository: sco-core. The commit below is the last one that changed sdk/tools/sco-plugin-verify.py
+# or sdk/test_plugin_verify.py. The checkout HEAD when the corpus was run was 37ff84e4d4c68fbcde7d99e16014848f2734f038.
+# Python 3.14.0 on Windows. The checker is sdk/tools/sco-plugin-check.c built with the SDK CMake file (MSVC 2022, Release).
+tool_commit = 3996d3a2c4d947f1b9abc74bde43bd7129f4290d
+checkout_head = 37ff84e4d4c68fbcde7d99e16014848f2734f038
+verify_sha256 = ccf1a89b7c370c58531a32ecc41e710ade90a5822a8142968436a73886822d28
+check_c_sha256 = 32ab49d095c81e3644f9a242b60150c8447d634581b1b9fd4255153b57eea9b9
