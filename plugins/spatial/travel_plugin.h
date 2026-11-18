@@ -95,6 +95,9 @@ std::string FileTime(const std::filesystem::path& path) {
 sco_result WriteFile(const std::filesystem::path& path,const std::string& text) {
     std::error_code ec;
     if (std::filesystem::is_symlink(path,ec)) return SCO_BAD_ARG;
+    // The data folder may not exist yet (the game's working folder is not the product's data folder).
+    if (path.has_parent_path()) { ec.clear(); std::filesystem::create_directories(path.parent_path(),ec); }
+    ec.clear();
     const auto tmp=std::filesystem::path(path.string()+".new");
     ec.clear(); if (std::filesystem::exists(tmp,ec)) return SCO_FAILED;
     { std::ofstream f(tmp,std::ios::binary); if (!f || !(f<<text) || !f.flush()) return SCO_FAILED; }
@@ -293,6 +296,13 @@ sco_result Ready(std::string& why) {
 }
 // The page's sentence for a refusal from Ready().
 const char* PlainWhy(const std::string& why) { return why==switched_off ? switched_off_plain : unavailable_plain; }
+// Sentence for a curated or scanned destination the game cannot resolve from where the player is.
+constexpr const char* unreachable_plain=" is somewhere you can't travel to from here. You can only travel to the place you are in, or a larger place around it, such as the planet or moon you are on. You haven't moved.";
+// True when game.spatial can resolve the destination's zone now. Same lookup TravelTo does.
+bool Reachable(const Destination& d) {
+    const auto* sp=Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME); sc_game_zone z{}; z.size=sizeof(z);
+    return TRAVEL_FN(sp,sc_game_spatial_v1,find_zone) && sp->find_zone(d.entity.c_str(),&z) && RecordValid(z);
+}
 bool SafePlace(const char* name) { return name && name[0] && std::strlen(name)<=95 && !std::strpbrk(name,"|\r\n"); }
 void Panel();
 void TravelTick(const char*,const void*,void*) noexcept;
@@ -356,7 +366,7 @@ sco_result GoSaved(const sco_arg*,uint32_t,void*,char* out,uint32_t n) {
     std::string why; if (Ready(why)!=SCO_OK) return Reply(SCO_UNAVAILABLE,out,n,why,PlainWhy(why));
     Restoration r; const auto found=Resolve(Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),g.saved,r);
     if (found!=SCO_OK) return Reply(found,out,n,"Saved spot unavailable (none saved, unloaded/expired metadata or root-only match); not moved",
-        "Can't go there. Either nothing is saved yet, or that area isn't loaded now. You haven't moved.");
+        "Can't go there. Either nothing is saved yet, or you are too far from that place for the game to find it. You haven't moved.");
     if (!g.ticket && AlreadyThere(Open<sc_spatial_v1>(SC_SPATIAL_SERVICE_NAME),Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),r)) {
         const auto here=Reply(SCO_OK,out,n,"Already at the saved spot (within 2 m); not moved",already_there_plain);
         Announce(); return here;
@@ -375,7 +385,7 @@ sco_result GoBookmarkAt(size_t index,char* out,uint32_t n) {
     const auto bookmark=g.marks[index]; Restoration r;
     const auto found=Resolve(Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),bookmark.spot,r);
     if (found!=SCO_OK) return Reply(found,out,n,"Bookmark pose unavailable (unloaded/expired metadata or root-only match); not moved",
-        "Can't go to '"+bookmark.name+"' now. That area isn't loaded. You haven't moved.");
+        "Can't go to '"+bookmark.name+"' from here. The game can't find that place from where you are. You haven't moved.");
     if (!g.ticket && AlreadyThere(Open<sc_spatial_v1>(SC_SPATIAL_SERVICE_NAME),Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),r)) {
         const auto here=Reply(SCO_OK,out,n,"Already at saved spot '"+bookmark.name+"' (within 2 m); not moved",already_there_plain);
         Announce(); return here;
@@ -392,10 +402,10 @@ sco_result TravelTo(const sco_arg* a,uint32_t count,void*,char* out,uint32_t n) 
     if (count!=2 || !a || a[0].type!=SCO_ARG_STRING || !SafePlace(a[0].v.s) || a[1].type!=SCO_ARG_FLOAT || !std::isfinite(a[1].v.f) || a[1].v.f<100 || a[1].v.f>20000)
         return Reply(SCO_BAD_ARG,out,n,"Usage: quantum.travel <destination> <altitude 100..20000 m>","Give a destination and a height between 100 and 20000 metres.");
     const auto it=std::find_if(g.places.begin(),g.places.end(),[&](const auto& p){return Same(p.name,a[0].v.s) || Same(p.entity,a[0].v.s);});
-    if (it==g.places.end()) return Reply(SCO_NOT_FOUND,out,n,"No such destination; check lists/locations.txt or run quantum.scan","That destination isn't in the list. Try Find nearby places.");
+    if (it==g.places.end()) return Reply(SCO_NOT_FOUND,out,n,"No such destination; check lists/locations.txt or run quantum.scan","That destination isn't in the list.");
     const auto* sp=Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME); sc_game_zone z{}; z.size=sizeof(z);
-    if (!TRAVEL_FN(sp,sc_game_spatial_v1,find_zone) || !sp->find_zone(it->entity.c_str(),&z) || !RecordValid(z)) return Reply(SCO_UNAVAILABLE,out,n,"Destination zone '"+it->entity+"' is not loaded; not moved",
-        it->name+" isn't loaded right now. You haven't moved.");
+    if (!TRAVEL_FN(sp,sc_game_spatial_v1,find_zone) || !sp->find_zone(it->entity.c_str(),&z) || !RecordValid(z)) return Reply(SCO_UNAVAILABLE,out,n,"Destination zone '"+it->entity+"' is not the zone you are in or one of its ancestors; not moved",
+        it->name+unreachable_plain);
     // Arrival: radius + altitude along the destination zone's +Z axis, identity rotation in that frame.
     Pose target; target.zone=z.zone_id; target.pos[2]=it->radius+a[1].v.f;
     return Move(target,it->name+", "+std::to_string(static_cast<long long>(a[1].v.f))+" m up",out,n);
@@ -419,7 +429,7 @@ sco_result Status(const sco_arg*,uint32_t,void*,char* out,uint32_t n) {
 }
 sco_result ScanCommand(const sco_arg*,uint32_t,void*,char* out,uint32_t n) {
     std::vector<sc_game_zone> records; const auto r=Scan(Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),records);
-    if (r!=SCO_OK) return Reply(r,out,n,"Spatial scan unavailable or metadata expired; prior destination list unchanged","Couldn't look for nearby places right now. Your list is unchanged.");
+    if (r!=SCO_OK) return Reply(r,out,n,"Spatial scan unavailable or metadata expired; prior destination list unchanged","Couldn't read the places you are inside right now. Your list is unchanged.");
     auto next=g.places; std::string appended; size_t added=0;
     for (const auto& z:records) {
         if (next.size()==3000) break;
@@ -436,8 +446,9 @@ sco_result ScanCommand(const sco_arg*,uint32_t,void*,char* out,uint32_t n) {
         if (wrote!=SCO_OK) return Reply(wrote,out,n,"Observed scan could not persist; destination list unchanged","Couldn't save the places that were found. Your list is unchanged.");
     }
     g.places=std::move(next);
-    return Reply(SCO_OK,out,n,"Copied "+std::to_string(records.size())+" observed zones (max 256; 64/page); not a full system scan; system identity unknown",
-        "Found "+Count(records.size(),"place")+" nearby, "+std::to_string(added)+" new.");
+    return Reply(SCO_OK,out,n,"Copied "+std::to_string(records.size())+" observed zones (max 256; 64/page); the player's own ancestry only, not a system scan; system identity unknown",
+        records.empty() ? std::string("You aren't inside any place the game has told this plugin about yet.") :
+        added ? "Added "+Count(added,"place")+" you are inside." : "Every place you are inside is already in the list.");
 }
 sco_result SaveBookmark(const sco_arg* a,uint32_t count,void*,char* out,uint32_t n) {
     if (count!=1 || !a || a[0].type!=SCO_ARG_STRING || !SafeName(a[0].v.s)) return Reply(SCO_BAD_ARG,out,n,"Bookmark name must be <=63 bytes, without separators/newlines","Spot names can be up to 63 characters and can't contain | or line breaks.");
@@ -463,7 +474,7 @@ sco_result DeleteBookmark(const sco_arg* a,uint32_t count,void*,char* out,uint32
 sco_result InspectSpot(const Spot& spot,char* out,uint32_t n) {
     Restoration r; const auto result=Resolve(Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),spot,r);
     if (result!=SCO_OK) return Reply(result,out,n,"Saved pose unavailable (unloaded/expired metadata or root-only match); not moved",
-        "That spot can't be reached now. Its area isn't loaded.");
+        "That spot can't be reached from here. The game can't find its place from where you are.");
     return Reply(SCO_OK,out,n,std::string(r.partial?"Partial restoration candidate":"Exact restoration candidate")+" at saved level "+std::to_string(r.level)+"; "+(r.system_known?"provider system known":"system unknown")+"; read-only, not moved",
         r.partial?"Only the area around that spot is loaded. Going there would take you near it.":"That spot can be reached.");
 }
@@ -568,7 +579,7 @@ void Panel() {
     add(SCO_WIDGET_LABEL,21,"Remember your position so you can come back to it later.",20);
     add(SCO_WIDGET_BUTTON,16,g.key_save?"Save this spot (F7)":"Save this spot",20);
     add(SCO_WIDGET_COLUMN,22,"Go back to it");
-    add(SCO_WIDGET_LABEL,23,saved?"You have a spot saved. Saving again replaces it.":"Nothing is saved yet. Save a spot first.",22);
+    add(SCO_WIDGET_LABEL,23,saved?"You have a spot saved. Saving again replaces it. Going back works while the game still has that place near you.":"Nothing is saved yet. Save a spot first.",22);
     auto& go=add(SCO_WIDGET_BUTTON,6,g.key_go?"Go to saved spot (F8)":"Go to saved spot",22); if (!saved) go.flags=SCO_WIDGET_DISABLED;
 #else
     std::vector<std::string> places,marks; std::vector<const char*> place_items,mark_items;
@@ -587,18 +598,22 @@ void Panel() {
 
     add(SCO_WIDGET_COLUMN,20,"Choose a destination");
     add(SCO_WIDGET_TEXT_INPUT,17,"Search destinations",20).text=g.filter.c_str();
-    if (rows.empty()) add(SCO_WIDGET_LABEL,41,g.places.empty()?"No destinations yet. Use Find nearby places to add some.":"No destination matches your search.",20);
+    if (rows.empty()) add(SCO_WIDGET_LABEL,41,g.places.empty()?"No destinations yet. Use Add the places you are inside to add some.":"No destination matches your search.",20);
     auto& p=add(SCO_WIDGET_LIST,2,"Destinations",20); p.items=place_items.data(); p.item_count=static_cast<uint32_t>(place_items.size()); p.index=place_pick;
     if (rows.size()>128) {
         add(SCO_WIDGET_ROW,18,"",20);
         add(SCO_WIDGET_BUTTON,11,"Previous page",18); add(SCO_WIDGET_BUTTON,12,"Next page",18);
     }
-    add(SCO_WIDGET_BUTTON,7,"Find nearby places",20);
+    add(SCO_WIDGET_BUTTON,7,"Add the places you are inside",20);
 
     add(SCO_WIDGET_COLUMN,21,"Set the height and go");
     auto& slider=add(SCO_WIDGET_SLIDER,5,"Arrival height (m)",21); slider.value=g.altitude; slider.minimum=100; slider.maximum=20000;
+    // Core only resolves the place the player is in and the larger places around it, so say so instead of
+    // offering a button that can only refuse. The page is rebuilt every quarter second, so this stays current.
+    const bool place_reach=place_chosen && Reachable(g.places[static_cast<size_t>(g.selected_place)]);
     if (!place_chosen) add(SCO_WIDGET_LABEL,42,"Choose a destination first.",21);
-    auto& go=add(SCO_WIDGET_BUTTON,6,"Travel to selected destination",21); if (!place_chosen) go.flags=SCO_WIDGET_DISABLED;
+    else if (!place_reach) add(SCO_WIDGET_LABEL,42,"You can't travel there from here. You can only travel to the place you are in, or a larger place around it.",21);
+    auto& go=add(SCO_WIDGET_BUTTON,6,"Travel to selected destination",21); if (!place_reach) go.flags=SCO_WIDGET_DISABLED;
 
     add(SCO_WIDGET_COLUMN,22,"Your saved spots");
     auto& m=add(SCO_WIDGET_LIST,3,"Saved spots",22); m.items=mark_items.data(); m.item_count=static_cast<uint32_t>(mark_items.size());
@@ -647,13 +662,19 @@ inline sco_result Load(const sco_api* api,sco_plugin* self) {
     if (!TRAVEL_FN(api,sco_api,register_command) || !TRAVEL_FN(api,sco_api,query_service) || api->major!=SCO_API_MAJOR || api->minor<SCO_API_MINOR) return SCO_UNAVAILABLE;
     g.api=api; g.self=self;
     try {
-        g.root=Setting("data_root","data");
         std::string inherited;
-#ifdef _MSC_VER
-        { char* v=nullptr; size_t n=0; if (_dupenv_s(&v,&n,"SC_OFFLINE_SPAWN_FILE")==0 && v) inherited=v; std::free(v); }
+#ifdef _WIN32
+        // The live process environment, not the plugin runtime's startup copy of it.
+        { const DWORD n=GetEnvironmentVariableA("SC_OFFLINE_SPAWN_FILE",nullptr,0); if (n>1) { std::string v(n,'x'); const DWORD m=GetEnvironmentVariableA("SC_OFFLINE_SPAWN_FILE",v.data(),n); if (m && m<n) { v.resize(m); inherited=v; } } }
 #else
         if (const char* v=std::getenv("SC_OFFLINE_SPAWN_FILE")) inherited=v;
 #endif
+        // Places and spots go beside the launcher's own data files. The game runs from its Bin64 folder, so a
+        // relative "data" would land there; the launcher's absolute spawn-file path says where the real folder is.
+        {
+            std::filesystem::path beside; if (!inherited.empty()) beside=std::filesystem::path(inherited).parent_path();
+            g.root=Setting("data_root",beside.empty() ? std::string("data") : beside.string());
+        }
         g.spawn=Setting("spawn_file",!inherited.empty() ? inherited : (g.root/"spawn.txt").string());
         Storage();
 #ifdef TRAVEL_TELEPORT
@@ -661,8 +682,8 @@ inline sco_result Load(const sco_api* api,sco_plugin* self) {
 #else
         const auto curated=LoadCuratedPlaces();
         if(curated!=SCO_OK) Reply(curated,nullptr,0,g.curated_status,"The list of destinations could not be loaded.");
-        g.last_status=curated==SCO_OK ? (g.places.empty() ? "The destination list is empty. Use Find nearby places to add some." : "Loaded "+Count(g.places.size(),"destination")+".") :
-            "No destination list is available. Use Find nearby places to add some.";
+        g.last_status=curated==SCO_OK ? (g.places.empty() ? "The destination list is empty. Use Add the places you are inside to add some." : "Loaded "+Count(g.places.size(),"destination")+".") :
+            "No destination list is available. Use Add the places you are inside to add some.";
         LoadPlaces(g.root/"locations_found.txt"); const auto loaded=LoadMarks();
 #endif
         if (loaded!=SCO_OK) Reply(loaded,nullptr,0,"Legacy state import/read failed; prior database retained","Saved spots from an older version could not be read.");
@@ -682,7 +703,7 @@ inline sco_result Load(const sco_api* api,sco_plugin* self) {
             {sizeof(sco_command),0,"quantum.save_bookmark","Save this spot","Save where you are under a name",nullptr,&name,1,sizeof(sco_arg_def),Guard<SaveBookmark>,nullptr},
             {sizeof(sco_command),0,"quantum.delete_bookmark","Delete saved spot","Remove a saved spot",nullptr,&name,1,sizeof(sco_arg_def),Guard<DeleteBookmark>,nullptr},
             {sizeof(sco_command),0,"quantum.inspect_bookmark","Check saved spot","Check whether a saved spot can be reached, without moving",nullptr,&name,1,sizeof(sco_arg_def),Guard<InspectBookmark>,nullptr},
-            {sizeof(sco_command),0,"quantum.scan","Find nearby places","Add the places the game has loaded around you to the destination list",nullptr,nullptr,0,sizeof(sco_arg_def),Guard<ScanCommand>,nullptr},
+            {sizeof(sco_command),0,"quantum.scan","Add the places you are inside","Add the place you are in, and the larger places around it, to the destination list",nullptr,nullptr,0,sizeof(sco_arg_def),Guard<ScanCommand>,nullptr},
             {sizeof(sco_command),0,"quantum.status","Travel status","How many destinations and saved spots you have, and whether moving is allowed",nullptr,nullptr,0,sizeof(sco_arg_def),Guard<Status>,nullptr}
 #endif
         };

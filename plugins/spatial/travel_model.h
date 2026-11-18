@@ -34,6 +34,9 @@ inline std::string SpotText(const Spot& s) {
         std::snprintf(line,sizeof(line),"spot %.6f %.6f %.6f %s\n",z.pos[0],z.pos[1],z.pos[2],z.name.c_str()); out+=line;
         // Additive extension: old readers ignore pose lines; original spot syntax is unchanged.
         std::snprintf(line,sizeof(line),"pose %.17g %.17g %.17g %.17g\n",z.rot[0],z.rot[1],z.rot[2],z.rot[3]); out+=line;
+        // Additive too: the game's id for the zone when it was saved. Resolve tries it first (an id the
+        // game still streams is re-validated by name), so a spot can be reached from outside its zone.
+        if (z.zone) { std::snprintf(line,sizeof(line),"zoneid %llu\n",static_cast<unsigned long long>(z.zone)); out+=line; }
     }
     return out;
 }
@@ -52,6 +55,9 @@ inline bool ParseSpot(const std::string& text,Spot& out) {
             if (!(fields>>z.pos[0]>>z.pos[1]>>z.pos[2])) continue;
             std::getline(fields>>std::ws,z.name);
             if (!z.name.empty() && z.name.size()<96 && Valid(z)) next.z.push_back(z);
+        } else if (line.starts_with("zoneid ") && !next.z.empty()) {
+            unsigned long long id=0; std::istringstream fields(line.substr(7));
+            if (fields>>id && id) next.z.back().zone=id; // a bad hint is ignored; the name still resolves
         } else if (line.starts_with("pose ") && !next.z.empty()) {
             auto z=next.z.back(); std::istringstream fields(line.substr(5));
             if (!(fields>>z.rot[0]>>z.rot[1]>>z.rot[2]>>z.rot[3]) || !Valid(z)) return false;
@@ -84,11 +90,22 @@ inline sco_result Capture(const sc_spatial_v1* old,const sc_game_spatial_v1* sp,
     if (!sp->zone_record(player.zone,&final) || final.epoch!=epoch) return SCO_UNAVAILABLE;
     out=std::move(next); return SCO_OK;
 }
+// game.spatial has no name lookup for zones the player is not inside, but zone_record observes any id the
+// game still streams. So the saved id comes first, accepted only when the record still carries the saved
+// name; the name lookup (the player's own ancestry) is the fallback for spots saved without an id.
+inline bool LookUp(const sc_game_spatial_v1* sp,const ZoneSpot& saved,sc_game_zone& z) {
+    if (saved.zone) {
+        sc_game_zone byId{}; byId.size=sizeof(byId);
+        if (sp->zone_record(saved.zone,&byId) && RecordValid(byId) && byId.zone_id==saved.zone && saved.name==byId.name) { z=byId; return true; }
+    }
+    z={}; z.size=sizeof(z);
+    return sp->find_zone(saved.name.c_str(),&z)!=0;
+}
 inline sco_result Resolve(const sc_game_spatial_v1* sp,const Spot& spot,Restoration& out) {
     if (!TRAVEL_FN(sp,sc_game_spatial_v1,find_zone) || !TRAVEL_FN(sp,sc_game_spatial_v1,zone_record)) return SCO_UNAVAILABLE;
     for (size_t i=0;i<spot.z.size() && i<12;++i) {
         sc_game_zone z{}; z.size=sizeof(z);
-        if (!sp->find_zone(spot.z[i].name.c_str(),&z)) continue;
+        if (!LookUp(sp,spot.z[i],z)) continue;
         if (!RecordValid(z) || (i && !z.parent_id)) return SCO_UNAVAILABLE;
         sc_game_zone current{}; current.size=sizeof(current);
         if (!sp->zone_record(z.zone_id,&current) || current.epoch!=z.epoch || current.parent_id!=z.parent_id || std::strcmp(current.name,z.name)) return SCO_UNAVAILABLE;

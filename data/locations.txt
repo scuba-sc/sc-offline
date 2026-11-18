@@ -2,8 +2,8 @@
 #   system | name shown | entity name | radius in metres (0 = unknown)
 #
 # The entity names must match the game's exactly; all Stanton planets and moons below were confirmed
-# by the Travel tab's scan. The scan adds everything else (Lagrange points, comm arrays, jump points,
-# other systems) to locations_found.txt. Radii are mean surface radii, so you arrive above the ground.
+# by the Travel tab's scan. The scan adds only the place you are in and the bigger places around it
+# to locations_found.txt. Radii are mean surface radii, so you arrive above the ground.
 
 Stanton | Hurston   | OOC_Stanton_1_Hurston    | 1000000
 Stanton | Ariel     | OOC_Stanton_1a_Ariel     | 344500

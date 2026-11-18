@@ -42,6 +42,9 @@ int32_t selected_bookmark=-1;
 std::string panel_status;
 sco_result panel_result=SCO_OK,request_result=SCO_OK;
 bool relocation_available=true,zone_available=true;
+// Core's find_zone matches only the zones the player stands in (ids 1 and 3 here); zone_record still observes any streamed id.
+bool ancestry_only=false;
+std::map<uint32_t,uint32_t> panel_flags; std::map<uint32_t,std::string> panel_labels; // latest published page
 std::vector<std::string> resolved_zones;
 struct Callback { sco_widget_event_fn fn; void* ctx; };
 Callback CurrentPanel() { return {event,event_ctx}; }
@@ -56,7 +59,9 @@ int enables=0,holds=0,releases=0,panels=0; uint32_t duration=0;
 const void* service=nullptr;
 bool relocation_cap=false; int32_t allow=1; std::string data_root,last_status;
 int requests=0; uint32_t reloc_state=SC_RELOCATION_PENDING; sc_relocation_request last_request{};
-int Has(const char* name) { return !std::strcmp(name,"game.gamerules.read") || (capability && !std::strcmp(name,"game.quantum.control")) || (relocation_cap && !std::strcmp(name,SC_RELOCATION_NAME)); }
+// Only capability names that exist in Core may be asked: a fake that says yes to anything hides a typo or a retired name.
+bool CoreName(const char* name) { for (const char* known:{"game.gamerules.read","game.quantum.control","game.relocation"}) if (!std::strcmp(name,known)) return true; return false; }
+int Has(const char* name) { assert(CoreName(name)); return !std::strcmp(name,"game.gamerules.read") || (capability && !std::strcmp(name,"game.quantum.control")) || (relocation_cap && !std::strcmp(name,SC_RELOCATION_NAME)); }
 sco_result GetBool(sco_plugin*,const char* name,int32_t* out) { if (std::strcmp(name,"relocation")) return SCO_NOT_FOUND; *out=allow; return SCO_OK; }
 sco_result GetString(sco_plugin*,const char* name,char* out,uint32_t* n) {
     if (std::strcmp(name,"data_root") || data_root.empty()) return SCO_NOT_FOUND;
@@ -85,6 +90,7 @@ int ZoneRecord(uint64_t id,sc_game_zone* z) {
 int FindZone(const char* name,sc_game_zone* z) {
     resolved_zones.emplace_back(name);
     for (uint64_t id:{1u,2u,3u,77u}) { sc_game_zone record{};
+        if (ancestry_only && id!=1 && id!=3) continue;
         if (ZoneRecord(id,&record) && !std::strcmp(name,record.name)) { *z=record; return 1; }
     }
     return 0;
@@ -125,6 +131,8 @@ sco_result Panel(sco_plugin*,const char* id,const char* title,const sco_widget_n
     { const auto why=sc_offline::panel_dump::Violation(nodes,n,stride); if (!why.empty()) std::printf("quantum.travel: %s\n",why.c_str()); assert(why.empty()); }
     sc_offline::panel_dump::Record(id,title,nodes,n,stride);
     bool bookmarks=false,control=false;
+    panel_flags.clear(); panel_labels.clear();
+    for (uint32_t i=0;i<n;++i) { panel_flags[nodes[i].id]=nodes[i].flags; panel_labels[nodes[i].id]=nodes[i].label?nodes[i].label:""; }
     std::vector<uint32_t> seen,chain; // sco_widgets.h: unique ids; parent is a preceding ROW/COLUMN; subtrees contiguous
     for (uint32_t i=0;i<n;++i) {
         assert(nodes[i].id && std::find(seen.begin(),seen.end(),nodes[i].id)==seen.end()); seen.push_back(nodes[i].id);
@@ -190,6 +198,30 @@ sco_result Query(const char* name,uint32_t version,const void** out) {
 }
 sco_result Call(const char* name,const sco_arg* args=nullptr,uint32_t n=0) { char reply[512]{}; assert(commands.count(name)); const auto& c=commands.at(name); return c.fn(args,n,c.ctx,reply,sizeof(reply)); }
 std::string FileBytes(const std::filesystem::path& file) {std::ifstream in(file,std::ios::binary);return {std::istreambuf_iterator<char>(in),{}};}
+// Without an explicit data_root, places and spots go beside the launcher's spawn file (the game's working folder
+// is Bin64, so a relative "data" would land there), and the folder is created on first write.
+void SetSpawnEnv(const char* value) {
+#ifdef _WIN32
+    SetEnvironmentVariableA("SC_OFFLINE_SPAWN_FILE",value); _putenv_s("SC_OFFLINE_SPAWN_FILE",value?value:"");
+#else
+    if (value) setenv("SC_OFFLINE_SPAWN_FILE",value,1); else unsetenv("SC_OFFLINE_SPAWN_FILE");
+#endif
+}
+void DataRootWorkflow(sco_result(*load)(const sco_api*,sco_plugin*),void(*unload)(),const sco_api& api,sco_plugin* self,const std::filesystem::path& root) {
+    const auto beside=root/"beside_launcher"; assert(!std::filesystem::exists(beside));
+    const auto saved_root=data_root; data_root.clear();
+    SetSpawnEnv((beside/"spawn.txt").string().c_str());
+    unload(); commands.clear(); relocation_cap=true; zone_available=true; ancestry_only=false;
+    spatial.zone_record=ZoneRecord; spatial.pose_to_zone=PoseToZone; player.size=sizeof(player); player.player_pose=PlayerPose;
+    assert(load(&api,self)==SCO_OK);
+    sco_arg name{}; name.type=SCO_ARG_STRING; name.v.s="Dock";
+    assert(Call("quantum.save_bookmark",&name,1)==SCO_OK);
+    assert(std::filesystem::exists(beside/"bookmarks.txt")); // folder created, file beside the spawn file
+    assert(FileBytes(beside/"bookmarks.txt").find("bookmark Unknown system|Dock")!=std::string::npos);
+    data_root=root.string(); unload(); commands.clear(); // an explicit data_root still wins
+    assert(load(&api,self)==SCO_OK); assert(Call("quantum.save_bookmark",&name,1)==SCO_OK && std::filesystem::exists(root/"bookmarks.txt"));
+    data_root=saved_root; SetSpawnEnv(nullptr); unload(); commands.clear(); relocation_cap=false;
+}
 void BookmarkWorkflow(sco_result(*load)(const sco_api*,sco_plugin*),void(*unload)(),const sco_api& api,sco_plugin* self,const std::filesystem::path& root) {
     const auto file=root/"bookmarks.txt";
     const std::string first="bookmark A|Base\nspot 11 0 0 zone_a\n";
@@ -198,6 +230,8 @@ void BookmarkWorkflow(sco_result(*load)(const sco_api*,sco_plugin*),void(*unload
     auto seed=[&](const std::string& bytes){unload();commands.clear();std::ofstream(file,std::ios::binary)<<bytes;assert(load(&api,self)==SCO_OK);};
     auto done=[&]{reloc_state=SC_RELOCATION_COMPLETE;Tick(100);};
     auto go=[&](int32_t index,double x){SelectBookmark(index);const auto before=requests;Send(15);assert(requests==before+1&&last_request.pos[0]==x);done();};
+    // A spot the player already stands on (the fake player is at x=30) is not moved to: one plain sentence, no request.
+    auto stay=[&](int32_t index){SelectBookmark(index);const auto before=requests;Send(15);assert(requests==before&&panel_status=="You are already at that spot.");};
     relocation_cap=true;zone_available=true;
     spatial.zone_record=ZoneRecord;spatial.pose_to_zone=PoseToZone;
     player.size=sizeof(player);player.player_pose=PlayerPose;
@@ -234,10 +268,10 @@ void BookmarkWorkflow(sco_result(*load)(const sco_api*,sco_plugin*),void(*unload
     resolved_zones.clear();assert(Call("quantum.inspect_bookmark",&name,1)==SCO_OK&&resolved_zones.front()=="zone_a");
     // Saving remains append-only: duplicate names and the existing schema/format survive.
     assert(Call("quantum.save_bookmark",&name,1)==SCO_OK&&bookmark_labels.size()==3&&selected_bookmark==-1);
-    go(2,30);SelectBookmark(1);Send(9);
+    stay(2);SelectBookmark(1);Send(9);
     assert(bookmark_labels.size()==2&&bookmark_labels[0]=="A / Base"&&bookmark_labels[1]=="BASE");
     const auto persisted=FileBytes(file);assert(persisted.find("spot 22.")==std::string::npos&&persisted.find("spot 11.")!=std::string::npos);
-    reload();go(1,30);
+    reload();stay(1);
     assert(Call("quantum.delete_bookmark",&name,1)==SCO_OK&&bookmark_labels.size()==1&&bookmark_labels[0]=="BASE");
     // Provider and capability refusal must never substitute another bookmark.
     seed(first+second);SelectBookmark(1);auto before=requests;relocation_cap=false;Send(15);assert(requests==before);relocation_cap=true;
@@ -336,11 +370,30 @@ int main(int argc,char** argv) {
     assert(Call("quantum.travel",trip,2)==SCO_OK && requests==1 && ticks.size()==2);
     assert(last_request.zone_id==77 && last_request.pos[2]==510 && last_request.rot_xyzw[3]==1 && last_request.timeout_ms>=1 && last_request.timeout_ms<=60000);
     assert(Call("quantum.travel",trip,2)==SCO_TOO_MANY && requests==1); // one active request
-    uint32_t now=100; Tick(now); assert(ticks.size()==2 && last_status.empty()); // pending: still tracked
+    assert(last_status.find("Moving to")==0); // starting a move announces itself on the status line
+    last_status.clear(); uint32_t now=100; Tick(now); assert(ticks.size()==2 && last_status.empty()); // pending: still tracked, no new announcement
     reloc_state=SC_RELOCATION_COMPLETE; Tick(now); assert(ticks.size()==1 && !last_status.empty()); // reported once, then untracked
     last_status.clear(); assert(Call("quantum.travel",trip,2)==SCO_OK && requests==2 && ticks.size()==2);
     reloc_state=SC_RELOCATION_FAILED; Tick(now); assert(ticks.size()==1 && !last_status.empty());
     relocation_cap=false; assert(Call("quantum.travel",trip,2)==SCO_UNAVAILABLE && requests==2); // re-checked per command
+    // Core resolves a zone by name only inside the player's own ancestry. A destination outside it must be refused
+    // in plain words, with no request, and the page must not offer a button that can only refuse.
+    relocation_cap=true; ancestry_only=true;
+    { const auto before=requests;
+      trip[0].v.s="Port"; assert(Call("quantum.travel",trip,2)==SCO_UNAVAILABLE && requests==before && ticks.size()==1);
+      assert(panel_status.find("can't travel to from here")!=std::string::npos && panel_status.find("isn't loaded")==std::string::npos);
+      Send(2,SCO_WIDGET_LIST,0); // choose Port
+      assert((panel_flags.at(6)&SCO_WIDGET_DISABLED) && panel_labels.at(42).find("can't travel there from here")!=std::string::npos);
+      Send(6); assert(requests==before); // a forged click is still refused
+      ancestry_only=false; Send(2,SCO_WIDGET_LIST,0);
+      assert(!(panel_flags.at(6)&SCO_WIDGET_DISABLED) && !panel_labels.count(42)); // reachable: usable button, no warning line
+      Send(6); assert(requests==before+1); reloc_state=SC_RELOCATION_COMPLETE; Tick(100); assert(ticks.size()==1);
+    }
+    // The scan button says what it does: it adds the places the player is inside, not "nearby" places.
+    assert(panel_labels.at(7)=="Add the places you are inside"); Send(7);
+    assert(panel_status.find("nearby")==std::string::npos);
+    for (const auto& label:panel_labels) assert(label.second.find("nearby")==std::string::npos && label.second.find("isn't loaded")==std::string::npos);
+    relocation_cap=false;
     on.v.i=2; assert(Call("quantum.enable",&on,1)==SCO_BAD_ARG); on.v.i=1;
     capability=true;
     std::array<unsigned char,8> short_table{}; const uint32_t short_size=8; std::memcpy(short_table.data(),&short_size,sizeof(short_size)); service=short_table.data();
@@ -358,12 +411,13 @@ int main(int argc,char** argv) {
     capability=false; now=500; Tick(now); assert(!enabled && !held);
     capability=true; assert(Call("quantum.enable",&on,1)==SCO_OK);
     assert(Call("quantum.hold",&ms,1)==SCO_OK);
-    relocation_cap=true; assert(Call("quantum.travel",trip,2)==SCO_OK && requests==3 && ticks.size()==2); // in flight at unload
+    relocation_cap=true; assert(Call("quantum.travel",trip,2)==SCO_OK && requests==4 && ticks.size()==2); // in flight at unload (the third request is the reachable-destination check above)
     unload(); unload(); assert(!enabled && !held && ticks.empty() && !event); relocation_cap=false;
     // A provider release hook is NOT emulated here: ordinary unload requests cleanup.
     commands.clear(); const auto writes=enables; assert(load(&api,self)==SCO_OK && enables==writes);
     available=false; assert(Call("quantum.control_status")==SCO_UNAVAILABLE); unload();available=true;
     BookmarkWorkflow(load,unload,api,self,root);
+    DataRootWorkflow(load,unload,api,self,root);
 #ifdef _WIN32
     FreeLibrary(module);
 #else

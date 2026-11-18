@@ -120,8 +120,7 @@ void DrawTravelTab(void*, void*) {
     } else if (ImGui::Button("Scan the game for places", ImVec2(-1, 0))) {
         Travel_RequestScan();
     }
-    Hint("The scan finds the planets, moons, stations, Lagrange points, comm arrays and jump points of every loaded "
-         "system and adds them here. It only reads; it takes a few seconds.");
+    Hint("The scan adds the place you are in and the bigger places around it. It only reads; it takes a few seconds.");
 
     SectionHeading("Saved spots");
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 160 - ImGui::GetStyle().ItemSpacing.x);

@@ -24,6 +24,7 @@ struct ControlState {
     uint32_t last_tick=0, last_panel=0; uintptr_t epoch=0;
     sc_quantum_state observed{}; sco_result result=SCO_UNAVAILABLE;
     sc_gamerules_state rules{}; sco_result rules_result=SCO_UNAVAILABLE; bool rules_known=false;
+    bool rules_readable=false; // the game's rules can be read at all (capability on); off means nothing is there to consult
     char message[256]=""; // plain result line shown on the Travel page
 };
 inline ControlState g;
@@ -54,10 +55,14 @@ inline void ReadRules() {
             next.quantum_travel_allowed>1 || next.quantum_boost_allowed>1) result=SCO_FAILED;
         for (float value:thresholds) if (!std::isfinite(value)) result=SCO_FAILED;
     }
+    g.rules_readable=readable;
     g.rules_result=result; g.rules_known=result==SCO_OK && next.valid==1;
     g.rules=g.rules_known ? next : sc_gamerules_state{};
 }
-inline bool RulesAllowBoost() { return g.rules_known && g.rules.quantum_travel_allowed && g.rules.quantum_boost_allowed; }
+// Rules gate Boost only where the game can report them. With the rules capability off (the default on
+// the pinned Core) there is nothing to consult, so the button is not held back: the provider still
+// checks admission for every boost, exactly as it does for the command and the hotkey.
+inline bool RulesAllowBoost() { return !g.rules_readable || (g.rules_known && g.rules.quantum_travel_allowed && g.rules.quantum_boost_allowed); }
 inline bool Held() { return g.leased && g.result==SCO_OK && g.observed.held; }
 inline sco_result Read() {
     sc_quantum_state next{}; next.size=sizeof(next);
@@ -164,7 +169,7 @@ inline void AppendPanel(std::vector<sco_widget_node>& nodes) {
     auto& boost=add(SCO_WIDGET_BUTTON,103,Held()?"Stop boost":"Boost");
     if (!Held() && (!Cap() || !g.leased || !RulesAllowBoost())) boost.flags=SCO_WIDGET_DISABLED;
     if (g.rules_known && !RulesAllowBoost()) add(SCO_WIDGET_LABEL,106,"Boost isn't allowed here.");
-    else if (!g.rules_known && g.leased && !Held()) add(SCO_WIDGET_LABEL,108,"Boost turns on once the game says whether it's allowed here.");
+    else if (g.rules_readable && !g.rules_known && g.leased && !Held()) add(SCO_WIDGET_LABEL,108,"Boost turns on once the game says whether it's allowed here.");
     if (g.rules_known && g.rules.enforce_group_qt) add(SCO_WIDGET_LABEL,107,"Quantum travel may need a group in this game.");
     if (g.message[0]) add(SCO_WIDGET_LABEL,100,g.message);
 }
