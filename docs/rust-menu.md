@@ -2,7 +2,9 @@
 
 Status: design proposal for owner review. Nothing in this page is built. Nothing is claimed to work in game. Every acceptance check below is source, build, synthetic or CI evidence. Docs keep the words "not run in game" until the owner records a session.
 
-This page belongs to the [Rust launcher plan](rust-launcher.md). It covers owner decision 1 of 2026-11-17: the in-game menu is rebuilt in Rust now, reads `sco.widgets` panels through a new versioned C interface in sco-core, and the in-game host (dinput8.dll, hooks, Core host kit) stays C++. Decision 2 applies: sco-core 2.4.1 is held until the Rust launcher, Rust menu, catalogue and reference launcher are in it. So the new interface below is a 2.4.1 item, not a later one.
+Revised 2026-11-17 after review. Changes: the header moves to `include/sco/widgets_view.h` with a stated catalogue, ABI-test, packaging and provenance route (2.1, 2.7); the tag limit is `SCO_WIDGETS_MAX_TAG` (63), never the caps index 9 (2.2); the menu thread registers itself through the C table (2.2, 2.4); events are matched across a `set_panel` republish by a node key, with the exact rules and tests (2.3.1, 5.1; the key is compared at equal epoch too, owner decision 11); `events_done` under coalescing is defined with examples, and `node_key` is part of the merge condition (2.3.2); the capability readout follows the owner's switch defaults (3.10). Scope: design only, no code.
+
+This page belongs to the [Rust launcher plan](rust-launcher.md). It covers owner decision 1 of 2026-11-17: the in-game menu is rebuilt in Rust now, reads `sco.widgets` panels through a new versioned C interface in sco-core, and the in-game host (dinput8.dll, hooks, Core host kit) stays C++. Decision 2 applies: sco-core 2.4.1 is held until the Rust launcher, Rust menu, catalogue and reference launcher are in it. So the new interface below is a 2.4.1 item, not a later one: nothing in this page is "after 2.4.1".
 
 ## Owner decisions applied (2026-11-17)
 
@@ -11,11 +13,24 @@ This page belongs to the [Rust launcher plan](rust-launcher.md). It covers owner
 | 1. Rust is the launcher and the in-game menu, both now. The host (dinput8.dll, hooks, Core host kit) stays C++. The Rust menu reads `sco.widgets` through a new versioned C interface in sco-core. | Section 2 is that interface. Section 3 is the menu. Nothing in the host moves to Rust. |
 | 2. sco-core 2.4.1 is held until the Rust launcher, Rust menu, catalogue and reference launcher are in it. | Nothing here is "after 2.4.1". The interface (M1) and the menu (M2 to M8) are 2.4.1 work. The release job stays blocked until M8 is recorded. |
 | 3. Catalogue: signed index, disabled on pull, native-code warning. | Not changed by this page. Plugin pages from a pulled plugin appear in the menu only after the player enables it. |
-| 4. Capability switches are on by default in every release package. Each is a visible setting the player can turn off. Its text says it has not been run in game. | The menu never defaults a switch off and never calls one experimental. Section 3.10 adds a read-only readout. Changes are made in the launcher and apply at the next Play. |
+| 4. The five capability switches (`exp_loadout_async`, `exp_inventory_read`, `exp_actor_stats_write`, `exp_cvars_native`, `exp_audio_native`) are on by default in every release package. Each is a visible key the player can turn off, and each says it has not been run in game. `exp_entities_diag` (diagnostic hooks that patch game functions; not a feature) is off by default. | The menu never defaults a feature switch off and never calls one experimental. `exp_entities_diag` is shown apart, as a diagnostic that is off. Section 3.10 is a read-only readout. Changes are made in the launcher and apply at the next Play. |
+
+## What the owner must run in game (short list)
+
+None of this has been run. The full list with numbering is in section 6; the build, hash and result of each run go in `docs/status.md`.
+
+1. `M` opens the menu above the game with focus; Esc, `M` and the close button hide it and return input to the game (windowed, borderless, exclusive fullscreen). The cursor is clipped to the menu while open and free after hide and Alt+Tab.
+2. A click reaches a plugin exactly once, also on a page whose plugin republishes its panel on a timer (item 14). This is the check for the republish rule in 2.3.1.
+3. Typing in a text box does not fire game hotkeys.
+4. The window scales at 100, 125 and 150 percent and across two monitors.
+5. The five capability switches show On after a game start, `exp_entities_diag` shows Off as a diagnostic, and turning one off in the launcher shows Off after the next start (items 6 and 15).
+6. Overlays you normally run do not break the menu, and the software cursor is correct when the game hides the OS cursor.
+7. With `scom.dll` deleted the ImGui menu returns by itself; a fault-injection build hides the menu and the game keeps running.
+8. The game closes cleanly with the menu open and closed; a `sco.ui` page opens in the classic window and returns.
 
 ## 0. Summary
 
-1. sco-core gets a new host-side reader, `sco.widgets.view` 1.0 (section 2). It lists panels, copies one panel as a flat, relocatable byte blob (nodes, items and strings with offsets, no pointers), queues one event, and exposes revision counters. It is not a plugin service: only the host menu identity can get it.
+1. sco-core gets a new host-side reader, `sco.widgets.view` 1.0 (section 2), as a C11 host-source header at `include/sco/widgets_view.h`. It lists panels, copies one panel as a flat, relocatable byte blob (nodes, items and strings with offsets, no pointers), queues one event, and exposes revision counters. It is not a plugin service and not part of the plugin SDK: only the host menu identity can get it, and the menu thread registers itself through the table (2.2).
 2. The menu is a Rust cdylib, `scom.dll`, loaded by dinput8.dll. It owns its own window and thread and draws with egui through a small in-tree Direct3D 11 painter (section 3). A separate-process menu over shared memory is the documented fallback if the spike fails.
 3. The old ImGui menu code stays compiled. It is the fallback when `scom.dll` is missing or refused, and it hosts the pages of plugins that still draw with `sco.ui` and ImGui (section 4).
 4. Tests do not need the game: a blob fixture suite shared between C++ and Rust, golden PNGs from synthetic panel dumps through the same preview flow the ImGui menu already has, and synthetic window messages (section 5).
@@ -41,7 +56,7 @@ Read from the worktree sources. The sidebar shell is on branch `feature/menu-pla
 Core facts the design relies on (sco-core `4ba313d`, SDK 2.4.1-dev.6):
 
 - `sco::widgets::Panels()`, `RenderPanel()` and every `sco_widgets_v1` call are game-thread only. `Panels()` returns nothing off-thread.
-- Each panel entry holds a shared immutable snapshot, rebuilt lazily (at most once per change) and a `generation` that changes on structural change (replace, remove). `RenderPanel` drops the rest of a pass when the generation moved.
+- Each panel entry holds a shared immutable snapshot, rebuilt lazily (at most once per change) and a `generation` that moves on every plugin mutation (`set_panel`, `update_nodes` and `remove_nodes` all call `Changed()`). `RenderPanel` drops the rest of a pass when the generation moved. `dispatch_events` does not keep that break (2.3.1, "Within one drain").
 - A panel enters tagged-event mode (1.4) once any node has a tag. Node tags (1.2) are copied into snapshots but never rendered. They are the automation handle used in section 5.
 - Limits: 64 panels, 256 nodes per `set_panel`, 4096 nodes total, 256 items, 16 columns, 255 bytes per text, 63 bytes per id and title, 256 events per pass.
 
@@ -55,19 +70,22 @@ The Rust menu runs on its own thread and cannot link the C++ host kit (STL types
 2. **Reads off the game thread, event dispatch on the game thread.** In 1.0 the read calls are specified for the menu thread only (`list_panels`, `copy_panel`, `submit_event`). "Any non-game thread" is proposed and is not promised until the M1 race test passes (2.4). Widening a thread rule later is compatible; narrowing it is not, so 1.0 starts narrow. `capabilities` and `stamps` touch only atomics and stay any-thread. Reading takes the widget lock for a pointer copy of the shared snapshot, then flattens outside plugin code. It runs no plugin callback. Events are queued by the menu thread and dispatched by the host on the game thread, through the same validation and callout guard as `RenderPanel`. This removes the per-frame game-thread hand-off for panels: the menu stays responsive when the game thread is busy.
 3. **Not a plugin service.** If `query_service("sco.widgets.view")` worked, any plugin could read every other plugin's panels and inject player clicks into them. So the table is never published through `query_service`. The host gets it from the reserved host-menu identity (section 2.5). A test pins that a plugin's `query_service` answers `SCO_NOT_FOUND`.
 
-The header is a host-source seam. Recommendation: ship it in the host-source kit only, not in the plugin SDK kit, so it is not a public plugin promise. Owner decision (section 7).
+Where the header lives. Source check of sco-core `4ba313d`: `tools/sdk_catalogue.py` collects only top-level `include/*.h` (`header_inventory` and `documentation_signatures` both glob `include/*.h`, and its docstring says top-level C headers are the public boundary, not `include/sco/`). Every table found there needs a record in `sdk/contracts`, a row in `docs/contracts.md`, a service name and a stability class. A host-only table must not enter that set, so the header is **`include/sco/widgets_view.h`**, beside `include/sco/host_menu.h`, the other host-source seam. Both are `core-source` entries in `sdk/components.json` without `public_header`; `host-source-sc` includes `core-source`; the plugin kits (`core`, `game-sc`, `legacy`) do not list them. sc-offline's `tools/sdk-headers.py` counts only `public_header: true` components of `core` and `game-sc`, so plugins and `src/builtins/` cannot include it, while the host glue under `src/` can.
+
+The header is C, not C++, because a Rust consumer needs a C interface. Rust does not read the header at build time. It carries hand-written `#[repr(C)]` mirrors with compile-time size and offset asserts, and a probe that compiles the header from the pinned Core export keeps the mirrors honest (2.7). So the header does not need to be on any Rust include path, and no bindgen or C compiler is part of a product build. The kit decision (host-source only) is the owner's (section 7).
 
 ### 2.2 Proposed header text
 
-File `include/sco_widgets_view.h` in sco-core. This is the exact proposed text.
+File `include/sco/widgets_view.h` in sco-core. This is the exact proposed text. Plain C11 inside `extern "C"`; it compiles as C and as C++.
 
 ```c
 /* SPDX-License-Identifier: GPL-3.0-only
- * sco_widgets_view.h: the host-side flat reader of "sco.widgets" panels, version 1.0.
+ * sco/widgets_view.h: the host-side flat reader of "sco.widgets" panels, version 1.0.
  *
- * For the host's own menu only. It is NOT a plugin service and is never returned by
- * query_service. The host obtains it through a host-only entry point and may hand it to a
- * menu renderer written in any language. No renderer type, plugin pointer or Core pointer
+ * Host-source seam, not a public SDK header: it lives in include/sco/, is not listed in the
+ * plugin SDK kits and has no entry in the SDK catalogue. It is NOT a plugin service and is
+ * never returned by query_service. The host obtains it through sco/host_menu.h and may hand it
+ * to a menu renderer written in any language. No renderer type, plugin pointer or Core pointer
  * crosses this interface.
  *
  * Rules (the rules of sco_api.h hold here too: 64-bit only, 4-byte enums, results not
@@ -147,7 +165,7 @@ typedef struct sco_view_blob_header {
     uint64_t revision;
     uint64_t epoch;
     uint32_t node_count;
-    uint32_t node_stride;   /* sizeof(sco_view_node): 112 */
+    uint32_t node_stride;   /* sizeof(sco_view_node): 120 */
     uint32_t nodes_offset;
     uint32_t items_offset;
     uint32_t item_total;
@@ -160,8 +178,17 @@ typedef struct sco_view_blob_header {
     uint32_t _reserved[2];  /* zero */
 } sco_view_blob_header;
 
+/* Node key. A 64-bit FNV-1a hash (offset basis 0xcbf29ce484222325, prime 0x100000001b3) that
+ * Core computes in one place, over these bytes in order:
+ *   a tagged node:    the byte 'T', the kind as 4 bytes little endian, the tag bytes
+ *   an untagged node: the byte 'U', then kind, id and parent as 4 bytes little endian each,
+ *                     then the label bytes
+ * (tag and label without a NUL; a computed 0 is stored as 1). A renderer never computes a
+ * key: it copies the blob node's key into the event it sends. The key names "the same
+ * control" across a set_panel republish (see sco_view_event). A tag is unique within a panel
+ * (widgets 1.2) and at most SCO_WIDGETS_MAX_TAG (63) bytes. */
 typedef struct sco_view_node {
-    uint32_t size;          /* 112 */
+    uint32_t size;          /* 120 */
     uint32_t kind;          /* SCO_WIDGET_* */
     uint32_t id;
     uint32_t parent;
@@ -181,28 +208,41 @@ typedef struct sco_view_node {
     sco_view_str label;
     sco_view_str text;
     sco_view_str tooltip;
-    sco_view_str tag;       /* widgets 1.2 stable tag, empty when untagged */
+    sco_view_str tag;       /* widgets 1.2 tag, at most SCO_WIDGETS_MAX_TAG (63) bytes;
+                               empty when untagged */
+    uint64_t key;           /* the node key above, as of this copy */
 } sco_view_node;
 
 /* ---- one event, from the menu to a plugin ----
  * The same candidate a renderer gives RenderPanel, plus the epoch of the copy the player
- * acted on and, for a tagged node, its tag. Matching at dispatch:
- *  - epoch equal: the node is checked against the live tree (same id, same kind, enabled
- *    including its ancestors). If `tag` is not NULL the live node's tag must equal it, so
- *    a plugin that removed a node and added another under the same id cannot receive the
- *    click. A plugin changing other nodes does not drop the event.
- *  - epoch different (set_panel replaced the panel), `tag` not NULL, and the live panel is
- *    in tagged-event mode: the event is matched by tag instead of id. The live node with
- *    that tag must have the same kind and be enabled including its ancestors; the event
- *    is then delivered with the live node's id, and its value, selection or row is
- *    validated against the live node. No match: dropped and counted.
- *  - epoch different and `tag` NULL (or the panel is not tagged): dropped and counted.
- * The host validates the rest exactly as RenderPanel does (value in range, text <= 255
- * bytes and valid UTF-8, page row in range). The callback tag is always copied from the
- * live node, never taken from the menu. */
+ * acted on and the key of the node acted on, both copied from the blob. There is no pointer
+ * for a tag: the key carries the node's identity. Matching at dispatch, against the live
+ * panel of that id at the moment of dispatch:
+ *  1. The panel is gone or its owner was released: dropped.
+ *  2. epoch equal (no set_panel since the copy): the live node with node_id must exist, have
+ *     the same kind, be enabled including its ancestors, and have a key equal to node_key.
+ *     The live key is the stored key of a tagged node and the computed key of an untagged
+ *     one, so the check is the same for both. A node removed and replaced by another control
+ *     under the same id (another tag, or another label or parent) cannot receive the click.
+ *     update_nodes of other nodes, or a new value on this node, does not change its key and
+ *     never drops the event. An update_nodes that relabels an untagged node does change its
+ *     key: the event is dropped (a tag keeps a control clickable across a relabel).
+ *     Residual, stated: a plugin that removes an untagged node and adds a node of the same
+ *     kind, id, parent and label back between copy and dispatch gets the click; that node
+ *     has the same key, so it is the same control.
+ *  3. epoch different (set_panel replaced the panel after the copy): the target is found by
+ *     key. First the live tagged node whose key equals node_key; failing that, the live
+ *     node with id node_id whose computed key equals node_key (same kind, id, parent and
+ *     label as the copy, untagged). The target must have the event's kind and be enabled
+ *     including its ancestors. It receives the event with ITS id, whatever the id was in
+ *     the copy. No target: dropped.
+ *  4. The host then validates the rest exactly as RenderPanel does, against the live node:
+ *     value in range, selection or page row in range of the live items, text <= 255 bytes
+ *     and valid UTF-8. The callback tag is always copied from the live node, never taken
+ *     from the menu. One event is delivered to at most one node and at most once. */
 typedef struct sco_view_event {
     uint32_t size;      /* 56 */
-    uint32_t node_id;
+    uint32_t node_id;   /* the node's id in the copy */
     uint32_t kind;      /* the node's kind, or SCO_WIDGET_EVENT_PAGE */
     int32_t index;      /* COMBO/LIST selection, else 0 */
     double value;       /* TOGGLE/SLIDER, else 0 */
@@ -212,9 +252,8 @@ typedef struct sco_view_event {
     uint32_t _reserved; /* zero */
     uint64_t epoch;     /* the epoch of the blob the player acted on. 0 is invalid:
                            submit_event answers SCO_BAD_ARG (a real epoch is never 0) */
-    const char* tag;    /* the tag of the target node in that blob, UTF-8, NUL-terminated,
-                           at most SCO_WIDGETS_CAP_MAX_TAG bytes, copied during the call;
-                           NULL for an untagged node. 64-bit hosts only. */
+    uint64_t node_key;  /* the key of the target node in that blob. 0 is invalid
+                           (a real key is never 0) */
 } sco_view_event;
 
 /* capabilities(): caps[SCO_VIEW_CAP_COUNT] is the array length on entry (>= 2) and the
@@ -225,17 +264,18 @@ typedef struct sco_view_event {
 #define SCO_VIEW_CAP_COUNT 0u
 #define SCO_VIEW_CAP_FEATURES 1u
 #define SCO_VIEW_CAP_MAX_PANELS 2u
-#define SCO_VIEW_CAP_EVENT_QUEUE 3u  /* events the queue holds before submit_event answers SCO_TOO_MANY */
+#define SCO_VIEW_CAP_EVENT_QUEUE 3u  /* slots the queue holds before submit_event answers SCO_TOO_MANY */
 #define SCO_VIEW_CAP_NODE_STRIDE 4u  /* sizeof(sco_view_node) */
 #define SCO_VIEW_CAP_ENTRY_STRIDE 5u /* sizeof(sco_view_panel_entry) */
 #define SCO_VIEW_CAPS_1_0 6u         /* array length that covers every 1.0 index */
 #define SCO_VIEW_FEATURE_TAGS 0x1u     /* blob tags are filled in (widgets 1.2 and later) */
-#define SCO_VIEW_FEATURE_COALESCE 0x2u /* the host merges queued SLIDER and TEXT_INPUT events
-                                          for one node, keeping the last */
+#define SCO_VIEW_FEATURE_COALESCE 0x2u /* submit_event merges a SLIDER or TEXT_INPUT event into an
+                                          adjacent queued one for the same node, keeping the last
+                                          value (see submit_event) */
 #define SCO_VIEW_FEATURE_HOST_PANELS 0x4u /* SCO_VIEW_PANEL_HOST_OWNED is reported */
 
 typedef struct sco_widgets_view_v1 {
-    uint32_t size;    /* sizeof(sco_widgets_view_v1): 56 */
+    uint32_t size;    /* sizeof(sco_widgets_view_v1): 72 */
     uint32_t version; /* SCO_WIDGETS_VIEW_VERSION_1_0. A consumer checks this and `size`.
                          Functions are only ever appended. Each append raises the minor
                          macro (SCO_WIDGETS_VIEW_VERSION_1_1, and so on) and grows `size`:
@@ -247,27 +287,51 @@ typedef struct sco_widgets_view_v1 {
     sco_result (*capabilities)(sco_view_client* client, uint32_t* caps);
 
     /* Any thread, O(1), no allocation. Writes the counters (see "Counters"); any pointer
-     * may be NULL. event_drops is the running total of events dropped by dispatch_events
-     * (never reset). events_done is the sequence number (see submit_event) of the newest
-     * event that has left the queue, whether delivered, dropped or merged by coalescing.
-     * Events leave in the order submit_event accepted them, so every event with a sequence
-     * number <= events_done is finished, and its effect on the panel (if any) is already in
-     * that panel's revision. A caller polls this every frame and does more work only when a
-     * counter moved. SCO_UNAVAILABLE: client stopped. */
+     * may be NULL. event_drops is the running total of queue slots dropped by
+     * dispatch_events (never reset; a slot that merged several events counts once).
+     * events_done is the sequence number of the last event of the newest slot that has left
+     * the queue, whether the slot was delivered or dropped. It is 0 before the first slot
+     * leaves, it never decreases, and it can jump by more than 1 when a slot covers several
+     * merged events. Every event with a sequence number <= events_done is finished: delivered
+     * (the newest value of its slot), superseded by a merge, or dropped, and the effect of a
+     * delivered event on the panel is already in that panel's revision. A caller polls this
+     * every frame and does more work only when a counter moved. SCO_UNAVAILABLE: client
+     * stopped. */
     sco_result (*stamps)(sco_view_client* client, uint64_t* global_revision, uint64_t* list_revision,
                          uint64_t* event_drops, uint64_t* events_done);
 
-    /* Menu thread in 1.0 (any non-game thread is proposed, not promised; see 2.4). Writes live panels in the host's listing order (registration order).
+    /* Menu thread registration. The thread that will call list_panels, copy_panel and
+     * submit_event calls menu_thread_enter first, before it does anything else with the
+     * table; Core records the calling thread (the host passes no thread id).
+     * SCO_OK: registered, or this thread already is. SCO_WRONG_THREAD: the caller is the
+     * game thread. SCO_FAILED: another thread is registered (one at a time; it is released by
+     * its own menu_thread_leave, or by the host after it has joined that thread). SCO_BAD_ARG:
+     * NULL client. SCO_UNAVAILABLE: client stopped. Never runs plugin code. This is a
+     * correctness guard (it keeps panel reads and event submission to one named thread), not a
+     * security boundary: native code in the process could do anything anyway, and no plugin can
+     * obtain this table. */
+    sco_result (*menu_thread_enter)(sco_view_client* client);
+
+    /* Releases the registration. SCO_OK: released, or nothing was registered.
+     * SCO_WRONG_THREAD: another thread is registered; nothing changes. SCO_BAD_ARG: NULL
+     * client. Works after stop (the thread must be able to leave) and never answers
+     * SCO_UNAVAILABLE. The menu thread calls it on every exit path, including a panic. After it,
+     * list_panels, copy_panel and submit_event answer SCO_WRONG_THREAD. */
+    sco_result (*menu_thread_leave)(sco_view_client* client);
+
+    /* The registered menu thread only (any non-game thread is proposed, not promised; see
+     * 2.4). Writes live panels in the host's listing order (registration order).
      * out/stride: stride >= sizeof(sco_view_panel_entry) and a multiple of 8 (BAD_ARG
      * otherwise); *inout_count is the capacity in entries on entry and the entries
      * written on return. If capacity is too small the host writes none and sets
      * *inout_count to the entries needed, with SCO_TOO_MANY. Panels whose owner was
      * released after a fault are not listed. SCO_WRONG_THREAD: the caller is not the
-     * registered menu thread (see sco/host_menu.h); nothing is written. */
+     * registered menu thread; nothing is written. */
     sco_result (*list_panels)(sco_view_client* client, sco_view_panel_entry* out, uint32_t stride,
                               uint32_t* inout_count);
 
-    /* Menu thread in 1.0 (any non-game thread is proposed, not promised; see 2.4). Flattens one panel into out (8-byte aligned, BAD_ARG otherwise). The
+    /* The registered menu thread only (any non-game thread is proposed, not promised; see
+     * 2.4). Flattens one panel into out (8-byte aligned, BAD_ARG otherwise). The
      * snapshot is built under the widget lock only if it is dirty; the flattening itself
      * runs outside the lock.
      * *inout_bytes is the capacity on entry and the bytes written on return; when too
@@ -280,31 +344,45 @@ typedef struct sco_widgets_view_v1 {
     sco_result (*copy_panel)(sco_view_client* client, const char* panel_id, void* out,
                              uint32_t* inout_bytes);
 
-    /* Menu thread in 1.0 (any non-game thread is proposed, not promised; see 2.4). Checks the shape of the event, copies it and queues it for the game
-     * thread. It runs no plugin code and does not validate against the live node: that
-     * happens in dispatch_events. Events are never dropped silently: a drop adds to the
-     * event_drops counter of stamps. SCO_NOT_FOUND: no such panel. SCO_BAD_ARG: bad size,
-     * unknown kind, non-finite value, text over 255 bytes or not UTF-8, nonzero reserved.
-     * SCO_TOO_MANY: the queue is full (the event is not queued). SCO_UNAVAILABLE: client
-     * stopped. SCO_WRONG_THREAD: not the registered menu thread; the event is not queued.
-     * Returns before the plugin sees the event. On SCO_OK, *seq (may be NULL) receives the
-     * event's sequence number: 1 for the first accepted event of the client, then strictly
-     * increasing by 1. It is compared with events_done of stamps (the ack path). */
+    /* The registered menu thread only (any non-game thread is proposed, not promised; see
+     * 2.4). Checks the shape of the event, copies it and queues it for the game thread. It
+     * runs no plugin code and does not validate against the live node: that happens in
+     * dispatch_events. Events are never dropped silently: a drop adds to the event_drops
+     * counter of stamps. SCO_NOT_FOUND: no such panel. SCO_BAD_ARG: bad size, unknown kind,
+     * non-finite value, text over 255 bytes or not UTF-8, nonzero reserved, epoch 0 or
+     * node_key 0. SCO_TOO_MANY: the queue is full and the event could not be merged (the
+     * event is not queued and takes no sequence number). SCO_UNAVAILABLE: client stopped.
+     * SCO_WRONG_THREAD: not the registered menu thread; the event is not queued. Returns
+     * before the plugin sees the event.
+     * Sequence numbers. On SCO_OK, *seq (may be NULL) receives the event's sequence number: 1
+     * for the first accepted event of the client, then +1 for each accepted event, with no
+     * gaps. The queue is a list of slots in first-in first-out order; every slot covers a range
+     * of sequence numbers, and the ranges of consecutive slots follow each other without a gap.
+     * Coalescing, at submit time. If the event is a SLIDER or TEXT_INPUT event and the newest
+     * slot is still queued (dispatch_events has not taken it) and holds a SLIDER or TEXT_INPUT
+     * event with the same panel id, node_id, kind, epoch and node_key, the new event is merged
+     * into that slot: the slot keeps its place, takes the new value, and its range now ends at
+     * *seq. node_key is part of the condition because a different key is a different control
+     * (the matching rule at sco_view_event): an event with another key takes a new slot and is
+     * matched on its own, and a slot never changes its key. A merge needs no free slot, so it
+     * succeeds when the queue is full. Every other event takes a new slot; BUTTON, TOGGLE,
+     * COMBO, LIST and PAGE events are never merged. */
     sco_result (*submit_event)(sco_view_client* client, const char* panel_id, const sco_view_event* event,
                                uint64_t* seq);
 
     /* Game thread only (SCO_WRONG_THREAD otherwise); not from inside a widget callback
-     * (SCO_FAILED). Drains the queue in order. Each event is matched as described at
-     * sco_view_event: dropped when its panel is gone, when the epoch differs and no live
-     * node matches by tag, or when its node is gone, changed kind, has another tag or is
-     * now disabled; otherwise it is validated and delivered with
-     * the same node update, tag rule, callout guard and reentrancy rules as RenderPanel.
-     * A callback that replaces or removes its panel drops the remaining events of that
-     * panel. *dispatched counts events delivered to a callback or applied to a
-     * display-only panel; *dropped counts the rest; either pointer may be NULL.
-     * events_done of stamps advances after each event's effect is in the panel revision.
-     * SCO_CRASHED: at least one owner faulted (counts are still valid; remaining events of
-     * that owner are dropped, other panels continue). */
+     * (SCO_FAILED). Takes the slots that are queued when the call starts (at most
+     * SCO_WIDGETS_MAX_EVENTS; later ones wait for the next call) and handles them in order.
+     * Each slot is matched as described at sco_view_event: dropped when its panel is gone,
+     * when no live node matches, or when the node is disabled or of another kind; otherwise it
+     * is validated and delivered with the same node update, tag rule, callout guard and
+     * reentrancy rules as RenderPanel. A callback that replaces or removes its panel drops the
+     * remaining slots of that panel. *dispatched counts slots delivered to a callback or applied
+     * to a display-only panel; *dropped counts the rest; either pointer may be NULL.
+     * Merged-away events count in neither. events_done of stamps advances once per slot, to the
+     * end of the slot's range, after the slot's effect is in the panel revision (or after it
+     * was dropped). SCO_CRASHED: at least one owner faulted (counts are still valid; remaining
+     * slots of that owner are dropped, other panels continue). */
     sco_result (*dispatch_events)(sco_view_client* client, uint32_t* dispatched, uint32_t* dropped);
 } sco_widgets_view_v1;
 
@@ -321,28 +399,116 @@ Layout pins, to go in `tests/abi_widgets_view.c` and mirrored as `const` asserts
 | `sco_view_str` | 8 | offset 0, length 4 |
 | `sco_view_panel_entry` | 224 | flags 4, revision 8, epoch 16, node_count 24, id 32, title 96, owner 160 |
 | `sco_view_blob_header` | 96 | total_bytes 12, revision 16, epoch 24, node_count 32, nodes_offset 40, items_offset 44, strings_offset 52, panel_id 64, title 72, owner 80 |
-| `sco_view_node` | 112 | flags 16, index 20, value 56, minimum 64, maximum 72, label 80, text 88, tooltip 96, tag 104 |
-| `sco_view_event` | 56 | node_id 4, value 16, text 24, row 32, epoch 40, tag 48 |
-| `sco_widgets_view_v1` | 56 | version 4, capabilities 8, stamps 16, list_panels 24, copy_panel 32, submit_event 40, dispatch_events 48 |
+| `sco_view_node` | 120 | flags 16, index 20, value 56, minimum 64, maximum 72, label 80, text 88, tooltip 96, tag 104, key 112 |
+| `sco_view_event` | 56 | node_id 4, value 16, text 24, row 32, epoch 40, node_key 48 |
+| `sco_widgets_view_v1` | 72 | version 4, capabilities 8, stamps 16, menu_thread_enter 24, menu_thread_leave 32, list_panels 40, copy_panel 48, submit_event 56, dispatch_events 64 |
 
-### 2.3 Counters
+The tag limit. The longest tag is `SCO_WIDGETS_MAX_TAG` (63 bytes, so it always fits the blob string table and the 64-byte id fields). `SCO_WIDGETS_CAP_MAX_TAG` (9) is an index into the `sco.widgets` capabilities array, not a length, and this header does not use it. Core's own `include/sco_widgets.h` has two misleading comments, and M1 fixes both in Core so the mistake is not repeated: at line 128, "SCO_WIDGETS_CAP_MAX_TAG is the host's tag byte limit", and on the define itself at line 176, `#define SCO_WIDGETS_CAP_MAX_TAG 9u /* longest accepted tag, in bytes */`. The real byte limit is `SCO_WIDGETS_MAX_TAG` at line 177. Both comments are changed to say the value is an index into the capabilities array and to point at `SCO_WIDGETS_MAX_TAG` for the length. Comments only, no value or layout change; M1 runs the existing ABI snapshot test to confirm. An earlier draft of this page used it as a byte limit in the event comment. The event no longer carries a tag at all (it carries the key), so the only tag limit left is the one on the blob node.
+
+### 2.3 Counters, event matching and acknowledgement
 
 All counters come from one monotonic 64-bit source, so a value is never reused, even for a panel removed and added again. Zero is never a valid revision. The single shared source is new Core work. Core today has only a per-panel `generation` that moves on every plugin mutation (`set_panel`, `update_nodes` and `remove_nodes` all call `Changed()`), so it cannot serve as `epoch`.
 
 | Counter | Changes when | Used for |
 |---|---|---|
 | `panel.revision` | anything `copy_panel` would return changes: `set_panel`, `update_nodes`, `remove_nodes`, an event applied to a node (value, index, text, page row) | decide whether to re-copy one panel |
-| `panel.epoch` | a new counter, bumped only by `set_panel` (replace, or remove and add). `update_nodes` and `remove_nodes` do not move it | tell dispatch that the panel was replaced: a tagged event is then rematched by tag, any other event is dropped. Everything else is checked per node against the live tree |
-| event sequence (`seq`, from `submit_event`) | each accepted event gets the next number, from 1 | name one submitted event |
-| `events_done` (from `stamps`) | an event leaves the queue (delivered, dropped or merged), after its effect is in the panel revision | the ack path: the event with `seq` <= `events_done` is finished |
+| `panel.epoch` | a new counter, bumped only by `set_panel` (replace, or remove and add). `update_nodes` and `remove_nodes` do not move it | tell dispatch that the panel was republished after the copy: the event is then matched by node key (2.3.1). With an equal epoch it is checked per node against the live tree, including the node key (2.3.1) |
+| event sequence (`seq`, from `submit_event`) | each accepted event gets the next number, from 1, with no gaps | name one submitted event |
+| `events_done` (from `stamps`) | a queue slot leaves the queue (delivered or dropped); set to the last sequence number the slot covers, after its effect is in the panel revision | the ack path: every event with `seq` <= `events_done` is finished (2.3.2) |
+| `event_drops` (from `stamps`) | a slot is dropped by `dispatch_events` | make a lost click visible (3.4) |
 | `list_revision` | the set of listed panels changes (add, remove, owner released) or a panel's title, owner or flags change | decide whether to re-list |
 | `global_revision` | any of the above, for any panel | the per-frame poll: one value to compare |
 
-Why not drop on any change: a click is copied on the menu thread and delivered on a later game-thread pass. A plugin that refreshes live values in that gap (an inspector Refresh, a status-like panel) must not lose the click. So a mutation of other nodes does not matter; only the clicked node is re-checked (same id, same kind, still enabled, ancestors enabled). A real replace of the panel (a new epoch) is different. Plugins that republish a panel with `set_panel` on a timer or after each status change are common, and the gap between copy and dispatch is one game pump, not one render pass. So a replace must not lose a click on a node that still exists. The event therefore carries the node's tag, and when the epoch differs and the live panel is tagged, the host matches the live node by tag, kind and enabled state and delivers there. Only an untagged panel, a tag that no longer exists, a changed kind or a disabled node drops the event. The drop is counted and shown (section 3.4). The same tag check at an equal epoch catches a plugin that removed a node and added a different one under the same id.
+A menu frame is: `stamps`; if `global_revision` moved then `list_panels` (when `list_revision` moved) and `copy_panel` for the open page only (when its revision moved); draw; submit events. `stamps` is read before `copy_panel`, so a copy taken after seeing `events_done >= seq` shows the effect of that event.
 
-Ack path. `submit_event` returns a sequence number and `stamps` returns `events_done`. The queue is first in, first out, so "event k is finished" is the single test `events_done >= k`. The menu uses it to keep its optimistic local value (section 3.4) until the host has caught up, so a revision that arrives while an event is still queued cannot snap a slider or toggle back.
+#### 2.3.1 Matching events across a republish
 
-A menu frame is: `stamps`; if `global_revision` moved then `list_panels` (when `list_revision` moved) and `copy_panel` for the open page only (when its revision moved); draw; submit events.
+The problem. A click is copied on the menu thread, from a blob of epoch E, and is delivered on a later game-thread pass. Today ImGui copies and dispatches in one game-thread pass, so a plugin cannot change its panel in between. With the view table there is a gap of up to one game pump. A plugin that republishes a whole panel with `set_panel` on a timer or after each status change (source reading: `plugins/loadout/loadout.cpp` ends a `tick` subscriber in `Publish()`, which calls `set_panel`; 2.4) moves the panel to epoch E+1 inside that gap. Dropping the click would be a regression against ImGui, and the plugin cannot avoid it. So a republish must not lose a click on a control that is still there.
+
+Identity. Core gives every node a 64-bit key (the header text of 2.2 defines it, with one function used for both the blob and the live tree):
+
+| Node | Key covers | Survives a republish when |
+|---|---|---|
+| tagged (widgets 1.2) | kind and tag | the tag and kind are the same. The id, the label, the position and the parent may all change. The supported guarantee |
+| untagged | kind, id, parent id, label | the same node is republished with the same id, parent and label. Not guaranteed if the plugin relabels the node or renumbers ids in the same republish |
+
+Rule at dispatch (the full text is the comment at `sco_view_event`):
+
+| Case | Outcome |
+|---|---|
+| epoch equal, the live node with id `node_id` is present, same kind, enabled with its ancestors, and its computed key = `node_key` (tagged and untagged alike) | delivered |
+| epoch equal, any of those fails | dropped, counted |
+| epoch different, a live tagged node has key = `node_key` | that node is the target |
+| epoch different, no such tagged node, the live node with id `node_id` has computed key = `node_key` | that node is the target |
+| epoch different, no target, or the target has another kind, or is disabled including its ancestors | dropped, counted |
+| a target was found | delivered to it with the live node's id; value, selection and page row are validated against the live node as in `RenderPanel`; at most once, to at most one node |
+
+Why a key and not "the same id". Ids are plugin-chosen and can be renumbered by a republish, and a different control can reuse an id. The key makes the click land on the control the player saw. A wrong delivery (Delete instead of Apply) is worse than a dropped click, which is why an untagged node whose label changed in the republish is dropped, counted, and shown by the "try again" line (3.4) and not delivered by id alone. The same rule holds at equal epoch. `update_nodes` can replace a subtree without moving the epoch, so an id can come to name a different untagged control (a Delete button under the id Apply had) with no `set_panel` at all. Checking id, kind and enabled state alone would deliver the click to it. So the key is compared at equal epoch too, for untagged nodes as well as tagged ones. The cost is stated: an untagged control that `update_nodes` relabels between copy and dispatch loses that click (counted, shown) where ImGui, which matches by id alone in one pass, would deliver it. This is an accepted divergence from `RenderPanel` and is owner decision 11 (section 7). The supported way to keep a control clickable across a relabel is a tag.
+
+Examples, with an in-game meaning:
+
+| What the plugin does between copy and dispatch | Tagged button | Untagged button |
+|---|---|---|
+| nothing, or `update_nodes` of other nodes | delivered | delivered |
+| `update_nodes` relabels this button (same epoch) | delivered (the label is not in the key) | dropped, counted, shown (the key covers the label; same rule as a `set_panel` relabel) |
+| `update_nodes` replaces the subtree so that a different button now has this id (same epoch) | dropped (no tag match) | dropped, counted (key differs; never delivered to the other button) |
+| `set_panel` with the same tree and values changed elsewhere | delivered | delivered (same id, parent, label) |
+| `set_panel` with ids renumbered | delivered, with the new id | dropped unless an id still carries the same key |
+| `set_panel` with this button relabelled | delivered (label is not in the key) | dropped, counted, shown |
+| `set_panel` with the button removed | dropped, counted | dropped, counted |
+| `set_panel` with the button disabled | dropped, counted | dropped, counted |
+| `set_panel` with a different control under the old id | dropped (no tag match) | dropped (key differs) |
+| `update_nodes` changes other nodes, or this node's value, and leaves it enabled (same epoch) | delivered | delivered (label unchanged, so the key is equal) |
+
+Plugin guidance (goes to `docs/plugin-ui.md`): give a tag to every control that must survive a republish, and republish only when something changed. M1 reports which in-tree panels republish on a tick and whether they are tagged; M6 tags the ones that are not (owner-run item 14 checks it in game).
+
+How it is tested without the game (all in `tests/test_widgets_view.cpp`, deterministic because the test calls `dispatch_events` itself):
+
+1. Table-driven: for each row of the example table above and each interactive kind (BUTTON, TOGGLE, SLIDER, COMBO, LIST, PAGE, TEXT_INPUT), submit with epoch E, republish, dispatch, and assert delivered or dropped, the id the callback saw, and `dispatched`, `event_drops` and `events_done`.
+2. Exactly once: a callback counter shows a delivered event is seen once, and a slot that matched nothing is not delivered to a neighbour with the same id.
+3. Stress: one thread republishes the same panel with `set_panel` in a loop (identical tree, tagged and untagged variants) while the test thread submits and dispatches 10 000 BUTTON events. Tagged: every event delivered, `event_drops` stays 0. Untagged with an identical republish: the same. Untagged with the label changed on every republish: every event dropped and counted, none delivered to a wrong node. Run under the repository's sanitizer or stress setup.
+4. Equal-epoch relabel and id reuse by `update_nodes`: a relabel between copy and dispatch delivers the click for a tagged button and drops it (counted) for an untagged one; an `update_nodes` that replaces the subtree so that a different untagged button, and then a different tagged button, carries the old id drops the click and runs neither callback. Each case runs for every interactive kind and asserts the id the callback saw, or that no callback ran.
+4a. Parity with `RenderPanel`, two deliberate divergences: (i) the equal-epoch key check of case 4, where `RenderPanel` would deliver by id alone; (ii) no generation break inside one drain (below), where `RenderPanel` breaks. A table-driven test runs the same copy, mutation and event sequence through `RenderPanel` and through `dispatch_events`, asserts the outcome is identical for every row that is not one of these two cases, and asserts that the two cases differ exactly as documented. `RenderPanel` keeps its break and its id-only match on purpose: its copy and dispatch happen in one pass, so neither hole exists for it, and changing it would alter ImGui behaviour for no gain.
+5. Key vectors: the key function has golden vectors (tag, id, parent, label, kind; the empty label; a 63-byte tag; a 255-byte label) that the Rust test host reproduces, so the C++ and Rust sides cannot disagree. The menu never computes a key in product code.
+
+Within one drain. `RenderPanel` today stops its pass when the panel's generation moves, which a callback's own `update_nodes`, `remove_nodes` or `set_panel` does. `dispatch_events` does not do that. It handles every slot taken at its start, and each slot is checked on its own against the live panel when its turn comes, by the table above: the epoch gate (a callback's `set_panel` moves the epoch, so the later slots of that panel are key-matched) and the per-node check, which at equal epoch includes the key (a callback's `update_nodes` or `remove_nodes` does not move the epoch, so the later slots are checked against the live tree: present, same kind, enabled, same key). One rule for all of these cases: a queued click is delivered if its control is still there, enabled and of the same kind, and dropped and counted if not. No callback, whatever it changes, causes a slot to be dropped only because it ran earlier in the same drain. Why: a button handler that calls `update_nodes` is the common case, and dropping the player's next queued clicks for it would be the click loss this section removes. Cost: a handler can now see a second click that ImGui would have discarded; the click is still one the player made on a control that was visible. Termination: the drain is bounded by the slots taken at its start, so a handler that republishes cannot make it loop. Case 4a above pins the difference against `RenderPanel`, which keeps its generation break deliberately and is not changed; the two entry points differ in this one stated way (owner decision 11). The tests below include this case.
+
+#### 2.3.2 `events_done` under coalescing
+
+Definitions.
+
+- `seq`: assigned by `submit_event` when it accepts an event: 1, 2, 3 and so on for the client. A refused event takes no number, so there are no gaps.
+- Queue: a list of slots, first in first out. A slot covers a range of sequence numbers `[first, last]`. The ranges of consecutive slots follow each other with no gap and no overlap.
+- Merge (only at submit time): a SLIDER or TEXT_INPUT event merges into the newest slot if that slot is still queued and holds a SLIDER or TEXT_INPUT event for the same panel id, node id, kind, epoch and node key. A different key is a different control (2.3.1), so it never merges and takes its own slot; a slot never changes its key. The slot keeps its place, takes the newer value, and `last` becomes the new `seq`. Nothing else merges: a BUTTON, TOGGLE, COMBO, LIST or PAGE event always takes a new slot, and nothing merges across another event (the merge target is the tail only). A slot that `dispatch_events` has already taken is never merged into.
+- `dispatch_events` takes the slots queued when it starts (at most 256) and handles them in order. For each slot it delivers or drops it, then publishes `events_done = slot.last`. `events_done` is therefore monotonic, can jump by more than 1, and is never a number inside a slot.
+- `dispatched` and `event_drops` count slots, not events. A merged-away event counts in neither: it is superseded, not dropped.
+- The guarantee: `events_done >= k` means event `k` is finished. If `k` was the last event of its slot, it was delivered (with its own value) or dropped. If `k` was merged away, its slot carries a newer value and `events_done >= k` only after that slot is finished, so "finished" never claims that an old value reached the plugin. A caller that waits on the newest `seq` it sent for a node is always waiting on a slot's `last`, because a newer event for the same node either merged (its `seq` is the new `last`) or took its own slot.
+
+Examples.
+
+| Step | Queue after the step (`[first,last]` kind node) | `events_done` after a full dispatch |
+|---|---|---|
+| `submit` BUTTON A returns 1 | `[1,1] BUTTON A` | |
+| `submit` SLIDER S 0.3 returns 2 | `[1,1] BUTTON A`, `[2,2] SLIDER S` | |
+| `submit` SLIDER S 0.5 returns 3 (tail is SLIDER S, same epoch) | `[1,1] BUTTON A`, `[2,3] SLIDER S 0.5` | |
+| `dispatch_events` | empty. Two slots handled: `dispatched` is 2 | 3 (the poll sees 0, 1 or 3; it never sees 2) |
+
+| Case | What happens |
+|---|---|
+| Not adjacent: SLIDER S 0.3 (1), BUTTON X (2), SLIDER S 0.5 (3) | three slots, no merge. S is set to 0.3, X runs, S is set to 0.5. `events_done` ends at 3 |
+| Different epoch: SLIDER S (1, epoch E), then SLIDER S (2, epoch E+1) | two slots. They are matched separately (2.3.1) |
+| Different key, same node id and epoch: untagged SLIDER S (1, key K1), `update_nodes` relabels it, the menu copies again, SLIDER S (2, key K2) | two slots, no merge. Slot 1 is matched with K1 and is dropped (the live key is now K2, 2.3.1); slot 2 is matched with K2 and delivered. `events_done` ends at 2. The same holds for a tagged node whose tag was replaced under the same id |
+| Same key, same node id and epoch, tail slot: SLIDER S (1, key K1), SLIDER S (2, key K1) | one slot `[1,2]` that keeps K1 |
+| Queue holds 256 slots and the tail is SLIDER S | a SLIDER S event merges and returns `SCO_OK` with the next `seq`; a BUTTON returns `SCO_TOO_MANY` and takes no `seq` |
+| A merged slot `[2,3]` is dropped because the node was disabled | `event_drops` +1 (one slot), `events_done` goes to 3 anyway; the menu sees `events_done >= 3` and `event_drops` moved, copies the panel, and snaps the node to the plugin's value (3.4) |
+| A callback at slot 1 replaces its own panel with `set_panel` (epoch E+1); slots 2 and 3 are BUTTON events for tagged nodes still in the new tree | slots 2 and 3 are key-matched (2.3.1) and delivered, `dispatched` +3, `event_drops` unchanged, `events_done` advances after each slot. If a node is gone from the new tree, its slot is dropped and `event_drops` +1 for it |
+| A callback at slot 1 calls `update_nodes` or `remove_nodes` (epoch unchanged); slots 2 and 3 are for other nodes | slots 2 and 3 are checked against the live tree and delivered unless their node was removed, re-kinded, disabled or now has another key (an untagged node relabelled by that `update_nodes`); there is no generation break |
+| Slots arrive during a drain | the drain handles the slots queued at its start; a later `submit_event` waits for the next call. A new SLIDER event after a slot was taken cannot merge into it; it takes a new slot |
+| The client stops | `events_done` stops moving; `submit_event` answers `SCO_UNAVAILABLE`; the menu is stopping anyway |
+
+How the menu uses it (3.4): per node it keeps the `seq` of the newest event it sent and its optimistic value. It treats the node as settled when `events_done >= seq`, forces one `copy_panel`, shows the copied value, and forgets the record. It never needs to know whether a merge happened.
+
+Tests: `tests/test_widgets_view.cpp` runs every row of the two tables above (the sequence in the first table is checked step by step with the real `seq` and `events_done` values), plus: `seq` is gapless across refused events; `events_done` never decreases and never lands inside a slot; two SLIDER and two TEXT_INPUT events with the same node id and epoch but different `node_key` take two slots (no merge, each slot keeps its own key, each is matched with it, the first is dropped when the live key is the second), and with equal keys they merge; a test thread submits while a callback is running (the callback is gated) and the test checks that the new event waits for the next call; a slot that is taken is never merged into (a gate in the test callback holds the slot open); `dispatched + event_drops` equals the slot count; and a property test with a random mix of SLIDER, TEXT_INPUT and BUTTON events on two nodes checks the invariants (the nodes include two with the same id but different keys): ranges contiguous, a slot's events all carry its key, `events_done` equals the last `last` of the finished prefix, and the value the plugin sees for each node last is the value of the newest event for that node that was not dropped.
 
 ### 2.4 Core implementation notes (not part of the header)
 
@@ -352,11 +518,11 @@ A menu frame is: `stamps`; if `global_revision` moved then `list_panels` (when `
 - Id lengths. Panel id and title limits are 63 bytes. The plugin id is at most 31 bytes (`kMaxIdLen` in `include/sco/host.h` and `plugins.h`, source-checked), so the 64-byte owner field always fits. `list_panels` still skips a panel whose owner id would not fit, with one log line, and never truncates it. That branch is defensive and cannot be reached today.
 - Password nodes. `copy_panel` omits the text of a node with `SCO_WIDGET_PASSWORD` (length 0, flag kept). The blob therefore never carries a secret, in any shape. The Rust field shows no dots for an existing value; it only accepts new input.
 - Admission and shutdown order. Every view call takes the `RuntimeLease` like `RenderPanel`. Stop closes admission first. The order in `src/dllmain.cpp` is: Core closure runs on the game thread, `DrainRequestedStop(1000)` (the Core owner drain) runs on the control thread, and only then `Menu_Drain(1000)` joins the menu thread. So the Rust thread can still call the table after the client's stop has returned. This is why the table and the client handle are static for the process lifetime (header rule) and why a call after stop answers `SCO_UNAVAILABLE` and is expected. Nothing in the design waits on the join for memory safety. A stop-versus-copy race test with the join after stop is in 5.1.
-- Menu thread registration. The product calls `HostWidgetsViewSetMenuThread` (2.5) when the menu thread starts and clears it at drain. `list_panels`, `copy_panel` and `submit_event` compare the caller's platform thread id with the registered id (the same kind of check the game-thread test uses for `dispatch_events`) and answer `SCO_WRONG_THREAD` otherwise. In debug builds a mismatch also asserts. No registered thread means every caller is refused.
-- Periodic `set_panel`, source reading in `plugins/` of this repository (not a test, not run in game): `set_panel` is called from a command, an event or a startup path in gear_presets, inspector, titanlink, voxel_bridge, build picker and travel. `plugins/loadout/loadout.cpp` registers a `tick` subscriber (`Tick`, near line 965) that ends in `Publish()`, which calls `set_panel` for `loadout.player` and `loadout.sq42`; M1 confirms which ticks reach it. So at least one shipped plugin can republish a whole panel on a tick, which is why the tag rematch above exists. M1 reports the exact count and re-counts after M6.
+- Menu thread registration. The Rust menu thread calls `menu_thread_enter` (2.2) as the first act of its entry function, and `menu_thread_leave` from a drop guard on every exit path, panic unwinding included. Core stores the caller's platform thread id in the client under the client's own small mutex (never the widget lock). `list_panels`, `copy_panel` and `submit_event` compare the caller's thread id with it (the same kind of check `OnGameThread()` makes for `dispatch_events`) and answer `SCO_WRONG_THREAD` otherwise; no registered thread means every caller is refused. `menu_thread_enter` from the game thread is refused and a second thread is refused with `SCO_FAILED`, so a stale registration cannot be taken over silently. If the menu thread dies without leaving (a fault, not a panic), `Menu_Drain` clears it with `HostWidgetsViewReleaseMenuThread` (2.5) after the join. In debug builds a mismatch also asserts. If `menu_thread_enter` fails, the Rust thread logs one line, marks the menu broken and draws nothing.
+- Periodic `set_panel`, source reading in `plugins/` of this repository (not a test, not run in game): `set_panel` is called from a command, an event or a startup path in gear_presets, inspector, titanlink, voxel_bridge, build picker and travel. `plugins/loadout/loadout.cpp` registers a `tick` subscriber (`Tick`, near line 965) that ends in `Publish()`, which calls `set_panel` for `loadout.player` and `loadout.sq42`; M1 confirms which ticks reach it. So at least one shipped plugin can republish a whole panel on a tick, which is why the key rematch of 2.3.1 exists. M1 reports the exact count and re-counts after M6.
 - Event drops: the queue keeps a running drop total, returned by `stamps`. `dispatch_events` logs at most one line per second.
-- `RenderPanel`'s event half is split out as one function, `ApplyAndDispatch(entry, event)`, used by both `RenderPanel` and `dispatch_events`. Two code paths for validation would drift. Existing widget tests must stay green with the split. The node-level check (id, kind, enabled including ancestors) is the check `RenderPanel` already runs on the live node, so the split adds no new rule, only the epoch gate.
-- The queue is per client, bounded at `SCO_WIDGETS_MAX_EVENTS` (256) entries, guarded by its own small mutex, never held during a callback. Coalescing is only for SLIDER and TEXT_INPUT, only for adjacent events of one node. BUTTON, TOGGLE, COMBO, LIST and PAGE are never merged or reordered.
+- `RenderPanel`'s event half is split out as one function, `ApplyAndDispatch(entry, event)`, used by both `RenderPanel` and `dispatch_events`. Two code paths for validation would drift. Existing widget tests must stay green with the split. The node-level check (id, kind, enabled including ancestors) is the check `RenderPanel` already runs on the live node. Three things are new for `dispatch_events` and are stated in 2.3.1: the epoch gate with the key match, the key compare at equal epoch (so a reused id is never delivered to another control), and the removal of the generation break (`RenderPanel` keeps its id-only match and its break, so its behaviour does not change). The key compare is a parameter of the shared function, which `RenderPanel` passes as off. The split therefore takes the break as a parameter or leaves it in `RenderPanel`'s loop; the shared function never reads `generation`. The key comes from one function, `NodeKey(const Node&)`, used by the snapshot flattener and by dispatch.
+- The queue is per client, a list of slots bounded at `SCO_WIDGETS_MAX_EVENTS` (256), guarded by its own small mutex, never held during a callback. `submit_event` assigns the sequence number, merges a SLIDER or TEXT_INPUT event into the tail slot when the rules of 2.3.2 allow it, and otherwise appends a slot. `dispatch_events` takes the queued slots under the mutex, releases it, handles each slot, and stores `events_done` (release) after each slot. BUTTON, TOGGLE, COMBO, LIST and PAGE are never merged or reordered.
 - Behaviour change for plugins, stated: in Rust mode Core no longer renders panels, so a plugin gets no per-pass signal. Callbacks arrive only from `dispatch_events`, on the game thread, with no render context and no "panel is visible" hint. A plugin that relied on work done inside a render pass (a lazy refresh when its page is drawn, state set only on a render path) must refresh on its own events or on its own timer. Panels never gain a hidden or visible signal in this version. `docs/plugin-ui.md` says so, and a test plugin that keeps state only in a render-pass path (5.1) shows the effect.
 - Host panels: the host-menu reserved owner's panels carry `SCO_VIEW_PANEL_HOST_OWNED`. The Rust menu does not render them as pages (section 3.8).
 - Logs: a dropped event is counted, never logged per event. `dispatch_events` returns the counts and the host logs one line per second at most.
@@ -370,62 +536,68 @@ This is the only place the host-menu names appear. The C header above does not m
 // (HostMenuActive(context) is true). Returns false for any other caller or after stop.
 // Both *table and *client are static: valid for the life of the process, never freed or
 // reused. After the client's stop callback returns, every call through them answers
-// SCO_UNAVAILABLE.
+// SCO_UNAVAILABLE (menu_thread_leave excepted: it still works so a thread can leave).
 bool HostWidgetsView(const HostMenuContext& context, const sco_widgets_view_v1** table,
                      sco_view_client** client);
 
-// Any thread of the host, for the same reserved identity. Registers the thread id that may
-// call list_panels, copy_panel and submit_event. The menu thread calls it first thing when
-// it starts; the control thread clears it (thread_id 0) after Menu_Drain. Returns false for
-// any other caller. Until it is called, those three functions answer SCO_WRONG_THREAD.
-bool HostWidgetsViewSetMenuThread(const HostMenuContext& context, uint32_t thread_id);
+// Control thread, for the same reserved identity, and only after Menu_Drain has joined the menu
+// thread: clears a menu-thread registration that the thread did not clear itself (it died on a
+// fault). Returns false for any other caller, and does nothing while a thread is still running
+// (a drain that timed out leaves the registration to that thread's own menu_thread_leave).
+bool HostWidgetsViewReleaseMenuThread(const HostMenuContext& context);
 ```
 
-The product's `Client::Load` calls it and passes both pointers to the Rust module (section 3.2). A plugin has no way to name this identity.
+The product's `Client::Load` calls `HostWidgetsView` and passes both pointers to the Rust module (section 3.2). A plugin has no way to name this identity. The menu thread registers itself: it is the Rust thread that calls `menu_thread_enter` on the table, so the host never has to know the Rust thread's id, and the earlier `HostWidgetsViewSetMenuThread(context, thread_id)` is dropped (a Rust thread could not call a C++ function that needs a `HostMenuContext`, and passing an id from another thread invites a mismatch). The only host-side call is the backstop above.
 
 ### 2.6 Versioning and safety
 
 - The table only grows: new functions are appended, each append raises the minor version macro and `size` tells a consumer what exists. The blob header, node and entry structs only grow at the end. A reader that sees a bigger `size` ignores the tail. A change to an existing field is a new major.
-- The menu checks table `version` and `size`, blob `version`, `magic`, `size >= 96/112/224`, `node_stride >= 112`, that `nodes_offset`, `items_offset` and `strings_offset` are multiples of 8 and their ranges do not overlap, and every offset and length before it reads a byte. A malformed blob is a refused page ("This page could not be read"), never a crash. Section 5 fuzzes this reader.
-- Least privilege: the event path is the same path a renderer uses. A Rust menu cannot do more than an ImGui menu could: it cannot press a disabled node, set an out-of-range slider, or choose the callback's tag.
+- The menu checks table `version` and `size`, blob `version`, `magic`, `size >= 96/120/224`, `node_stride >= 120`, that `nodes_offset`, `items_offset` and `strings_offset` are multiples of 8 and their ranges do not overlap, and every offset and length before it reads a byte. A malformed blob is a refused page ("This page could not be read"), never a crash. Section 5 fuzzes this reader.
+- Least privilege: the event path is the same path a renderer uses. A Rust menu cannot do more than an ImGui menu could: it cannot press a disabled node, set an out-of-range slider, or choose the callback's tag. The node key only picks which live node the player's click goes to, and the host re-checks kind, enabled state and values on that node.
 - No new capability is switched on or off by this interface. Nothing here changes a default.
 
-### 2.7 Contract record and provenance (M1 deliverables, draft text)
+### 2.7 Catalogue, ABI test, packaging and provenance (M1 deliverables, draft text)
 
-Draft entries for `docs/contracts.md`, in its Inventory plus per-method form, and for the catalogue/status data in sco-core.
+What the SDK catalogue sees. `tools/sdk_catalogue.py` reads top-level `include/*.h` only (2.1). The new header is under `include/sco/`, so it creates no record in `sdk/contracts`, no row in the `docs/contracts.md` Inventory, no service name, no status-registry row and no plugin-facing catalogue export. That is the intent, and not a loophole: the table is not a plugin contract. M1 proves it by running `python tools/sdk_catalogue.py check` before and after the change; the output must be the same. If the check ever starts to scan `include/sco/`, the header would need the records of a published table, and that is a sign it is in the wrong place.
 
-Inventory row:
-
-| Table | Methods | Size | Version | Kind |
-|---|---|---|---|---|
-| `sco_widgets_view_v1` | 6 | 56 bytes | 1.0 (`0x00010000`) | host-source seam; no service name; not published by `query_service` |
-
-Per-method rows (signature, ownership, threads, errors, cancellation and lifetime; the full wording is in the header comment and is copied verbatim):
+The contract text for this seam is the header comment (normative) and one page, `docs/widgets-view.md`, which carries the per-method table below. The same page carries the one stability statement: the view table is a host-source seam, outside the Stable and Experimental classes of published service tables, pinned by size and layout tests, with no promise to plugins. `docs/contracts.md` is not touched, and neither is `docs/stability.md`: `tools/sdk_catalogue.py check` pins the rows of `docs/contracts.md`, and `sdk/components.json` lists both files, so an edit there is a packaging-visible change this seam does not need. `docs/widgets-view.md` is a new file with its own `components.json` entry (`core-source`). If the owner later ships it to plugins it needs a top-level header, a record per method, a service name and a class (Experimental to start).
 
 | Method | Ownership | Threads | Results | Lifetime and cancellation |
 |---|---|---|---|---|
 | `capabilities(client, caps)` | caller's array; written, not kept | any | OK, BAD_ARG, UNAVAILABLE | none; O(1) |
 | `stamps(client, g, l, drops, done)` | caller's pointers; written, not kept | any, O(1), no allocation | OK, UNAVAILABLE | none |
-| `list_panels(client, out, stride, count)` | caller's array; Core keeps nothing | menu thread in 1.0 (proposed: any non-game thread) | OK, BAD_ARG, TOO_MANY (count = needed), UNAVAILABLE, WRONG_THREAD | a snapshot of the list at one revision |
-| `copy_panel(client, id, out, bytes)` | caller's 8-aligned buffer; Core keeps nothing | menu thread in 1.0 (proposed: any non-game thread); runs no plugin code | OK, TOO_MANY (bytes = needed), NOT_FOUND, CRASHED, BAD_ARG, UNAVAILABLE, WRONG_THREAD | one consistent snapshot of one revision |
-| `submit_event(client, id, event, seq)` | event, text and tag copied during the call; `*seq` written on OK | menu thread in 1.0 (proposed: any non-game thread) | OK, NOT_FOUND, BAD_ARG, TOO_MANY, UNAVAILABLE, WRONG_THREAD | queued; finished when `events_done` >= `*seq`; may be dropped later and counted in `event_drops` |
-| `dispatch_events(client, ok, dropped)` | none | game thread only; not inside a widget callback | OK, WRONG_THREAD, FAILED, CRASHED | drains the queue; a callback that faults stops its owner's events only |
+| `menu_thread_enter(client)` | none; Core records the calling thread | the future menu thread; not the game thread | OK, BAD_ARG, WRONG_THREAD, FAILED, UNAVAILABLE | held until `menu_thread_leave` or the host's release after a join |
+| `menu_thread_leave(client)` | none | the registered thread | OK, BAD_ARG, WRONG_THREAD | works after stop |
+| `list_panels(client, out, stride, count)` | caller's array; Core keeps nothing | registered menu thread in 1.0 (proposed: any non-game thread) | OK, BAD_ARG, TOO_MANY (count = needed), UNAVAILABLE, WRONG_THREAD | a snapshot of the list at one revision |
+| `copy_panel(client, id, out, bytes)` | caller's 8-aligned buffer; Core keeps nothing | registered menu thread in 1.0 (proposed: any non-game thread); runs no plugin code | OK, TOO_MANY (bytes = needed), NOT_FOUND, CRASHED, BAD_ARG, UNAVAILABLE, WRONG_THREAD | one consistent snapshot of one revision |
+| `submit_event(client, id, event, seq)` | event and text copied during the call; `*seq` written on OK | registered menu thread in 1.0 (proposed: any non-game thread) | OK, NOT_FOUND, BAD_ARG, TOO_MANY, UNAVAILABLE, WRONG_THREAD | queued, possibly merged (2.3.2); finished when `events_done` >= `*seq`; may be dropped later and counted in `event_drops` |
+| `dispatch_events(client, ok, dropped)` | none | game thread only; not inside a widget callback | OK, WRONG_THREAD, FAILED, CRASHED | drains the slots queued at its start; a callback that faults stops its owner's slots only |
 
-Machine contract record. In Core the per-method authority is the machine records in `sdk/contracts/*.json` (one file per table, for example `sco_widgets_v1.json`). The cells above are checked against those records by `tools/sdk_catalogue.py check`, and CI refuses a disagreement. So M1 adds `sdk/contracts/sco_widgets_view_v1.json` in the existing format: six `table-method` records (`sco-widgets-view-v1-capabilities`, `-stamps`, `-list-panels`, `-copy-panel`, `-submit-event`, `-dispatch-events`), each with `symbol`, `table` (`sco_widgets_view_v1`), `version_macro` (`SCO_WIDGETS_VIEW_VERSION_1_0`), `source_header`, `signature`, `member_extent`, `table_size` (56), `since`, `purpose`, `buffer_contract`, `ownership`, `thread_affinity`, `results`, `reentrancy`, `cleanup`, `limitations`, `tests`, and the other fields the existing records carry. The Inventory row and the rows above are generated to match them. The extractor today reads public SDK headers and compares them with the records, and the existing records name a service in their `service` field. This table has no service name and is not published, so M1 first runs `tools/sdk_catalogue.py check` on the new header and decides one of two ways, recorded in the PR: add the header and records with an explicit host-source marker so the check passes, and keep the table out of the plugin-facing catalogue export, the status registry and the plugin kit; or list the header in an explicit allowlist of host-source headers that the check skips (then no record file is needed, and the prose rows above become the only text, which the owner must accept). The first way is recommended: the header is then still a checked contract.
+Where the files go, and how they are packaged. `sdk/package.py` builds every zip from `sdk/components.json` alone, and the repository check requires that every file under the folders in `covers` is listed there or in `excluded`. So M1 adds one entry per new file, each with `profiles: ["core-source"]` (the same profile as `include/sco/host_menu.h`; `host-source-sc` includes it), `origin: "project-authored"`, `license: "GPL-3.0-only"` and no `public_header` key:
 
-Stability class. `docs/stability.md` classes only published service tables as Stable or Experimental. This table is not published (`query_service` answers `SCO_NOT_FOUND`), so it is outside that scheme: a host-source seam, pinned by size and golden, with no promise to plugins. `docs/stability.md` gets one sentence saying so. If the owner later ships it in the plugin kit (decision 2, section 7) it would need a class, and Experimental is the right start.
+| New file | Role |
+|---|---|
+| `include/sco/widgets_view.h` | the header (2.2) |
+| `src/widgets/view.cpp` (and a private header if needed) | the implementation; the `RenderPanel` event split (2.4) |
+| `tests/abi_widgets_view.c` | layout pins, built as C11, as C++20 and with short enums, the same three ways as `tests/abi_widgets.c`, and run with the `abi_v1` target list |
+| `tests/test_widgets_view.cpp` | the section 5.1 tests |
+| `tests/fixtures/widgets_view/` | shared blobs and `.json` descriptions, plus the key vectors |
 
-Golden pin. The header is host-source only, so it is not a plugin promise, but its bytes are still pinned. Core's released-header check (`tests/abi/released/sco_api.h`, the `abi_snapshot` target in `CMakeLists.txt`, `tools/abi_snapshot.py`) is built around `sco_api.h`. M1 extends it: `tools/abi_snapshot.py` takes a list of headers, the `abi_snapshot` target passes `sco_widgets_view.h` as a second one, and the first release that contains the header stores `tests/abi/released/sco_widgets_view.h`; from then a test fails if the live header and the golden differ without a version bump. Until that release, the only pin is `tests/abi_widgets_view.c` (the static asserts for every size and key offset), which lands in the same M1 change as the header, not after it. That is a stated gap: the owner accepts it in section 7. The `version` field and `size` follow the rule in 2.2: appending a function bumps the minor macro and grows `size`.
+Packaging checks added to `sdk/test_package.py`: the host-source kit (`host-source-sc`) and the kernel source kit (`core-source`) contain the header and its tests; the `core`, `game-sc` and `legacy` zips do not contain `include/sco/widgets_view.h`; the plugin zips' header list is unchanged. A plugin author therefore cannot see the table, and the SDK catalogue and plugin docs are unchanged. The sc-offline `external/sco-core` pin (and the host-source kit digest it records) moves when the commit that adds the header is pinned. That is the normal bump for any Core change in 2.4.1.
+
+ABI test, and pin. `tests/abi_widgets_view.c` asserts, in C11 and C++20, every size and key offset of the pins table of 2.2, the macro values, that `SCO_VIEW_ID_BYTES` is larger than `SCO_WIDGETS_MAX_TAG`, and that all three blob offsets are multiples of 8. It is a new CMake object library set beside `sco_abi_widgets_*`. Core's released-header freeze (`tools/abi_snapshot.py`, `tests/abi/released/sco_api.h`) is built around `sco_api.h` and is not extended: this header has no release yet, and stretching a plugin-ABI freeze to a host-source seam would blur what the freeze promises. Instead, until the first release that contains the header, the only pin on the Core side is `tests/abi_widgets_view.c`; at the first release candidate its golden (a probe's printed sizes and offsets) is checked in under `tests/abi/` and compared by a test. That is a stated gap, and owner decision 9 (section 7) accepts it or asks for the golden earlier.
+
+The Rust side. The menu does not include the header. `scom-view` has hand-written `#[repr(C)]` mirrors (`ffi.rs`) with `const` asserts for every size and offset in the pins table, and a list of those numbers in `menu-rs/crates/scom-view/pins.txt`. sc-offline gets a check, `tools/view-abi-check.py`, that compiles a small C probe including `sco/widgets_view.h` from the pinned Core (`SCO_HOST_SOURCE_DIR` or `external/sco-core`) with the compiler the repository already uses, prints `sizeof`, `offsetof` and the macros, and compares them with `pins.txt`. It also records the SHA-256 of the pinned header in `menu-rs/ABI_PIN`. A Core header edit therefore fails the sc-offline CI until a person has reviewed the Rust mirrors and re-recorded the hash. The C++ host glue in `src/` includes the header directly (it is a host, not a plugin or a builtin, so `tools/sdk-headers.py` does not apply), and passes the table and client pointers to `scom_open` (3.2).
 
 | Field | Value |
 |---|---|
 | Name | `sco.widgets.view` (a label for docs and logs; there is no service name) |
-| Header | `include/sco_widgets_view.h`, host-source kit only (owner decision 2, section 7); record `sdk/contracts/sco_widgets_view_v1.json` |
+| Header | `include/sco/widgets_view.h`; `core-source` profile, no `public_header`; not in the SDK catalogue |
 | Game neutrality | no game type, no game name, no change to `sco_api.h` or `sco_widgets.h` |
-| Tests | `tests/abi_widgets_view.c`, `tests/test_widgets_view.cpp`, shared fixtures |
+| Tests | `tests/abi_widgets_view.c`, `tests/test_widgets_view.cpp`, shared fixtures, `tools/view-abi-check.py` (sc-offline) |
 | Status | specified and tested synthetically once M1 lands; **not run in game** |
 
-Provenance: the header and its tests are independently authored from the public `sco.widgets` contract and the Core sources already in the repository. Each new file carries the per-file provenance metadata the repository requires and the SPDX line `GPL-3.0-only`. No private ledger id, private path, extracted game data, binary or dump is used or cited. Fixtures are synthetic panels only. Provenance review stays a human step.
+Provenance. The header and its tests are independently authored from the public `sco.widgets` contract and the Core sources already in the repository. Each new file carries the SPDX line `GPL-3.0-only` and the per-file provenance metadata the repository requires (`origin` and `license` in `sdk/components.json`, and whatever `IP_POLICY.md` asks for at review time). No private ledger id, private path, extracted game data, binary or dump is used or cited. Fixtures are synthetic panels only. The key function and its vectors are invented for this interface. Provenance review stays a human step.
 
 ## 3. The Rust menu: process shape, input, theme
 
@@ -513,6 +685,7 @@ Rules for these tables:
 - Nothing in them runs on the menu thread that needs the game thread or the control thread to answer. Every callback marked `menu` only stores a request or reads a snapshot, and the menu thread never waits for anyone. The control thread is not a target of any callback. Source check: in `src/dllmain.cpp` the control thread calls `Menu_Start`, then loops on `WaitForSingleObject(g_controlWakeEvent, 200)`, and that event means "stop". It cannot serve requests, would add up to 200 ms latency, and reusing the event would stop the game. So the design does not restructure that loop. The legacy window has its own thread with its own message pump (it must, to own a window) and its own wake event. `active_window` is an atomic enum in the host. The window that is closing writes it with a compare-exchange just before it moves focus to the other (4.1). `Menu_Drain` runs on the control thread and joins both threads.
 - The sco.ui tab list is read through `sco::ui::Tabs()`, which `sco/ui.h` documents as an any-thread snapshot, so the menu thread may call it. It has no change counter and badges can change without a registration, so the host cannot bump a counter on registration. Instead `legacy_tabs` returns a hash of the whole list including badges (see the table above). A tab registered, removed or re-badged after the menu started therefore shows in "More plugins" within one poll interval (33 ms while visible). Rust copies the bytes out; the memory belongs to the host.
 - Settings files. In Rust mode the Rust menu is the only writer of `menu-view.ini`, `menu-window.ini` and the background and developer-page settings (it writes to a temp file and renames, so a reader never sees half a file). `settings_changed` tells the host to re-read them. The host also re-reads them every time it shows the legacy window, so both windows show the same values. When the legacy window changes a setting it writes through the same helpers and the Rust menu re-reads the files when it is next shown. A test (5.4) changes a value in each window and checks that the other shows it.
+- Menu thread registration (finding: the Rust thread cannot call a C++ `HostMenuContext` function). The first statement of the menu thread's entry function, before any window, D3D or egui work, is `view->menu_thread_enter(client)` on the table the host passed in `scom_host_v1`. A drop guard calls `menu_thread_leave` on every exit path, panic unwinding included, then `ClipCursor(NULL)` and hide. If enter fails (`SCO_FAILED`, `SCO_WRONG_THREAD`, `SCO_UNAVAILABLE`), the thread logs one line through `log`, sets the broken flag, and never calls `list_panels`, `copy_panel` or `submit_event`. The host does not know or pass the thread id. After `Menu_Drain` has joined the thread, the control thread calls `HostWidgetsViewReleaseMenuThread` (2.5) as a backstop for a thread that died without leaving; if the join timed out it does not call it.
 
 The existing contract maps one to one: `Menu_Start`, `Menu_RequestStop`, `Menu_Drain` (same control-thread and `WrongThread` rules), `Menu_Typing`, and `Menu_GameThreadFrame`, which in Rust mode only calls `dispatch_events` (and runs the legacy frame when the legacy window is open). `scom.dll` is pinned with `GetModuleHandleExW` before `start` and never freed after exposure. `scom_open` and `start` do nothing in `DllMain`: no threads, no loader-lock work.
 
@@ -562,8 +735,8 @@ menu-rs/                         separate Cargo workspace from launcher-rs/ (own
 
 - The menu thread never waits for the game thread. This is the main behavioural gain over today: a game that pumps messages rarely no longer makes the menu crawl. An event may still take until the game's next message-hook pass to reach the plugin; that is unchanged, and the existing `WM_NULL` nudge stays.
 - `PanelSource` is a trait with three methods (`stamps`, `list`, `copy`) and one for events (`submit`). Implementations: the real FFI view, `scom-testhost` (fake table), and a dump-file source (section 5). The renderer and app never see which one they have.
-- Optimistic local state, with an ack. While the player drags a slider, types, or flips a toggle, egui holds the value locally. The menu records, per node (keyed by tag when there is one, else by id), the value it sent and the `seq` that `submit_event` returned. A host revision never replaces that node's local value while the pointer is on it, nor while `events_done` < that `seq` (the event is still queued, so the copied value is old). When `events_done` reaches the `seq`, the menu marks the node settled, forces one `copy_panel` of the panel (the event may have been dropped, so the revision need not have moved), shows the copied value, and forgets the record. If the host dropped the event (`event_drops` moved) the copied value is simply the plugin's value and the node snaps to it, once, with the "try again" line. A newer event for the same node replaces the record and its `seq`. On a new epoch the local state is kept for tagged nodes that still exist (matched by tag) and dropped for the rest. Test: the fake host delays dispatch by 300 ms, a plugin revision bump arrives at 100 ms, and the slider value shown never goes back to the old value; see 5.2.
-- Event pacing: at most one event per node per frame (last value wins), on top of the host's own coalescing. When `submit_event` answers `SCO_TOO_MANY`, the menu keeps BUTTON/TOGGLE/COMBO/LIST/PAGE events and retries them on the next frames (they are never discarded); only the last SLIDER and TEXT_INPUT value per node is kept. Drops after queueing are counted by the host (`event_drops` in `stamps`). When that total moves, the menu shows a transient line in the status strip, "A panel changed; try again", for three seconds, so a lost click is never silent. With the tag rematch (2.3) this line appears only for an untagged panel that was replaced, or a node that was removed or disabled.
+- Optimistic local state, with an ack. While the player drags a slider, types, or flips a toggle, egui holds the value locally. The menu records, per node (keyed by tag when there is one, else by id), the value it sent and the `seq` that `submit_event` returned. A host revision never replaces that node's local value while the pointer is on it, nor while `events_done` < that `seq` (the event is still queued, so the copied value is old). When `events_done` reaches the `seq`, the menu marks the node settled, forces one `copy_panel` of the panel (the event may have been dropped, so the revision need not have moved), shows the copied value, and forgets the record. If the host dropped the event (`event_drops` moved) the copied value is simply the plugin's value and the node snaps to it, once, with the "try again" line. A newer event for the same node replaces the record and its `seq`. On a new epoch the local state is kept for nodes that still exist, matched by node key (a tagged node by its tag and kind; an untagged node only while its id, parent and label are unchanged, so a relabelled untagged node is treated as new), and dropped for the rest. Test: the fake host delays dispatch by 300 ms, a plugin revision bump arrives at 100 ms, and the slider value shown never goes back to the old value; see 5.2.
+- Event pacing: at most one event per node per frame (last value wins), on top of the host's own coalescing. When `submit_event` answers `SCO_TOO_MANY`, the menu keeps BUTTON/TOGGLE/COMBO/LIST/PAGE events and retries them on the next frames (they are never discarded); only the last SLIDER and TEXT_INPUT value per node is kept. Drops after queueing are counted by the host (`event_drops` in `stamps`). When that total moves, the menu shows a transient line in the status strip, "A panel changed; try again", for three seconds, so a lost click is never silent. With the key rematch (2.3.1) this line appears only for a node that a republish removed, re-kinded or disabled, or, if it is untagged, relabelled or re-parented.
 - Poll interval: while visible, the menu thread calls `stamps` at least every 33 ms even with no input (and on every frame it draws), so a plugin-driven revision change appears within about 33 ms. While hidden or unfocused the interval is 50 ms. A test with `scom-testhost` bumps a revision with no input and checks the redraw within 40 ms (hidden: 60 ms).
 - Repaint is on demand: the loop draws when an input event, a revision change, an animation or an egui repaint request is pending, and sleeps 50 ms while the window is hidden or unfocused, as today. The game is not asked for frames at all while the menu draws panels.
 
@@ -627,13 +800,16 @@ The Settings page and the status strip become native Rust. `menu.main` and `menu
 
 ### 3.10 Capability switch readout (read-only)
 
-Decision 4 puts the switches in the launcher: on by default in every release package, each a visible setting the player can turn off. The in-game menu only shows the state the game started with.
+The switches live in the launcher. The in-game menu only shows the state the game started with.
 
-- The Settings page has a "Game capabilities" section. One row per switch the host lists through `scom_host_v1.switches`: the switch name, `On` or `Off`, and the host's text. The list comes from the same registry the launcher reads (sco-core `sdk/status_registry.json` and the host's own table), so the menu hard-codes no switch name and a switch added in Core appears without a menu change.
-- Every row ends with the words "Not run in game." until the owner records a session for that capability. The menu does not show "verified" for any row.
-- A switch that is Off shows one line: "Turn it on in the launcher, then start the game again." The menu has no toggle. Core reads the switches when the game starts, so a toggle in the menu would be a button that does nothing.
-- The section never describes a switch as experimental or default-off. It states what is true now: on or off, and not run in game.
-- Test: a `scom-testhost` list of three rows (On, Off, long text) draws as a golden at 100 and 125 percent. The text of each row is cut on a UTF-8 boundary with a tooltip, like any label.
+Owner defaults (2026-11-17), as the menu must show them in a release package: the five capability switches `exp_loadout_async`, `exp_inventory_read`, `exp_actor_stats_write`, `exp_cvars_native` and `exp_audio_native` are **on** by default, each a visible key the player can turn off, each saying it has not been run in game. `exp_entities_diag` is **off** by default: it enables diagnostic hooks that patch game functions, and it is a diagnostic, not a feature.
+
+- The Settings page has a "Game capabilities" section with one row per feature switch the host lists through `scom_host_v1.switches`: the switch name, `On` or `Off`, and the host's text. Below it, a separate "Diagnostics" group holds `exp_entities_diag` the same way. The list comes from the same registry the launcher reads (sco-core `sdk/status_registry.json` and the host's own table), so the menu hard-codes no switch name and a switch added in Core appears without a menu change. Which group a switch is in is a field the host sends (`feature` or `diagnostic`), not a name the menu knows.
+- A feature row ends with the words "Not run in game." until the owner records a session for that capability. The menu does not show "verified" for any row.
+- A feature switch that is Off shows one line: "Turn it on in the launcher, then start the game again." The menu has no toggle. Core reads the switches when the game starts, so a toggle in the menu would be a button that does nothing.
+- A diagnostic row says what it does in plain words ("Patches game functions to collect diagnostic data. For problem reports only."). When it is Off it says nothing more; when it is On the row carries a visible "On: diagnostic hooks active" line, so a player who forgot it was on can see it.
+- The section never calls a feature switch experimental or default-off, and never calls the diagnostic a feature. It states what is true now: on or off, and not run in game.
+- Test: a `scom-testhost` list of four rows (feature On, feature Off, a long text, one diagnostic Off) and a variant with the diagnostic On draws as goldens at 100 and 125 percent. The text of each row is cut on a UTF-8 boundary with a tooltip, like any label.
 
 ## 4. What happens to `sco.ui` ImGui tabs
 
@@ -674,9 +850,10 @@ Everything in this section runs on a Windows machine or CI runner with no game a
 
 ### 5.1 Interface tests (sco-core)
 
-- `tests/abi_widgets_view.c`: compile-only layout pins from section 2.2 in C11 and C++20, including the new `stamps` signature, the table `version` field, and the 8-byte multiples of the three blob offsets.
+- `tests/abi_widgets_view.c`: compile-only layout pins from section 2.2 in C11 and C++20 (and with short enums), including the 120-byte node with `key` at 112, the event with `node_key` at 48, the 72-byte table with `menu_thread_enter` and `menu_thread_leave`, the new `stamps` signature, the table `version` field, the 8-byte multiples of the three blob offsets, and `SCO_VIEW_ID_BYTES > SCO_WIDGETS_MAX_TAG`.
 - `tests/test_widgets_view.cpp`: with a real Core and synthetic plugin panels: list order and counts; `copy_panel` blob for every node kind and every 1.1 to 1.3 extension; paging; tags; password flag; disabled ancestors; limits (256 nodes, 255-byte strings, 256 items); size handshake including a panel that grows between calls; revision rules (event moves `revision` not `epoch`, `set_panel` moves both, removal and re-add never reuses a value); released owner gives `SCO_CRASHED` and drops out of the list; `query_service` for the name answers `SCO_NOT_FOUND`; after stop every call answers `SCO_UNAVAILABLE`.
-- Event path: submit from a test thread registered as the menu thread (`HostWidgetsViewSetMenuThread`), dispatch on the game thread; ordering; `seq` starts at 1 and rises by 1, and `events_done` reaches it after the effect is in the revision (a copy taken after seeing `events_done >= seq` shows the new value); a replaced untagged panel (new epoch) drops the queued event and moves `event_drops`; a replaced tagged panel delivers a queued BUTTON, TOGGLE, SLIDER, COMBO and PAGE event to the live node with the same tag (with the live node's id); a replaced tagged panel whose node lost its tag, changed kind or is disabled drops it; an equal epoch with a node removed and another added under the same id and a different tag drops the event; an `update_nodes` or `remove_nodes` of other nodes between submit and dispatch does NOT drop a BUTTON, TOGGLE, COMBO or LIST event (stress test: one thread calls `update_nodes` in a loop while events are queued and dispatched; every event for an untouched node is delivered); an event for a removed, re-kinded or disabled node is dropped and counted; disabled node, wrong kind, out-of-range slider, over-long or invalid UTF-8 text are refused exactly as `RenderPanel` refuses them (the same table of cases is run against both entry points and must give identical outcomes); queue full gives `SCO_TOO_MANY`; coalescing never merges BUTTON/TOGGLE/COMBO/LIST/PAGE; a callback that replaces its panel drops the rest; a callback that faults gives `SCO_CRASHED` and other panels still get theirs; `dispatch_events` off the game thread gives `SCO_WRONG_THREAD`. Thread rule: `list_panels`, `copy_panel` and `submit_event` from an unregistered thread, or before any thread is registered, give `SCO_WRONG_THREAD` and write nothing. The proposed any-thread rule (2.4) is a separate test, run only after M1 task one and only if the race test passes.
+- Menu thread registration: `menu_thread_enter` from the game thread gives `SCO_WRONG_THREAD`; from a test thread it gives `SCO_OK` (and again from the same thread); a second thread gets `SCO_FAILED`; `list_panels`, `copy_panel` and `submit_event` give `SCO_WRONG_THREAD` before any enter, from any other thread, and after `menu_thread_leave`; `menu_thread_leave` from another thread gives `SCO_WRONG_THREAD` and changes nothing; leave works after stop; enter after stop gives `SCO_UNAVAILABLE`; `HostWidgetsViewReleaseMenuThread` after a join clears a registration the thread left behind and does nothing while the thread still runs. A plugin cannot obtain the table (`query_service` gives `SCO_NOT_FOUND`).
+- Event path: submit from the registered menu thread, dispatch on the game thread; ordering; the republish, key-matching and stress tests of 2.3.1 (tagged and untagged, every interactive kind, exactly once, label changed in the republish, equal-epoch relabel by `update_nodes`, the key vectors); the `seq`, merge and `events_done` tests of 2.3.2, including the step-by-step sequence of its first table; `events_done` reaches `seq` after the effect is in the revision (a copy taken after seeing `events_done >= seq` shows the new value); a replaced untagged panel whose node kept id, parent and label delivers, one whose label changed drops and moves `event_drops`; an `update_nodes` or `remove_nodes` of other nodes between submit and dispatch does NOT drop a BUTTON, TOGGLE, COMBO or LIST event (stress test: one thread calls `update_nodes` in a loop while events are queued and dispatched; every event for an untouched node is delivered); an event for a removed, re-kinded or disabled node is dropped and counted; disabled node, wrong kind, out-of-range slider, over-long or invalid UTF-8 text are refused exactly as `RenderPanel` refuses them (the same table of cases is run against both entry points and must give identical outcomes); queue full gives `SCO_TOO_MANY` except for a merge, which succeeds; coalescing never merges BUTTON/TOGGLE/COMBO/LIST/PAGE, and never merges SLIDER or TEXT_INPUT events whose `node_key` differs; a callback that replaces its panel with `set_panel` with slots 2 and 3 queued for that panel delivers them by key match (tagged) and drops only those whose control is gone; a callback that calls `update_nodes` (relabel, disable another node) or `remove_nodes` with further slots queued delivers the slots whose nodes are still enabled and still have the same key (an untagged node that callback relabelled is dropped) and drops the others, with no generation break, and the drain still ends after the slots taken at its start; a callback that faults gives `SCO_CRASHED` and other panels still get theirs; `dispatch_events` off the game thread gives `SCO_WRONG_THREAD`. The proposed any-thread rule (2.4) is a separate test, run only after M1 task one and only if the race test passes.
 - No render pass: a test plugin keeps a value only on a path that runs in `RenderPanel` today (a lazy refresh on draw). In Rust mode it gets no such call; the test records this as the documented behaviour, and a second plugin that refreshes from its own events keeps working.
 - Stop versus copy: the menu thread loops `copy_panel` and `submit_event` while the control thread runs the real order: Core stop, `DrainRequestedStop`, then (later) `Menu_Drain`. The join is deliberately after stop. Acceptance: calls made after stop answer `SCO_UNAVAILABLE`, the table and client memory are still valid (checked under the repository's sanitizer or a guard-page allocator for the client), every call returns a result code, no deadlock.
 - Ack under delay (synthetic, no game): a delayed dispatch (the game pass runs 300 ms after the submit) and a plugin revision bump in the gap; `events_done` stays below `seq` until the pass, the copied value in the gap is the old one, and after the pass it is the new one.
@@ -690,7 +867,7 @@ Everything in this section runs on a Windows machine or CI runner with no game a
 - Parser fuzz: random bytes, truncated blobs, offsets past the end, `nodes_offset` or `items_offset` not a multiple of 8, overlapping ranges, invalid UTF-8, oversized counts, `node_stride` below the minimum, a cycle in parents. Property: never panics, never reads out of bounds, returns an error. `cargo fuzz` target kept in the repository, plus a bounded `proptest` run in normal CI.
 - `scom-nav`, `scom-window` and the panel grouping: the vectors of the C++ tests (`menu_navigation_test`, the menu window tests, `menu_frame_windows_test` for the escape logic) become shared data files read by both languages. Same inputs, same outputs, including the `.ini` readers' refusal of unknown keys.
 - `scom-render` layout rules: the pure functions are tested with the same vectors as `tests/test_widgets_layout.cpp` in sco-core (label column, control width, popup limits, `Ellipsize` including cut points inside multi-byte text).
-- Event tests with `scom-testhost`: render a synthetic panel to egui with scripted input (no window: egui `RawInput` fed directly), assert the exact `sco_view_event` that comes out for each widget kind, one event per node per frame, no event for disabled nodes, paging events carry `row`, epoch is the epoch of the copy drawn, a tagged node's event carries its tag. Optimistic state: with a fake host that delays the ack by 300 ms and bumps the revision at 100 ms, the value egui shows for a dragged slider and a toggled toggle never returns to the old value, and equals the host's value one frame after `events_done` reaches the `seq`; with a host that drops the event, the node snaps to the host value once and the "try again" line shows.
+- Event tests with `scom-testhost`: render a synthetic panel to egui with scripted input (no window: egui `RawInput` fed directly), assert the exact `sco_view_event` that comes out for each widget kind, one event per node per frame, no event for disabled nodes, paging events carry `row`, epoch is the epoch of the copy drawn, the event's `node_key` is the key of the blob node (copied, never computed; the test host builds blobs with the shared key vectors of 2.3.1). The menu thread's entry registers with `menu_thread_enter` before its first `copy_panel`, a failed enter leaves the menu broken with no calls to the table, and the leave guard runs on a panic. Optimistic state: with a fake host that delays the ack by 300 ms and bumps the revision at 100 ms, the value egui shows for a dragged slider and a toggled toggle never returns to the old value, and equals the host's value one frame after `events_done` reaches the `seq`; with a host that drops the event, the node snaps to the host value once and the "try again" line shows.
 
 ### 5.3 Golden pictures
 
@@ -724,7 +901,7 @@ Order matters. M1 is a Core change and is the long pole: start it first, in para
 | Phase | Work | Acceptance (all synthetic, build or CI) |
 |---|---|---|
 | M0. Spike, 1 to 2 weeks | In a throwaway `menu-rs/spikes/` crate: Win32 window + egui + the D3D11 painter drawing one hard-coded panel, hardware and WARP, software cursor, PNG capture, panic caught at an FFI edge in a test cdylib. Measure: DLL size, crate count, `cargo deny`, CPU per idle frame, whether the process DPI awareness changes (it must not). Also two go/no-go probes: (a) the software cursor still draws and tracks when the host has hidden the OS cursor (`ShowCursor` count below zero, `SetCursor(NULL)`), checked with a stand-in game window; (b) a second D3D11 device and its swapchain in a process that already has a stand-in game device, with a stand-in overlay hook on `Present`, causes no error or visible conflict. Both are synthetic; real overlays are owner-run (item 13). | Report committed with numbers, including the two probes. Written go/no-go for shape A versus B (a failed probe is a no-go for A). If no-go, M3 changes to shape B: `PanelSource` over shared memory, plus the second event encoding (text by offset) and its fuzz tests; the rest of the plan stands |
-| M1. Core interface, 2 to 3 weeks | `sco_widgets_view.h`, the implementation, `RenderPanel` event split, `HostWidgetsView`, ABI pins, `test_widgets_view.cpp`, fixtures, `docs/widgets-view.md`, `sdk/contracts/sco_widgets_view_v1.json` and the Inventory row and six per-method rows in `docs/contracts.md` generated to match it, with `tools/sdk_catalogue.py check` passing (2.7), the second header in the released-golden check (2.7), the one-line `docs/stability.md` note, the count of in-tree `set_panel` calls made on a tick (2.4), status records, host-source kit includes the header. Held for 2.4.1 with the other items. The header text of 2.2 was compiled once as C11 and C++20 with clang against the repository's `sco_widgets.h`, with static asserts for every size and key offset in the pins table (all passed). That check is repeated by `tests/abi_widgets_view.c` in M1. Never run in game | All section 5.1 tests pass (including the stale-event stress, tag rematch, ack-under-delay and stop-versus-copy tests); existing widget tests unchanged and green; `query_service` refusal test; kit package check includes the header in host-source and not in the plugin kit (if the owner agrees); no change to `sco_api.h` or `sco_widgets.h` |
+| M1. Core interface, 2 to 3 weeks | `include/sco/widgets_view.h`, the implementation (`src/widgets/view.cpp`), the `RenderPanel` event split, the node key and the epoch/key matching, the slot queue with coalescing, menu-thread registration, `HostWidgetsView` and `HostWidgetsViewReleaseMenuThread`, `tests/abi_widgets_view.c`, `test_widgets_view.cpp`, fixtures and key vectors, `docs/widgets-view.md` (with the stability statement; `docs/contracts.md` and `docs/stability.md` unchanged), the two comment fixes in `include/sco_widgets.h`, `sdk/components.json` entries (`core-source`, no `public_header`) and the package checks of 2.7, a `tools/sdk_catalogue.py check` run before and after with identical output, the count and tagged state of in-tree `set_panel` calls made on a tick (2.4), and the sc-offline `tools/view-abi-check.py` with `pins.txt` and `ABI_PIN`. Held for 2.4.1 with the other items. The header text of 2.2 was compiled once as C11 and C++20 with clang against the repository's `sco_widgets.h`, with static asserts for every size and key offset in the pins table. That check is repeated by `tests/abi_widgets_view.c` in M1. Never run in game | All section 5.1 tests pass (registration, republish and key matching, `events_done` under coalescing, stale-event stress, ack-under-delay and stop-versus-copy); existing widget tests unchanged and green; `query_service` refusal test; package check: the header is in the host-source and kernel source kits and not in the `core`, `game-sc` or `legacy` zips; `tools/sdk_catalogue.py check` output unchanged; no change to `sco_api.h` or `sco_widgets.h` |
 | M2. Rust model and renderer, 3 to 4 weeks | `scom-view`, `scom-nav`, `scom-window`, `scom-theme`, `scom-render`, `scom-testhost`; shared vector files; first goldens through a software path or the M0 painter. Needs the sidebar shell branch merged | Section 5.2 tests pass; fuzz smoke clean; layout vectors identical to sco-core's; `forbid(unsafe_code)` on these crates |
 | M3. Window, painter, input, 3 to 4 weeks | `scom-d3d11`, `scom-win`, `scom-app`, the `scom` cdylib, `scom-preview`, the full shell, Settings page, status strip, background image | Section 5.3 goldens pass on WARP at 100/125/150 percent; section 5.4 window tests pass; cdylib exports only `scom_open`; no `DllMain` work; release size within the M0 budget |
 | M4. Host integration, 2 weeks | C++ side: backend setting, `scom.dll` load with hash check, `scom_host_v1` and `scom_module_v1`, `Menu_Start/Drain/Typing/GameThreadFrame` mapping, fallback rules, retain-until-exit, release manifest and packaging, `docs/build.md`, `docs/features.md` notes | Host builds with and without the Rust menu; fallback tests pass; `menu_frame_windows_test` family passes for both backends; release profile lists `scom.dll` with its digest; default stays `imgui` |
@@ -744,7 +921,7 @@ An agent cannot do these. Each result is recorded as pass, fail or not run, with
 3. Typing in a text box does not trigger game or plugin hotkeys; `M` and Esc behave while typing (`M` types, Esc closes).
 4. At 100, 125 and 150 percent scale, on the primary and on a second monitor, with the game's own DPI setting changed: the window opens at a sane size, text is readable, a drag to the other monitor rescales, the saved size comes back after restart.
 5. Real panels do real things: each shipped page changes the game state it names (Gear, Saved outfits, Travel, Saved spots, Ships & vehicles, Build, Creative, Crew, Characters, Multiplayer) or says plainly that the capability is unavailable. This ties to the [pending acceptance ledger](status.md); the menu does not prove a feature works, it proves the click reaches the plugin.
-6. The capability switches on the launcher's Capabilities page (on by default, each can be turned off, text says not run in game) match the "Game capabilities" rows on the menu's Settings page after a game start: switch one off in the launcher, start the game, and the row says Off.
+6. The five capability switches on the launcher's Capabilities page (on by default, each can be turned off, text says not run in game) match the "Game capabilities" rows on the menu's Settings page after a game start: switch one off in the launcher, start the game, and the row says Off.
 7. Performance: game frame time with the menu hidden, open and idle, open and dragging a slider; a 100-node panel; a 20-minute soak with the menu open and closed repeatedly. Record numbers, not impressions.
 8. Fault behaviour: with a fault-injection dev build of `scom.dll`, the game keeps running, the menu is gone, `mod.log` says why. With `scom.dll` deleted, the ImGui menu comes back by itself with one log line.
 9. A `sco.ui` plugin (`ui_probe`): its page appears under More plugins, opens the ImGui window, and Back returns to the Rust menu. Overlays show only in the legacy window.
@@ -752,11 +929,13 @@ An agent cannot do these. Each result is recorded as pass, fail or not run, with
 11. Wine or Proton, best effort (launcher decision 17): `M` opens the menu, the window can be clicked and typed into, hide returns to the game. A failure here is recorded, not a release gate.
 12. Anti-cheat and hosts: the menu adds no new file, process, network call or PC change. The existing PC changes (firewall block, EAC hosts line, EAC exe rename) are unchanged by this work and still need the owner security review before cutover (launcher decision 8).
 13. Overlays and cursor: with each overlay the owner normally runs (graphics-card, chat, capture or monitoring overlays), the menu opens, draws, takes the click and closes without a crash, flicker or a lost game frame; and the menu's software cursor is visible and correct when the game has hidden the OS cursor. Record which overlays were present.
+14. Clicks across a republish: on a page whose plugin republishes its panel on a timer (M1 lists them; the loadout pages are the known case), press the same button 20 times at normal pace and then once a second for a minute. Each press acts exactly once. On a tagged page none may be lost; on an untagged page write down any lost press and whether the "A panel changed; try again" line showed. This is the only in-game check of 2.3.1.
+15. `exp_entities_diag`: a fresh release package starts with it Off and the menu lists it as a diagnostic that is Off. The five feature switches show On. The menu has no control that changes any of them.
 
 ## 7. Open decisions for the owner
 
 1. Shape A (in-process `scom.dll`, recommended) or shape B (separate process). Section 3.1. M0 gives the numbers; the owner decides after it.
-2. The new interface ships in the host-source kit only (recommended) or also in the plugin SDK kit. Shipping it to plugins makes it a public promise and a privacy exposure (section 2.1).
+2. The new interface ships as a host-source seam (`include/sco/widgets_view.h`, `core-source` profile, outside the SDK catalogue; recommended) or also in the plugin SDK kit. Shipping it to plugins would need a top-level header, a catalogue record per method, a service name and a stability class, and it makes the table a public promise and a privacy exposure (section 2.1).
 3. Software cursor drawn by the menu (recommended, parity) or the OS cursor.
 4. Release font: needs launcher decision 10 (an owner-approved Cyrillic OFL or MIT font). Goldens do not wait for it: they use egui's bundled OFL font behind the test-only `test-font` feature (5.3). The menu uses the machine fonts first until the release font is approved.
 5. `scom-theme` reads the scuba-preview-theme JSON from scuba-engine, or sc-offline owns the file and scuba-engine copies it. Recommended: sc-offline owns it (the product is the source of the look), and a check keeps the engine copy equal.
@@ -764,7 +943,8 @@ An agent cannot do these. Each result is recorded as pass, fail or not run, with
 7. Whether M6 (porting in-tree `sco.ui` users) is a gate for 2.4.1 or can follow. Decision 2 says nothing is after 2.4.1, so the plan treats M6 as inside the hold. The owner may relax it for the plugins that are not shipped in the player package.
 
 8. Password fields. The blob omits the text of a password node (2.4), so the Rust field shows no dots for an existing value and only accepts new input. Today's ImGui menu shows dots. This is a small parity loss that keeps secrets out of the blob; the owner accepts it or asks for a length-only field (a count of dots, no text).
-9. Golden pin gap. Until the first release containing `sco_widgets_view.h`, only the compile-time asserts pin the header (2.7). The owner accepts the gap, or asks for the first golden to be recorded at the first release candidate.
-10. Contract record route (2.7): add the table to `sdk/contracts` with a host-source marker (recommended) or allowlist the header and keep only prose rows.
+9. Golden pin gap. Until the first release that contains `include/sco/widgets_view.h`, the Core-side pin is `tests/abi_widgets_view.c` only, and the sc-offline `view-abi-check` pins the header hash (2.7). The owner accepts the gap, or asks for the first golden to be recorded at the first release candidate.
+10. Identity of untagged controls across a republish (2.3.1). Recommended: the key of an untagged node covers kind, id, parent and label, so a relabelled untagged node loses the click (counted, shown) and is never mis-delivered. The owner accepts this, or asks M6 to tag every in-tree panel that republishes so the question does not arise for shipped plugins. Third-party panels keep the rule. Source reading, not a test: `plugins/loadout/loadout.cpp` builds `loadout.player` and `loadout.sq42` from plain `sco_widget_node` entries (no tag field) and republishes them from a `tick` subscriber, so those two panels are untagged republishers today. Their ids are fixed numbers, so a click survives unless a button's label changes in the republish. Until the owner answers, the click-loss fix is guaranteed only for tagged controls; for the loadout pages it holds while labels are stable. M1 counts the rest.
+11. Two deliberate differences from ImGui's `RenderPanel` (2.3.1, case 4a). First, `dispatch_events` compares the node key at equal epoch, so an untagged control relabelled by `update_nodes` loses a click that ImGui would deliver; the alternative, delivering by id alone, can press the wrong control after an id is reused. Second, `dispatch_events` keeps no generation break inside one drain, so a handler can see a second queued click that ImGui would have discarded. `RenderPanel` is left as it is. The owner accepts both, or asks for `RenderPanel` to change to match (which alters ImGui behaviour).
 
-Not decided here and not changed by this page: the capability switch defaults (decision 4 stays: on by default in every release package, each a visible setting, each saying it has not been run in game), the catalogue (decision 3), and the PC changes.
+Not decided here and not changed by this page: the capability switch defaults (decision 4: the five feature switches on by default in every release package, each a visible key the player can turn off, each saying it has not been run in game; `exp_entities_diag` off by default), the catalogue (decision 3), and the PC changes.
