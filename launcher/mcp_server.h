@@ -7,7 +7,8 @@
 //
 // The server exposes four read-only tools (get_status, list_plugins, read_log, get_settings) and nothing
 // else: no command, console, start/stop or settings write (docs/decisions.md, "Console and cvars").
-// Every string a tool returns is made valid UTF-8 and redacted (Redact) first.
+// Every string a tool returns is made valid UTF-8 and redacted (Redact) first. The game's Game.log is served only
+// when the server was started with --game-log (Platform::gameLog); without it the file is never opened.
 
 #include <algorithm>
 #include <cctype>
@@ -17,16 +18,21 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "redact.h"
 
 namespace sco::launcher::mcp {
 
 inline constexpr size_t kMaxLine = 1u << 20;         // longest accepted request line
 inline constexpr int kMaxDepth = 64;                 // deepest JSON nesting accepted
 inline constexpr size_t kMaxLogBytes = 2u << 20;     // read_log scans at most this much of a file's end
+inline constexpr uint64_t kMaxScanBytes = 64ull << 20;   // the login-line scan reads at most this much of each log, from its start
 inline constexpr size_t kMaxLogText = 64u << 10;     // read_log returns at most this much text
+inline constexpr size_t kMaxRedactLine = 4 * kMaxLogText;   // a longer line is cut before redaction
 inline constexpr size_t kMaxPlugins = 256;
 inline constexpr size_t kMaxFieldBytes = 256;        // a plugin.ini value
 inline constexpr size_t kMaxSettings = 1000;
@@ -469,102 +475,10 @@ inline std::string CheckSchema(const Value& schema, const Value& v, const std::s
     return "";
 }
 
-// --- redaction ----------------------------------------------------------------------------------
+// --- redaction ---------------------------------------------------------------------------------
 
-inline char LowerAscii(char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; }
-inline bool IsSlash(char c) { return c == '\\' || c == '/'; }
-
-inline std::string LowerAscii(std::string s) {
-    for (char& c : s) c = LowerAscii(c);
-    return s;
-}
-
-inline bool EqualsNoCase(const std::string& s, size_t at, const std::string& word) {
-    if (at + word.size() > s.size()) return false;
-    for (size_t k = 0; k < word.size(); ++k) if (LowerAscii(s[at + k]) != LowerAscii(word[k])) return false;
-    return true;
-}
-
-// Where a profile root or a `Users` path ends: the end of the run of slashes starting at i.
-inline size_t SlashRunEnd(const std::string& s, size_t i) {
-    while (i < s.size() && IsSlash(s[i])) ++i;
-    return i;
-}
-
-// The end of `root` matched at s[at], or npos. A run of slashes in either matches a run in the other (so
-// `C:\\Users\\x` in an escaped log still matches). Letters compare ASCII-case-insensitively only, so a
-// non-ASCII account name matches byte for byte.
-inline size_t MatchRoot(const std::string& s, size_t at, const std::string& root) {
-    size_t i = at;
-    for (size_t k = 0; k < root.size();) {
-        if (IsSlash(root[k])) {
-            const size_t e = SlashRunEnd(s, i);
-            if (e == i) return std::string::npos;
-            i = e;
-            k = SlashRunEnd(root, k);
-        } else {
-            if (i >= s.size() || LowerAscii(s[i]) != LowerAscii(root[k])) return std::string::npos;
-            ++i; ++k;
-        }
-    }
-    return i;
-}
-
-// Paths under the user's profile must not carry the account name out of the PC. First every
-// case-insensitive (ASCII only) occurrence of a profile root (USERPROFILE) becomes %USERPROFILE%; then the name in
-// any `Users` path component that follows a separator (C:\Users\x, /c/Users/x, \\?\C:\Users\x,
-// \Device\HarddiskVolume3\Users\x, \\host\c$\Users\x) is replaced by <user>. A run of \ or / counts as one
-// separator and is kept as written. A name may hold spaces when a separator follows it; otherwise it ends at the
-// next character that cannot be part of a path in a log (quote, < > |, comma, semicolon, closing bracket) or the
-// end of the line, which can hide more than the name.
-inline std::string Redact(const std::string& text, const std::vector<std::string>& profileRoots) {
-    std::string s = text;
-    for (std::string root : profileRoots) {
-        while (root.size() > 3 && IsSlash(root.back())) root.pop_back();
-        if (root.size() < 3) continue;
-        std::string out;
-        size_t i = 0;
-        while (i < s.size()) {
-            const size_t end = MatchRoot(s, i, root);
-            bool boundary = false;
-            if (end != std::string::npos) {
-                // The root ends the account name unless the name goes on: a letter, digit or non-ASCII byte, or
-                // '-' / '_' followed by one. '.' always ends it, so `bobsecret.` and `bobsecret.log` match.
-                const auto cont = [&](size_t k) {
-                    return k < s.size() && (std::isalnum(static_cast<unsigned char>(s[k])) || static_cast<unsigned char>(s[k]) >= 0x80);
-                };
-                boundary = end >= s.size() || !(cont(end) || ((s[end] == '-' || s[end] == '_') && cont(end + 1)));
-            }
-            if (boundary) { out += "%USERPROFILE%"; i = end; }
-            else out += s[i++];
-        }
-        s = std::move(out);
-    }
-    std::string out;
-    size_t i = 0;
-    while (i < s.size()) {
-        if (!IsSlash(s[i])) { out += s[i++]; continue; }
-        const size_t run = SlashRunEnd(s, i);
-        const bool users = EqualsNoCase(s, run, "users") && run + 5 < s.size() && IsSlash(s[run + 5]);
-        if (!users) { out.append(s, i, run - i); i = run; continue; }
-        const size_t nameStart = SlashRunEnd(s, run + 5);
-        out.append(s, i, nameStart - i);
-        const auto stops = [&](char c) {
-            return IsSlash(c) || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|' ||
-                   static_cast<unsigned char>(c) < 0x20;
-        };
-        size_t e = nameStart;
-        while (e < s.size() && !stops(s[e])) ++e;
-        size_t nameEnd = e;
-        if (!(e < s.size() && IsSlash(s[e]))) {
-            nameEnd = nameStart;
-            while (nameEnd < e && !std::strchr("',;)]}", s[nameEnd])) ++nameEnd;
-        }
-        i = nameEnd;
-        if (nameEnd > nameStart) out += "<user>";
-    }
-    return out;
-}
+// Shared with the crash-report bundle: launcher/redact.h.
+using namespace sco::launcher::redact;
 
 // --- platform -----------------------------------------------------------------------------------
 
@@ -605,6 +519,17 @@ struct LogRead {
     bool skippedOlder = false;  // the file is longer than `bytes`
 };
 
+// What a streaming scan of one log delivered: the platform calls the sink with consecutive chunks of the file, from
+// its start, and stops after maxBytes.
+struct LogScan {
+    bool exists = false;
+    std::string error;          // set when the file exists but could not be read
+    uint64_t size = 0;          // the file's size in bytes
+    uint64_t scanned = 0;       // the bytes delivered to the sink
+};
+
+using ScanSink = std::function<void(const char* data, size_t size)>;
+
 struct IniRead {
     std::string path;
     bool exists = false;
@@ -616,9 +541,12 @@ struct IniRead {
 struct Platform {
     std::string version;                                           // SCO_VERSION
     std::vector<std::string> profileRoots;                         // USERPROFILE, for Redact
+    std::vector<std::string> accountNames;                         // the Windows account name: USERNAME and the last part of USERPROFILE
     std::function<StatusInfo()> status;
     std::function<std::vector<PluginFolder>()> plugins;            // folders that have a plugin.ini
     std::function<LogRead(const std::string& log, size_t maxBytes)> readLog;   // mod | launcher | launcher_previous | game
+    std::function<LogScan(const std::string& log, uint64_t maxBytes, const ScanSink& sink)> scanLog;   // the whole file in chunks, for login lines
+    bool gameLog = false;                                          // --game-log: read_log may serve (and scan) Game.log
     std::function<IniRead()> settings;                             // sc-offline.ini next to the exe
 };
 
@@ -634,6 +562,7 @@ inline constexpr const char* kInstructions =
     "This server gives a read-only view of one sc-offline install: its status, plugins, logs and settings. "
     "It never starts or stops the game, installs, updates, or changes settings or plugins. "
     "Paths under the user's profile are shown as %USERPROFILE%. "
+    "The game's Game.log is served only when the server was started with --game-log. "
     "To write plugins, use the sco-core SDK MCP server (sco-core-mcp); to test plugins out of game, use the scuba-engine MCP server.";
 
 struct ToolDef {
@@ -694,11 +623,14 @@ inline const ToolDef (&Tools())[4] {
 "required":["folder","enabled","id","name","version","author","api","kind","entry","description","warnings"],"additionalProperties":false}}},
 "required":["count","truncated","plugins"],"additionalProperties":false})json"},
         {"read_log", "Read a log",
-         "Returns the last lines of one log: the mod's data\\mod.log, the launcher's data\\launcher.log or its previous run launcher.log.1, or the game's Game.log. "
+         "Returns the last lines of one log: the mod's data\\mod.log, the launcher's data\\launcher.log or its previous run launcher.log.1, or the game's Game.log (log game reads the Game.log of the game folder that get_status reports; it is served only when the server was started as `sc-offline.exe mcp --game-log`, because Game.log can contain account names, otherwise the call returns an error that says how to enable it). "
          "It scans at most the last 2 MiB of the file, can keep only the lines containing a case-insensitive ASCII text, and returns at most 500 lines and 64 KiB of text, dropping the oldest first. "
-         "Paths under the user's profile are redacted and invalid UTF-8 is replaced. The tool is read-only: it never writes, rotates or deletes a log.",
+         "Before filtering and returning it first learns every handle, nickname, character name and identifier that the scanned part of the file and earlier calls in this session announce, and that the login lines (User Login Success, AccountLoginCharacterStatus) anywhere in the first 64 MiB of every log announce (login lines first; the result says when a log was longer than 64 MiB), "
+         "then redacts paths under the user's profile (%USERPROFILE%) and Users and home paths (<user>; %5C, %2F and %40 are decoded first), the Windows account name (<user>; a name of 3 to 5 characters as a whole word, also next to - and _, a longer name also inside other words, a name shorter than 3 characters only in paths), "
+         "the values of identity keys (nickname, handle, character and account names, GEID, account, player and user ids, also with a prefix such as rsiHandle or targetAccountId; as <redacted>), the digits after geid, accountid, account_id and playerid, what follows Player_ in batch names, and e-mail addresses, and replaces invalid UTF-8; "
+         "values after the weak keys user=, owner=, player= and login= are hidden where they stand but not learned; free text can still hold a name that no key or login line announced, and obfuscated addresses or paths are not caught, so read a log before you share it. The tool is read-only: it never writes, rotates or deletes a log.",
          R"json({"type":"object","properties":{
-"log":{"type":"string","enum":["mod","launcher","launcher_previous","game"],"description":"Which log: mod (data\\mod.log), launcher (data\\launcher.log), launcher_previous (data\\launcher.log.1) or game (the game's Game.log next to the channel folder)."},
+"log":{"type":"string","enum":["mod","launcher","launcher_previous","game"],"description":"Which log: mod (data\\mod.log), launcher (data\\launcher.log), launcher_previous (data\\launcher.log.1) or game (the game's Game.log next to the channel folder; only when the server runs with --game-log)."},
 "lines":{"type":"integer","minimum":1,"maximum":500,"default":100,"description":"How many of the last matching lines to return."},
 "contains":{"type":"string","minLength":1,"maxLength":200,"description":"Keep only lines containing this text, compared case-insensitively for ASCII letters, before the last lines are taken."}},
 "required":["log"],"additionalProperties":false})json",
@@ -708,8 +640,10 @@ inline const ToolDef (&Tools())[4] {
 "exists":{"type":"boolean","description":"Whether the file exists."},
 "lines":{"type":"array","description":"The returned lines, oldest first, without line endings.","items":{"type":"string"}},
 "matched_lines":{"type":"integer","minimum":0,"description":"Lines that matched in the scanned part of the file, before the last N were taken."},
-"truncated":{"type":"boolean","description":"True when older content was not scanned or more lines matched than were returned."}},
-"required":["log","path","exists","lines","matched_lines","truncated"],"additionalProperties":false})json"},
+"truncated":{"type":"boolean","description":"True when older content was not scanned or more lines matched than were returned."},
+"identity_scan_complete":{"type":"boolean","description":"False when a log was longer than 64 MiB (or could not be read), so login lines past that point were not learned from."},
+"notice":{"type":"string","description":"Empty, or what was not scanned and what that means for redaction."}},
+"required":["log","path","exists","lines","matched_lines","truncated","identity_scan_complete","notice"],"additionalProperties":false})json"},
         {"get_settings", "sc-offline.ini settings",
          "Returns the settings in the sc-offline.ini next to the launcher as section, key and value entries in file order, skipping comments and blank lines. "
          "Values are redacted for the user profile and shortened to 1 KiB, and at most 1000 entries are returned. "
@@ -798,6 +732,9 @@ public:
 
 private:
     Platform platform_;
+    mutable Identities session_;   // what earlier read_log calls learned (the lists; the roots and names are set again on every use)
+    mutable std::unique_ptr<Redactor> cleaner_;   // Clean's compiled redactor; reset when session_ changes
+    mutable bool scanned_ = false;                // session_ holds the identities scanned from the logs
 
     static Value Envelope(const Value& id) {
         Value v = Value::Object();
@@ -818,7 +755,25 @@ private:
         return Serialize(v);
     }
 
-    std::string Clean(const std::string& s) const { return Redact(SanitizeUtf8(s), platform_.profileRoots); }
+    // Every string the server returns goes through here: profile roots, account names and what earlier read_log calls
+    // learned (a handle that sits in a folder name is hidden there too). The compiled redactor is kept until the
+    // learned lists change.
+    std::string Clean(const std::string& s) const {
+        if (!cleaner_) {
+            // The first string of a session already knows the handles the logs announce, so a handle in a folder name
+            // is hidden in get_status and get_settings before any read_log call.
+            if (!scanned_) {
+                std::string ignored;
+                session_ = ScanIdentities(ignored);
+                scanned_ = true;
+            }
+            Identities id = session_;
+            id.profileRoots = platform_.profileRoots;
+            id.accountNames = platform_.accountNames;
+            cleaner_ = std::make_unique<Redactor>(id);
+        }
+        return cleaner_->Apply(SanitizeUtf8(s));
+    }
 
     static bool Supported(const std::string& v) {
         return v == "2025-11-25" || v == "2025-06-18" || v == "2025-03-26" || v == "2024-11-05";
@@ -979,6 +934,35 @@ private:
         return r;
     }
 
+    // Reads the login lines of every log from its start (in chunks, login lines only, at most kMaxScanBytes of each; Game.log
+    // only with the flag) into fresh identities. `notice` collects what could not be read in full.
+    Identities ScanIdentities(std::string& notice) const {
+        Identities identities;
+        identities.profileRoots = platform_.profileRoots;
+        identities.accountNames = platform_.accountNames;
+        if (platform_.scanLog) {
+            for (const char* name : {"mod", "launcher", "launcher_previous", "game"}) {
+                if (std::string(name) == "game" && !platform_.gameLog) continue;   // Game.log is not even opened without the flag
+                LoginScanner scanner(identities, SanitizeUtf8);
+                const LogScan scan = platform_.scanLog(name, kMaxScanBytes, [&](const char* data, size_t n) { scanner.Feed(data, n); });
+                scanner.Finish();
+                if (scanner.Capped())
+                    notice += std::string(notice.empty() ? "" : " ") + "The " + name + " log has more login lines than were read (at most 4096 lines or 4 MiB of them per log), "
+                              "so a handle or name that only a later login line announces may not be hidden outside its own line.";
+                if (scanner.CutLogin())
+                    notice += std::string(notice.empty() ? "" : " ") + "A login line in the " + name + " log is longer than 16 KiB: only its first 16 KiB were read, "
+                              "so a name that comes later in that line may not be hidden elsewhere.";
+                if (!scan.error.empty()) {
+                    notice += std::string(notice.empty() ? "" : " ") + "The " + name + " log could not be read for login lines, so a name only it announces may not be hidden.";
+                } else if (scan.exists && scan.size > scan.scanned) {
+                    notice += std::string(notice.empty() ? "" : " ") + "The " + name + " log is larger than 64 MiB: only its first 64 MiB were scanned for login lines, "
+                              "so a handle or name that only a later login line announces may not be hidden outside its own line.";
+                }
+            }
+        }
+        return identities;
+    }
+
     ToolResult ReadLog(const Value& args) const {
         const std::string log = args.Find("log")->AsString();
         int64_t want = kDefaultLines;
@@ -986,6 +970,11 @@ private:
         std::string needle;
         const Value* contains = args.Find("contains");
         if (contains) needle = LowerAscii(contains->AsString());
+
+        if (log == "game" && !platform_.gameLog)
+            return Failure("Game.log is not enabled. Start the server as `sc-offline.exe mcp --game-log` to let read_log serve it. "
+                           "It is off by default because Game.log can contain account names, handles and ids; the other logs (mod, launcher, launcher_previous) are available. "
+                           "With the flag, the same redaction applies, but a name that no key or login line announces can still show.");
 
         const LogRead read = platform_.readLog ? platform_.readLog(log, kMaxLogBytes) : LogRead{};
         if (!read.error.empty()) return Failure("Could not read the " + log + " log: " + Clean(read.error));
@@ -998,13 +987,30 @@ private:
             const size_t nl = bytes.find('\n');
             pos = nl == std::string::npos ? bytes.size() : nl + 1;
         }
+        // Learn handles, nicknames, character names and ids first (ScanIdentities), then the part that is shown in
+        // full, so a name that one login line announces is hidden on every other line and in free text too. The
+        // lists are rebuilt on every call, so values from earlier calls cannot fill them up.
+        std::string notice;
+        Identities identities = ScanIdentities(notice);
+        // What earlier calls learned from ordinary lines (the second list) is kept for the session; the login-line list is not.
+        for (const std::string& v : session_.learned) AddLearned(identities, v);
+        Learn(identities, SanitizeUtf8(bytes));
+        if (identities.priorityDropped)
+            notice += std::string(notice.empty() ? "" : " ") + "More identity values were found in login lines than the lists hold (at most 64 per log and 384 in all), "
+                      "so a handle or name that comes later may not be hidden outside its own line.";
+        session_ = identities;
+        scanned_ = true;
+        cleaner_.reset();
+        const Redactor redactor(identities);
         while (pos < bytes.size()) {
             size_t nl = bytes.find('\n', pos);
             const size_t end = nl == std::string::npos ? bytes.size() : nl;
             std::string line = bytes.substr(pos, end - pos);
             pos = end + 1;
             while (!line.empty() && line.back() == '\r') line.pop_back();
-            line = Clean(line);
+            // Bound the work per line: a hostile line cannot make redaction slow. The final clip comes after redaction.
+            if (line.size() > kMaxRedactLine) line = ClipUtf8(line, kMaxRedactLine);
+            line = redactor.Apply(SanitizeUtf8(line));
             // The filter runs on the redacted text, so it cannot be used to probe for an account name.
             if (!needle.empty() && LowerAscii(line).find(needle) == std::string::npos) continue;
             matched.push_back(std::move(line));
@@ -1028,11 +1034,13 @@ private:
         for (size_t k = first; k < matchedCount; ++k) lines.Push(Value::Str(matched[k]));
         Value o = Value::Object();
         o.Set("log", Value::Str(log));
-        o.Set("path", Value::Str(Clean(read.path)));
+        o.Set("path", Value::Str(redactor.Apply(SanitizeUtf8(read.path))));   // with what was learned: a handle in a folder name too
         o.Set("exists", Value::Bool(read.exists));
         o.Set("lines", std::move(lines));
         o.Set("matched_lines", Value::Int(static_cast<int64_t>(matchedCount)));
         o.Set("truncated", Value::Bool(truncated));
+        o.Set("identity_scan_complete", Value::Bool(notice.empty()));
+        o.Set("notice", Value::Str(notice));
         ToolResult r; r.structured = std::move(o);
         return r;
     }
@@ -1056,7 +1064,14 @@ private:
             Value s = Value::Object();
             s.Set("section", Value::Str(ClipUtf8(Clean(section), kMaxFieldBytes)));
             s.Set("key", Value::Str(ClipUtf8(Clean(TrimSpace(line.substr(0, eq))), kMaxFieldBytes)));
-            s.Set("value", Value::Str(ClipUtf8(Clean(TrimSpace(line.substr(eq + 1))), kMaxSettingBytes)));
+            // The value is redacted together with its key, so an identity key (nickname = ..., geid = ...)
+            // hides its value as it would in a log line; the key part is then cut off again.
+            const std::string joined = Clean(TrimSpace(line.substr(0, eq)) + "=" + TrimSpace(line.substr(eq + 1)));
+            const size_t cut_at = joined.find('=');
+            const std::string alone = Clean(TrimSpace(line.substr(eq + 1)));
+            const std::string with_key = cut_at == std::string::npos ? joined : joined.substr(cut_at + 1);
+            // Whichever form hid more wins (an e-mail or path is caught either way).
+            s.Set("value", Value::Str(ClipUtf8(with_key.find('<') != std::string::npos ? with_key : alone, kMaxSettingBytes)));
             list.Push(std::move(s));
         }
         Value o = Value::Object();

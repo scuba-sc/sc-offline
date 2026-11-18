@@ -5,7 +5,7 @@ The launcher starts the game with the mod and takes the mod out again when the g
 ## Commands
 
 ```text
-sc-offline.exe [play|install|uninstall|status|mcp|update|help] [--game <folder>] [--dry-run] [--skip-eac-check]
+sc-offline.exe [play|install|uninstall|status|mcp|update|help] [--game <folder>] [--dry-run] [--skip-eac-check] [--game-log]
 ```
 
 | Command | What it does |
@@ -14,7 +14,7 @@ sc-offline.exe [play|install|uninstall|status|mcp|update|help] [--game <folder>]
 | `install` | Copies the mod in and leaves it there, for starting the game some other way. Run `uninstall` before going online. Command line only: the [window](#the-window) has no Install button. |
 | `uninstall` | Takes the mod out, puts back anything it replaced, and undoes leftover [PC changes](#pc-changes). Refuses while the game is running. The window's **Repair: undo PC changes** runs it. |
 | `status` | Runs the [checks below](#checks-it-runs-every-time) and is read-only: it writes no file (not `data\launcher.log`, not `data\game-path.txt`), doesn't migrate `discord_presence`, doesn't settle an interrupted update, doesn't open the folder picker and makes no network request (no update check). If the game folder can't be found it says so; `play` still remembers what it finds. The window's Status panel runs the same checks. |
-| `mcp` | Runs a read-only [MCP server for AI agents](ai-agents.md) on stdin/stdout: status (the same checks as `status`), installed plugins, log tails and `sc-offline.ini`. Like `status` it writes nothing and makes no network request; it runs no command and changes no setting. |
+| `mcp` | Runs a read-only [MCP server for AI agents](ai-agents.md) on stdin/stdout: status (the same checks as `status`), installed plugins, log tails and `sc-offline.ini`. Like `status` it writes nothing and makes no network request; it runs no command and changes no setting. The game's `Game.log` is served only with `mcp --game-log`; without the flag the file is not opened (it can hold account names). |
 | `update` | Checks GitHub for a newer sc-offline and offers to install it; see [Updates](#updates). |
 | `help` | Prints the usage. |
 
@@ -25,6 +25,7 @@ sc-offline.exe [play|install|uninstall|status|mcp|update|help] [--game <folder>]
 | `--skip-eac-check` | Don't stop when Easy Anti-Cheat looks active. |
 | `--window` | Open the window from a terminal, or under Wine/Proton. |
 | `--console` | Double-clicked: run `play` in the console instead of opening the window. |
+| `--game-log` | With `mcp` only: let the MCP server's `read_log` serve the game's `Game.log`, redacted like the other logs. Off by default. Any other command refuses it. |
 
 Exit codes: `0` ok · `1` error · `2` Easy Anti-Cheat is active · `3` the game is running. The helper's own codes, in `launcher.log`: `5` a PC change failed.
 
@@ -325,8 +326,10 @@ The top-bar and Plugins-page switch still creates or removes `data\plugins\disco
 If the game wrote crash files under `<channel>\Crashes` during the session, the launcher offers a report
 before the log cleanup. A **y** zips `mod.log`, `launcher.log`, `Game.log` and the crash folder's text
 files into `data\crash-reports\sc-offline-crash-<time>.zip`. In the copies (never the originals), your RSI
-handle becomes `<handle>`, GEID and account numbers become `<id>`, and your Windows user name in paths
-becomes `<user>`. Memory dumps (`.dmp`) are left out because they can't be redacted. It can then open the bug
+handle, nickname and character name, GEID and account numbers become `<redacted>` wherever they appear (the
+launcher learns them from every bundled file first), e-mail addresses become `<redacted>`, and your Windows
+user name in paths and text becomes `<user>`. Free text can still hold a name that no log line announced, so
+read the zip before you share it. The report is stricter than the MCP `read_log`: a handle from a login line is hidden inside other words too, even if it is short or an ordinary word, and every `Handle[..]`/`Nickname[..]` value in any bundled file is hidden everywhere. The same redactor serves the [MCP server](ai-agents.md). Memory dumps (`.dmp`) are left out because they can't be redacted. It can then open the bug
 form with the version, game build and platform filled in, and an Explorer window on the zip. **Nothing is
 uploaded**: you attach the zip and read it first. `crash_reports = off` turns this off.
 
