@@ -67,24 +67,26 @@ pub mod env {
     ];
 }
 
-/// Capability switches read by the sco-core host. These are NOT set by the C++ launcher
-/// today. Names are from the design document (section 4.3). The sco-core submodule is not
-/// checked out in this worktree, so the reading source line was not re-checked here.
+/// Capability switches read by the sco-core host. The C++ launcher sets them in
+/// `ApplyExperimentalEnv` from the `exp_*` keys of `sc-offline.ini` (`kExperimental` in
+/// `launcher/launcher.cpp`); the dump tool writes that table to `tests/golden/constants.txt` and a
+/// test compares it with [`SWITCHES`].
 ///
-/// Owner decision 2026-11-17: each switch is ON by default in every release package, each is
+/// Owner decision 2026-11-17: each capability switch is ON by default in every release package, each is
 /// a visible setting the player can turn OFF, and each one's text says it has not been run in
-/// game. A switch is on only when the value is exactly `"1"`.
+/// game. A switch is on only when the value is exactly `"1"`. An OFF switch is removed from the
+/// game's environment, so a value inherited from the shell cannot turn it on.
 ///
-/// The one exception is the logging-only `SCO_ENTITIES_DIAG`. It is not a capability, so the
-/// decision does not cover it. It is OFF by default (the safer reading) and stays pending an
-/// owner answer. `Switch::default_on` carries this, and `capabilities.json` says the same.
+/// The one exception is the diagnostic `SCO_ENTITIES_DIAG`: its hooks patch game functions to
+/// write log lines. It is not a feature and is OFF by default. `Switch::default_on` carries this, and
+/// `capabilities.json` says the same.
 pub mod capability_env {
     pub const LOADOUT_ASYNC: &str = "SCO_LOADOUT_ASYNC";
     pub const INVENTORY_READ: &str = "SCO_INVENTORY_READ";
     pub const ACTOR_STATS_WRITE: &str = "SCO_ACTOR_STATS_WRITE";
     pub const CVARS_NATIVE: &str = "SCO_CVARS_NATIVE";
     pub const AUDIO_NATIVE: &str = "SCO_AUDIO_NATIVE";
-    /// Diagnostic logging only. Not a capability.
+    /// Diagnostic: hooks that patch game functions to write log lines. Not a capability.
     pub const ENTITIES_DIAG: &str = "SCO_ENTITIES_DIAG";
 
     /// The exact value that turns a switch on.
@@ -95,24 +97,25 @@ pub mod capability_env {
     pub struct Switch {
         /// Environment variable the sco-core host reads.
         pub env: &'static str,
-        /// Key in `sc-offline.ini` (new in the Rust launcher; the C++ launcher does not know it).
+        /// Key in `sc-offline.ini`: `exp_` and the variable name without `SCO_`, in lower case.
         pub ini_key: &'static str,
         /// What the switch turns on. Not a capability for the diagnostic switch.
         pub capability: &'static str,
         /// Evidence level from the SDK status registry. No switch is `in_game_verified`.
         pub evidence: &'static str,
-        /// True for the one switch that is logging only.
+        /// True for the one diagnostic switch: its hooks patch game functions to write log lines.
         pub diagnostic_only: bool,
-        /// Release default. True for every capability switch. False for the logging-only one.
+        /// Release default. True for every capability switch. False for the diagnostic one.
         pub default_on: bool,
     }
 
-    /// Every switch the launcher shows. Owner decision 2026-11-17: every capability switch is ON
-    /// by default. The logging-only switch is OFF by default (see the module text).
+    /// Every switch the launcher shows, in the order of `kExperimental`. Owner decision
+    /// 2026-11-17: every capability switch is ON by default. The diagnostic switch is OFF by
+    /// default (see the module text).
     pub const SWITCHES: [Switch; 6] = [
         Switch {
             env: LOADOUT_ASYNC,
-            ini_key: "loadout_async",
+            ini_key: super::ini::EXP_LOADOUT_ASYNC,
             capability: "game.loadout.async",
             evidence: "synthetic_only",
             diagnostic_only: false,
@@ -120,7 +123,7 @@ pub mod capability_env {
         },
         Switch {
             env: INVENTORY_READ,
-            ini_key: "inventory_read",
+            ini_key: super::ini::EXP_INVENTORY_READ,
             capability: "game.inventory.read",
             evidence: "synthetic_only",
             diagnostic_only: false,
@@ -128,7 +131,7 @@ pub mod capability_env {
         },
         Switch {
             env: ACTOR_STATS_WRITE,
-            ini_key: "actor_stats_write",
+            ini_key: super::ini::EXP_ACTOR_STATS_WRITE,
             capability: "game.actor_stats.write",
             evidence: "off_pending_probe",
             diagnostic_only: false,
@@ -136,7 +139,7 @@ pub mod capability_env {
         },
         Switch {
             env: CVARS_NATIVE,
-            ini_key: "cvars_native",
+            ini_key: super::ini::EXP_CVARS_NATIVE,
             capability: "game.cvars.read adapter",
             evidence: "synthetic_only",
             diagnostic_only: false,
@@ -144,7 +147,7 @@ pub mod capability_env {
         },
         Switch {
             env: AUDIO_NATIVE,
-            ini_key: "audio_native",
+            ini_key: super::ini::EXP_AUDIO_NATIVE,
             capability: "audio native adapter attempt",
             evidence: "synthetic_only",
             diagnostic_only: false,
@@ -152,8 +155,8 @@ pub mod capability_env {
         },
         Switch {
             env: ENTITIES_DIAG,
-            ini_key: "entities_diag",
-            capability: "diagnostic logging, not a capability",
+            ini_key: super::ini::EXP_ENTITIES_DIAG,
+            capability: "diagnostic hooks that patch game functions to log, not a capability",
             evidence: "not a capability",
             diagnostic_only: true,
             default_on: false,
@@ -273,6 +276,15 @@ pub mod ini {
     pub const CLEAN_LOGS: &str = "clean_logs";
     /// `launcher/launcher.cpp:354`
     pub const REGISTRY_PROBE: &str = "registry_probe";
+    /// Capability switches: `kExperimental` in `launcher/launcher.cpp`, matched with `_wcsicmp` like the
+    /// other keys. `exp_` plus the variable name without `SCO_`, in lower case.
+    pub const EXP_LOADOUT_ASYNC: &str = "exp_loadout_async";
+    pub const EXP_INVENTORY_READ: &str = "exp_inventory_read";
+    pub const EXP_ACTOR_STATS_WRITE: &str = "exp_actor_stats_write";
+    pub const EXP_CVARS_NATIVE: &str = "exp_cvars_native";
+    pub const EXP_AUDIO_NATIVE: &str = "exp_audio_native";
+    /// Diagnostic hooks, off by default.
+    pub const EXP_ENTITIES_DIAG: &str = "exp_entities_diag";
 
     /// `launcher/launcher.cpp:313`. Legacy: `off` turns the Discord plugin off, then the key is
     /// dropped from the file (`launcher/launcher.cpp:5210`).
@@ -286,7 +298,7 @@ pub mod ini {
     pub const LEGACY: [&str; 3] = [DISCORD_PRESENCE, MINING, MINING_DEBUG];
 
     /// Active keys the C++ parser applies as settings, in source order.
-    pub const ALL: [&str; 20] = [
+    pub const ALL: [&str; 26] = [
         GAME,
         LANGUAGE,
         CHANNEL,
@@ -307,6 +319,12 @@ pub mod ini {
         UPDATE_CHANNEL,
         CLEAN_LOGS,
         REGISTRY_PROBE,
+        EXP_LOADOUT_ASYNC,
+        EXP_INVENTORY_READ,
+        EXP_ACTOR_STATS_WRITE,
+        EXP_CVARS_NATIVE,
+        EXP_AUDIO_NATIVE,
+        EXP_ENTITIES_DIAG,
     ];
 
     /// True when `key` is an active ini key. Case-insensitive, like the C++ parser.
@@ -558,7 +576,7 @@ mod tests {
     }
 
     #[test]
-    fn capability_table_matches_the_names_and_is_not_in_the_cpp_key_list() {
+    fn capability_table_matches_the_names_and_the_ini_keys() {
         let names: Vec<_> = capability_env::SWITCHES.iter().map(|s| s.env).collect();
         assert_eq!(
             names,
@@ -573,11 +591,16 @@ mod tests {
         );
         let keys: HashSet<_> = capability_env::SWITCHES.iter().map(|s| s.ini_key).collect();
         assert_eq!(keys.len(), 6);
-        for key in keys {
+        for s in &capability_env::SWITCHES {
+            // `exp_` and the variable name without `SCO_`, in lower case.
+            let want = format!("exp_{}", s.env.strip_prefix("SCO_").unwrap().to_lowercase());
+            assert_eq!(s.ini_key, want);
             assert!(
-                !ini::is_recognised_key(key),
-                "{key} must not clash with a C++ key"
+                ini::is_known_key(s.ini_key),
+                "{} is an active ini key",
+                s.ini_key
             );
+            assert!(ini::ALL.contains(&s.ini_key));
         }
         assert!(capability_env::SWITCHES
             .iter()
@@ -589,6 +612,17 @@ mod tests {
                 .count(),
             1
         );
+        // Five on, the diagnostic one off.
+        assert_eq!(
+            capability_env::SWITCHES
+                .iter()
+                .filter(|s| s.default_on)
+                .count(),
+            5
+        );
+        assert!(capability_env::SWITCHES
+            .iter()
+            .all(|s| s.default_on != s.diagnostic_only));
     }
 
     #[test]

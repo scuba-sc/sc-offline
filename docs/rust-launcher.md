@@ -1,6 +1,6 @@
 # sc-offline Rust launcher and SDK reference launcher
 
-Status: design proposal. Only the P0 skeleton exists (`launcher-rs/`: toolchain pins, `scol-contract`, a hello binary, CI job `rust-launcher`). Nothing else here is built. Nothing here is claimed to work in game. Every acceptance check below is source, build, synthetic or CI evidence. Docs keep the words "not run in game" until the owner records a session.
+Status: design proposal. Built so far in `launcher-rs/`: toolchain pins, `scol-contract`, `scol-config` (sc-offline.ini reader and editor, the game environment block, the capability switches), `scol-plugins` (plugin manifest and zip verifier), a hello binary, golden files written by the C++ launcher, and CI job `rust-launcher`. Nothing else here is built. Nothing here is claimed to work in game. Every acceptance check below is source, build, synthetic or CI evidence. Docs keep the words "not run in game" until the owner records a session.
 
 ## Owner decisions (2026-11-17)
 
@@ -9,7 +9,7 @@ These override anything below that disagrees.
 1. Rust scope: the launcher and the in-game menu, both now. The in-game host (dinput8.dll, hooks, Core host kit) stays C++. The Rust menu reads `sco.widgets` panels through a new versioned C interface in sco-core (see `docs/rust-menu.md`).
 2. sco-core 2.4.1 is held until the Rust launcher, Rust menu, catalogue and reference launcher are in it. Read every "after 2.4.1" or "2.4.2" below as "in 2.4.1".
 3. Catalogue: signed index. First-party and reviewed native plugins are allowed. Every pulled plugin lands disabled with a native-code warning. Local plugins are always allowed.
-4. Capability switches are on by default in all release packages. Each is a visible setting the player can turn off, and its text says it has not been run in game.
+4. The five capability switches (`exp_loadout_async`, `exp_inventory_read`, `exp_actor_stats_write`, `exp_cvars_native`, `exp_audio_native`) are on by default in all release packages. Each is a visible key in `sc-offline.ini` that the player can turn off, and its text says it has not been run in game. `exp_entities_diag` is diagnostic hooks that patch game functions to write log lines. It is not a feature and is off by default.
 
 Baseline facts used by this plan:
 
@@ -35,7 +35,7 @@ How this plan meets that, and where it stops:
 - The in-game menu is rebuilt in Rust now, in scope with the launcher (owner decision 1). It reads `sco.widgets` panels through a new versioned C interface added to sco-core.
 - The in-game host (dinput8.dll, hooks, Core host kit) stays C++. It is bound to the C++ host kit, SEH guards, detours, the startup gate and the retain-until-exit rules. A Rust host would need a different, larger C ABI in sco-core and is not in this plan (section 9).
 - The Rust launcher crates are designed from day one so they can move into sco-core as a reference launcher. sc-offline then becomes a product config on top of the same crates.
-- 2.4.1 gets documentation fixes only. No new contract, header or crate lands in 2.4.1.
+- sco-core 2.4.1 is held until this work is in it (owner decision 2). The new contract, header and crates land in 2.4.1, each as its own small PR.
 
 Out of scope for the first ship: Rust in-game UI, a Rust host, a game-device overlay, new engine hooks.
 
@@ -46,8 +46,8 @@ The four decisions at the top of this document are answered and override this li
 Each item has a recommended answer and the alternative. Items 1 to 8 block work. The rest can be answered as the phase arrives.
 
 1. Rust scope.
-   - Recommended: launcher only (window, CLI, install, update, plugin manager, settings, capabilities page). C++ host and ImGui menu unchanged.
-   - Alternative: also the host. That needs a new C ABI in sco-core (a permanent promise) or a fork of the kernel. Not recommended before in-game proof of ProcessRetained.
+   - Answered (owner decision 1): the launcher (window, CLI, install, update, plugin manager, settings, capabilities page) and the in-game menu. The in-game host stays C++.
+   - Not chosen: also the host. That needs a new C ABI in sco-core (a permanent promise) or a fork of the kernel. Not before in-game proof of ProcessRetained.
 2. Where the Rust code lives first.
    - Recommended: `launcher-rs/` Cargo workspace inside sc-offline, with a clean product-config crate boundary. Promote the reusable crates into sco-core as part of 2.4.1, which is held for them.
    - Alternative: build in sco-core first. This delays the launcher behind an SDK release.
@@ -64,7 +64,7 @@ Each item has a recommended answer and the alternative. Items 1 to 8 block work.
    - Recommended: keep today's player-offline plugin set in the base zip at first. Optional extras are pulled. Shrink the base later when the catalogue is proven.
    - Alternative: small base that pulls its defaults on first run.
 7. Capability switches shown in the launcher.
-   - Recommended: the five env-based switches get toggles, all default ON in release packages (owner decision 2026-11-17), each a visible setting the player can turn OFF, each with an evidence badge and the line "not run in game". Everything else is read-only with the reason.
+   - Answered (owner decision 2026-11-17): the five env-based switches get toggles, all default ON in release packages, each a visible key the player can turn OFF, each with an evidence badge and the line "not run in game". `exp_entities_diag` is a visible key too and is OFF by default. Everything else is read-only with the reason.
    - Alternative: show nothing until sco-core adds typed setters.
 8. PC changes (firewall block, EAC hosts line, EAC exe rename).
    - Recommended: port exactly as is. Do not widen. Owner security review before cutover (docs/decisions.md already requires it). Docs must not say there is no anti-cheat manipulation.
@@ -185,16 +185,16 @@ Add a `full` view in `sdk/components.json` that is the union of all profiles (co
 
 ### 4.3 The capability switches
 
-The launcher already builds the game's environment, so it can set these with no sco-core change. Each switch gets an ini key, a toggle, and a value of exactly `"1"` only when on. Default is ON in all release packages (owner decision 2026-11-17). Each is a visible setting the player can turn OFF, and its text says it has not been run in game. They are not labelled experimental-off. Changes apply at next Play and are blocked while the game runs.
+The launcher already builds the game's environment, so it can set these with no sco-core change. Each switch is a key in `sc-offline.ini`, a toggle in the window, and a value of exactly `"1"` only when on. The key is `exp_` plus the variable name without `SCO_`, in lower case; `exp_` is a name prefix, not a label on the feature. Default is ON in all release packages for the five capability switches (owner decision 2026-11-17). Each is a visible setting the player can turn OFF, and its text says it has not been run in game. When a key is off the launcher removes the variable from the game's environment, so a value left in the player's shell or in Windows cannot turn it on. The C++ launcher already does this (`ApplyExperimentalEnv`) and the golden files under `launcher-rs/tests/golden` hold its results; the Rust crates reproduce them byte for byte. Changes apply at next Play and are blocked while the game runs.
 
-| Switch (env) | Capability | What it needs besides the toggle | Evidence | Launcher offers |
+| Key (variable) | Capability | What it needs besides the toggle | Evidence | Launcher offers |
 |---|---|---|---|---|
-| SCO_ACTOR_STATS_WRITE | game.actor_stats.write | read rows, fresh offline admission, own player, stat 1..9 | off_pending_probe | toggle, ON by default, warning |
-| SCO_INVENTORY_READ | game.inventory.read | inventory rows | synthetic_only | toggle, ON by default |
-| SCO_LOADOUT_ASYNC | game.loadout.async | six loadout and spawn rows | synthetic_only | toggle, ON by default |
-| SCO_CVARS_NATIVE | game.cvars.read adapter | seven cvars rows | synthetic_only | toggle, ON by default. `cvars.write` stays off even when on. |
-| SCO_AUDIO_NATIVE | audio native adapter attempt | grounded witness for play_once and triggers | synthetic_only | toggle, ON by default. Play and triggers stay false. |
-| SCO_ENTITIES_DIAG | diagnostic logging only | none | not a capability | shown under Diagnostics, labelled "logging, not a capability". It is not a capability, so the 2026-11-17 decision does not cover it. It is OFF by default (the safer reading) and the owner can overturn that. |
+| exp_actor_stats_write (SCO_ACTOR_STATS_WRITE) | game.actor_stats.write | read rows, fresh offline admission, own player, stat 1..9 | off_pending_probe | toggle, ON by default, warning |
+| exp_inventory_read (SCO_INVENTORY_READ) | game.inventory.read | inventory rows | synthetic_only | toggle, ON by default |
+| exp_loadout_async (SCO_LOADOUT_ASYNC) | game.loadout.async | six loadout and spawn rows | synthetic_only | toggle, ON by default |
+| exp_cvars_native (SCO_CVARS_NATIVE) | game.cvars.read adapter | seven cvars rows | synthetic_only | toggle, ON by default. `cvars.write` stays off even when on. |
+| exp_audio_native (SCO_AUDIO_NATIVE) | audio native adapter attempt | grounded witness for play_once and triggers | synthetic_only | toggle, ON by default. Play and triggers stay false. |
+| exp_entities_diag (SCO_ENTITIES_DIAG) | none: diagnostic hooks | none | not a capability | shown under Diagnostics. It installs hooks that patch game functions, only to write log lines to mod.log. It is not a feature and the 2026-11-17 decision on capability switches does not cover it: it is OFF by default, and the player turns it on only when asked for a bug report. |
 
 Every row shows its evidence level and the line "not run in game". No row can show "verified", because no registry entry is `in_game_verified`.
 
@@ -255,7 +255,7 @@ Target: sco-core 2.4.1 (held until it is ready) carries a reference launcher tha
 
 1. `docs/launcher-contract.md`: env var table including the five switches, plugin folder and `disabled` marker, `sco_kv` settings key format, `plugin-startup.json`, stop and ready event names, package and compatibility rules. Golden vectors ship with it.
 2. `docs/building-a-launcher.md`: end to end. Bootstrap (dinput8 forwarder and startup gate), Platform fields, Admission inspector, `gameReadersQuiesced` attestation, ProcessRetained rules, Start/Tick/Stop thread rules, data root layout, plugin install, capability switches. Builds on `tools/sco-host-sim.cpp` and framework.md lessons 1 to 6.
-3. `sdk/examples/launcher/`: a reduced Rust reference launcher. CLI, plugin list, enable and disable, verified install from a local zip, capabilities page stub. No PC changes, no auto update. Ships in the core and combined kits like `rust_hello`. Experimental label stays until 2.5.0.
+3. `sdk/examples/launcher/`: a reduced Rust reference launcher. CLI, plugin list, enable and disable, verified install from a local zip, capabilities page stub. No PC changes, no auto update. Ships in the core and combined kits like `rust_hello`. Its text says not run in game until the owner records a session.
 4. A `launcher-kit` profile and the `full` view in `components.json`, with provenance and third-party rows. `sdk/package.py`, `test_package.py` and `test-zip.sh` must pass.
 5. A `sco-build-launcher` skill under `sdk/skills`, and `sco-package-plugin` extended with install and catalogue steps.
 6. A named "launcher seam" page listing what sco-core will not provide: injection, offline patches, OS admission, menu renderer.
@@ -327,8 +327,8 @@ Expected: no copyleft in the tree, 150 to 400 transitive crates (egui with wgpu 
 
 ### P5. Capabilities page (1 to 2 weeks)
 
-- Deliverable: page, ini keys, env entries for the five switches, read-only rows for the rest, `docs/capabilities.md`, updates to `docs/data-files.md` and `docs/launcher.md`, a generator from the pinned registry.
-- Acceptance: a test sets each switch and checks the env block holds exactly `"1"` for that name and nothing else. Defaults all ON in the release config, and each can be turned off. No row shows verified. A drift test fails on registry change. A wording check bans in-game claims.
+- Deliverable: page, the `exp_*` ini keys, env entries for the five switches, the diagnostic key, read-only rows for the rest, `docs/capabilities.md`, updates to `docs/data-files.md` and `docs/launcher.md`, a generator from the pinned registry.
+- Acceptance: a test sets each switch and checks the env block holds exactly `"1"` for that name when on and no entry when off. The five capability switches are ON and `exp_entities_diag` is OFF in the release config, and each can be turned off. A test over the shipped `launcher/sc-offline.ini` checks this. No row shows verified. A drift test fails on registry change. A wording check bans in-game claims.
 
 ### P6. Plugin manager (3 to 4 weeks)
 
@@ -374,7 +374,7 @@ Expected: no copyleft in the tree, 150 to 400 transitive crates (egui with wgpu 
 6. Timeline coupling. sdk-v2.4.1 is unpublished and the release job is blocked. Mitigation: P1 to P7 do not need the pin. Do not tag from the dev pin.
 7. Scope creep into the host. Pressure to rewrite dinput8 in Rust would force a C shim or a kernel fork and break "sc-offline consumes only published SDKs". Mitigation: Track B, owner-gated, sco-core contract first.
 8. Logic drift from Core. The launcher re-implements the settings grammar, `sco_kv` format and discovery states. Mitigation: shared golden vectors, published with the reference launcher, CI check on grammar or registry change.
-9. Misleading UI. Players may read a toggle as a working feature. Mitigation: five real switches only, evidence badge and "not run in game" on every row, wording check.
+9. Misleading UI. Players may read a toggle as a working feature. Mitigation: five real switches and one diagnostic key only, evidence badge and "not run in game" on every row, wording check.
 10. Two plugin indexes drift. Mitigation: one source of truth chosen in P0.
 11. Updater and catalogue fight over `data\plugins\`. Mitigation: plugins leave the release manifest (decision 14).
 12. Evidence honesty. Builds, mocks and checker passes are not game verification, and ProcessRetained has never run in a game session. Mitigation: wording gates. The owner runs and records the first session.

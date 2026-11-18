@@ -13,7 +13,11 @@ reads. Writes:
 
 Release policy (owner decision 2026-11-17): every capability switch is ON by default in every
 release package, is a visible setting the player can turn OFF, and its text says it has not been
-run in game. The "registry default" column is what Core itself ships; it is not the release default.
+run in game. The diagnostic switch (exp_entities_diag) is not a feature: its hooks patch game
+functions to write log lines, and it is OFF by default. The "registry default" column is what Core
+itself ships; it is not the release default. Each switch is the key "exp_" plus the variable name
+without "SCO_", in lower case, in launcher/sc-offline.ini; the tool checks that the launcher source
+(kExperimental in launcher/launcher.cpp) and the shipped ini agree with its table.
 Nothing here was run in game.
 """
 import argparse
@@ -26,6 +30,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 JSON_OUT = ROOT / "launcher-rs/crates/scol-contract/src/capabilities.json"
 MD_OUT = ROOT / "docs/capabilities.md"
+LAUNCHER_CPP = ROOT / "launcher/launcher.cpp"
+SHIPPED_INI = ROOT / "launcher/sc-offline.ini"
 
 # Capabilities served by each switch. The switch NAMES are found by grepping Core source; this map
 # only says which registry capabilities a found switch controls. A name found in source and absent
@@ -45,10 +51,18 @@ SWITCH_NOTE = {
     "SCO_ACTOR_STATS_WRITE": "The registry says OFF pending in-game confirmation. The release package "
                              "still sets it on by owner decision; you can turn it off.",
 }
-# Diagnostic switches: log-only, not capabilities, so no release default is set for them.
+# Diagnostic switches: not capabilities. Off by default, a visible key in the ini.
 DIAGNOSTIC = {
-    "SCO_ENTITIES_DIAG": "Installs the entity streaming hooks log-only and runs one diagnostic walk. Not a capability. Log only. Off by default.",
+    "SCO_ENTITIES_DIAG": "Installs hooks that patch game functions (the entity streaming functions) "
+                         "only to write log lines, and runs one diagnostic walk that writes to mod.log. "
+                         "Not a capability and no gameplay change. Off by default; turn it on only when "
+                         "asked for a bug report. Not run in game.",
 }
+
+
+def ini_key(name):
+    """sc-offline.ini key of a switch: exp_ and the variable name without SCO_, lower case."""
+    return "exp_" + name[len("SCO_"):].lower()
 
 LEVEL_TEXT = {
     "in_game_verified": "run in game on a recorded date",
@@ -71,6 +85,9 @@ BANNED = [
 ]
 BANNED_RE = re.compile("(?:%s)" % "|".join(BANNED), re.I)
 
+# kExperimental rows in launcher/launcher.cpp: { L"exp_x", L"SCO_X", true },
+KEXP_RE = re.compile(r'\{\s*L"(exp_[a-z0-9_]+)"\s*,\s*L"(SCO_[A-Z0-9_]+)"\s*,\s*(true|false)\s*\}')
+
 SWITCH_RE = re.compile(r'GetEnvironmentVariable[AW]?\s*\(\s*L?"(SCO_[A-Z0-9_]+)"')
 ENABLED_RE = re.compile(r'\bEnabled\s*\(\s*"(SCO_[A-Z0-9_]+)"')
 
@@ -83,6 +100,29 @@ def evidence_problems(md):
     """Positive rule: every table row of generated text says it was not run in game."""
     return [f"capabilities.md: row lacks 'Not run in game': {l[:60]}" for l in md.splitlines()
             if l.startswith("| `") and "Not run in game" not in l]
+
+
+def launcher_problems():
+    """The C++ table and the shipped ini must carry the same keys, variables and defaults as this tool."""
+    want = {ini_key(n): (n, True) for n in SWITCH_CAPS}
+    want.update({ini_key(n): (n, False) for n in DIAGNOSTIC})
+    cpp = LAUNCHER_CPP.read_text(encoding="utf-8", errors="replace")
+    have = {m.group(1): (m.group(2), m.group(3) == "true") for m in KEXP_RE.finditer(cpp)}
+    problems = []
+    if have != want:
+        problems.append(f"launcher/launcher.cpp kExperimental differs from the table: has {sorted(have.items())}, "
+                        f"want {sorted(want.items())}")
+    ini = {}
+    for line in SHIPPED_INI.read_text(encoding="utf-8").splitlines():
+        k, eq, v = line.partition("=")
+        if eq and not line.lstrip().startswith("#") and k.strip().lower().startswith("exp_"):
+            ini.setdefault(k.strip().lower(), []).append(v.strip().lower())
+    for key, (_, default_on) in want.items():
+        if ini.get(key) != ["on" if default_on else "off"]:
+            problems.append(f"launcher/sc-offline.ini: {key} must appear once, set {'on' if default_on else 'off'}; has {ini.get(key)}")
+    for key in sorted(set(ini) - set(want)):
+        problems.append(f"launcher/sc-offline.ini: unknown capability key {key}")
+    return problems
 
 
 def find_switches(core):
@@ -149,6 +189,7 @@ def build(core):
         sys.exit(f"switch map names capabilities absent from the registry: {sorted(missing)}")
     switches = [{
         "name": s,
+        "ini_key": ini_key(s),
         "capabilities": SWITCH_CAPS[s],
         "on_value": "1",
         "release_default": "on",
@@ -157,7 +198,8 @@ def build(core):
         "note": ("On by default in every release package; a visible setting the player can turn off. "
                  + (SWITCH_NOTE[s] + " " if s in SWITCH_NOTE else "") + "Not run in game."),
     } for s in sorted(SWITCH_CAPS)]
-    diags = [{"name": s, "source": found[s], "release_default": "off", "note": DIAGNOSTIC[s]}
+    diags = [{"name": s, "ini_key": ini_key(s), "source": found[s], "release_default": "off",
+              "player_can_turn_off": True, "note": DIAGNOSTIC[s]}
              for s in sorted(DIAGNOSTIC)]
     return {
         "schema": 1,
@@ -165,7 +207,8 @@ def build(core):
         "registry_schema_version": reg["schema_version"],
         "registry_sha256": hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest(),
         "release_policy": "Every capability switch is on by default in every release package and "
-                          "is a visible setting the player can turn off. Nothing here was run in game.",
+                          "is a visible setting the player can turn off. The diagnostic switch is not "
+                          "a feature and is off by default. Nothing here was run in game.",
         "switches": switches,
         "diagnostics": diags,
         "capabilities": caps,
@@ -183,27 +226,31 @@ def render_md(t):
          "Some game features sit behind a switch. In every release package each switch is **on by "
          "default** and shows as a setting you can turn **off**. **None of these features has been "
          "run in game.** The evidence column says what exists instead.", "",
-         "The launcher sets each switch to the value `1`; Core reads a switch as on only when its value is exactly `1`. A switch never bypasses Core's own "
-         "checks: a capability still needs its signature rows and a fresh offline admission.", "",
+         "Each switch is a key in `sc-offline.ini`. The launcher sets the matching variable to the value `1` "
+         "for a key that is on and removes the variable for a key that is off, so a value left in your "
+         "shell or in Windows cannot turn a switch on. Core reads a switch as on only when its value is "
+         "exactly `1`. A switch never bypasses Core's own checks: a capability still needs its signature "
+         "rows and a fresh offline admission.", "",
          "## Switches", "",
-         "| Switch | Asks Core to turn on | Release default | Evidence |", "|---|---|---|---|"]
+         "| Key in `sc-offline.ini` | Variable | Asks Core to turn on | Release default | Evidence |",
+         "|---|---|---|---|---|"]
     by = {c["capability"]: c for c in t["capabilities"]}
     for s in t["switches"]:
         ev = "; ".join(f"`{c}`: {LEVEL_TEXT[by[c]['evidence_level']]}" for c in s["capabilities"])
         caps = ", ".join(f"`{c}`" for c in s["capabilities"])
         note = SWITCH_NOTE.get(s["name"], "")
-        L.append(f"| `{s['name']}` | {caps} | on, you can turn it off | {cell(ev)}. "
+        L.append(f"| `{s['ini_key']}` | `{s['name']}` | {caps} | on, you can turn it off | {cell(ev)}. "
                  f"{cell(note + ' ' if note else '')}Not run in game. |")
-    L += ["", "Diagnostic only (not a capability, not a player setting):", ""]
+    L += ["", "Diagnostic (not a capability and not a feature; off by default):", ""]
     for d in t["diagnostics"]:
-        L.append(f"- `{d['name']}`: {d['note']}")
+        L.append(f"- `{d['ini_key']}` (`{d['name']}`): {d['note']}")
     L += ["", "## Every capability", "",
           "Core default is what the SDK registry ships. Release default is what the launcher "
           "package sets.", "",
-          "| Capability | Service | Switch | Core default | Release default | Evidence |",
+          "| Capability | Service | Key in `sc-offline.ini` | Core default | Release default | Evidence |",
           "|---|---|---|---|---|---|"]
     for c in t["capabilities"]:
-        sw = f"`{c['switch']}`" if c["switch"] else "none"
+        sw = f"`{ini_key(c['switch'])}`" if c["switch"] else "none"
         if c["switch"]:
             rel = "on, you can turn it off"
         else:
@@ -226,6 +273,9 @@ def main():
     if not (core / "sdk/status_registry.json").is_file():
         sys.exit(f"core dir not found or submodule not initialised: {core}")
     t = build(core)
+    drift = launcher_problems()
+    if drift:
+        sys.exit("\n".join(drift))
     js = json.dumps(t, indent=2, ensure_ascii=False) + "\n"
     md = render_md(t)
     # Registry evidence strings are quoted from Core verbatim and may say "not ... game verified";

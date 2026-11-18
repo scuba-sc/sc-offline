@@ -3,10 +3,11 @@
   "generated_by": "tools/capabilities.py",
   "registry_schema_version": 2,
   "registry_sha256": "ae60104759ca76009e371a395d28e20bb4c43c62d58f9298041531af6136c1a5",
-  "release_policy": "Every capability switch is on by default in every release package and is a visible setting the player can turn off. Nothing here was run in game.",
+  "release_policy": "Every capability switch is on by default in every release package and is a visible setting the player can turn off. The diagnostic switch is not a feature and is off by default. Nothing here was run in game.",
   "switches": [
     {
       "name": "SCO_ACTOR_STATS_WRITE",
+      "ini_key": "exp_actor_stats_write",
       "capabilities": [
         "game.actor_stats.write"
       ],
@@ -20,6 +21,7 @@
     },
     {
       "name": "SCO_AUDIO_NATIVE",
+      "ini_key": "exp_audio_native",
       "capabilities": [
         "game.audio.triggers",
         "game.audio.play_once"
@@ -34,6 +36,7 @@
     },
     {
       "name": "SCO_CVARS_NATIVE",
+      "ini_key": "exp_cvars_native",
       "capabilities": [
         "game.cvars.read"
       ],
@@ -47,6 +50,7 @@
     },
     {
       "name": "SCO_INVENTORY_READ",
+      "ini_key": "exp_inventory_read",
       "capabilities": [
         "game.inventory.read"
       ],
@@ -60,6 +64,7 @@
     },
     {
       "name": "SCO_LOADOUT_ASYNC",
+      "ini_key": "exp_loadout_async",
       "capabilities": [
         "game.loadout.async"
       ],
@@ -75,11 +80,13 @@
   "diagnostics": [
     {
       "name": "SCO_ENTITIES_DIAG",
+      "ini_key": "exp_entities_diag",
       "source": [
         "src/game/services/entities.cpp"
       ],
       "release_default": "off",
-      "note": "Installs the entity streaming hooks log-only and runs one diagnostic walk. Not a capability. Log only. Off by default."
+      "player_can_turn_off": true,
+      "note": "Installs hooks that patch game functions (the entity streaming functions) only to write log lines, and runs one diagnostic walk that writes to mod.log. Not a capability and no gameplay change. Off by default; turn it on only when asked for a bug report. Not run in game."
     }
   ],
   "capabilities": [

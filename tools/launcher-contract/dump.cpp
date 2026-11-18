@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Launcher contract dump. Compiles the real launcher/launcher.cpp (as launcher_status_config_test does) and writes
 // the results of its own functions as golden files: sc-offline.ini parse results, the in-place ini edits, the
-// SC_OFFLINE_* environment block, the install marker, the pc-changes.txt record, plugin.ini and [settings] parse
+// SC_OFFLINE_* environment block, the capability (exp_*) switches and the environment they leave, the install marker, the pc-changes.txt record, plugin.ini and [settings] parse
 // results and the plugin settings store. launcher-rs/tests/golden holds the committed copy; the Rust crates must
 // reproduce every file byte for byte. tools/check_launcher_contract.py runs this and diffs against that copy.
 // No helper, game or network call runs. Nothing here is run in game.
@@ -83,6 +83,8 @@ static std::string ConfigDump(const Config& c, bool returned, const std::string&
     t += "multiplayer_allow=" + Narrow(c.multiplayerAllow) + "\n";
     t += std::string("asop=") + OnOff(c.asop) + "\n";
     t += "asop_fleet_list=" + Narrow(c.asopFleetList) + "\n";
+    for (size_t i = 0; i < ARRAYSIZE(kExperimental); ++i)
+        t += Narrow(kExperimental[i].key) + "=" + OnOff(c.experimental[i]) + "\n";
     for (size_t pos = 0; pos < messages.size();) {
         size_t nl = messages.find('\n', pos);
         if (nl == std::string::npos) nl = messages.size();
@@ -105,6 +107,32 @@ static std::string EnvDump(const Config& c) {
     return t;
 }
 
+// The capability switches through the real ApplyExperimentalEnv: first every switch variable is set to the given
+// inherited value (empty = set to the empty string), then the function runs and the process environment is read
+// back. A line per switch: NAME=1 when its key is on, NAME=<unset> when it is off. Then the "on" summary the launcher
+// prints and the variables it reports as removed (non-empty although the key is off).
+static std::string CapsDump(const Config& c, const std::map<std::string, std::string>& inherited) {
+    for (const auto& s : kExperimental) SetEnvironmentVariableW(s.var, nullptr);
+    for (const auto& kv : inherited) {
+        std::wstring name(kv.first.begin(), kv.first.end()), value(kv.second.begin(), kv.second.end());
+        SetEnvironmentVariableW(name.c_str(), value.c_str());
+    }
+    std::wstring removed;
+    const std::wstring on = ApplyExperimentalEnv(c, removed);
+    std::string t;
+    for (const auto& s : kExperimental) {
+        wchar_t buf[64] = {};
+        SetLastError(0);
+        const DWORD n = GetEnvironmentVariableW(s.var, buf, ARRAYSIZE(buf));
+        const bool set = n > 0 || GetLastError() != ERROR_ENVVAR_NOT_FOUND;
+        t += Narrow(s.var) + "=" + (set ? Narrow(buf) : std::string("<unset>")) + "\n";
+    }
+    t += "on=" + Narrow(on) + "\n";
+    t += "removed=" + Narrow(removed) + "\n";
+    for (const auto& s : kExperimental) SetEnvironmentVariableW(s.var, nullptr);
+    return t;
+}
+
 static std::string RunReadConfig(const fs::path& file, Config& c, bool& returned) {
     const fs::path logPath = g_scratch / "x.log";
     g_log = _wfsopen(logPath.c_str(), L"w+b", _SH_DENYNO);   // binary: the messages end in \n, not \r\n
@@ -124,7 +152,13 @@ static void ParseCase(const std::string& name, const std::string& bytes) {
     const std::string messages = RunReadConfig(file, c, returned);
     Put("ini/" + name + ".ini", bytes);
     Put("ini/" + name + ".parsed.txt", ConfigDump(c, returned, messages));
-    if (returned) Put("ini/" + name + ".env.txt", EnvDump(c));
+    if (returned) {
+        Put("ini/" + name + ".env.txt", EnvDump(c));
+        // Every switch variable is inherited as "yes" here: an on key must replace it with 1, an off key must remove it.
+        std::map<std::string, std::string> inherited;
+        for (const auto& s : kExperimental) inherited[Narrow(s.var)] = "yes";
+        Put("ini/" + name + ".caps.txt", CapsDump(c, inherited));
+    }
 }
 
 static void MissingParseCase() {
@@ -224,6 +258,52 @@ asop_fleet_list = both
     cases.push_back({ "language-auto", "language = auto\r\n" });
     cases.push_back({ "language-upper", "language = RU\r\n" });
     cases.push_back({ "language-empty", "language =\r\n" });
+    // The capability switches (exp_* keys): defaults, each key on and off, spellings, malformed, duplicates.
+    for (const auto& s : kExperimental) {
+        const std::string key = Narrow(s.key);
+        cases.push_back({ key + "-off", Crlf(key + " = off\n") });
+        cases.push_back({ key + "-on", Crlf(key + " = on\n") });
+        cases.push_back({ key + "-malformed", Crlf(key + " = maybe\n") });
+        cases.push_back({ key + "-empty", Crlf(key + " =\n") });
+        cases.push_back({ key + "-dup-off-on", Crlf(key + " = off\n" + key + " = on\n") });
+        cases.push_back({ key + "-dup-on-off", Crlf(key + " = on\n" + key + " = off\n") });
+        cases.push_back({ key + "-off-then-malformed", Crlf(key + " = off\n" + key + " = maybe\n") });
+        cases.push_back({ key + "-on-then-malformed", Crlf(key + " = on\n" + key + " = nope\n") });
+        cases.push_back({ key + "-upper", Crlf("EXP" + key.substr(3) + " = OFF\n") });
+    }
+    {
+        std::string allOff, allOn;
+        for (const auto& s : kExperimental) { allOff += Narrow(s.key) + " = off\n"; allOn += Narrow(s.key) + " = on\n"; }
+        cases.push_back({ "exp-all-off-crlf", Crlf(allOff) });
+        cases.push_back({ "exp-all-off-lf", Lf(allOff) });
+        cases.push_back({ "exp-all-on-crlf", Crlf(allOn) });
+        cases.push_back({ "exp-all-off-bom-crlf", "\xEF\xBB\xBF" + Crlf(allOff) });
+        cases.push_back({ "exp-all-on-bom-lf", "\xEF\xBB\xBF" + Lf(allOn) });
+        cases.push_back({ "exp-all-off-no-trailing-newline", Crlf(allOff).substr(0, Crlf(allOff).size() - 2) });
+    }
+    cases.push_back({ "exp-spellings", Crlf(R"(exp_loadout_async = 0
+exp_inventory_read = No
+exp_actor_stats_write = FALSE
+exp_cvars_native = 1
+exp_audio_native = YES
+exp_entities_diag = True
+)") });
+    cases.push_back({ "exp-malformed-all", Crlf(R"(exp_loadout_async = 2
+exp_inventory_read = enabled
+exp_actor_stats_write = ""
+exp_cvars_native = on off
+exp_audio_native = ?
+exp_entities_diag = 11
+)") });
+    cases.push_back({ "exp-comments-and-unknown", Crlf(R"(# exp_loadout_async = off
+; exp_inventory_read = off
+exp_loadout_async_x = off
+exp_unknown = off
+loadout_async = off
+exp_cvars_native = off
+)") });
+    cases.push_back({ "exp-quotes-and-spaces", Crlf("exp_loadout_async = \"off\"\n\texp_inventory_read\t=\toff\t\n  exp_audio_native   =   no   \n") });
+    cases.push_back({ "exp-mixed-endings", "exp_loadout_async = off\r\nexp_inventory_read = off\nexp_actor_stats_write = off\r\n" });
     const std::pair<const char*, const char*> logs[] = {
         { "ask", "ask" }, { "always", "always" }, { "never", "never" }, { "always-upper", "ALWAYS" }, { "on", "on" },
         { "off", "off" }, { "yes", "yes" }, { "no", "no" }, { "true", "true" }, { "false", "false" }, { "one", "1" },
@@ -256,6 +336,44 @@ asop_fleet_list = both
         cases.push_back({ std::string("allow-") + a.first, std::string("multiplayer_allow = ") + a.second + "\r\n" });
     for (const auto& c : cases) ParseCase(c.first, c.second);
     MissingParseCase();
+}
+
+// Inherited environment against the capability switches: what is left in the game's environment, and what the launcher reports.
+static void CapsScenarioCases(const fs::path& repo) {
+    struct Scenario { const char* name; std::string ini; std::vector<std::pair<std::string, std::string>> inherited; };
+    std::string allOff;
+    for (const auto& s : kExperimental) allOff += Narrow(s.key) + " = off\n";
+    const std::string shipped = Crlf(Slurp(repo / "launcher" / "sc-offline.ini"));
+    const std::vector<Scenario> cases = {
+        { "defaults-nothing-inherited", "", {} },
+        { "shipped-nothing-inherited", shipped, {} },
+        { "shipped-inherited-zero", shipped, { { "SCO_LOADOUT_ASYNC", "0" }, { "SCO_ENTITIES_DIAG", "0" } } },
+        { "shipped-inherited-diag-and-odd", shipped, { { "SCO_ENTITIES_DIAG", "1" }, { "SCO_AUDIO_NATIVE", "2" } } },
+        { "all-off-nothing-inherited", Crlf(allOff), {} },
+        { "all-off-inherited-one", Crlf(allOff), { { "SCO_LOADOUT_ASYNC", "1" }, { "SCO_INVENTORY_READ", "1" }, { "SCO_ACTOR_STATS_WRITE", "1" },
+                                                  { "SCO_CVARS_NATIVE", "1" }, { "SCO_AUDIO_NATIVE", "1" }, { "SCO_ENTITIES_DIAG", "1" } } },
+        { "all-off-inherited-odd-values", Crlf(allOff), { { "SCO_LOADOUT_ASYNC", "true" }, { "SCO_INVENTORY_READ", "on" }, { "SCO_ACTOR_STATS_WRITE", " 1" } } },
+        { "all-off-inherited-empty", Crlf(allOff), { { "SCO_LOADOUT_ASYNC", "" }, { "SCO_CVARS_NATIVE", "" } } },
+        { "one-off-inherited-one", Crlf("exp_cvars_native = off\n"), { { "SCO_CVARS_NATIVE", "1" }, { "SCO_AUDIO_NATIVE", "1" } } },
+        { "diag-on-nothing-inherited", Crlf("exp_entities_diag = on\n"), {} },
+        { "diag-on-inherited-yes", Crlf("exp_entities_diag = on\n"), { { "SCO_ENTITIES_DIAG", "yes" } } },
+    };
+    std::string list;
+    for (const Scenario& sc : cases) {
+        const fs::path file = g_scratch / "caps.ini";
+        PutBytes(file, sc.ini); --g_files;
+        Config c;
+        bool returned = false;
+        RunReadConfig(file, c, returned);
+        std::map<std::string, std::string> inherited(sc.inherited.begin(), sc.inherited.end());
+        std::string in;
+        for (const auto& kv : sc.inherited) in += kv.first + "=" + kv.second + "\n";
+        Put(std::string("caps/") + sc.name + ".ini", sc.ini);
+        Put(std::string("caps/") + sc.name + ".inherited", in);
+        Put(std::string("caps/") + sc.name + ".result.txt", CapsDump(c, inherited));
+        list += std::string(sc.name) + "\n";
+    }
+    Put("caps/cases.txt", list);
 }
 
 // --- in-place ini edits ---------------------------------------------------------------------------
@@ -392,6 +510,8 @@ static void ConstantsAndPaths() {
     t += std::string("hosts_tag=") + kHostsTag + "\n";
     for (const FwRule& r : kFwRules) t += std::string("fw_rule.") + r.key + "=" + Narrow(r.name) + "\n";
     t += "pc_changes_rel=sc-offline\\pc-changes.txt\n";
+    for (const auto& s : kExperimental)
+        t += "exp." + Narrow(s.key) + "=" + Narrow(s.var) + "," + OnOff(s.defaultOn) + "\n";
     Put("constants.txt", t);
 
     const GamePaths g(L"C:\\Games\\StarCitizen\\LIVE\\Bin64");
@@ -612,6 +732,7 @@ int main(int argc, char** argv) {
     fs::create_directories(g_scratch);
     fs::create_directories(g_out);
     IniParseCases(repo);
+    CapsScenarioCases(repo);
     IniEditCases();
     MarkerCases();
     FieldCases();

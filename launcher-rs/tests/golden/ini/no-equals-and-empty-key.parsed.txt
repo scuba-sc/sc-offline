@@ -20,6 +20,12 @@ multiplayer=on
 multiplayer_allow=
 asop=off
 asop_fleet_list=ships
+exp_loadout_async=on
+exp_inventory_read=on
+exp_actor_stats_write=on
+exp_cvars_native=on
+exp_audio_native=on
+exp_entities_diag=off
 message=[!] sc-offline.ini line 1: expected key = value
 message=[!] sc-offline.ini line 2: unknown key ''
 message=[!] sc-offline.ini line 4: expected key = value

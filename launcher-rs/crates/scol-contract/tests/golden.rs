@@ -24,7 +24,7 @@ const OWNED: [&str; 7] = [
     "README.md",
 ];
 /// Top-level entries consumed by the `scol-config` tests.
-const OTHER_CRATE: [&str; 4] = ["ini", "ini-edit", "plugins", ".gitattributes"];
+const OTHER_CRATE: [&str; 5] = ["caps", "ini", "ini-edit", "plugins", ".gitattributes"];
 
 struct Golden {
     read: BTreeSet<PathBuf>,
@@ -114,6 +114,25 @@ fn golden_contracts() {
             .count()
             .to_string(),
         "4",
+    );
+    // The capability switches: key, variable and default, in the order of `kExperimental`.
+    let exp: Vec<(String, String)> = rows
+        .iter()
+        .filter_map(|(k, v)| k.strip_prefix("exp.").map(|k| (k.to_string(), v.clone())))
+        .collect();
+    let have: Vec<(String, String)> = scol_contract::capability_env::SWITCHES
+        .iter()
+        .map(|s| {
+            (
+                s.ini_key.to_string(),
+                format!("{},{}", s.env, if s.default_on { "on" } else { "off" }),
+            )
+        })
+        .collect();
+    g.expect(
+        "capability switches",
+        &format!("{have:?}"),
+        &format!("{exp:?}"),
     );
     g.expect(
         "pc_changes_rel",

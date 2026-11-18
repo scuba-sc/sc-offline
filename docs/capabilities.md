@@ -4,31 +4,31 @@
 
 Some game features sit behind a switch. In every release package each switch is **on by default** and shows as a setting you can turn **off**. **None of these features has been run in game.** The evidence column says what exists instead.
 
-The launcher sets each switch to the value `1`; Core reads a switch as on only when its value is exactly `1`. A switch never bypasses Core's own checks: a capability still needs its signature rows and a fresh offline admission.
+Each switch is a key in `sc-offline.ini`. The launcher sets the matching variable to the value `1` for a key that is on and removes the variable for a key that is off, so a value left in your shell or in Windows cannot turn a switch on. Core reads a switch as on only when its value is exactly `1`. A switch never bypasses Core's own checks: a capability still needs its signature rows and a fresh offline admission.
 
 ## Switches
 
-| Switch | Asks Core to turn on | Release default | Evidence |
-|---|---|---|---|
-| `SCO_ACTOR_STATS_WRITE` | `game.actor_stats.write` | on, you can turn it off | `game.actor_stats.write`: rows resolve; an in-game probe must settle an open question first. The registry says OFF pending in-game confirmation. The release package still sets it on by owner decision; you can turn it off. Not run in game. |
-| `SCO_AUDIO_NATIVE` | `game.audio.triggers`, `game.audio.play_once` | on, you can turn it off | `game.audio.triggers`: synthetic tests only; `game.audio.play_once`: synthetic tests only. Core currently refuses the native audio adapter even with this on, so both audio capabilities stay off. The switch only asks Core to try. Not run in game. |
-| `SCO_CVARS_NATIVE` | `game.cvars.read` | on, you can turn it off | `game.cvars.read`: synthetic tests only. Not run in game. |
-| `SCO_INVENTORY_READ` | `game.inventory.read` | on, you can turn it off | `game.inventory.read`: synthetic tests only. Not run in game. |
-| `SCO_LOADOUT_ASYNC` | `game.loadout.async` | on, you can turn it off | `game.loadout.async`: synthetic tests only. Not run in game. |
+| Key in `sc-offline.ini` | Variable | Asks Core to turn on | Release default | Evidence |
+|---|---|---|---|---|
+| `exp_actor_stats_write` | `SCO_ACTOR_STATS_WRITE` | `game.actor_stats.write` | on, you can turn it off | `game.actor_stats.write`: rows resolve; an in-game probe must settle an open question first. The registry says OFF pending in-game confirmation. The release package still sets it on by owner decision; you can turn it off. Not run in game. |
+| `exp_audio_native` | `SCO_AUDIO_NATIVE` | `game.audio.triggers`, `game.audio.play_once` | on, you can turn it off | `game.audio.triggers`: synthetic tests only; `game.audio.play_once`: synthetic tests only. Core currently refuses the native audio adapter even with this on, so both audio capabilities stay off. The switch only asks Core to try. Not run in game. |
+| `exp_cvars_native` | `SCO_CVARS_NATIVE` | `game.cvars.read` | on, you can turn it off | `game.cvars.read`: synthetic tests only. Not run in game. |
+| `exp_inventory_read` | `SCO_INVENTORY_READ` | `game.inventory.read` | on, you can turn it off | `game.inventory.read`: synthetic tests only. Not run in game. |
+| `exp_loadout_async` | `SCO_LOADOUT_ASYNC` | `game.loadout.async` | on, you can turn it off | `game.loadout.async`: synthetic tests only. Not run in game. |
 
-Diagnostic only (not a capability, not a player setting):
+Diagnostic (not a capability and not a feature; off by default):
 
-- `SCO_ENTITIES_DIAG`: Installs the entity streaming hooks log-only and runs one diagnostic walk. Not a capability. Log only. Off by default.
+- `exp_entities_diag` (`SCO_ENTITIES_DIAG`): Installs hooks that patch game functions (the entity streaming functions) only to write log lines, and runs one diagnostic walk that writes to mod.log. Not a capability and no gameplay change. Off by default; turn it on only when asked for a bug report. Not run in game.
 
 ## Every capability
 
 Core default is what the SDK registry ships. Release default is what the launcher package sets.
 
-| Capability | Service | Switch | Core default | Release default | Evidence |
+| Capability | Service | Key in `sc-offline.ini` | Core default | Release default | Evidence |
 |---|---|---|---|---|---|
 | `game.asop.selection.file` | `game.asop.selection` | none | OFF | off (no switch) | synthetic tests only. Not run in game. |
-| `game.audio.triggers` | `game.audio` | `SCO_AUDIO_NATIVE` | OFF | on, you can turn it off | synthetic tests only. Not run in game. |
-| `game.audio.play_once` | `game.audio` | `SCO_AUDIO_NATIVE` | OFF | on, you can turn it off | synthetic tests only. Not run in game. |
+| `game.audio.triggers` | `game.audio` | `exp_audio_native` | OFF | on, you can turn it off | synthetic tests only. Not run in game. |
+| `game.audio.play_once` | `game.audio` | `exp_audio_native` | OFF | on, you can turn it off | synthetic tests only. Not run in game. |
 | `game.inventory.contents.read` | `game.inventory.contents` | none | OFF | off (no switch) | synthetic tests only. Not run in game. |
 | `game.datacore_live` | `game.datacore_live` | none | OFF | off (no switch) | synthetic tests only. Not run in game. |
 | `game.input.registry` | `game.input` | none | ON | set by Core | synthetic tests only. Not run in game. |
@@ -40,7 +40,7 @@ Core default is what the SDK registry ships. Release default is what the launche
 | `game.actors.health` | `game.actors` | none | ON | set by Core | signature rows resolve in a build report; nothing executed. Not run in game. |
 | `game.actors.state` | `game.actors` | none | OFF | off (no switch) | rows resolve; an in-game probe must settle an open question first. Not run in game. |
 | `game.actor_stats.read` | `game.actor_stats` | none | ON | set by Core | signature rows resolve in a build report; nothing executed. Not run in game. |
-| `game.actor_stats.write` | `game.actor_stats_write` | `SCO_ACTOR_STATS_WRITE` | OFF | on, you can turn it off | rows resolve; an in-game probe must settle an open question first. Not run in game. |
+| `game.actor_stats.write` | `game.actor_stats_write` | `exp_actor_stats_write` | OFF | on, you can turn it off | rows resolve; an in-game probe must settle an open question first. Not run in game. |
 | `game.vehicles.seats` | `game.vehicles` | none | ON | set by Core | signature rows resolve in a build report; nothing executed. Not run in game. |
 | `game.vehicles.seat` | `game.vehicles` | none | ON | set by Core | signature rows resolve in a build report; nothing executed. Not run in game. |
 | `game.vehicles.flight_ready` | `game.vehicles` | none | ON | set by Core | signature rows resolve in a build report; nothing executed. Not run in game. |
@@ -77,15 +77,15 @@ Core default is what the SDK registry ships. Release default is what the launche
 | `game.entities.prefabs` | `game.prefabs` | none | ON | set by Core | synthetic tests only. Not run in game. |
 | `game.loadout.apply` | `game.loadout` | none | OFF | off (no switch) | synthetic tests only. Not run in game. |
 | `game.loadout.weapons` | `game.loadout` | none | OFF | off (no switch) | synthetic tests only. Not run in game. |
-| `game.loadout.async` | `game.loadout` | `SCO_LOADOUT_ASYNC` | OFF | on, you can turn it off | synthetic tests only. Not run in game. |
+| `game.loadout.async` | `game.loadout` | `exp_loadout_async` | OFF | on, you can turn it off | synthetic tests only. Not run in game. |
 | `game.quantum.control` | `game.quantum` | none | OFF | off (no switch) | synthetic tests only. Not run in game. |
 | `game.build.info` | `game.build` | none | ON | set by Core | synthetic tests only. Not run in game. |
 | `game.gamerules.read` | `game.gamerules` | none | OFF | off (no switch) | synthetic tests only. Not run in game. |
 | `game.gamerules.params` | `game.gamerules` | none | ON | set by Core | synthetic tests only. Not run in game. |
-| `game.inventory.read` | `game.inventory` | `SCO_INVENTORY_READ` | OFF | on, you can turn it off | synthetic tests only. Not run in game. |
+| `game.inventory.read` | `game.inventory` | `exp_inventory_read` | OFF | on, you can turn it off | synthetic tests only. Not run in game. |
 | `game.inventory.layout` | `game.inventory` | none | OFF | off (no switch) | synthetic tests only. Not run in game. |
 | `game.private_session` | `game.private_session` | none | ON | set by Core | synthetic tests only. Not run in game. |
-| `game.cvars.read` | `game.cvars` | `SCO_CVARS_NATIVE` | OFF | on, you can turn it off | synthetic tests only. Not run in game. |
+| `game.cvars.read` | `game.cvars` | `exp_cvars_native` | OFF | on, you can turn it off | synthetic tests only. Not run in game. |
 | `game.cvars.write` | `game.cvars_write` | none | OFF | off (no switch) | synthetic tests only. Not run in game. |
 | `game.economy.read` | `game.economy` | none | OFF | off (no switch) | synthetic tests only. Not run in game. |
 | `game.economy.apply` | `game.economy` | none | OFF | off (no switch) | synthetic tests only. Not run in game. |

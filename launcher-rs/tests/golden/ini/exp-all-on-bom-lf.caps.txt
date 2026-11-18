@@ -1,0 +1,8 @@
+SCO_LOADOUT_ASYNC=1
+SCO_INVENTORY_READ=1
+SCO_ACTOR_STATS_WRITE=1
+SCO_CVARS_NATIVE=1
+SCO_AUDIO_NATIVE=1
+SCO_ENTITIES_DIAG=1
+on=exp_loadout_async (SCO_LOADOUT_ASYNC=1), exp_inventory_read (SCO_INVENTORY_READ=1), exp_actor_stats_write (SCO_ACTOR_STATS_WRITE=1), exp_cvars_native (SCO_CVARS_NATIVE=1), exp_audio_native (SCO_AUDIO_NATIVE=1), exp_entities_diag (SCO_ENTITIES_DIAG=1)
+removed=

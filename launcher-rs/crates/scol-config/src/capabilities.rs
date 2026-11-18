@@ -3,10 +3,10 @@
 //!
 //! Owner decision 2026-11-17: every capability switch is ON by default in every release package, each one
 //! is a visible setting the player can turn OFF, and its text says it has not been run in game.
-//! The logging-only `SCO_ENTITIES_DIAG` is not a capability and is OFF by default, pending an
-//! owner answer. A switch is on for the game only when the environment value is exactly `1`. An OFF switch is
-//! left out of the game's environment (the launcher removes an inherited value), so turning a
-//! switch off in the launcher also beats a value set in the player's own shell.
+//! `SCO_ENTITIES_DIAG` is diagnostic hooks that patch game functions to write log lines; it is not a
+//! feature and is OFF by default. A switch is on for the game only when the environment value is exactly
+//! `1`. An OFF switch is left out of the game's environment (the launcher removes an inherited value), so
+//! turning a switch off in the launcher also beats a value set in the player's own shell.
 
 use scol_contract::capability_env::{Switch, ON_VALUE, SWITCHES};
 
@@ -17,7 +17,7 @@ pub struct Capabilities {
 }
 
 impl Default for Capabilities {
-    /// Every capability switch on, the logging-only switch off. See the module text.
+    /// Five capability switches on, the diagnostic switch off. See the module text.
     fn default() -> Self {
         let mut on = [false; SWITCHES.len()];
         for (slot, s) in on.iter_mut().zip(SWITCHES.iter()) {

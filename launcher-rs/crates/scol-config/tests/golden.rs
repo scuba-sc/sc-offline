@@ -5,11 +5,14 @@
 //!
 //! Source and synthetic evidence only. Nothing here was run in game.
 
-use scol_config::env::{play_env, render as render_env, PlayPaths};
+use scol_config::env::{
+    apply_capabilities, play_env, render as render_env, render_capabilities, PlayPaths,
+};
 use scol_config::plugin_ini::{
     self, apply_kept, canon_setting, parse_plugin_ini, parse_setting_line, pending_writes,
 };
 use scol_config::{ini_edit, read_config, Config, Parsed};
+use scol_contract::capability_env::SWITCHES;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
@@ -18,7 +21,7 @@ fn golden_dir() -> PathBuf {
 }
 
 /// Top-level entries of the golden tree this crate's tests consume.
-const OWNED: [&str; 3] = ["ini", "ini-edit", "plugins"];
+const OWNED: [&str; 4] = ["caps", "ini", "ini-edit", "plugins"];
 /// Top-level entries consumed by the `scol-contract` tests.
 const OTHER_CRATE: [&str; 7] = [
     "field",
@@ -131,6 +134,9 @@ fn dump_config(c: &Config, messages: &[String], returned: bool) -> String {
     line("multiplayer_allow", &c.multiplayer_allow);
     line("asop", on_off(c.asop));
     line("asop_fleet_list", &c.asop_fleet_list);
+    for s in &SWITCHES {
+        line(s.ini_key, on_off(c.capabilities.is_on(s)));
+    }
     for m in messages {
         line("message", m);
     }
@@ -163,11 +169,13 @@ fn check_ini(g: &mut Golden) {
             &render_env(&play_env(&config, paths)),
             &want_env,
         );
-        // No golden file uses a capability key: the switches keep their default (on).
+        // The launcher inherits every switch variable as "yes": an on key replaces it with 1, an
+        // off key removes it and says so.
+        let want_caps = g.text(&format!("ini/{name}.caps.txt"));
         g.expect(
-            &format!("ini/{name} capabilities"),
-            &format!("{:?}", config.capabilities),
-            &format!("{:?}", scol_config::Capabilities::default()),
+            &format!("ini/{name} capability environment"),
+            &render_capabilities(&apply_capabilities(&config.capabilities, &|_| true)),
+            &want_caps,
         );
     }
     // A file that cannot be read.
@@ -180,11 +188,31 @@ fn check_ini(g: &mut Golden) {
         &want,
     );
     // Every case has all three files, and nothing else is in the folder.
-    let expected: usize = cases.len() * 3 + 1;
+    let expected: usize = cases.len() * 4 + 1;
     let have = std::fs::read_dir(golden_dir().join("ini")).unwrap().count();
     if have != expected {
         g.failures
             .push(format!("ini/ holds {have} files, expected {expected}"));
+    }
+}
+
+/// `caps/`: a file, a set of inherited variables, and what the C++ launcher leaves in the game's
+/// environment and prints about it.
+fn check_caps(g: &mut Golden) {
+    let list = g.text("caps/cases.txt");
+    let names: Vec<&str> = list.lines().collect();
+    assert!(names.len() >= 10, "only {} caps cases", names.len());
+    for name in names {
+        let ini = g.bytes(&format!("caps/{name}.ini"));
+        let inherited_text = g.text(&format!("caps/{name}.inherited"));
+        let inherited: BTreeSet<&str> = inherited_text
+            .lines()
+            .filter_map(|l| l.split_once('=').map(|(k, _)| k))
+            .collect();
+        let want = g.text(&format!("caps/{name}.result.txt"));
+        let parsed = Config::parse(&ini);
+        let apply = apply_capabilities(&parsed.config.capabilities, &|n| inherited.contains(n));
+        g.expect(&format!("caps/{name}"), &render_capabilities(&apply), &want);
     }
 }
 
@@ -371,6 +399,7 @@ fn golden_config() {
         failures: Vec::new(),
     };
     check_ini(&mut g);
+    check_caps(&mut g);
     check_ini_edit(&mut g);
     check_plugin_files(&mut g);
     check_canon(&mut g);
@@ -413,53 +442,274 @@ fn golden_config() {
     );
 }
 
-#[test]
-fn capability_keys_default_on_and_can_be_turned_off() {
-    use scol_config::env::{capability_env, full_env};
-    use scol_contract::capability_env::{ENTITIES_DIAG, LOADOUT_ASYNC, SWITCHES};
-    let defaults = Config::default();
-    // Owner decision: every capability switch is on by default. The logging-only one is off.
-    for s in &SWITCHES {
-        assert_eq!(
-            defaults.capabilities.is_on(s),
-            !s.diagnostic_only,
-            "{} default",
-            s.env
-        );
-    }
-    let block = capability_env(&defaults.capabilities);
-    assert_eq!(block.len(), SWITCHES.len());
-    assert!(block
+/// The environment the game process ends up with from a block: a variable with an empty value
+/// is removed (`SetVar` in the C++ launcher), every other one is set.
+fn applied(block: &[scol_config::EnvVar]) -> BTreeMap<&'static str, String> {
+    block
         .iter()
-        .all(|e| (e.value == "1") == (e.name != ENTITIES_DIAG)));
+        .filter(|e| !e.is_unset())
+        .map(|e| (e.name, e.value.clone()))
+        .collect()
+}
 
-    let parsed =
-        Config::parse(b"loadout_async = off\r\nInventory_Read = no\r\nentities_diag = maybe\r\n");
-    assert!(!parsed.config.capabilities.is_on(&SWITCHES[0]));
-    assert!(!parsed.config.capabilities.is_on(&SWITCHES[1]));
-    assert!(parsed.config.capabilities.is_on(&SWITCHES[2]));
+#[test]
+fn defaults_are_five_on_and_the_diagnostic_off() {
+    let c = Config::default();
+    assert_eq!(SWITCHES.len(), 6);
+    for s in &SWITCHES {
+        assert_eq!(s.default_on, s.env != "SCO_ENTITIES_DIAG", "{}", s.ini_key);
+        assert_eq!(c.capabilities.is_on(s), !s.diagnostic_only, "{}", s.env);
+    }
+    let env = applied(&scol_config::env::capability_env(&c.capabilities));
+    assert_eq!(env.len(), 5);
+    assert!(!env.contains_key("SCO_ENTITIES_DIAG"));
+    assert!(env.values().all(|v| v == "1"));
+}
+
+/// One switch at a time: on gives exactly "1" under its name; off gives no entry at all and an
+/// inherited value is reported as removed.
+#[test]
+fn each_switch_on_holds_exactly_one_and_off_has_no_entry() {
+    for target in &SWITCHES {
+        for (word, on) in [("on", true), ("off", false)] {
+            // The other switches get the opposite value, so the key under test must do the work.
+            let others = if on { "off" } else { "on" };
+            let mut ini = String::new();
+            for s in &SWITCHES {
+                let value = if s.env == target.env { word } else { others };
+                ini.push_str(&format!("{} = {value}\r\n", s.ini_key));
+            }
+            let parsed = Config::parse(ini.as_bytes());
+            assert!(parsed.messages.is_empty(), "{:?}", parsed.messages);
+            let caps = &parsed.config.capabilities;
+            let block = scol_config::env::capability_env(caps);
+            assert_eq!(block.len(), SWITCHES.len());
+            let env = applied(&block);
+            for s in &SWITCHES {
+                let want_on = if s.env == target.env { on } else { !on };
+                assert_eq!(
+                    caps.is_on(s),
+                    want_on,
+                    "{} with {} = {word}",
+                    s.env,
+                    target.ini_key
+                );
+                if want_on {
+                    assert_eq!(env.get(s.env).map(String::as_str), Some("1"), "{}", s.env);
+                } else {
+                    assert_eq!(env.get(s.env), None, "{}", s.env);
+                }
+            }
+            let result = apply_capabilities(caps, &|_| true);
+            assert_eq!(
+                result.removed.split(", ").any(|n| n == target.env),
+                !on,
+                "{}",
+                target.env
+            );
+            assert_eq!(
+                result.on_summary.contains(&format!("{}=1)", target.env)),
+                on,
+                "{}",
+                target.env
+            );
+        }
+    }
+}
+
+#[test]
+fn inherited_variables_are_removed_when_the_key_is_off() {
+    let parsed = Config::parse(b"exp_cvars_native = off\r\n");
+    let caps = &parsed.config.capabilities;
+    let none = apply_capabilities(caps, &|_| false);
+    assert_eq!(none.removed, "");
+    let all = apply_capabilities(caps, &|_| true);
+    assert_eq!(all.removed, "SCO_CVARS_NATIVE, SCO_ENTITIES_DIAG");
+    // The game's environment is the same whatever was inherited.
+    assert_eq!(none.env, all.env);
+    assert_eq!(
+        all.on_summary,
+        "exp_loadout_async (SCO_LOADOUT_ASYNC=1), exp_inventory_read (SCO_INVENTORY_READ=1), \
+         exp_actor_stats_write (SCO_ACTOR_STATS_WRITE=1), exp_audio_native (SCO_AUDIO_NATIVE=1)"
+    );
+}
+
+#[test]
+fn capability_keys_ignore_case_and_accept_the_usual_spellings() {
+    let parsed = Config::parse(
+        b"EXP_LOADOUT_ASYNC = No\r\nExp_Inventory_Read = 0\r\nexp_actor_stats_write = FALSE\r\n\
+          exp_cvars_native = Yes\r\nexp_audio_native = 1\r\nexp_entities_diag = True\r\n",
+    );
+    assert!(parsed.messages.is_empty(), "{:?}", parsed.messages);
+    let on: Vec<bool> = SWITCHES
+        .iter()
+        .map(|s| parsed.config.capabilities.is_on(s))
+        .collect();
+    assert_eq!(on, [false, false, false, true, true, true]);
+}
+
+#[test]
+fn old_unprefixed_keys_are_unknown_keys() {
+    let parsed = Config::parse(b"loadout_async = off\r\nentities_diag = on\r\n");
     assert_eq!(
         parsed.messages,
-        ["[!] sc-offline.ini line 3: entities_diag must be on or off"]
+        [
+            "[!] sc-offline.ini line 1: unknown key 'loadout_async'",
+            "[!] sc-offline.ini line 2: unknown key 'entities_diag'"
+        ]
+    );
+    assert_eq!(
+        parsed.config.capabilities,
+        scol_config::Capabilities::default()
+    );
+}
+
+#[test]
+fn malformed_values_restore_the_default_even_after_a_valid_line() {
+    let parsed = Config::parse(
+        b"exp_loadout_async = off\r\nexp_loadout_async = maybe\r\n\
+          exp_entities_diag = on\r\nexp_entities_diag = nope\r\n\
+          exp_audio_native =\r\nexp_cvars_native = 2\r\n",
+    );
+    assert_eq!(
+        parsed.messages,
+        [
+            "[!] sc-offline.ini line 2: exp_loadout_async must be on or off; left on",
+            "[!] sc-offline.ini line 4: exp_entities_diag must be on or off; left off",
+            "[!] sc-offline.ini line 5: exp_audio_native must be on or off; left on",
+            "[!] sc-offline.ini line 6: exp_cvars_native must be on or off; left on",
+        ]
+    );
+    assert_eq!(
+        parsed.config.capabilities,
+        scol_config::Capabilities::default()
+    );
+}
+
+#[test]
+fn duplicate_keys_last_valid_line_wins() {
+    let off_on = Config::parse(b"exp_inventory_read = off\r\nexp_inventory_read = on\r\n");
+    assert!(off_on.config.capabilities.is_on(&SWITCHES[1]));
+    let on_off = Config::parse(b"exp_inventory_read = on\r\nexp_inventory_read = off\r\n");
+    assert!(!on_off.config.capabilities.is_on(&SWITCHES[1]));
+    assert!(on_off.messages.is_empty());
+    // A duplicate with different case is the same key.
+    let mixed = Config::parse(b"exp_inventory_read = off\r\nEXP_INVENTORY_READ = on\r\n");
+    assert!(mixed.config.capabilities.is_on(&SWITCHES[1]));
+}
+
+#[test]
+fn crlf_lf_mixed_bom_and_missing_final_newline_give_the_same_switches() {
+    let body = "exp_loadout_async = off\nexp_entities_diag = on\nexp_audio_native = off";
+    let state =
+        |c: &Config| -> Vec<bool> { SWITCHES.iter().map(|s| c.capabilities.is_on(s)).collect() };
+    let lf = Config::parse(body.as_bytes());
+    assert_eq!(state(&lf.config), [false, true, true, true, false, true]);
+    assert!(lf.messages.is_empty());
+    let crlf = Config::parse(body.replace('\n', "\r\n").as_bytes());
+    let mut bom = vec![0xEF, 0xBB, 0xBF];
+    bom.extend_from_slice(body.replace('\n', "\r\n").as_bytes());
+    let bom = Config::parse(&bom);
+    let mut bom_lf = vec![0xEF, 0xBB, 0xBF];
+    bom_lf.extend_from_slice(body.as_bytes());
+    let bom_lf = Config::parse(&bom_lf);
+    let mixed = Config::parse(
+        b"exp_loadout_async = off\r\nexp_entities_diag = on\nexp_audio_native = off\r\n",
+    );
+    for p in [&crlf, &bom, &bom_lf, &mixed] {
+        assert_eq!(state(&p.config), state(&lf.config));
+        assert!(p.messages.is_empty(), "{:?}", p.messages);
+    }
+}
+
+/// The shipped `launcher/sc-offline.ini`, read from the repository: the golden tree holds a CRLF
+/// copy of it, the C++ launcher's reading of that copy, and the environment it leaves.
+#[test]
+fn shipped_ini_golden() {
+    let shipped_path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../launcher/sc-offline.ini");
+    let shipped = std::fs::read(&shipped_path)
+        .unwrap_or_else(|e| panic!("cannot read the shipped sc-offline.ini: {e}"));
+    let text = String::from_utf8(shipped.clone()).expect("shipped ini is UTF-8");
+    let mut g = Golden {
+        read: BTreeSet::new(),
+        failures: Vec::new(),
+    };
+
+    // The golden copy is this file with CRLF line endings.
+    let crlf = text.replace("\r\n", "\n").replace('\n', "\r\n");
+    let golden_copy = g.bytes("ini/shipped.ini");
+    g.expect_bytes(
+        "golden copy of the shipped ini",
+        crlf.as_bytes(),
+        &golden_copy,
     );
 
+    // Reading it gives no message and the decided defaults, every key written out once.
+    let parsed = Config::parse(&shipped);
+    assert!(parsed.messages.is_empty(), "{:?}", parsed.messages);
+    assert_eq!(
+        parsed.config.capabilities,
+        scol_config::Capabilities::default()
+    );
+    for s in &SWITCHES {
+        let lines: Vec<&str> = text
+            .lines()
+            .filter(|l| {
+                !l.trim_start().starts_with('#')
+                    && l.split_once('=')
+                        .is_some_and(|(k, _)| k.trim().eq_ignore_ascii_case(s.ini_key))
+            })
+            .collect();
+        assert_eq!(lines.len(), 1, "{} must be a visible key, once", s.ini_key);
+        let value = lines[0].split_once('=').unwrap().1.trim();
+        assert_eq!(
+            value,
+            if s.default_on { "on" } else { "off" },
+            "{}",
+            s.ini_key
+        );
+        // The comment line above the key says it has not been run in game.
+        let comment = format!("# {}:", s.ini_key);
+        let line = text
+            .lines()
+            .find(|l| l.starts_with(&comment))
+            .unwrap_or_else(|| panic!("no comment for {}", s.ini_key));
+        assert!(line.contains("Not run in game"), "{line}");
+    }
+
+    // Same results as the C++ launcher wrote for the file.
+    let want = g.text("ini/shipped.parsed.txt");
+    g.expect(
+        "shipped parsed",
+        &dump_config(&parsed.config, &parsed.messages, true),
+        &want,
+    );
     let paths = PlayPaths {
-        data: "D",
-        user_dir: "U",
+        data: "C:\\sc-offline\\data",
+        user_dir: "C:\\Games\\StarCitizen\\LIVE\\user\\client\\0",
     };
-    let full = full_env(&parsed.config, paths);
-    assert_eq!(full.len(), 14 + SWITCHES.len());
-    let get = |name: &str| full.iter().find(|e| e.name == name).unwrap();
-    assert!(
-        get(LOADOUT_ASYNC).is_unset(),
-        "an off switch is removed from the game's environment"
+    let want_env = g.text("ini/shipped.env.txt");
+    g.expect(
+        "shipped env",
+        &render_env(&play_env(&parsed.config, paths)),
+        &want_env,
     );
-    assert!(
-        get(ENTITIES_DIAG).is_unset(),
-        "diagnostic switch is off by default"
+    let want_caps = g.text("ini/shipped.caps.txt");
+    g.expect(
+        "shipped capability environment",
+        &render_capabilities(&apply_capabilities(&parsed.config.capabilities, &|_| true)),
+        &want_caps,
     );
-    // The first 14 entries are the C++ block, unchanged.
-    assert_eq!(&full[..14], &play_env(&parsed.config, paths)[..]);
+    // The five on switches are exactly "1" and the diagnostic one has no entry.
+    let env = applied(&scol_config::env::capability_env(
+        &parsed.config.capabilities,
+    ));
+    assert_eq!(env.len(), 5);
+    assert!(env.values().all(|v| v == "1"));
+    assert!(!env.contains_key("SCO_ENTITIES_DIAG"));
+
+    assert!(g.failures.is_empty(), "{}", g.failures.join("\n"));
 }
 
 #[test]

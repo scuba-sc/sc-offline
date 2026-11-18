@@ -41,8 +41,8 @@ impl LogChoice {
     }
 }
 
-/// The settings of `sc-offline.ini`. Defaults are the C++ launcher's (`struct Config`), plus
-/// the capability switches, which are on by default.
+/// The settings of `sc-offline.ini`. Defaults are the C++ launcher's (`struct Config`),
+/// including the capability switches: five on, `exp_entities_diag` off.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     pub game: String,
@@ -70,7 +70,7 @@ pub struct Config {
     pub multiplayer_allow: String,
     pub asop: bool,
     pub asop_fleet_list: String,
-    /// New in the Rust launcher. The C++ launcher ignores these keys.
+    /// The `exp_*` keys (`Config::experimental` in the C++ launcher).
     pub capabilities: Capabilities,
 }
 
@@ -335,12 +335,18 @@ impl Config {
             } else if is("registry_probe") {
                 c.registry_probe = v.to_string();
             } else if let Some(switch) = Capabilities::switch_for_key(k) {
+                // Anything but on or off puts the switch back to its default, even after an
+                // earlier valid line, exactly as the C++ launcher does.
                 match parse_on_off(v) {
                     Some(b) => c.capabilities.set(switch, b),
-                    None => messages.push(format!(
-                        "[!] sc-offline.ini line {line_no}: {} must be on or off",
-                        switch.ini_key
-                    )),
+                    None => {
+                        c.capabilities.set(switch, switch.default_on);
+                        messages.push(format!(
+                            "[!] sc-offline.ini line {line_no}: {} must be on or off; left {}",
+                            switch.ini_key,
+                            if switch.default_on { "on" } else { "off" }
+                        ));
+                    }
                 }
             } else {
                 messages.push(format!(

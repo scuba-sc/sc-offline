@@ -1,0 +1,11 @@
+defaults-nothing-inherited
+shipped-nothing-inherited
+shipped-inherited-zero
+shipped-inherited-diag-and-odd
+all-off-nothing-inherited
+all-off-inherited-one
+all-off-inherited-odd-values
+all-off-inherited-empty
+one-off-inherited-one
+diag-on-nothing-inherited
+diag-on-inherited-yes
