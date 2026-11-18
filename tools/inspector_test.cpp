@@ -85,7 +85,16 @@ float stat_values[SC_ACTOR_STAT_LAST_1_0 + 1] = {};
 bool stat_nonfinite = false;
 const char* disabled_capability = nullptr;
 sco_result registration_result = SCO_OK;
-int Has(const char* name) { return !disabled_capability || std::strcmp(name, disabled_capability) != 0; }
+// Only names that exist in Core answer yes; a plugin asking for any other name is counted and refused.
+int unknown_capability_queries = 0;
+int Has(const char* name) {
+    static const char* const known[] = {"game.actors.local_player", "game.actors.health", "game.entities.transform",
+        "game.actor_stats.read", "game.gamerules.read", "game.inventory.read"};
+    bool exists = false;
+    for (const char* k : known) if (std::strcmp(name, k) == 0) exists = true;
+    if (!exists) { ++unknown_capability_queries; return 0; }
+    return !disabled_capability || std::strcmp(name, disabled_capability) != 0;
+}
 const char* locale_value = nullptr;
 bool settings_available = true;
 sco_event_fn settings_callback = nullptr;
@@ -456,6 +465,49 @@ void RetainedWidgetWorkflow() {
     CHECK(commands.count("inspector.read") == 1); Unload(); widgets_published = true;
     actors = nullptr; build_service = nullptr; stats_service = nullptr;
     rules_service = nullptr; inventory_service = nullptr; input_service = nullptr;
+}
+// Reading inventory switched off: the page must not offer a tab that can only fail.
+void InventoryOffHidesTabAndSaysSo() {
+    using namespace entry;
+    auto api = Api();
+    InitWidgets();
+    widgets_published = true;
+    sc_inventory_v1 inventory{}; inventory.size = sizeof(inventory); inventory.snapshot = InventoryRead;
+    inventory_service = &inventory;
+    inventory_fixture_count = 3;
+    disabled_capability = "game.inventory.read";
+    CHECK(Load(&api, owner) == SCO_OK);
+    CHECK(WidgetNode(W_INVENTORY) != nullptr);  // unknown until the first refresh
+    const int calls_before = inventory_calls;
+    WidgetEvent(W_REFRESH, SCO_WIDGET_BUTTON);
+    CHECK(inventory_calls == calls_before);
+    CHECK(WidgetNode(W_INVENTORY) == nullptr);
+    CHECK(WidgetNode(W_DIAGNOSTICS) && WidgetNode(W_ACTIONS) && WidgetNode(W_PARAMETERS));
+    bool said = false;
+    const auto* table = WidgetNode(W_TABLE);
+    for (uint32_t n = 0; table && n < table->item_count; ++n)
+        if (std::strstr(table->items[n], "Inventory: not available in this game session")) said = true;
+    CHECK(said);
+    WidgetEvent(W_INVENTORY, SCO_WIDGET_BUTTON);  // a stale click must not open the hidden page
+    CHECK(WidgetNode(W_DIAGNOSTICS) && WidgetNode(W_DIAGNOSTICS)->flags & SCO_WIDGET_DISABLED);
+    char reply[256]{};
+    sco_arg page0{}; page0.type = SCO_ARG_INT; page0.v.i = 0;
+    CHECK(InvokePage("inspector.inventory", &page0, reply, sizeof(reply)) == SCO_UNAVAILABLE);
+    CHECK(std::strstr(reply, "not available in this game session"));
+    CHECK(!std::strstr(reply, "switched off"));  // the cause is unknown, so do not claim it
+    CHECK(!std::strstr(reply, "build") && !std::strstr(reply, "SCO_"));
+    CHECK(unknown_capability_queries == 0);
+    Unload();
+    // Capability on but no inventory service: same plain, neutral wording, never "switched off".
+    disabled_capability = nullptr; inventory_service = nullptr;
+    CHECK(Load(&api, owner) == SCO_OK);
+    WidgetEvent(W_REFRESH, SCO_WIDGET_BUTTON);
+    CHECK(WidgetNode(W_INVENTORY) == nullptr);
+    char reply2[256]{};
+    CHECK(InvokePage("inspector.inventory", &page0, reply2, sizeof(reply2)) == SCO_UNAVAILABLE);
+    CHECK(std::strstr(reply2, "not available in this game session") && !std::strstr(reply2, "switched off"));
+    Unload();
+    disabled_capability = nullptr; inventory_service = nullptr; inventory_fixture_count = 1;
 }
 void RefreshResetsInventoryWidgetPage() {
     using namespace entry;
@@ -1230,6 +1282,7 @@ int main(int argc, char** argv) {
     RetainedWidgetWorkflow();
     PreviewStates();
     RefreshResetsInventoryWidgetPage();
+    InventoryOffHidesTabAndSaysSo();
     InspectorLayoutAndPaging();
     RefreshIsManualAndCopiesProviders();
     RefreshCommandValidationAndUnknownService();

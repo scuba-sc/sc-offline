@@ -68,6 +68,8 @@ const sco_widgets_v1* g_widgets = nullptr;
 bool g_panel = false;
 bool g_settings_subscribed = false;
 uint32_t g_tab = kDiagnostics, g_page = 0;
+// True once a refresh found inventory not available (switched off, or not provided; the cause cannot be told apart). The tab is then hidden: it could only fail.
+bool InventoryOff();
 char g_query[SC_INPUT_ACTION_NAME_BYTES]{};
 char g_widget_status[160] = "Not refreshed yet. Press Refresh to read the game.";
 constexpr uint32_t kRowsPerPage = 8;
@@ -235,6 +237,7 @@ void Refresh() {
     }
     g_snapshot = next;
     g_page = 0;
+    if (g_tab == kInventory && InventoryOff()) g_tab = kDiagnostics;
 }
 
 const sco_widgets_v1* Widgets() {
@@ -256,6 +259,8 @@ sco_result AcquireParams(uint32_t offset, sc_gamerules_param_info* out, uint32_t
     if (!HAS_FN(rules, sc_gamerules_v1, list_params)) return SCO_UNAVAILABLE;
     return rules->list_params(g_self, offset, out, sizeof(*out), capacity, copied, total);
 }
+
+bool InventoryOff() { return g_snapshot.sampled && g_snapshot.inventory_status == SCO_UNAVAILABLE; }
 
 bool RenderPanel();
 const char* Locale() {
@@ -324,7 +329,7 @@ void PanelEvent(const char* panel, const sco_widget_event* event, void* ctx) {
         const uint32_t pages = (total + kRowsPerPage - 1) / kRowsPerPage;
         if (id == kPrevious && g_page) --g_page;
         if (id == kNext && g_page + 1 < pages) ++g_page;
-    } else if (event->kind == SCO_WIDGET_BUTTON && (id == kDiagnostics || id == kInventory || id == kActions || id == kParameters)) {
+    } else if (event->kind == SCO_WIDGET_BUTTON && (id == kDiagnostics || (id == kInventory && !InventoryOff()) || id == kActions || id == kParameters)) {
         g_tab = id; g_page = 0;
     } else if (event->kind == SCO_WIDGET_TEXT_INPUT && id == kActionName && event->text) {
         const size_t len = std::strlen(event->text);
@@ -351,12 +356,12 @@ bool RenderPanel() {
         addf("Local player: %s", Word(g_snapshot.player_status));
         addf("Player stats: %s", Word(g_snapshot.stats_status));
         addf("Game rules: %s", Word(g_snapshot.rules_status));
-        addf("Inventory: %s", Word(g_snapshot.inventory_status));
+        if (InventoryOff()) add("Inventory: not available in this game session, so that page is hidden");
+        else addf("Inventory: %s", Word(g_snapshot.inventory_status));
         add(g_snapshot.sampled ? "Last update: refreshed by you" : "Last update: not refreshed yet");
     } else if (g_tab == kInventory) {
         // Say why there is nothing, and only point at Refresh when refreshing can help.
         if (!g_snapshot.sampled) add("Not read yet. Press Refresh at the top of the page.");
-        else if (g_snapshot.inventory_status == SCO_UNAVAILABLE) add("Reading your inventory is turned off in this build.");
         else if (g_snapshot.inventory_status != SCO_OK) add("The game did not return your inventory. Press Refresh at the top to try again.");
         else if (!g_snapshot.inventory.count) add("Inventory is empty.");
         else {
@@ -407,7 +412,7 @@ bool RenderPanel() {
     node(SCO_WIDGET_LABEL, kView, 0, view_text);
     node(SCO_WIDGET_ROW, kTabRow, 0, nullptr);
     node(SCO_WIDGET_BUTTON, kDiagnostics, kTabRow, tr("diagnostics"), disabled_if(g_tab == kDiagnostics));
-    node(SCO_WIDGET_BUTTON, kInventory, kTabRow, tr("inventory"), disabled_if(g_tab == kInventory));
+    if (!InventoryOff()) node(SCO_WIDGET_BUTTON, kInventory, kTabRow, tr("inventory"), disabled_if(g_tab == kInventory));
     node(SCO_WIDGET_BUTTON, kActions, kTabRow, tr("actions"), disabled_if(g_tab == kActions));
     node(SCO_WIDGET_BUTTON, kParameters, kTabRow, tr("parameters"), disabled_if(g_tab == kParameters));
     node(SCO_WIDGET_COLUMN, kSection, 0, heading);
@@ -540,6 +545,10 @@ sco_result InventoryCommand(const sco_arg* args, uint32_t nargs, void*, char* re
     uint32_t page = 0;
     if (!Page(args, nargs, reply, reply_size, (std::numeric_limits<uint32_t>::max)(), &page)) return SCO_BAD_ARG;
     if (!reply_size) return SCO_TOO_MANY;
+    if (InventoryOff()) {
+        Reply(reply, reply_size, "Your inventory is not available in this game session.");
+        return SCO_UNAVAILABLE;
+    }
     if (!g_snapshot.sampled || g_snapshot.inventory_status != SCO_OK) return SCO_UNAVAILABLE;
 
     const auto& inventory = g_snapshot.inventory;
