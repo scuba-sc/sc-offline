@@ -171,13 +171,19 @@ names never appear on a page, and the plugin uses 1.0 widget nodes, so there are
   optic, barrel, underbarrel, tool attachment, canister, battery; the first choice is **Keep current**), then
   **Equip chosen weapons**, **Clear choices** and **Refresh weapon list**.
 - **Progress**: the equip request's status, **Check progress** and **Cancel equipping**. Shown while a request exists or
-  when background equipping is available.
-- When background equipping is not available, the page starts with "Changing gear from this menu isn't available yet." and
-  the equip buttons stay disabled. There is no synchronous equip button: the only equip backend a published SDK
-  describes is background equipping, and a build without it can only refuse.
+  when background equipping is available. Core keeps one request per owner, so a finished request (done or failed) stays
+  until it is released. The page does that for the player: once the last report says the request finished, the equip
+  buttons are enabled again, the button reads **Clear result**, and pressing an equip button releases the finished request
+  first and then starts the new one. A request still in progress is never released that way; an unreadable report does not
+  count as finished.
+- When background equipping is not available, the page says "Changing gear isn't turned on." and shows no picker or equip
+  button. There is no synchronous equip button: the only equip backend a published SDK describes is background equipping,
+  and a build without it can only refuse. Core ships `game.loadout.async` and `game.cvars.read` OFF; they are opt-in
+  switches in Core (`SCO_LOADOUT_ASYNC=1` and `SCO_CVARS_NATIVE=1`), set by the launcher, not by this plugin.
 
 **Squadron 42**: behind the spoiler confirmation, **Outfit** (search, list, page buttons, **Wear selected outfit**,
-progress), **Game settings**, **Ships** and **Objects**. The settings cannot be changed from the menu; they appear as plain
+progress; only outfits whose every piece has a Core loadout slot are listed, and the page counts the ones it leaves out,
+because Core has no slot for clothing, hats or faces yet), **Game settings**, **Ships** and **Objects**. The settings cannot be changed from the menu; they appear as plain
 "on/off" lines when the game lets them be read, and otherwise as one line saying they can't be read or changed yet. Ships and
 objects forward to the Ships & vehicles and Build features; when the other feature's command is missing the section shows
 one plain line instead of a button. The visor control (synchronous only) is not on the page.

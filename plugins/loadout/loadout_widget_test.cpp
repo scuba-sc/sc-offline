@@ -9,6 +9,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <iterator>
+#include <set>
 #include <map>
 #include <string>
 #include <utility>
@@ -525,13 +528,87 @@ void Paging(unsigned outfits,unsigned builds) {
     }
     sco::features::loadout::Unload();
 }
+// Outfits that use a port Core has no slot for (clothing, hats, faces) can never be worn. The page must not
+// offer them, must say so in plain words, and every outfit it does offer must really be submittable.
+void StartSq42(const std::string& outfits) {
+    files={{"fixture_armory","lists/items.txt","[helmet]\nFixtureHelmet\n"},{"sq42_catalog","lists/outfits.txt",outfits}};
+    files[0].id=1; files[1].id=2;
+    player={}; sq42={}; rejected=0; removed=0; unsubscribed=0; fail_sq=false; reload_command=nullptr; items_command=nullptr; wear_command=nullptr; tick_event=nullptr; tick_time=0; submits=0; cancels=0; captured.clear(); async_cap=provider=true; supported=SC_LOADOUT_VERSION_1_2;
+    static sco_api api{}; api={};   // the plugin keeps the pointer until Unload
+    api.size=sizeof(api); api.major=SCO_API_MAJOR; api.minor=SCO_API_MINOR;
+    api.has=Has; api.register_command=Register; api.query_service=Query; api.invoke=Invoke; api.list_commands=ListCommands; spawn_listed=build_listed=true;
+    api.subscribe=Subscribe; api.unsubscribe=Unsubscribe;
+    static unsigned char owner=0; auto* self=reinterpret_cast<sco_plugin*>(&owner);
+    Require(sco::features::loadout::Load(&api,self)==SCO_OK,"outfit load failed");
+    Send("loadout.sq42",sq42,100,SCO_WIDGET_BUTTON);
 }
-int main() {
+bool Said(const Panel& panel,const std::string& text) { return std::find(panel.words.begin(),panel.words.end(),text)!=panel.words.end(); }
+void UnwearableOutfits() {
+    // A mix: only the armour outfit is offered; the clothing, hat and face outfits are not.
+    StartSq42("[Clothes]\nClothing_Torso_1 FixtureJacket\n[Armour]\nArmor_Helmet FixtureHelmet\nArmor_Torso FixtureTorso\n"
+              "[Hat]\nArmor_Helmet FixtureHelmet\nHat_ItemPort FixtureHat\n[Face]\nHead_ItemPort FixtureHead\n[Twice]\nArmor_Helmet A\nArmor_Helmet B\n");
+    Require(sq42.outfit_labels==std::vector<std::string>({"Armour"}),"only outfits whose pieces all have a slot are offered");
+    Require(Said(sq42,"4 outfits aren't shown because they use parts the game can't change yet."),"hidden outfits are explained in plain words");
+    ReadableOnly(sq42,"squadron 42 (hidden outfits)");
+    Send("loadout.sq42",sq42,135,SCO_WIDGET_TEXT_INPUT,"clothes");
+    Require(sq42.combos.at(101)==0,"search cannot bring a hidden outfit back");
+    Send("loadout.sq42",sq42,135,SCO_WIDGET_TEXT_INPUT,"");
+    // The same refusal by command says so plainly and sends nothing.
+    sco_arg name{}; name.type=SCO_ARG_STRING; name.v.s="Clothes"; char reply[512]{};
+    Require(wear_command(&name,1,nullptr,reply,sizeof(reply))==SCO_UNAVAILABLE && submits==0,"an unwearable outfit by name sends nothing");
+    Require(std::strstr(reply,"nothing sent"),"the refusal reply says nothing was sent");
+    sco::features::loadout::Unload();
+    // Nothing wearable at all: no picker or Wear button that could only fail, one plain sentence instead.
+    StartSq42("[Clothes]\nClothing_Torso_1 FixtureJacket\n[Face]\nHead_ItemPort FixtureHead\n");
+    Require(!sq42.flags.count(101) && !sq42.flags.count(106) && !sq42.flags.count(135),"no outfit controls when none can be worn");
+    Require(Said(sq42,"None of these outfits can be worn yet. They use parts the game can't change yet."),"the page says why there is no outfit picker");
+    ReadableOnly(sq42,"squadron 42 (no wearable outfit)");
+    sco::features::loadout::Unload();
+    // With async off the section still says only that it is not turned on.
+    StartSq42("[Armour]\nArmor_Helmet FixtureHelmet\n");
+    async_cap=false; TickNow();
+    Require(!sq42.flags.count(106) && Said(sq42,"Changing outfits isn't turned on."),"async off: one plain sentence, no Wear button");
+    sco::features::loadout::Unload();
+}
+// The shipped data/outfits.txt, parsed here without the plugin: every outfit the page offers can be submitted.
+void ShippedOutfits(const char* path) {
+    std::ifstream file(path,std::ios::binary); Require(bool(file),"shipped outfits file readable");
+    const std::string bytes((std::istreambuf_iterator<char>(file)),std::istreambuf_iterator<char>());
+    const std::set<std::string> mapped{"Armor_Undersuit","Armor_Helmet","Armor_Torso","Armor_Arms","Armor_Legs","backpack","Lens_ItemPort"};
+    struct Entry { std::string name; std::vector<std::string> ports; };
+    std::vector<Entry> all; std::string line;
+    for (size_t pos=0;pos<=bytes.size();) {
+        const auto end=bytes.find('\n',pos); line=bytes.substr(pos,end==std::string::npos ? std::string::npos : end-pos);
+        pos=end==std::string::npos ? bytes.size()+1 : end+1;
+        line=line.substr(0,line.find('#')); while (!line.empty() && (line.back()=='\r' || line.back()==' ')) line.pop_back();
+        if (line.empty()) continue;
+        if (line[0]=='[') all.push_back({line.substr(1,line.size()-2),{}}); else all.back().ports.push_back(line.substr(0,line.find_first_of(" \t")));
+    }
+    std::vector<std::string> expected;
+    for (const auto& e:all) if (std::all_of(e.ports.begin(),e.ports.end(),[&](const std::string& p) { return mapped.count(p)!=0; })) expected.push_back(e.name);
+    Require(all.size()>expected.size() && !expected.empty(),"shipped data has both wearable and unwearable outfits");
+    StartSq42(bytes);
+    Require(sq42.outfit_labels.size()==expected.size(),"the page offers exactly the outfits whose parts all have a slot");
+    Require(Said(sq42,std::to_string(all.size()-expected.size())+" outfits aren't shown because they use parts the game can't change yet."),"hidden shipped outfits are explained");
+    ReadableOnly(sq42,"squadron 42 (shipped outfits)");
+    for (size_t i=0;i<sq42.outfit_labels.size();++i) {
+        Select("loadout.sq42",sq42,101,static_cast<int>(i));
+        Require(!(sq42.flags.at(106)&SCO_WIDGET_DISABLED),"an offered outfit enables Wear");
+        const auto before=submits; Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON);
+        Require(submits==before+1,"every outfit the page offers is accepted by the equip route, none can only fail");
+        Send("loadout.sq42",sq42,108,SCO_WIDGET_BUTTON); Require(cancels==static_cast<unsigned>(i+1),"released for the next outfit");
+    }
+    sco::features::loadout::Unload();
+}
+}
+int main(int argc,char** argv) {
     content.size=sizeof(content); content.item=Item; content.read=Read;
     loadout.size=sizeof(loadout); loadout.submit=Submit; loadout.status=Status; loadout.cancel=Cancel;
     widgets.size=sizeof(widgets); widgets.set_panel=SetPanel; widgets.remove_panel=RemovePanel;
     Workflow(false); Workflow(true);
     Paging(65,64); Paging(64,65); Paging(65,65);
     MissingFeatures();
+    UnwearableOutfits();
+    if (argc>1) ShippedOutfits(argv[1]);
     std::puts("loadout widget workflow: PASS (synthetic public services; not run in game)");
 }

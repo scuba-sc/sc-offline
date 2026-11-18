@@ -48,6 +48,9 @@ struct State {
     ContentSource published_items_source, published_outfits_source, published_buildables_source;
     uint64_t player_content_generation = 0, sq_content_generation = 0;
     uint64_t job = 0; std::vector<Piece> job_pieces; bool job_poll_paused = false;
+    // The last valid progress report said the request has finished (complete or failed). The record is
+    // only kept so the result can be read; it no longer blocks a new equip request.
+    bool job_done = false;
     char job_status[256] = "Nothing is being equipped.";
     std::shared_ptr<const catalogue::Data> curated, published_curated;
     std::array<int32_t,std::size(catalogue::kSlots)> curated_picks{};
@@ -63,6 +66,8 @@ struct State {
 uintptr_t next_player_cookie = 0, next_sq_cookie = 0;
 bool job_observing = false, job_submitting = false, job_cancelling = false;
 uint64_t job_revision = 0;
+// A request still in progress. A finished one (job_done) is only a result left to read.
+bool JobBusy() { return g.job && !g.job_done; }
 const sco_plugin_info info{sizeof(sco_plugin_info),SCO_API_MAJOR,SCO_API_MINOR,"loadout","1.0.0","sc-offline"};
 const char* const cvar_names[]{"i_target_selector.targeting2_enabled","pl_lensdisplay.minimap_enabled",
     "pl_lensdisplay.greebles_enabled","g_squadron_frontend"};
@@ -280,7 +285,7 @@ const char* Status(uint32_t s) {
         case SC_LOADOUT_UNAVAILABLE:return "unavailable"; default:return "invalid"; }
 }
 sco_result Apply(const std::vector<Piece>& pieces,char* out,uint32_t size,uint32_t version=SC_LOADOUT_VERSION_1_0) {
-    if (g.job || job_submitting || job_cancelling) return Answer(SCO_UNAVAILABLE,out,size,"An equip request is already pending: check its progress or cancel it before sending another.","Finish or cancel the current equipping first.");
+    if (JobBusy() || job_submitting || job_cancelling) return Answer(SCO_UNAVAILABLE,out,size,"An equip request is already pending: check its progress or cancel it before sending another.","Finish or cancel the current equipping first.");
     if (pieces.empty()) return Answer(SCO_BAD_ARG,out,size,"No selected pieces; unspecified slots are unchanged (not cleared/defaulted).","Nothing is selected.");
     if (pieces.size()>SC_LOADOUT_MAX_ITEMS) return Answer(SCO_TOO_MANY,out,size,"More than 16 pieces: entire request refused before equip; no split/retry.","That is too many items at once. Choose 16 or fewer.");
     sc_loadout_item items[SC_LOADOUT_MAX_ITEMS]{};
@@ -357,7 +362,14 @@ sco_result Slots(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
     std::vector<Piece> pieces; const auto r=SlotPieces(args,n,out,size,pieces);
     return r==SCO_OK ? Apply(pieces,out,size,SC_LOADOUT_VERSION_1_1) : r;
 }
+sco_result Cancel(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size);
 sco_result SubmitPieces(std::vector<Piece> pieces,char* out,uint32_t size) {
+    // A finished request is only a result left to read: release it so the next one can start. If Core
+    // refuses the release, the record stays and the gate below refuses the new request.
+    if (g.job && g.job_done && !job_submitting && !job_cancelling) {
+        (void)Cancel(nullptr,0,nullptr,nullptr,0);
+        if (g.job) return Answer(SCO_UNAVAILABLE,out,size,"The finished equip request could not be released; nothing was sent.","Couldn't clear the last result. Try again.");
+    }
     if (g.job || job_submitting || job_cancelling) return Answer(SCO_UNAVAILABLE,out,size,"An equip request is already pending or being sent: check its progress or cancel it before sending another.","Finish or cancel the current equipping first.");
     if (pieces.empty()) return Answer(SCO_BAD_ARG,out,size,"No selected pieces; nothing was sent.","Nothing is selected.");
     if (pieces.size()>SC_LOADOUT_MAX_ITEMS) return Answer(SCO_TOO_MANY,out,size,"More than 16 pieces; nothing was sent.","That is too many items at once. Choose 16 or fewer.");
@@ -386,7 +398,7 @@ sco_result SubmitPieces(std::vector<Piece> pieces,char* out,uint32_t size) {
     if (g.api!=api || g.self!=owner || job_revision!=revision) return SCO_UNAVAILABLE;
     if (result!=SCO_OK) return Answer(result,out,size,"Loadout submit refused; no retry or synchronous fallback.","The game refused the request.");
     if (!job) return Answer(SCO_FAILED,out,size,"Invalid zero request id; state unknown, no retry.","Couldn't start equipping.");
-    g.job=job; g.job_pieces=std::move(pieces); g.job_poll_paused=false; ++job_revision;
+    g.job=job; g.job_pieces=std::move(pieces); g.job_poll_paused=false; g.job_done=false; ++job_revision;
     std::snprintf(g.job_status,sizeof(g.job_status),"Equipping: waiting for the game.");
     return Answer(SCO_OK,out,size,"Equip request sent, not confirmed equipped. Check its progress; cancelling releases pending work without rollback.","Equipping started. Progress shows below.");
 }
@@ -435,6 +447,7 @@ sco_result ObserveJob(std::string& message, std::string& plain, bool& malformed,
             applied==0 ? std::string("Finished, but nothing could be equipped.") :
             "Finished. Equipped "+done+" of "+all+" items; the rest couldn't be equipped.") :
         "Equipping failed. Equipped "+done+" of "+all+" items.";
+    g.job_done=progress.state!=SC_LOADOUT_JOB_PENDING;
     return SCO_OK;
 }
 void JobLabel(const std::string& plain) { std::snprintf(g.job_status,sizeof(g.job_status),"%.255s",plain.c_str()); }
@@ -473,9 +486,11 @@ sco_result Cancel(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) 
     // Cleanup remains callable after mutation capability revocation; never undo confirmed equipment.
     const auto result=service->cancel(owner,job);
     if (!current()) return SCO_UNAVAILABLE;
-    if (result==SCO_OK || result==SCO_NOT_FOUND) { g.job=0; g.job_pieces.clear(); g.job_poll_paused=false; ++job_revision; JobLabel("Nothing is being equipped."); }
+    const bool finished=g.job_done;
+    if (result==SCO_OK || result==SCO_NOT_FOUND) { g.job=0; g.job_pieces.clear(); g.job_poll_paused=false; g.job_done=false; ++job_revision; JobLabel("Nothing is being equipped."); }
     return Answer(result,out,size,result==SCO_OK ? "Equip request released; confirmed equipment remains, no rollback." : "Loadout cancellation refused/not found; no rollback or retry.",
-        result==SCO_OK ? "Stopped equipping. Anything already equipped stays on." : "Couldn't cancel. Try again.");
+        result==SCO_OK ? (finished ? "Cleared the last result. Anything equipped stays on." : "Stopped equipping. Anything already equipped stays on.") :
+        finished ? "Couldn't clear the last result. Try again." : "Couldn't cancel. Try again.");
 }
 sco_result ReadSlots() {
     g.player_events=false;g.weapon_type.fill(weapon_types::All);g.weapon_filters={};g.attachment_filters={};g.curated_picks.fill(0);g.curated.reset();g.published_curated.reset();
@@ -538,6 +553,18 @@ sco_result EquipSelection(const sco_arg* args,uint32_t n,char* out,uint32_t size
 }
 sco_result Equip(const sco_arg* a,uint32_t n,void*,char* o,uint32_t z) { return EquipSelection(a,n,o,z,false); }
 sco_result SubmitGear(const sco_arg* a,uint32_t n,void*,char* o,uint32_t z) { return EquipSelection(a,n,o,z,true); }
+// An outfit can be worn only when every piece goes in a slot this menu can set, no two pieces share a
+// slot and the whole outfit fits one request. Core has no slot for clothing, hats or faces, so
+// an outfit with one of those pieces can never be worn and is not offered.
+bool PiecesMapped(const Outfit& outfit) {
+    return !outfit.pieces.empty() && std::all_of(outfit.pieces.begin(),outfit.pieces.end(),[](const Piece& p) {
+        return p.slot && p.slot<=SC_LOADOUT_SLOT_SIDEARM_TOOL_BATTERY; });
+}
+bool Wearable(const Outfit& outfit) {
+    if (!PiecesMapped(outfit) || outfit.pieces.size()>SC_LOADOUT_MAX_ITEMS) return false;
+    for (size_t i=0;i<outfit.pieces.size();++i) for (size_t j=0;j<i;++j) if (outfit.pieces[j].slot==outfit.pieces[i].slot) return false;
+    return true;
+}
 sco_result WearSelection(const sco_arg* args,uint32_t n,char* out,uint32_t size,bool async) {
     auto r=Validate(args,n,1,out,size); if (r!=SCO_OK) return r;
     if (!String(args[0],127) || !*args[0].v.s) return SCO_BAD_ARG;
@@ -551,6 +578,7 @@ sco_result WearSelection(const sco_arg* args,uint32_t n,char* out,uint32_t size,
         found=&outfit;
     }
     if (!found) return Answer(SCO_NOT_FOUND,out,size,"Outfit not in copied outfits.txt.","That outfit isn't in the list.");
+    if (!PiecesMapped(*found)) return Answer(SCO_UNAVAILABLE,out,size,"Outfit has a piece in a port with no public loadout slot; whole outfit refused, nothing sent.","That outfit has parts the game can't change yet.");
     return async ? SubmitPieces(found->pieces,out,size) : Apply(found->pieces,out,size);
 }
 sco_result Wear(const sco_arg* a,uint32_t n,void*,char* o,uint32_t z) { return WearSelection(a,n,o,z,false); }
@@ -669,6 +697,7 @@ std::vector<size_t> Filtered() {
     return matches;
 }
 bool OutfitMatch(const Outfit& outfit) {
+    if (!Wearable(outfit)) return false;   // never offer an outfit that can only be refused
     return catalogue::Contains(outfit.name,g.outfit_filter) || catalogue::Contains(Readable(outfit.name),g.outfit_filter);
 }
 size_t OutfitMatches() {
@@ -866,10 +895,10 @@ void Publish() {
     }
     // Without the game's async loadout route nothing on this page can work, so it shows only why (test card
     // step 10: no buttons that only fail). A job already running keeps its progress and Cancel below.
-    const bool can_equip=async_available || g.job;
+    const bool can_equip=async_available || JobBusy();
     if (!can_equip) item_rows.clear();   // no gear picker is shown, so no gear row can be chosen
-    if (!async_available) add(SCO_WIDGET_LABEL,25,g.job ? "Gear changes here have stopped working. You can still cancel the one in progress."
-                                                       : "Changing gear here is off in this build.");
+    if (!async_available) add(SCO_WIDGET_LABEL,25,JobBusy() ? "Gear changes here have stopped working. You can still cancel the one in progress."
+                                                       : "Changing gear isn't turned on.");
     if (can_equip) {
     add(SCO_WIDGET_COLUMN,300,"Choose gear");
     under(300,SCO_WIDGET_TEXT_INPUT,1,"Search gear").text=g.filter.c_str();
@@ -883,7 +912,7 @@ void Publish() {
     if (text.back().size()>250) text.back()=text.back().substr(0,247)+"...";
     under(300,SCO_WIDGET_LABEL,5,text.back().c_str());
     add(SCO_WIDGET_ROW,302,"").parent=300;
-    under(302,SCO_WIDGET_BUTTON,27,"Equip selected gear",g.job || !async_available || g.equip.empty() ? SCO_WIDGET_DISABLED : 0u);
+    under(302,SCO_WIDGET_BUTTON,27,"Equip selected gear",JobBusy() || !async_available || g.equip.empty() ? SCO_WIDGET_DISABLED : 0u);
     under(302,SCO_WIDGET_BUTTON,7,"Clear selection",g.equip.empty() ? SCO_WIDGET_DISABLED : 0u);
     }
     std::array<std::vector<const char*>,std::size(catalogue::kSlots)> curated_options;
@@ -936,7 +965,7 @@ void Publish() {
         }
     }
     add(SCO_WIDGET_ROW,311,"").parent=310;
-    under(311,SCO_WIDGET_BUTTON,221,"Equip chosen weapons",chosen&&!g.job&&async_available?0u:SCO_WIDGET_DISABLED);
+    under(311,SCO_WIDGET_BUTTON,221,"Equip chosen weapons",chosen&&!JobBusy()&&async_available?0u:SCO_WIDGET_DISABLED);
     under(311,SCO_WIDGET_BUTTON,222,"Clear choices",chosen?0u:SCO_WIDGET_DISABLED);
     under(311,SCO_WIDGET_BUTTON,223,"Refresh weapon list");
     under(310,SCO_WIDGET_LABEL,224,"Anything left on Keep current stays as it is.");
@@ -947,7 +976,7 @@ void Publish() {
         under(320,SCO_WIDGET_LABEL,26,g.job_status);
         add(SCO_WIDGET_ROW,321,"").parent=320;
         under(321,SCO_WIDGET_BUTTON,23,"Check progress",g.job ? 0u : SCO_WIDGET_DISABLED);
-        under(321,SCO_WIDGET_BUTTON,24,"Cancel equipping",g.job ? 0u : SCO_WIDGET_DISABLED);
+        under(321,SCO_WIDGET_BUTTON,24,g.job_done ? "Clear result" : "Cancel equipping",g.job ? 0u : SCO_WIDGET_DISABLED);
     }
     char status[256]{}; std::snprintf(status,sizeof(status),"%.255s",g.status); if (*status) add(SCO_WIDGET_LABEL,14,status);
     if(next_player_cookie<std::numeric_limits<uintptr_t>::max()) {
@@ -977,10 +1006,17 @@ void Publish() {
         // Same rule as the Gear page: without the async route nothing in this section can work, so it shows only
         // why. A job already running keeps its progress and Cancel. Ships, Objects and the settings list do not
         // need async and stay.
-        const bool can_wear=async_available || g.job;
-        if (!async_available) under(400,SCO_WIDGET_LABEL,115,g.job ? "Outfit changes here have stopped working. You can still cancel the one in progress."
-                                                                  : "Changing outfits here is off in this build.");
-        if (can_wear) {
+        const bool can_wear=async_available || JobBusy();
+        if (!async_available) under(400,SCO_WIDGET_LABEL,115,JobBusy() ? "Outfit changes here have stopped working. You can still cancel the one in progress."
+                                                                  : "Changing outfits isn't turned on.");
+        // Outfits that use parts Core has no slot for (clothing, hats, faces) can never be worn, so they are
+        // not offered; the page says so in plain words, and shows no picker at all when none can be worn.
+        const size_t outfit_total=g.lists.outfits.size();
+        const size_t outfit_wearable=static_cast<size_t>(std::count_if(g.lists.outfits.begin(),g.lists.outfits.end(),Wearable));
+        const size_t outfit_hidden=outfit_total-outfit_wearable;
+        if (can_wear && outfit_total && !outfit_wearable)
+            under(400,SCO_WIDGET_LABEL,116,"None of these outfits can be worn yet. They use parts the game can't change yet.");
+        if (can_wear && (!outfit_total || outfit_wearable)) {
         under(400,SCO_WIDGET_TEXT_INPUT,135,"Search outfits").text=g.outfit_filter.c_str();
         int32_t selected_row=-1;
         std::vector<size_t> outfit_matches;   // paged like the Player gear list: at most 64 rows per combo
@@ -994,13 +1030,17 @@ void Publish() {
         add(SCO_WIDGET_ROW,401,"").parent=400;
         under(401,SCO_WIDGET_BUTTON,137,"Previous page",g.outfit_page ? 0u : SCO_WIDGET_DISABLED);
         under(401,SCO_WIDGET_BUTTON,138,"Next page",static_cast<size_t>(g.outfit_page+1)*64<outfit_matches.size() ? 0u : SCO_WIDGET_DISABLED);
-        under(400,SCO_WIDGET_BUTTON,106,"Wear selected outfit",selected_row>=0 && !g.job && async_available ? 0u : SCO_WIDGET_DISABLED);
+        under(400,SCO_WIDGET_BUTTON,106,"Wear selected outfit",selected_row>=0 && !JobBusy() && async_available ? 0u : SCO_WIDGET_DISABLED);
+        if (outfit_hidden) {
+            text.push_back(std::to_string(outfit_hidden)+(outfit_hidden==1 ? " outfit isn't shown because it uses" : " outfits aren't shown because they use")+" parts the game can't change yet.");
+            under(400,SCO_WIDGET_LABEL,117,text.back().c_str());
+        }
         }
         if (g.job || async_available) {
             under(400,SCO_WIDGET_LABEL,109,g.job_status);
             add(SCO_WIDGET_ROW,402,"").parent=400;
             under(402,SCO_WIDGET_BUTTON,107,"Check progress",g.job ? 0u : SCO_WIDGET_DISABLED);
-            under(402,SCO_WIDGET_BUTTON,108,"Cancel equipping",g.job ? 0u : SCO_WIDGET_DISABLED);
+            under(402,SCO_WIDGET_BUTTON,108,g.job_done ? "Clear result" : "Cancel equipping",g.job ? 0u : SCO_WIDGET_DISABLED);
         }
         // Game settings: they can be read when the game allows it, never changed from here.
         add(SCO_WIDGET_COLUMN,410,"Game settings");

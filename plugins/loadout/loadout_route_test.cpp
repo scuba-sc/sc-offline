@@ -20,7 +20,7 @@ std::map<std::string,sco_command_fn> commands;
 sco_widget_event_fn panel_event=nullptr;
 void* panel_context=nullptr;
 std::map<uint32_t,sco_widget_node> player;
-std::string copied_status;
+std::string copied_status, copied_cancel_label;
 bool apply_cap=true, weapons_cap=true, async_cap=true, present=true;
 uint32_t supported=SC_LOADOUT_VERSION_1_2, queried=0;
 sc_loadout_v1_2 service{};
@@ -120,6 +120,7 @@ sco_result SetPanel(sco_plugin*,const char* id,const char*,const sco_widget_node
         player.clear(); for (uint32_t i=0;i<count;++i) {
             player[nodes[i].id]=nodes[i];
             if (nodes[i].id==14) copied_status=nodes[i].label ? nodes[i].label : "";
+            if (nodes[i].id==24) copied_cancel_label=nodes[i].label ? nodes[i].label : "";
         }
         panel_event=event;
         panel_context=context;
@@ -144,7 +145,7 @@ void Reset() {
     service={}; service.size=sizeof(service); service.apply=Apply; service.submit=Submit; service.status=Status; service.cancel=Cancel;
     publication=&service; supported=SC_LOADOUT_VERSION_1_2; present=apply_cap=weapons_cap=async_cap=true;
     apply_result=submit_result=status_result=cancel_result=SCO_OK; submitted_id=42; corrupt=0; reenter_submit=false; reenter_cancel=false; unload_on_lookup=false;
-    applies=submits=statuses=cancels=0; captured.clear(); copied_status.clear(); reply[0]=0;
+    applies=submits=statuses=cancels=0; captured.clear(); copied_status.clear(); copied_cancel_label.clear(); reply[0]=0;
     static unsigned char token=0; owner=reinterpret_cast<sco_plugin*>(&token);
     static sco_api api{}; api={}; api.size=sizeof(api); api.major=SCO_API_MAJOR; api.minor=SCO_API_MINOR;
     api.register_command=Register; api.query_service=WidgetsQuery; api.has=Has; api.subscribe=Subscribe; api.unsubscribe=Unsubscribe;
@@ -329,6 +330,40 @@ void CopiedAsync() {
     SetProgress(SC_LOADOUT_JOB_PENDING,1); Require(Call("loadout.progress")==SCO_OK && std::strstr(reply,"Armor_Torso=applied"),"copied result order");
     Require(Call("loadout.cancel")==SCO_OK,"release outfit job");
 }
+// A finished request (complete or failed) must not keep the next Equip waiting for a Cancel press.
+void FinishedJob() {
+    Reset();
+    const auto disabled=[](uint32_t id) { return (player.at(id).flags&SCO_WIDGET_DISABLED)!=0; };
+    Send(2,SCO_WIDGET_COMBO,nullptr,2); Send(27,SCO_WIDGET_BUTTON);
+    Require(submits==1 && disabled(27) && copied_cancel_label=="Cancel equipping","a running request blocks Equip and offers Cancel");
+    Send(27,SCO_WIDGET_BUTTON); Require(submits==1,"a running request still refuses a second submit");
+    SetProgress(SC_LOADOUT_JOB_PENDING,0); Send(23,SCO_WIDGET_BUTTON);
+    Require(disabled(27) && copied_cancel_label=="Cancel equipping","pending stays blocked after a progress check");
+    for (const auto state:{SC_LOADOUT_JOB_COMPLETE,SC_LOADOUT_JOB_FAILED}) {
+        SetProgress(state,1); Send(23,SCO_WIDGET_BUTTON);
+        Require(!disabled(27) && copied_cancel_label=="Clear result","a finished request leaves Equip enabled and relabels Cancel");
+        const auto before_cancels=cancels,before_submits=submits;
+        Send(27,SCO_WIDGET_BUTTON);
+        Require(cancels==before_cancels+1 && submits==before_submits+1 && disabled(27),"Equip releases the finished request itself and starts the next one");
+        SetProgress(SC_LOADOUT_JOB_PENDING,0); Send(23,SCO_WIDGET_BUTTON);
+    }
+    // The command route does the same: no Cancel needed after a finished request.
+    SetProgress(SC_LOADOUT_JOB_COMPLETE,1); Require(Call("loadout.progress")==SCO_OK,"finished observed");
+    { const auto c=cancels,m=submits; Require(Call("loadout.submit","primary=Fixture")==SCO_OK && cancels==c+1 && submits==m+1,"command submit after a finished request needs no Cancel"); }
+    // A request still in progress is not released by a new submit.
+    { const auto c=cancels,m=submits; Require(Call("loadout.submit","primary=Fixture")==SCO_UNAVAILABLE && cancels==c && submits==m,"pending request is never released by a new submit"); }
+    // If Core refuses to release the finished request, nothing is sent and the player is told in plain words.
+    SetProgress(SC_LOADOUT_JOB_FAILED,1); Require(Call("loadout.progress")==SCO_OK,"failed observed");
+    cancel_result=SCO_UNAVAILABLE; { const auto m=submits; Send(27,SCO_WIDGET_BUTTON);
+        Require(submits==m && copied_status=="Couldn't clear the last result. Try again.","refused release sends nothing and says so"); }
+    cancel_result=SCO_OK;
+    // Clearing the result by hand uses honest words, and Equip works afterwards.
+    Send(23,SCO_WIDGET_BUTTON); Send(24,SCO_WIDGET_BUTTON);
+    Require(copied_status=="Cleared the last result. Anything equipped stays on." && !disabled(27) && copied_cancel_label=="Cancel equipping","clearing a finished result is not called stopping");
+    // An unreadable report is not a finished request: it stays blocked.
+    Send(27,SCO_WIDGET_BUTTON); SetProgress(SC_LOADOUT_JOB_PENDING,1); progress.completed=9; Send(23,SCO_WIDGET_BUTTON);
+    Require(disabled(27) && copied_cancel_label=="Cancel equipping","a malformed report does not count as finished");
+}
 void ReentrantCancel() {
     Reset(); Require(Call("loadout.submit","primary=Fixture")==SCO_OK,"job for reentrant cancellation");
     reenter_cancel=true; Require(Call("loadout.cancel")==SCO_OK,"outer cancellation"); reenter_cancel=false;
@@ -432,7 +467,7 @@ int main(int argc,char** argv) {
     else if (argc==2 && (!std::strcmp(argv[1],"--refusal-submit") || !std::strcmp(argv[1],"--command-refusal-submit"))) ManualRefusals("loadout.submit");
     else {
         Require(argc==1,"unknown test option");
-        Sync(); Async(); CopiedAsync(); ReentrantCancel(); ManualRefusals("loadout.slots"); ManualRefusals("loadout.submit");
+        Sync(); Async(); FinishedJob(); CopiedAsync(); ReentrantCancel(); ManualRefusals("loadout.slots"); ManualRefusals("loadout.submit");
     }
     sco::features::loadout::Unload();
     std::printf("loadout public route: %u checks PASS (synthetic providers; not run in game)\n",checks);
