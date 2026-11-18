@@ -39,7 +39,7 @@ refuse. The importer never runs at startup and is not a plugin-side write servic
 ## Build and distribution
 
 Configure this folder alone against an extracted core + game SDK that publishes
-`sc_mining.h` (the pinned published sdk-v2.4.0 does; sdk-v2.0.0 was too old):
+`sc_mining.h` (the published sdk-v2.4.0 does):
 
 ```sh
 cmake -S plugins/mining -B mining-build -DSCO_SDK_INCLUDE_DIR=/path/to/sdk/include -DSCO_WORKFLOW_TESTS=ON
@@ -50,9 +50,8 @@ cmake --install mining-build --prefix stage --component mining
 
 The aggregate plugins build opts in with `SCO_MINING_FEATURE=ON`; the module, manifest
 and standalone importer install under `data/plugins/mining`. CI/release staging names
-mining explicitly: the feature job runs `tools/check_mining_sdk.py` against the
-pinned published `sco-sdk-2.4.0.zip`, which contains `sc_mining.h` (sdk-v2.0.0
-did not). No CI result on this pin is claimed here.
+mining explicitly: the `external-sdk` matrix job runs `tools/check_mining_sdk.py` against
+the published `sco-sdk-2.4.0.zip`, which contains `sc_mining.h`. No CI result is recorded here.
 
 `tools/check_mining_sdk.py` builds a separate copied consumer against a checksum-
 verified archive and runs one synthetic workflow. The fixture loads the actual module

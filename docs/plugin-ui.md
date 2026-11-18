@@ -1,6 +1,6 @@
 # Plugin UI: menu tabs, overlays and hotkeys
 
-sc-offline's menu (**M**) is a shell over sco-core's `sco.ui` service ([sco-core docs/ui.md](https://github.com/scuba-sc/sco-core/blob/main/docs/ui.md)). Every feature tab is registered by its built-in plugin, and a plugin can add its own tab, overlay and hotkeys the same way. This page covers what sc-offline adds to sco-core's contract.
+sc-offline's menu (**M**) is a shell over sco-core's `sco.ui` service ([sco-core docs/ui.md](https://github.com/scuba-sc/sco-core/blob/main/docs/ui.md)). The host registers no feature tabs. Feature panels (Vehicles, Crew, NPCs, Player, Squadron 42, Build and the inspector) come from the external plugins through `sco.widgets` and are drawn by the host's ImGui adapter. A plugin can also add its own tab, overlay and hotkeys through `sco.ui`. This page covers what sc-offline adds to sco-core's `sco.ui` contract.
 
 ## Pages and the sidebar
 
@@ -75,7 +75,7 @@ static void DrawMyTab(void* frame, void*) {
 
 [`tools/test-plugins/ui_probe`](../tools/test-plugins/ui_probe/ui_probe.cpp) is a complete example; `CMakeLists.txt` builds it against the `imgui` library target. A different ImGui version or `imconfig.h` is undefined behaviour.
 
-We chose direct ImGui calls rather than a C drawing shim, so a plugin can use the same widgets as built-ins. This is a deliberately version-locked product contract: Dear ImGui does not guarantee backward or forward ABI compatibility. Context/allocator binding does not negotiate versions, detect incompatible layouts or make arbitrary DLL builds safe. Rebuild drawing plugins when the host's ImGui snapshot, configuration or ABI-affecting build settings change; do not rely on crash guards to recover from corrupted native state.
+We chose direct ImGui calls rather than a C drawing shim, so a plugin draws with the same widgets as the host. This is a deliberately version-locked product contract: Dear ImGui does not guarantee backward or forward ABI compatibility. Context/allocator binding does not negotiate versions, detect incompatible layouts or make arbitrary DLL builds safe. Rebuild drawing plugins when the host's ImGui snapshot, configuration or ABI-affecting build settings change; do not rely on crash guards to recover from corrupted native state.
 
 The immutable host source pin is `1ee0727cc63866a95e709ae61dd5dd355b511253`. [`tools/imgui-pin.py`](../tools/imgui-pin.py) pins SHA-256 for all 15 vendored implementation, backend, configuration, header and licence inputs, and separately compares the three public SDK files with the pinned sco-core submodule. The exact bytes—not just **1.92.8 WIP** / **19277**—must match. CI runs the pin gate and [`tools/test_imgui_pin.py`](../tools/test_imgui_pin.py), which rejects same-label source drift, matching drift on both sides, SDK-only drift and missing inputs. Intentional upgrades must hand-edit the pin and provenance together; there is no auto-update mode. The implementation/private headers are not added to the public SDK. These source checks are not game-runtime or compiler-configuration certification.
 
@@ -92,11 +92,11 @@ When a key is pressed while the game or the menu is in front (and the menu isn't
 | Key | Does | How |
 | --- | --- | --- |
 | **M** | Opens and closes the menu | Reserved by sc-offline |
-| **F6** | `build.toggle` | Bound by the `build` built-in |
-| **F7** | `teleport.save` | Bound by the `teleport` built-in |
-| **F8** | `teleport.go` | Bound by the `teleport` built-in |
+| **F6** | `build.toggle` | Bound by the `build` plugin |
+| **F7** | `teleport.save` | Bound by the `teleport` plugin |
+| **F8** | `teleport.go` | Bound by the `teleport` plugin |
 | **R**, **[**, **]**, **Backspace** | Build mode: rotate, reach closer, reach farther, undo | Reserved by sc-offline (used only while build mode is on) |
-| **Caps Lock** (hold) | Quantum boost while held | Read by sc-offline's quantum code. It is a held key, not a chord, and the chord grammar has no Caps Lock |
+| **Caps Lock** (hold) | Quantum boost while held | Read by the quantum plugin. It is a held key, not a chord, and the chord grammar has no Caps Lock |
 | Left mouse button | Build mode: place | Read by build mode, not a chord |
 
-Built-ins load before any plugin folder, so their bindings are in place before a plugin can ask for F6, F7 or F8. Binding a reserved chord is refused with `<chord> is reserved by the host`.
+Binding a reserved chord is refused with `<chord> is reserved by the host`.

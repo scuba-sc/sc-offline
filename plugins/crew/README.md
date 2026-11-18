@@ -2,8 +2,7 @@
 
 Current picker/copy-list installation and the one targeted module fixture:
 [Public pickers](../../docs/pickers.md). **These sources use `sco_widgets.h` and
-`sco_content.h`, which the pinned published `sdk-v2.4.0` ships** (`sdk-v2.0.0`
-did not). The obtain/proof recipes below use that archive.
+`sco_content.h`, which the published `sdk-v2.4.0` ships**. The obtain/proof recipes below use that archive.
 
 External native consumer of **sdk-v2.4.0** (SDK 2.4.0, plugin ABI 1.1,
 Star Citizen game pack 0.8.0). GPL-3.0-only project code. Native plugins are
@@ -23,8 +22,7 @@ refuses foreign/player/NPC-plugin occupants. The panel has no free-text seat box
 `crew.sit` still accepts seat words from the command line, and selected-seat actions
 use the fresh copied index, not ambiguous names.
 Crew and NPC share SDK-only catalog parsing/filtering/paging, not session IDs.
-Widgets/content ship in the pinned published SDK 2.4.0; SDK 2.0.0 predated
-them. No Windows rendering/gameplay result is claimed.
+Widgets/content ship in the published SDK 2.4.0. No Windows rendering/gameplay result is claimed.
 There is no private ImGui/menu, spawner engine, built-in registration or fallback
 in this module. The command IDs remain available through the host's typed
 `sco_api.invoke` route; this is not a new console or command transport.

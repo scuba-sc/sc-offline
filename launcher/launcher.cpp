@@ -45,6 +45,8 @@
 #include <cstdio>
 #include <cstring>
 #include <cwctype>
+#include <fcntl.h>
+#include <io.h>
 #include <share.h>
 #include <ctime>
 #include <algorithm>
@@ -55,6 +57,8 @@
 #include "install_identity_win32.h"
 #include "localization_win32.h"
 #include "locale_ru_builtin.h"
+#include "mcp_server.h"
+#include "redact.h"
 #include "plugin_startup_snapshot.h"
 #include "contract_text.h"
 #include "../src/version.h"
@@ -1348,70 +1352,9 @@ static bool SetIniValue(const wstring& iniPath, const char* key, const char* val
 // name redacted, then open a prefilled bug form. Nothing is uploaded: the player attaches the zip.
 // Minidumps (.dmp) are raw memory and can't be redacted, so they are left out.
 
-// "Handle[Name]" -> "Name". Every bracketed value after these keys is redacted as well.
-static const char* kRedactKeys[] = { "Handle", "Nickname", "GEID", "PlayerGEID", "AccountId", "Account", "accountId", "playerGEID" };
-
-static std::vector<std::string> HandlesIn(const std::string& text) {
-    std::vector<std::string> found;
-    for (const char* key : { "Handle[", "Nickname[", "nickname=\"", "handle=\"" }) {
-        const char close = key[strlen(key) - 1] == '[' ? ']' : '"';
-        for (size_t p = text.find(key); p != std::string::npos; p = text.find(key, p + 1)) {
-            const size_t a = p + strlen(key), b = text.find(close, a);
-            if (b == std::string::npos || b == a || b - a > 64) continue;
-            const std::string h = text.substr(a, b - a);
-            bool plain = true;
-            for (char c : h) if (!(isalnum((unsigned char)c) || c == '_' || c == '-')) plain = false;
-            if (plain && h.size() >= 3 && std::find(found.begin(), found.end(), h) == found.end()) found.push_back(h);
-        }
-    }
-    return found;
-}
-
-static void ReplaceAllNoCase(std::string& t, const std::string& what, const std::string& with) {
-    if (what.empty()) return;
-    std::string low = t, w = what;
-    for (char& c : low) c = (char)tolower((unsigned char)c);
-    for (char& c : w) c = (char)tolower((unsigned char)c);
-    std::string out; size_t from = 0;
-    for (size_t p = low.find(w); p != std::string::npos; p = low.find(w, p + w.size())) {
-        out.append(t, from, p - from); out += with; from = p + w.size();
-    }
-    out.append(t, from, std::string::npos);
-    t.swap(out);
-}
-
-// Redacts one file's text. handles: every RSI handle seen in any bundled file; user: Windows user name.
-static std::string Redact(std::string t, const std::vector<std::string>& handles, const std::string& user) {
-    for (const char* key : kRedactKeys) {
-        const std::string k = std::string(key) + "[";
-        for (size_t p = t.find(k); p != std::string::npos; p = t.find(k, p + 1)) {
-            const size_t a = p + k.size(), b = t.find(']', a);
-            if (b == std::string::npos || b - a > 80) continue;
-            const bool numeric = !strcmp(key, "Handle") || !strcmp(key, "Nickname") ? false : true;
-            t.replace(a, b - a, numeric ? "<id>" : "<handle>");
-        }
-    }
-    // "geid 200012345", "accountId=9876543", "playerGEID: 1": a key, up to 2 separators, then digits.
-    std::string low = t;
-    for (char& c : low) c = (char)tolower((unsigned char)c);
-    for (const char* key : { "geid", "accountid", "account_id", "playerid" }) {
-        const size_t kl = strlen(key);
-        for (size_t p = low.find(key); p != std::string::npos; p = low.find(key, p + kl)) {
-            if (p && isalnum((unsigned char)low[p - 1]) && low[p - 1] != 'r') continue;   // "playergeid" ok, "xgeid" no
-            size_t a = p + kl, seps = 0;
-            while (a < low.size() && seps < 3 && (low[a] == ' ' || low[a] == '=' || low[a] == ':' || low[a] == '"' || low[a] == '[')) { ++a; ++seps; }
-            size_t b = a; while (b < low.size() && isdigit((unsigned char)low[b])) ++b;
-            if (b - a < 3) continue;
-            t.replace(a, b - a, "<id>"); low.replace(a, b - a, "<id>");
-        }
-    }
-    for (const std::string& h : handles) ReplaceAllNoCase(t, h, "<handle>");
-    if (user.size() >= 2) {
-        for (const char* sep : { "\\Users\\", "/Users/", "\\\\Users\\\\", "/home/" })
-            ReplaceAllNoCase(t, std::string(sep) + user, std::string(sep) + "<user>");
-    }
-    return t;
-}
+// The redactor is shared with the MCP server: launcher/redact.h. It learns every handle, nickname and character
+// name from all bundled files, then hides them everywhere, with the profile paths, the Windows account name,
+// e-mail addresses and the account and GEID numbers.
 
 static std::string UrlEncode(const std::string& s) {
     std::string o; char b[4];
@@ -2046,6 +1989,22 @@ static bool IsTextReport(const wstring& f) {
     return false;
 }
 
+// What the redactor knows about this PC: the profile folder and the Windows account name (USERNAME and the last
+// part of the profile path).
+static sco::launcher::redact::Identities HostIdentities() {
+    sco::launcher::redact::Identities id;
+    const wstring profile = EnvOr(L"USERPROFILE", L"");
+    if (!profile.empty()) id.profileRoots.push_back(Narrow(profile));
+    const wstring account = EnvOr(L"USERNAME", L"");
+    if (!account.empty()) id.accountNames.push_back(Narrow(account));
+    wstring last = profile;
+    while (!last.empty() && (last.back() == L'\\' || last.back() == L'/')) last.pop_back();
+    const size_t cut = last.find_last_of(L"\\/");
+    if (cut != wstring::npos) last = last.substr(cut + 1);
+    if (!last.empty()) id.accountNames.push_back(Narrow(last));
+    return id;
+}
+
 static void OfferCrashReport(const wstring& here, const wstring& channelDir, ULONGLONG since, const std::string& gameBuild) {
     std::vector<wstring> crash;
     SessionFilesIn(channelDir + L"\\Crashes", since, true, crash);
@@ -2054,7 +2013,7 @@ static void OfferCrashReport(const wstring& here, const wstring& channelDir, ULO
     for (const wstring& f : crash) if (!IsTextReport(f)) ++dumps;
     Out("\n[!] the game crashed this session (%zu file%s in %ls\\Crashes).\n", crash.size(), crash.size() == 1 ? "" : "s", channelDir.c_str());
     Out("    A crash report zips mod.log, launcher.log, Game.log and the crash text files into data\\crash-reports,\n"
-        "    with your RSI handle, account numbers and Windows user name replaced. Nothing is sent: you attach\n"
+        "    with your RSI handle, account numbers, e-mail address and Windows user name replaced. Nothing is sent: you attach\n"
         "    the zip to the bug form yourself.%s\n", dumps ? " Memory dumps (.dmp) are left out; they can't be redacted." : "");
     if (!AskYes("Make a crash report?")) { Out("Crash:    no report made\n"); return; }
 
@@ -2069,13 +2028,13 @@ static void OfferCrashReport(const wstring& here, const wstring& channelDir, ULO
         items.push_back({ f, L"Crashes_" + rel });
     }
     std::vector<std::string> texts(items.size());
-    std::vector<std::string> handles;
+    sco::launcher::redact::Identities identities = HostIdentities();
+    identities.strict = true;   // a crash bundle leaves the PC: hide short and common-word handles inside words too
     for (size_t i = 0; i < items.size(); ++i) {
         if (!ReadAll(items[i].src, texts[i])) continue;
         if (texts[i].size() > (16u << 20)) texts[i].erase(0, texts[i].size() - (16u << 20));   // keep the tail of huge logs
-        for (const std::string& h : HandlesIn(texts[i])) if (std::find(handles.begin(), handles.end(), h) == handles.end()) handles.push_back(h);
+        sco::launcher::redact::Learn(identities, texts[i]);   // every file teaches the handle for all of them
     }
-    const std::string user = Narrow(EnvOr(L"USERNAME", L""));
 
     SYSTEMTIME t; GetLocalTime(&t);
     wchar_t stamp[32]; swprintf(stamp, 32, L"%04u%02u%02u-%02u%02u%02u", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
@@ -2085,10 +2044,11 @@ static void OfferCrashReport(const wstring& here, const wstring& channelDir, ULO
     int put = 0;
     for (size_t i = 0; i < items.size(); ++i) {
         if (texts[i].empty()) continue;
-        if (WriteAll(stage + L"\\" + items[i].name, Redact(texts[i], handles, user))) ++put;
+        if (WriteAll(stage + L"\\" + items[i].name, sco::launcher::redact::RedactWith(texts[i], identities))) ++put;
     }
     WriteAll(stage + L"\\README.txt", std::string("sc-offline ") + SCO_VERSION + " crash report\r\nGame: " + gameBuild +
-             "\r\nRedacted: RSI handle -> <handle>, account/GEID numbers -> <id>, Windows user name -> <user>.\r\n");
+             "\r\nRedacted: RSI handle, nickname, character name and account/GEID numbers -> <redacted>; Windows user name -> <user>;\r\n"
+             "profile paths -> %USERPROFILE%; e-mail addresses -> <redacted>. Free text can still hold a name: read the files before you share them.\r\n");
     wchar_t sys[MAX_PATH]; GetSystemDirectoryW(sys, MAX_PATH);
     const wstring tar = wstring(sys) + L"\\tar.exe";
     DWORD code = 1;
@@ -2097,7 +2057,9 @@ static void OfferCrashReport(const wstring& here, const wstring& channelDir, ULO
     const wstring made = zipped ? zip : stage;
     Out("Crash:    report saved: %ls (%d file%s%s)\n", made.c_str(), put, put == 1 ? "" : "s",
         zipped ? "" : "; tar.exe failed, so it is a folder - zip it yourself");
-    Out("          Look through it before you share it: the redaction covers handle, IDs and user name only.\n");
+    Out("          Look through it before you share it: the redaction covers known shapes only, so a name in free text can remain.\n");
+    if (identities.legacyDropped || identities.priorityDropped)
+        Out("          The logs held more handles than the redactor keeps, so a handle may be left in free text: read every file.\n");
     if (!AskYes("Open the bug form in your browser (you attach the zip there)?")) return;
     const std::string url = "https://github.com/scuba-sc/sc-offline/issues/new?template=bug.yml&title=" +
         UrlEncode("Crash: ") + "&version=" + UrlEncode(SCO_VERSION) + "&game=" + UrlEncode(gameBuild) +
@@ -5178,6 +5140,207 @@ static int RunGui() {
     return kExitOk;
 }
 
+// `mcp`: a read-only MCP server for AI agents on stdin/stdout (launcher/mcp_server.h has the protocol and the
+// four tools: status, plugins, logs, settings). The game's Game.log is served (and opened) only with `mcp --game-log`.
+// It exposes no command or action. Like `status` it creates and
+// changes nothing (no data\ folder, no launcher.log, no network); the logs and the ini are opened for reading
+// with every sharing mode, so a running game is not disturbed. stdout carries only JSON-RPC lines: the launcher's
+// own Out() (used by ReadConfig and the game search) is pointed at stderr for the whole session.
+// Reads at most maxBytes: the file's end (a log), or with fromHead its start (a plugin.ini); skippedOlder then means "more was left".
+static void ReadFileRange(const wstring& path, size_t maxBytes, sco::launcher::mcp::LogRead& out, bool fromHead = false) {
+    out.exists = out.skippedOlder = false;
+    out.error.clear();
+    out.bytes.clear();
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                           nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f == INVALID_HANDLE_VALUE) {
+        const DWORD e = GetLastError();
+        if (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND) return;
+        out.exists = true;
+        out.error = "the file could not be opened (Windows error " + std::to_string(e) + ")";
+        return;
+    }
+    out.exists = true;
+    LARGE_INTEGER size{};
+    if (!GetFileSizeEx(f, &size)) {
+        out.error = "the file size could not be read (Windows error " + std::to_string(GetLastError()) + ")";
+        CloseHandle(f);
+        return;
+    }
+    LARGE_INTEGER start{};
+    if ((unsigned long long)size.QuadPart > maxBytes) {
+        if (!fromHead) start.QuadPart = size.QuadPart - (LONGLONG)maxBytes;
+        out.skippedOlder = true;
+    }
+    if (!SetFilePointerEx(f, start, nullptr, FILE_BEGIN)) {
+        out.error = "the file could not be read (Windows error " + std::to_string(GetLastError()) + ")";
+        CloseHandle(f);
+        return;
+    }
+    char buf[65536]; DWORD got = 0;
+    while (out.bytes.size() < maxBytes &&
+           ReadFile(f, buf, (DWORD)std::min<size_t>(sizeof(buf), maxBytes - out.bytes.size()), &got, nullptr) && got)
+        out.bytes.append(buf, got);
+    CloseHandle(f);
+}
+
+// Streams a file from its start in 1 MiB chunks to the sink, at most maxBytes: what read_log learns login lines from.
+// Opened for reading with every sharing mode, like ReadFileRange.
+static sco::launcher::mcp::LogScan ScanFile(const wstring& path, unsigned long long maxBytes, const sco::launcher::mcp::ScanSink& sink) {
+    sco::launcher::mcp::LogScan out;
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                           nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f == INVALID_HANDLE_VALUE) {
+        const DWORD e = GetLastError();
+        if (e == ERROR_FILE_NOT_FOUND || e == ERROR_PATH_NOT_FOUND) return out;
+        out.exists = true;
+        out.error = "the file could not be opened (Windows error " + std::to_string(e) + ")";
+        return out;
+    }
+    out.exists = true;
+    LARGE_INTEGER size{};
+    if (!GetFileSizeEx(f, &size)) {
+        out.error = "the file size could not be read (Windows error " + std::to_string(GetLastError()) + ")";
+        CloseHandle(f);
+        return out;
+    }
+    out.size = (unsigned long long)size.QuadPart;
+    std::vector<char> buf(1u << 20);
+    DWORD got = 0;
+    while (out.scanned < maxBytes &&
+           ReadFile(f, buf.data(), (DWORD)std::min<unsigned long long>(buf.size(), maxBytes - out.scanned), &got, nullptr) && got) {
+        sink(buf.data(), got);
+        out.scanned += got;
+    }
+    CloseHandle(f);
+    return out;
+}
+
+static int RunMcp(const wstring& here, bool gameLog) {
+    using namespace sco::launcher;
+    // The protocol's stdout is a private copy of the real one; fd 1 (and so every printf) now goes to stderr.
+    std::fflush(stdout);
+    const int protocolOut = _dup(_fileno(stdout));
+    if (protocolOut < 0 || _dup2(_fileno(stderr), _fileno(stdout)) != 0) {
+        std::fprintf(stderr, "sc-offline mcp: stdout is not available\n");
+        return kExitError;
+    }
+    _setmode(protocolOut, _O_BINARY);
+    _setmode(_fileno(stdin), _O_BINARY);
+    std::fprintf(stderr, "sc-offline mcp: read-only server on stdio, %s\n", SCO_VERSION);
+
+    wstring gameBin;   // the game folder the last status check found: the game's Game.log sits next to it
+    mcp::Platform platform;
+    platform.version = SCO_VERSION;
+    platform.gameLog = gameLog;   // --game-log: without it Game.log is never opened
+    {
+        const sco::launcher::redact::Identities host = HostIdentities();
+        platform.profileRoots = host.profileRoots;
+        platform.accountNames = host.accountNames;
+    }
+
+    platform.status = [&] {
+        const StatusReport r = CollectStatus(here);
+        gameBin = r.bin;
+        mcp::StatusInfo s;
+        s.launcherVersion = SCO_VERSION;
+        s.gameFolderFound = r.folderKnown;
+        s.gameFolder = Narrow(r.bin);
+        s.gameBuild = r.build;
+        s.modInstalled = r.modInstalled;
+        s.eac = r.eac == Eac::Active ? "active" : r.eac == Eac::Disabled ? "disabled" : "not_installed";
+        s.networkBlocked = r.networkBlocked;
+        s.eacRename = r.eacRename;
+        s.pluginsSettingOn = r.pluginsOn;
+        s.pluginsEnabled = r.pluginsEnabled;
+        s.pluginsTotal = r.pluginsTotal;
+        s.pcChangesLeft = r.pcLeft;
+        s.wine = r.wine;
+        s.gameRunning = GameRunningIn(r.bin);   // this install's exe only; no game folder known: not running
+        return s;
+    };
+    platform.plugins = [&] {
+        // Names first (cheap, up to 4096), sorted the way list_plugins sorts; only the first kMaxPlugins + 1 have their
+        // plugin.ini read, so memory stays small and the 256 returned are the first 256 by name. One more than
+        // kMaxPlugins tells list_plugins to set truncated.
+        std::vector<std::pair<std::string, wstring>> names;
+        const wstring dir = here + L"\\data\\plugins";
+        WIN32_FIND_DATAW fd;
+        HANDLE h = FindFirstFileW((dir + L"\\*").c_str(), &fd);
+        if (h == INVALID_HANDLE_VALUE) return std::vector<mcp::PluginFolder>{};
+        do {
+            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || fd.cFileName[0] == L'.') continue;
+            const wstring folder = dir + L"\\" + fd.cFileName;
+            if (!IsFile(folder + L"\\plugin.ini") || names.size() >= 4096) continue;
+            names.emplace_back(Narrow(fd.cFileName), folder);
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+        std::stable_sort(names.begin(), names.end(), [](const auto& a, const auto& b) { return mcp::FolderLess(a.first, b.first); });
+        if (names.size() > mcp::kMaxPlugins + 1) names.resize(mcp::kMaxPlugins + 1);
+        std::vector<mcp::PluginFolder> folders;
+        for (const auto& n : names) {
+            mcp::LogRead ini;
+            ReadFileRange(n.second + L"\\plugin.ini", 64 * 1024, ini, true);   // the head: id, name and version come first
+            mcp::PluginFolder p;
+            p.folder = n.first;
+            p.iniText = ini.bytes;
+            p.disabled = GetFileAttributesW((n.second + L"\\disabled").c_str()) != INVALID_FILE_ATTRIBUTES;
+            folders.push_back(std::move(p));
+        }
+        return folders;
+    };
+    const auto logPath = [&](const std::string& log) {
+        wstring path;
+        if (log == "mod") path = here + L"\\data\\mod.log";
+        else if (log == "launcher") path = here + L"\\data\\launcher.log";
+        else if (log == "launcher_previous") path = here + L"\\data\\launcher.log.1";
+        else if (log == "game" && gameLog) {   // never looked up, let alone opened, without --game-log
+            if (gameBin.empty()) gameBin = CollectStatus(here).bin;
+            if (!gameBin.empty()) path = ParentDir(gameBin) + L"\\Game.log";
+        }
+        return path;
+    };
+    platform.readLog = [logPath](const std::string& log, size_t maxBytes) {
+        const wstring path = logPath(log);
+        mcp::LogRead r;
+        r.path = Narrow(path);
+        if (!path.empty()) ReadFileRange(path, maxBytes, r);
+        return r;
+    };
+    platform.scanLog = [logPath](const std::string& log, unsigned long long maxBytes, const mcp::ScanSink& sink) {
+        const wstring path = logPath(log);
+        return path.empty() ? mcp::LogScan{} : ScanFile(path, maxBytes, sink);
+    };
+    platform.settings = [&] {
+        const wstring path = here + L"\\sc-offline.ini";
+        mcp::LogRead f;
+        ReadFileRange(path, 256 * 1024, f);
+        mcp::IniRead r;
+        r.path = Narrow(path);
+        r.exists = f.exists;
+        r.error = f.error;
+        r.text = f.bytes;
+        return r;
+    };
+
+    mcp::Server server(std::move(platform));
+    mcp::Serve(server,
+        [](char* buf, size_t n) {
+            const int got = _read(_fileno(stdin), buf, (unsigned)std::min<size_t>(n, 1u << 16));
+            return got > 0 ? (size_t)got : (size_t)0;   // end of input or a read error ends the session
+        },
+        [protocolOut](const std::string& line) {
+            const std::string out = line + "\n";
+            for (size_t at = 0; at < out.size();) {
+                const int put = _write(protocolOut, out.data() + at, (unsigned)std::min<size_t>(out.size() - at, 1u << 16));
+                if (put <= 0) return false;   // the client went away
+                at += (size_t)put;
+            }
+            return true;
+        });
+    return kExitOk;
+}
+
 static const char* kUsage =
     "usage: sc-offline.exe [command] [--game <folder>] [--dry-run] [--skip-eac-check]\n"
     "\n"
@@ -5185,12 +5348,15 @@ static const char* kUsage =
     "  install    copy the mod in and leave it there; run `uninstall` before going online\n"
     "  uninstall  take the mod out and restore anything it replaced\n"
     "  status     check the setup and report; read-only (no writes, no network)\n"
+    "  mcp        MCP server on stdin/stdout for AI agents; read-only (status, plugins, logs, settings)\n"
+    "             add --game-log to let it read Game.log too (off by default: it can hold account names)\n"
     "  update     check GitHub for a newer sc-offline and offer to install it (saves and ini kept)\n"
     "  help       show this\n"
     "\n"
     "  --game <folder>   your StarCitizen, LIVE or Bin64 folder (else sc-offline.ini, else searched)\n"
     "  --dry-run         print every step, change nothing, start nothing\n"
     "  --skip-eac-check  don't stop when Easy Anti-Cheat looks active\n"
+    "  --game-log        with mcp only: allow read_log to serve the game's Game.log\n"
     "  --console         double-clicked: run `play` in this console instead of opening the window\n"
     "  --window          open the window (from a terminal, or under Wine/Proton)\n"
     "\n"
@@ -5215,7 +5381,7 @@ int wmain(int argc, wchar_t** argv) {
         return ElevatedUpdate(ExeDir(), argv[2], argv[3]);   // S4: no network as administrator
 
     wstring command = L"play", gameArg;
-    bool dry = false, skipEac = false, sawCommand = false;
+    bool dry = false, skipEac = false, sawCommand = false, gameLogFlag = false;
     for (int i = 1; i < argc; ++i) {
         const wchar_t* a = argv[i];
         if (!_wcsicmp(a, L"--game")) {
@@ -5224,21 +5390,36 @@ int wmain(int argc, wchar_t** argv) {
         } else if (!_wcsicmp(a, L"--dry-run")) dry = true;
         else if (!_wcsicmp(a, L"--console")) {}
         else if (!_wcsicmp(a, L"--skip-eac-check")) skipEac = true;
+        else if (!_wcsicmp(a, L"--game-log")) gameLogFlag = true;   // checked below: only `mcp` takes it
         else if (!sawCommand && (!_wcsicmp(a, L"play") || !_wcsicmp(a, L"install") || !_wcsicmp(a, L"uninstall") ||
-                                 !_wcsicmp(a, L"status") || !_wcsicmp(a, L"update") || !_wcsicmp(a, L"help"))) {
+                                 !_wcsicmp(a, L"status") || !_wcsicmp(a, L"update") || !_wcsicmp(a, L"help") || !_wcsicmp(a, L"mcp"))) {
             command = a; sawCommand = true;
         } else if (!_wcsicmp(a, L"--help") || !_wcsicmp(a, L"-h") || !_wcsicmp(a, L"/?")) {
             command = L"help"; sawCommand = true;
         } else {
+            bool mcpMode = false;   // `mcp` anywhere: stdout belongs to the protocol, so usage goes to stderr
+            for (int k = 1; k < argc; ++k) if (!_wcsicmp(argv[k], L"mcp")) mcpMode = true;
+            if (mcpMode) {   // no Fail(): it writes to stdout
+                std::fprintf(stderr, "%s[!] unknown argument '%ls'\n", kUsage, a);
+                return kExitError;
+            }
             std::printf("%s", kUsage);
             return Fail("unknown argument '%ls'", a);
         }
     }
     for (wchar_t& c : command) c = towlower(c);
+    if (gameLogFlag && command != L"mcp") {
+        std::printf("%s", kUsage);
+        return Fail("unknown argument '--game-log' (it belongs to `sc-offline.exe mcp --game-log`)");
+    }
     if (command == L"help") { std::printf("sc-offline launcher %s (%s)\n\n%s", SCO_VERSION, SCO_BASED_ON, kUsage); return kExitOk; }
 
     const wstring here = ExeDir();
     if (command == L"status") return RunStatus(here, gameArg);   // before anything below that writes
+    if (command == L"mcp") {   // likewise: nothing may be written, and stdout belongs to the protocol
+        if (!gameArg.empty()) std::fprintf(stderr, "sc-offline mcp: --game is ignored; set game = in sc-offline.ini\n");
+        return RunMcp(here, gameLogFlag);
+    }
     const wstring data = here + L"\\data";
     CreateDirectoryW(data.c_str(), nullptr);   // a fresh unzip may not have it yet
     std::string header = "sc-offline.exe";

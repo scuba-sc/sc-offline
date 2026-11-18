@@ -7,7 +7,7 @@
 [![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-f0851f?style=flat-square)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/NJKeVfYCCC)
 
-sc-offline brings the launcher, offline game session and mod interface together. It is also a reference consumer of the sco-core SDK: a real product built on the same public contracts available to other plugin authors.
+sc-offline is a launcher, an offline game session and a mod menu. It is also a reference consumer of the sco-core SDK: a product built on the same public contracts other plugin authors use.
 
 [**Download**](https://github.com/scuba-sc/sc-offline/releases/latest) · [**Discord**](https://discord.gg/NJKeVfYCCC) · [**SDK documentation**](https://scuba-sc.github.io/sco-core/) · [**Changelog**](CHANGELOG.md) · [**Issues**](https://github.com/scuba-sc/sc-offline/issues)
 
@@ -24,9 +24,9 @@ The project separates the **product**, the **framework** and its **extensions**:
 | **sco-core** | The shared runtime: plugin loading, commands, events, services, settings, storage and UI contracts. Its Star Citizen game pack owns the shared game-integration layer. |
 | **Feature plugins** | Independently built modules that use public SDK services rather than depending on the product's private internals. Most live in `plugins/`; the Creative plugin (noclip, god mode, infinite ammo) has its own repository, [`sc-creative`](https://github.com/scuba-sc/sc-creative), carried as the `external/sc-creative` submodule and shipped enabled. |
 
-This keeps reusable infrastructure in sco-core and product behavior in sc-offline. When a plugin needs a missing capability, the intended path is to add the SDK contract/provider in sco-core, then consume it here—not introduce another private implementation in the plugin.
+Reusable infrastructure lives in sco-core and product behavior in sc-offline. When a plugin needs a capability the SDK lacks, add the contract and provider in sco-core, then consume it here; do not write a private copy in the plugin.
 
-**The migration is ongoing.** External plugins already follow this boundary; remaining host-side feature engines and exceptions are documented in the [architecture](docs/architecture.md) and [verification status](docs/status.md). This is a reference consumer in development, not a claim that every legacy path has been externalized.
+**The migration is not finished.** External plugins follow this boundary; the host-side feature engines and exceptions that remain are listed in the [architecture](docs/architecture.md) and [verification status](docs/status.md).
 
 ### From SDK contract to installed plugin
 
@@ -34,7 +34,7 @@ The development loop follows the [sco-core SDK build/check/install guide](https:
 
 1. **Discover the contract.** Read the API catalogue or query sco-core-mcp for service versions, capabilities, ownership and lifecycle requirements before writing a consumer.
 2. **Build against the SDK.** Verify a published SDK archive and compile external plugins against its public headers in an isolated build, without product-private include paths.
-3. **Check the module.** Use `sco-plugin-check` and focused module fixtures to exercise registration, missing services and cleanup. Synthetic checks are development evidence, not gameplay validation.
+3. **Check the module.** Run `sco-plugin-check` and the module's own fixtures for registration, missing services and cleanup. These are synthetic checks, not gameplay.
 4. **Install as a folder.** Package the module with its `plugin.ini` under `data/plugins/<id>/`, then enable and validate it in the matching Windows host.
 
 The **host and plugin builds are separate**: this repository builds the Windows host from the source revision pinned in `external/sco-core`; plugin SDK archives supply the external consumers. sco-core also publishes a separate [host-source kit](https://github.com/scuba-sc/sco-core/blob/main/docs/host-source-sc.md). Host, SDK package, plugin ABI and individual plugin versions are separate coordinates.
@@ -50,18 +50,16 @@ You need your own installed copy of Star Citizen and **64-bit Windows**. Linux t
 3. Close the game, open **`sc-offline.exe`** normally and click **Play**. Approve the setup helper's administrator prompt.
 4. Let initialization finish. The launcher holds the game at its first instruction while the mod starts (up to 3 minutes by design), so a pause of roughly 15 seconds before the game window appears is expected. Then **M** is meant to open the menu in game; opening the menu has **not been confirmed in game** on a current release ([Status](docs/status.md)).
 
-Use the launcher's **Plugins** page to manage extensions. Feature availability depends on the release, game build and enabled services; see [Features](docs/features.md) and [Status](docs/status.md), rather than assuming `main` and a downloaded release are identical.
+Use the launcher's **Plugins** page to manage extensions. What works depends on the release, the game build and the enabled services (see [Features](docs/features.md) and [Status](docs/status.md)); `main` and a downloaded release can differ.
 
 ## What has actually been run
-
-**Development startup is unavailable.** The native reader and worker exclusion and drain required for safe activation are not yet proven. This draft refuses native startup and installs no startup hook. It is not a playable build.
 
 Read this before relying on any feature description. Only the owner runs the game; a green build, a synthetic check or a resolved signature is never a game result.
 
 - **Observed in game (once or twice, startup only):** v0.7.8.1 offline startup on two Windows PCs: offline evidence line clear, every offline patch applied, signatures resolved, plugins loaded, the game loading into the universe. Play beyond loading in, the menu and every feature below are **not verified in game**.
 - **Checked on a development machine only:** the external plugins build against published SDK archives and pass the SDK's plugin checker with no game services. That is a build and contract check, not gameplay.
 - **Historical Linux report:** sc-offline 0.7.0 was reported played offline with game 4.10.193 on one Bazzite/LUG Helper Wine setup. [The exact tuple and limits](docs/linux.md#historical-observation) are recorded separately; the current stable SDK 2.4.0 host and plugins have no Wine game run.
-- **Development source:** the embedded host builds from the exact `external/sco-core` gitlink. This private candidate selects an unpublished Core revision; use its matching, explicitly versioned development SDK for current plugin proofs. The published SDK 2.4.0 archive and its checksums remain historical release evidence, not the development pin. See [SDK coordinates](docs/sdk-candidate.md). Plugin ABI 1.1 and game pack 0.8.0 remain unchanged. In-game acceptance is unverified; native startup remains refused.
+- **Development source:** the host builds from the exact `external/sco-core` gitlink, currently Core `4ba313d` (development SDK coordinate `2.4.1-dev.6`, unpublished). That Core provides the process-retained composition, so native startup is on; it has not been run in game ([host composition](docs/host-composition.md)). The published SDK 2.4.0 archive is what CI uses for the external plugin proofs. See [SDK coordinates](docs/sdk-candidate.md).
 
 Details and the list of owed in-game checks: [Status](docs/status.md).
 
@@ -81,8 +79,6 @@ The launcher records its session changes and arranges cleanup when the game exit
 
 Start through `sc-offline.exe`, and turn **NVIDIA Smooth Motion off** for Star Citizen if you use an NVIDIA GPU. For a bug report, include the mod version, game build and matching `data/launcher.log`, `data/mod.log` and `Game.log`; review logs for personal information before posting. See [launcher guidance](docs/launcher.md) or [open an issue](https://github.com/scuba-sc/sc-offline/issues/new/choose).
 
-Build success and resolved signatures do not establish gameplay correctness. Outstanding Windows/in-game checks are recorded in [Status](docs/status.md).
-
 ## Documentation
 
 | Start here | Covers |
@@ -92,6 +88,7 @@ Build success and resolved signatures do not establish gameplay correctness. Out
 | [Architecture](docs/architecture.md) · [Status](docs/status.md) | Layer boundaries, migration progress and verification limits |
 | [Launcher](docs/launcher.md) · [Linux](docs/linux.md) | Setup, configuration, updates, recovery and experimental Wine support |
 | [Features](docs/features.md) · [Data files](docs/data-files.md) | User-facing capabilities, catalogs and saves |
+| [AI agents](docs/ai-agents.md) | Connect Claude, Codex, Cursor or VS Code to your install (`sc-offline.exe mcp`) and to the SDK and sandbox MCP servers |
 
 Offline play is the scope: no connection to CIG servers or online services, no anti-cheat bypass, no telemetry and no account or entitlement changes (see [CONTRIBUTING](CONTRIBUTING.md) and [SECURITY](SECURITY.md)). Optional co-presence lives separately in [sc-mp](https://github.com/scuba-sc/sc-mp); it and the optional [cross-game bridges](docs/bridges.md) are excluded from the standard release.
 

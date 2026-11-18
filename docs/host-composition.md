@@ -4,8 +4,8 @@
 composition.** CMake probes the selected Core's `include/sco/game/host.h` for
 `Composition::ProcessRetained` and defines `SCO_CORE_PROCESS_RETAINED_COMPOSITION`;
 together with the non-draining stop API (`SCO_CORE_NON_DRAINING_STOP_API`) that makes
-`NativeActivationAvailable()` true. The current `external/sco-core` pin (Core `94dffc5`, development SDK coordinate
-`2.4.1-dev.6`) provides it, so activation is ON with the pin. With an older Core (for
+`NativeActivationAvailable()` true. The current `external/sco-core` pin (Core `4ba313d`, which includes `94dffc5`; development SDK
+coordinate `2.4.1-dev.6`) provides it, so activation is ON with the pin. With an older Core (for
 example one selected through `SCO_HOST_SOURCE_DIR`), configure prints that native startup
 remains refused and the product keeps refusing: no entry hook, native Prepare/Start, product patch or plugin
 activation. The product selects `Options::composition = ProcessRetained`, which runs the
@@ -37,9 +37,8 @@ exercised with synthetic and static tests only; **it has not been run in game**.
 and shutdown write numbered `[startup]` and `[shutdown]` lines to `mod.log` for the first
 owner-run session.
 
-The default development host builds from the exact `external/sco-core` gitlink.
-The selected source is an unpublished coordinated candidate; the published
-stable SDK source remains a separate historical reference.
+The default host builds from the exact `external/sco-core` gitlink, an unpublished
+development revision; the published SDK 2.4.0 source is a separate reference.
 For local development, an extracted `host-source-sc` kit
 can be selected with `-DSCO_HOST_SOURCE_DIR=<extracted-source-root>`.
 That override does not change the committed pin or the external plugin archive.

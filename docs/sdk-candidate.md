@@ -23,14 +23,23 @@ source and byte-compared with the published release assets.
 | Star Citizen game overlay | `sco-sdk-game-sc-0.8.0.zip` | `a5881e321bb456a3a17894413a07ece9ce6d3787bd6d1ad7dcc34fc288951f6b` | 203 |
 | Star Citizen host source | `sco-sdk-host-source-sc-2.4.0.zip` | `a0aaaba07e3d4eb0d8c264912cd6f2ab23f0d237a99fa07816005790a76efc4c` | 986 |
 
-## Current coordinated development source
+## Current development source
 
-The committed product source `f38dcdd4625e0290f61855074d907a6749ea980c` selects
+The `external/sco-core` gitlink selects Core `4ba313da3ac76c887cda03772d6106452f33a5d4`:
+unpublished development SDK `2.4.1-dev.6`, Star Citizen game pack `0.8.1`, plugin ABI
+`1.1`. It adds the process-retained host composition on top of `94dffc5`.
+No development archive digests are recorded for this Core yet, and none of the
+receipts below qualify it. The tables that follow are earlier pairings, kept as
+historical records.
+
+## Previous development pairing: Core e2dc4ac (2.4.1-dev.3)
+
+At product commit `f38dcdd4625e0290f61855074d907a6749ea980c` the gitlink selected
 Core `e2dc4ac933b5565417fb067735ddc12104c8030d`, tree
-`60f3e544244a8e487b08f32adbd4a81eab344d43`. This is unpublished Core
-`2.4.1-dev.3` and Star Citizen game-pack `0.8.1` source. The local development
-archives below have embedded compatibility metadata naming that exact Core
-source. They are local artifacts, not published release assets.
+`60f3e544244a8e487b08f32adbd4a81eab344d43`: unpublished Core `2.4.1-dev.3` and
+game pack `0.8.1`. The local development archives below have embedded
+compatibility metadata naming that exact Core source. They are local artifacts,
+not published release assets.
 
 | Profile | Local archive | SHA-256 |
 |---|---|---|
@@ -55,9 +64,9 @@ published release asset.
 
 The standalone game overlay metadata names the Core archive above by its exact
 SHA-256. The combined archive contains both profiles and its metadata names Core
-and game-SC source `e2dc4ac`. No current `core-source` or `host-source-sc`
-archive identity is established here; do not infer those archive hashes from the
-source gitlink or from these plugin-kit archives.
+and game-SC source `e2dc4ac`. No `core-source` or `host-source-sc` archive
+identity is recorded for this pairing; do not infer those hashes from the
+gitlink or from these plugin-kit archives.
 
 The e2 Core source qualification recorded a full Windows RelWithDebInfo build
 and CTest run (429 registered, 395 passed, 34 skipped, zero failed). Its SDK
@@ -69,12 +78,12 @@ Rust checks were not enabled; Lua runtime checks were skipped with
 product startup, runtime activation or in-game behavior. No game, launcher or
 native activation was run; this is not release acceptance.
 
-The published 2.4.0 profiles above remain historical. The local development
-archives are not substitutes for those release assets. The host uses its exact
-gitlink or an explicit matching host-source kit; the external plugin proof uses
-the exact public SDK archive recorded below. Keep embedded-host source and
-external-plugin archive identities separate. Static resolution, synthetic tests,
-host integration, native activation and game acceptance are distinct evidence.
+The local development archives are not substitutes for the published 2.4.0
+release assets. The host uses its exact gitlink or an explicit matching
+host-source kit; the external plugin proof uses a public SDK archive. Keep
+host-source and plugin-archive identities separate, and keep static resolution,
+synthetic tests, host integration, native activation and game acceptance
+separate.
 
 ## Loadout profile candidate composition
 
@@ -166,9 +175,9 @@ It built the Loadout module against the verified SDK and exercised Core plugin
 startup, synthetic list-pack content/reload/read behavior, and shutdown. The 12
 individual checks are not the consumer-proof aggregator or its separate list
 staging test. None of these synthetic results establishes native activation,
-full outfit/provider parity, or game acceptance. Production native activation
-remains refused, and Loadout has not been run in game. The `2.4.1-dev.3` label
-is unpublished development metadata, not release-status evidence.
+full outfit/provider parity, or game acceptance. At that commit native activation
+was refused. Loadout has not been run in game. The `2.4.1-dev.3` label is
+unpublished development metadata, not release-status evidence.
 
 A prior Loadout proof used a separate `legacy` archive with the same filename,
 `2.4.1-dev.3` label, and SHA-256
@@ -184,10 +193,8 @@ other 11 profile artifacts.
 
 These five development archive hashes were recorded for an earlier local Core
 source commit `4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd`, tree
-`b80a97a9af8d19c447399922fa0664ecc22d4190`. They are historical coordinates,
-not the current product gitlink or the e2 archive identities above. The source
-and archive version labels match; use the source commit and archive SHA-256 to
-distinguish these separate builds.
+`b80a97a9af8d19c447399922fa0664ecc22d4190`, not the e2 archive identities above.
+The version labels match; tell the builds apart by source commit and archive SHA-256.
 
 | Profile | Historical development archive | SHA-256 |
 |---|---|---|
@@ -205,7 +212,7 @@ Those results do not transfer to the e2 source or archives.
 ### Previous development pairing
 
 Core `248d2a65ff979909695ece68ec8a0b71cbf26172` and its `2.4.1-dev.2` archives
-are historical inputs; they do not qualify the new tuple:
+are historical inputs and do not qualify later pairings:
 
 | Profile | Development archive | SHA-256 |
 |---|---|---|
@@ -218,6 +225,4 @@ are historical inputs; they do not qualify the new tuple:
 Consumer integration, hosted availability, reader/worker exclusion, ownership,
 Windows runtime behavior and human gameplay acceptance remain separate gates.
 
-Earlier RC2 and pre-release candidate coordinates are historical evidence only;
-they are not current consumer pins or substitutes for the stable archive digests
-above.
+Earlier RC2 and pre-release candidate coordinates are historical evidence only.

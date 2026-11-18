@@ -1,28 +1,23 @@
 # ASOP host composition consumer
 
-The product currently refuses native startup pending a proven reader/worker
-exclusion and drain. ASOP compositions are unavailable too: both
-`SCO_ASOP_HOST_COMPOSITION` and `SCO_ASOP_SELECTION_COMPOSITION` default to OFF,
-and CMake rejects either option until the product has a reviewed nonblocking
-stop request and ordered control-thread drain. The selected Core pin
-`4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd` refuses ASOP host Start
-before installing hooks even when validation and admission pass; invalid or
-disabled configurations may return other results. Its `Stop` is synchronous.
-The direct legacy quit detour requests owner closure and then immediately
-forwards the original call on the same stack; it does not drain the owner.
-The separate `ForwardQuit` helper calls `BeforeQuit`, which invokes `Stop`.
-Neither path proves engine-object lifetime or a safe native drain.
-The selected local `2.4.1-dev.3` checkpoint and its matching host-source archive
-are recorded in [SDK coordinates](sdk-candidate.md). Earlier adapter and lifecycle
-receipts do not qualify this new pair. Neither the pin nor this product enables
-ASOP gameplay.
+ASOP compositions are unavailable: both `SCO_ASOP_HOST_COMPOSITION` and
+`SCO_ASOP_SELECTION_COMPOSITION` default to OFF, and CMake rejects either option until the
+product has a reviewed nonblocking stop request and ordered control-thread drain. This is
+separate from native startup, which is on with a Core that provides the process-retained
+composition ([host composition](host-composition.md)). The selected Core pin `4ba313d`
+still returns `Unavailable` from ASOP host `Start` before installing hooks, even when
+validation and admission pass; invalid or disabled configurations may return other results.
+Its `Stop` is synchronous. The direct legacy quit detour requests owner closure and then
+immediately forwards the original call on the same stack; it does not drain the owner. The
+separate `ForwardQuit` helper calls `BeforeQuit`, which invokes `Stop`. Neither path proves
+engine-object lifetime or a safe native drain. The pin's development SDK coordinate
+(`2.4.1-dev.6`) is in [SDK coordinates](sdk-candidate.md). Neither the pin nor this product
+enables ASOP gameplay.
 
 `src/asop_shell.*` consumes the game-specific public host-source
 `sco::game::asop_host` interface. It is not a plugin service. The published
 stable SDK 2.4.0 release (`sdk-v2.4.0`) carries G10 in
-`sco-sdk-host-source-sc-2.4.0.zip` (`include/sco/game/asop_host.h`; SDK 2.0.0
-lacked it). Header availability alone is insufficient to enable this consumer;
-the missing lifecycle contract is the current blocker.
+`sco-sdk-host-source-sc-2.4.0.zip` (`include/sco/game/asop_host.h`). Having the header is not enough to enable this consumer; the missing lifecycle contract is the blocker.
 
 ## Current configure status
 
@@ -44,10 +39,9 @@ removal and re-addition; only currently issued IDs decode from terminal URNs. Th
 historical-class limit refuses new classes rather than recycling an ID. This is identity
 hardening only: the legacy catalogue still builds once, and no selection editor,
 live-rebuild trigger, buffer-retirement policy or SDK cutover is introduced.
-The coordinated development core currently refuses native `Reconfigure` with
-`Unavailable`. Saving a selection is not evidence that a running terminal has
+The pinned Core refuses native `Reconfigure` with `Unavailable`. Saving a selection is not evidence that a running terminal has
 changed. The optional source adapter is designed to report an unapplied selection
-and does not claim a live rebuild; the current product gate refuses before the
+and does not claim a live rebuild; the product's ASOP gate refuses before the
 adapter starts.
 `python3 tools/test_fleet_identity.py` compiles the actual legacy build/mapping/retrieve
 bodies under ASan/UBSan with synthetic engine reads and platform stand-ins. It does not
@@ -56,8 +50,7 @@ exercise Windows locks/SEH, native hooks or game behavior.
 The optional selection-file adapter now keeps the newest committed selection
 notice pending until `Reconfigure` returns `Ok`; a parse failure, exception or
 non-`Ok` result leaves the notice available for retry and emits a deferred-apply
-message. An older in-flight apply cannot clear a newer notice. The selected Core source
-still returns `Unavailable`, and this product's native-activation gate refuses
+message. An older in-flight apply cannot clear a newer notice. The pinned Core still returns `Unavailable`, and this product's ASOP gate refuses
 before the adapter starts. These changes protect future integration state; they
 do not activate ASOP or establish live-reconfiguration acceptance.
 

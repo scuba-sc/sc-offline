@@ -9,7 +9,7 @@ wording rules in `docs/plugin-ui.md`; command replies keep their detail, and `ge
 
 Capture a complete logical layout, give it a name, save it in the host's owner-scoped storage, and compare it with a fresh observation. Delete one saved preset with the picker button or `gear_presets.delete <id>`; `gear_presets.list` shows IDs. Deletion frees a slot without resetting the next ID. If storage reports a deletion error, refresh before retrying because the outcome may be unknown. The picker and commands use the public SDK; no game memory, item equip, move, input or mission mutation is used. Comparison is category-level advice, never exact class or item-instance identity. Storage ports are retained as layout context and never generate gear actions. Incomplete or unavailable observations cannot be saved or treated as empty.
 
-The published stable SDK 2.4.0 defines `game.inventory.layout` over `game.inventory` 1.2, including the required stable keys and roles. The current product refuses native startup, so capture is unavailable there. The synthetic host fixture is development evidence, not a claim about the game or an installed launcher. This module is not staged for players.
+The published stable SDK 2.4.0 defines `game.inventory.layout` over `game.inventory` 1.2, including the required stable keys and roles. The offline player product has no ready producer for it, so capture is unavailable there. The synthetic host fixture is development evidence, not a claim about the game or an installed launcher. This module is not staged for players.
 
 Build the standalone module using a checksum-verified extracted SDK containing the 1.2 layout contract:
 
@@ -27,5 +27,5 @@ source `6106fa3639cbcc28f78a1ded8de2707de019f4d3` includes it, so the syntax
 check can now see the development-only adapter. The standalone configure still
 requires the matching SDK archive and refuses an older SDK. CI runs the model,
 storage and actual-module fixtures against a checksum-verified SDK and matching
-Core source. This verifies contract compatibility only; the current product
-startup refusal means there is no active native producer or runtime capture.
+Core source. This verifies contract compatibility only; the product has
+no active native producer, so there is no runtime capture.

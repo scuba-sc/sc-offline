@@ -3,7 +3,7 @@
 `loadout` 1.0.0 is a C++20 SDK consumer with three native exports, no product
 headers/ImGui globals, private engine calls, XML loader or gameplay fallback.
 It is **development work; not run in game**. Its G6/G7/content/widgets
-headers ship in the pinned published `sdk-v2.4.0` (`sdk-v2.0.0` lacked them);
+headers ship in the published `sdk-v2.4.0`;
 the release workflow does not yet stage loadout. Do not substitute this local build for a published-release proof.
 
 ## Candidate-only profile composition
@@ -80,7 +80,7 @@ that tree.
 
 This creates a fresh inspection tree and makes no upgrade-preservation promise.
 It does not merge into an existing installation or establish what an upgrade
-would retain. Production native activation remains refused. Full outfit/provider
+would retain. Native startup needs a Core with the process-retained composition and has not been run in game. Full outfit/provider
 parity and game acceptance are pending; neither this tree nor synthetic peer
 fixtures are runtime or release evidence.
 
@@ -95,7 +95,7 @@ version hash or proof for the other 11 supplied binaries. See the
 for the evidence boundary.
 ## Obtain, build, install
 
-1. Obtain the pinned published combined core+game SDK containing `sc_loadout.h`,
+1. Obtain the published combined core+game SDK containing `sc_loadout.h`,
    `sc_cvars.h`, `sco_content.h` and `sco_widgets.h`, plus `sco_api.h`. Use its extracted public `include/` directory and
    checksum inventory, never the host checkout's headers.
 2. Build separately from the Windows host:
@@ -141,7 +141,7 @@ for the evidence boundary.
    follow ordinary CMake overwrite behavior, so use a fresh staging directory
    when those destinations contain files you need to preserve.
    A larger standalone `plugins/` build uses `SCO_LOADOUT_FEATURE=ON`; that switch
-defaults off until release staging is approved (the pinned sdk-v2.4.0 ships
+defaults off until release staging is approved (the published sdk-v2.4.0 ships
    the headers). Runtime folder metadata
    itself is enabled, user-disableable, with no `disabled` marker.
 3. On Windows x64/MSVC, install the staged `data/plugins/loadout/` module and

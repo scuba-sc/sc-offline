@@ -2,8 +2,7 @@
 
 Current picker/copy-list installation and the one targeted module fixture:
 [Public pickers](../../docs/pickers.md). **These sources use `sco_widgets.h` and
-`sco_content.h`, which the pinned published `sdk-v2.4.0` ships** (`sdk-v2.0.0`
-did not). The obtain/proof recipes below use that archive.
+`sco_content.h`, which the published `sdk-v2.4.0` ships**. The obtain/proof recipes below use that archive.
 
 Step 1C ships NPC as an **enabled external native plugin**, following inspector
 in step 1B. Release layout is `data/plugins/npc/plugin.ini` plus `npc.dll`, with
@@ -78,8 +77,7 @@ The external NPCs panel uses public `sco.widgets`, in sections: **Choose a chara
 Crew uses the same SDK-only parser, with independent selection/ownership state.
 No NPC hotkey was previously registered; none is invented here. Legacy
 `src/npc.cpp` stays untouched and is never a fallback. No plugin ImGui coupling
-is added. Widgets/content ship in the pinned published SDK 2.4.0 (SDK 2.0.0
-predated them); Windows rendering remains NOT VERIFIED.
+is added. Widgets/content ship in the published SDK 2.4.0; Windows rendering remains NOT VERIFIED.
 
 Normal `sco.reload npc` is a running-host external-consumer route, not provider
 hot-reload support or proven gameplay safety. Rebuild with the game closed or the
