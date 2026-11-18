@@ -2,6 +2,7 @@
 #if __has_include(<scosdk/game/inventory_layout.hpp>)
 #include "model.h"
 #include "store.h"
+#include <algorithm>
 #include <scosdk/game/inventory_layout.hpp>
 #include <sco_widgets.h>
 #include <array>
@@ -18,7 +19,7 @@ namespace {
 struct State {
     const sco_api* api = nullptr; sco_plugin* self = nullptr;
     Preset captured; bool fresh = false;
-    std::string name = "Preset", status = "Capture a complete layout to save a preset.";
+    std::string name = "My outfit", status = "Check what you're wearing, then save it as an outfit.";
     std::vector<SavedPreset> items, published;
     std::vector<Difference> differences;
     int32_t selection = -1; uintptr_t cookie = 0; uint64_t published_selection = 0;
@@ -44,34 +45,34 @@ sco_result Reload() {
 }
 sco_result DoCapture() {
     g.fresh=false; g.differences.clear(); Preset next; const auto result=CaptureNow(next);
-    if (result!=SCO_OK) { g.status="Layout unavailable or incomplete; no capture saved."; return result; }
+    if (result!=SCO_OK) { g.status="Couldn't read what you're wearing right now, so nothing was saved."; return result; }
     g.captured=std::move(next); g.fresh=true;
-    g.status="Captured complete layout. Categories are coarse; exact item classes are unknown.";
+    g.status="Checked what you're wearing. Give it a name and press Save outfit.";
     return SCO_OK;
 }
 sco_result DoSave() {
-    if (!g.fresh) { g.status="Capture a complete layout before saving."; return SCO_UNAVAILABLE; }
+    if (!g.fresh) { g.status="Check what you're wearing before saving."; return SCO_UNAVAILABLE; }
     Preset next=g.captured; next.name=g.name;
-    PresetStore store; auto result=store.Open(g.api,g.self); if (result!=SCO_OK) { g.status="Preset storage unavailable."; return result; }
+    PresetStore store; auto result=store.Open(g.api,g.self); if (result!=SCO_OK) { g.status="Saved outfits can't be reached right now."; return result; }
     uint64_t id=0; result=store.Save(next,id);
-    if (result!=SCO_OK) { g.status="Save failed or its outcome is unknown. Refresh before retrying."; return result; }
+    if (result!=SCO_OK) { g.status="Couldn't confirm the save. Refresh the list before trying again."; return result; }
     g.fresh=false;
     // Presentation must not turn a committed write into a reported failure.
     try {
         result=Reload();
-        g.status=result==SCO_OK ? "Preset saved. Select it to compare a fresh layout." : "Preset saved, but the picker could not refresh.";
+        g.status=result==SCO_OK ? "Outfit saved. Pick it from the list to compare it with what you're wearing." : "Outfit saved, but the list couldn't refresh.";
     } catch (...) { /* the committed result remains successful */ }
     return SCO_OK;
 }
 sco_result DoDelete(uint64_t id) {
     // Prepare messages before the write so later allocation cannot change its result.
-    std::string failed="Deletion failed or its outcome is unknown. Refresh before retrying.";
-    std::string deleted="Preset deleted.";
-    std::string refresh_failed="Preset deleted, but the picker could not refresh.";
-    std::string missing="Preset not found. Refresh and select a saved preset.";
+    std::string failed="Couldn't confirm the delete. Refresh the list before trying again.";
+    std::string deleted="Outfit deleted.";
+    std::string refresh_failed="Outfit deleted, but the list couldn't refresh.";
+    std::string missing="That outfit wasn't found. Refresh the list and pick a saved outfit.";
     g.cookie=0; g.selection=-1; g.differences.clear();
     PresetStore store; auto result=store.Open(g.api,g.self);
-    if(result!=SCO_OK) { g.status="Preset storage unavailable; deletion was not attempted."; return result; }
+    if(result!=SCO_OK) { g.status="Saved outfits can't be reached right now, so nothing was deleted."; return result; }
     g.status.swap(failed);
     result=store.Delete(id);
     if(result==SCO_OK) g.status.swap(deleted);
@@ -88,22 +89,35 @@ sco_result DoDelete(uint64_t id) {
     }
     return result;
 }
+// A slot the player has to do something about. Same-kind and uncompared slots are not differences.
+bool Actionable(const Difference& d) { return d.advice!=Advice::ExactClassUnknown && d.advice!=Advice::Unclassified; }
 sco_result DoCompare(uint64_t id) {
-    g.differences.clear(); PresetStore store; auto result=store.Open(g.api,g.self); if(result!=SCO_OK) { g.status="Preset storage unavailable."; return result; }
-    Preset saved,current; result=store.Load(id,saved); if(result!=SCO_OK) { g.status="Preset could not be read."; return result; }
-    result=CaptureNow(current); if(result!=SCO_OK) { g.status="Current layout unavailable or incomplete."; return result; }
-    if(!Compare(saved,current,g.differences)) { g.status="Layouts differ; capture a new preset for this layout."; return SCO_UNAVAILABLE; }
-    g.status="Category comparison only. Review gear manually; no changes are applied."; return SCO_OK;
+    g.differences.clear(); PresetStore store; auto result=store.Open(g.api,g.self); if(result!=SCO_OK) { g.status="Saved outfits can't be reached right now."; return result; }
+    Preset saved,current; result=store.Load(id,saved); if(result!=SCO_OK) { g.status="Couldn't read that saved outfit."; return result; }
+    result=CaptureNow(current); if(result!=SCO_OK) { g.status="Couldn't read what you're wearing right now, so there is nothing to compare."; return result; }
+    if(!Compare(saved,current,g.differences)) { g.status="This outfit doesn't line up with your current gear, so it can't be compared. Save a new outfit instead."; return SCO_UNAVAILABLE; }
+    g.status=std::none_of(g.differences.begin(),g.differences.end(),Actionable)
+        ? "Compared with what you're wearing. Everything is the same kind of item as when you saved."
+        : "Compared with what you're wearing. The differences are below. Nothing was changed, so swap items yourself.";
+    return SCO_OK;
 }
+// What to do about one slot, in the player's words. Only the kind of item is compared, never the exact item.
 const char* AdviceText(Advice a) {
     switch(a) {
-    case Advice::ExactClassUnknown: return "same category; exact class unknown";
-    case Advice::EquipCategory: return "manually equip required category";
-    case Advice::RemoveItem: return "captured empty; inspect or remove manually";
-    case Advice::ReplaceCategory: return "different category; inspect or replace manually";
-    case Advice::Unclassified: return "unclassified port; no gear advice";
-    default: return "unknown; inspect manually";
+    case Advice::ExactClassUnknown: return "same kind of item as when you saved.";
+    case Advice::EquipCategory: return "you had an item here when you saved, and nothing now. Put one on.";
+    case Advice::RemoveItem: return "this was empty when you saved. Take off what you have here.";
+    case Advice::ReplaceCategory: return "a different kind of item than when you saved. Swap it yourself.";
+    case Advice::Unclassified: return "not compared.";
+    default: return "couldn't be compared. Check it yourself.";
     }
+}
+// "helmet" -> "Helmet", "left_arm" -> "Left arm": slot names as a player reads them.
+std::string SlotName(const std::string& key) {
+    std::string name;
+    for (const char c:key) name+=(c=='_' || c=='-' || c=='.') ? ' ' : c;
+    if (!name.empty() && name[0]>='a' && name[0]<='z') name[0]=static_cast<char>(name[0]-('a'-'A'));
+    return name;
 }
 void Publish();
 void Event(const char* panel, const sco_widget_event* event, void* ctx) {
@@ -116,7 +130,7 @@ void Event(const char* panel, const sco_widget_event* event, void* ctx) {
         } else if (event->node_id==2 && event->kind==SCO_WIDGET_BUTTON) (void)DoCapture();
         else if (event->node_id==3 && event->kind==SCO_WIDGET_BUTTON) (void)DoSave();
         else if (event->node_id==4 && event->kind==SCO_WIDGET_BUTTON) {
-            if (Reload()!=SCO_OK) g.status="Preset picker unavailable.";
+            if (Reload()!=SCO_OK) g.status="The saved outfit list isn't available right now.";
         } else if (event->node_id==5 && event->kind==SCO_WIDGET_COMBO && event->index>=0 &&
                    static_cast<size_t>(event->index)<g.published.size()) {
             const auto id=g.published[static_cast<size_t>(event->index)].id;
@@ -128,7 +142,7 @@ void Event(const char* panel, const sco_widget_event* event, void* ctx) {
                    static_cast<size_t>(g.selection)<g.items.size() && g.published_selection!=0 &&
                    g.items[static_cast<size_t>(g.selection)].id==g.published_selection) (void)DoDelete(g.published_selection);
     } catch (...) {
-        try { g.status="Preset operation failed."; } catch (...) {}
+        try { g.status="That didn't work. Try again."; } catch (...) {}
     }
     // Presentation failure must not overwrite the operation's result or escape the callback.
     try { Publish(); } catch (...) {}
@@ -141,24 +155,29 @@ void Publish() {
     auto add=[&](uint32_t kind,uint32_t id,const char* label,uint32_t flags=0)->sco_widget_node& {
         sco_widget_node node{}; node.size=sizeof(node); node.kind=kind; node.id=id; node.label=label; node.flags=flags; nodes.push_back(node); return nodes.back();
     };
-    add(SCO_WIDGET_TEXT_INPUT,1,"Preset name").text=g.name.c_str();
-    add(SCO_WIDGET_BUTTON,2,"Capture complete layout");
-    add(SCO_WIDGET_BUTTON,3,"Save captured preset",g.fresh ? 0u : SCO_WIDGET_DISABLED);
-    add(SCO_WIDGET_BUTTON,4,"Refresh saved presets");
-    auto& picker=add(SCO_WIDGET_COMBO,5,"Saved preset"); picker.items=names.empty()?nullptr:names.data(); picker.item_count=static_cast<uint32_t>(names.size()); picker.index=g.selection;
-    add(SCO_WIDGET_BUTTON,6,"Compare current layout",g.selection>=0 ? 0u : SCO_WIDGET_DISABLED);
+    auto under=[&](uint32_t parent,uint32_t kind,uint32_t id,const char* label,uint32_t flags=0)->sco_widget_node& {
+        auto& node=add(kind,id,label,flags); node.parent=parent; return node;
+    };
+    // In the order a player uses it: check what you wear, save it, then compare or delete saved outfits.
+    add(SCO_WIDGET_COLUMN,20,"Save what you're wearing");
+    under(20,SCO_WIDGET_TEXT_INPUT,1,"Outfit name").text=g.name.c_str();
+    add(SCO_WIDGET_ROW,23,"").parent=20;
+    under(23,SCO_WIDGET_BUTTON,2,"Check what I'm wearing");
+    under(23,SCO_WIDGET_BUTTON,3,"Save outfit",g.fresh ? 0u : SCO_WIDGET_DISABLED);
+    add(SCO_WIDGET_COLUMN,21,"Saved outfits");
+    auto& picker=under(21,SCO_WIDGET_COMBO,5,"Saved outfit"); picker.items=names.empty()?nullptr:names.data(); picker.item_count=static_cast<uint32_t>(names.size()); picker.index=g.selection;
+    add(SCO_WIDGET_ROW,24,"").parent=21;
+    under(24,SCO_WIDGET_BUTTON,6,"Compare with what I'm wearing",g.selection>=0 ? 0u : SCO_WIDGET_DISABLED);
+    under(24,SCO_WIDGET_BUTTON,9,"Delete outfit",g.selection>=0 ? 0u : SCO_WIDGET_DISABLED);
+    under(24,SCO_WIDGET_BUTTON,4,"Refresh list");
+    under(21,SCO_WIDGET_LABEL,8,"Comparing only tells you what differs. It never changes your gear.");
     add(SCO_WIDGET_LABEL,7,g.status.c_str());
-    add(SCO_WIDGET_LABEL,8,"Category-level advice only; no equipment or movement commands are executed.");
-    add(SCO_WIDGET_BUTTON,9,"Delete selected preset",g.selection>=0 ? 0u : SCO_WIDGET_DISABLED);
+    if (std::any_of(g.differences.begin(),g.differences.end(),Actionable)) add(SCO_WIDGET_COLUMN,22,"What is different");
     uint32_t id=100;
     for (const auto& d:g.differences) {
-        char line[240];
-        if (d.advice==Advice::EquipCategory)
-            std::snprintf(line,sizeof(line),"%s: %s (saved category %u)",d.key.c_str(),AdviceText(d.advice),d.wanted);
-        else if (d.advice==Advice::ReplaceCategory || d.advice==Advice::ExactClassUnknown)
-            std::snprintf(line,sizeof(line),"%s: %s (saved %u, current %u)",d.key.c_str(),AdviceText(d.advice),d.wanted,d.current);
-        else std::snprintf(line,sizeof(line),"%s: %s",d.key.c_str(),AdviceText(d.advice));
-        labels.emplace_back(line); add(SCO_WIDGET_LABEL,id++,labels.back().c_str());
+        if (!Actionable(d)) continue;
+        labels.push_back(SlotName(d.key)+": "+AdviceText(d.advice));
+        under(22,SCO_WIDGET_LABEL,id++,labels.back().c_str());
     }
     auto published=g.items; // Allocate before accepting a new callback.
     const uint64_t selected=g.selection>=0 && static_cast<size_t>(g.selection)<published.size()
@@ -168,7 +187,11 @@ void Publish() {
         g.published.swap(published); g.published_selection=selected; g.cookie=cookie;
     }
 }
-sco_result Reply(sco_result result,char* reply,uint32_t size) { if(reply && size) std::snprintf(reply,size,"%s",g.status.c_str()); try { Publish(); } catch (...) {} return result; }
+// `detail` replaces the panel's sentence in the command reply only (the console lists IDs there).
+sco_result Reply(sco_result result,char* reply,uint32_t size,const std::string* detail=nullptr) {
+    if(reply && size) std::snprintf(reply,size,"%s",(detail ? *detail : g.status).c_str());
+    try { Publish(); } catch (...) {} return result;
+}
 sco_result CaptureCommand(const sco_arg*,uint32_t n,void*,char* reply,uint32_t size) { try { return n ? SCO_BAD_ARG : Reply(DoCapture(),reply,size); } catch (...) { return SCO_TOO_MANY; } }
 sco_result SaveCommand(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size) {
     try { if(n!=1 || !args || args[0].type!=SCO_ARG_STRING || !args[0].v.s) return SCO_BAD_ARG;
@@ -180,16 +203,17 @@ sco_result ListCommand(const sco_arg*,uint32_t n,void*,char* reply,uint32_t size
     try {
         if(n) return SCO_BAD_ARG;
         auto r=Reload();
-        g.status=r==SCO_OK ? "Saved preset IDs:" : "Preset picker unavailable.";
+        g.status=r==SCO_OK ? "Refreshed your saved outfits." : "The saved outfit list isn't available right now.";
+        std::string ids=r==SCO_OK ? "Saved preset IDs:" : g.status;
         if (r==SCO_OK) {
             for (const auto& item:g.items) {
                 const auto next=" "+std::to_string(item.id);
-                if (g.status.size()+next.size()>220) { g.status+=" ..."; break; }
-                g.status+=next;
+                if (ids.size()+next.size()>220) { ids+=" ..."; break; }
+                ids+=next;
             }
-            if (g.items.empty()) g.status+=" none";
+            if (g.items.empty()) ids+=" none";
         }
-        return Reply(r,reply,size);
+        return Reply(r,reply,size,&ids);
     }
     catch (...) { return SCO_TOO_MANY; }
 }

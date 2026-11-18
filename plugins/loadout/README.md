@@ -157,6 +157,41 @@ use commands. Actual product renderer integration remains a separate dependency.
 Native code is trusted, not sandboxed. Commands/tick/widget callbacks use only the
 public game-thread routes, reopen tables, and guard complete pointer extents/nulls.
 
+## What the pages show players
+
+Both pages follow the player-wording rules in `docs/plugin-ui.md` ("Writing a page for players"). The panel shows
+plain sentences; command replies and `mod.log` keep the detailed text. Raw class names, versions, capability and command
+names never appear on a page, and the plugin uses 1.0 widget nodes, so there are no tooltips.
+
+**Player** (shown as Gear), in the order a player uses it:
+
+- **Choose gear**: search, a list of gear that can be equipped (items this plugin cannot map to a slot are not offered),
+  page buttons, **Refresh gear list**, the current selection, **Equip selected gear** and **Clear selection**.
+- **Weapons and tools**: *Primary weapon or tool* and *Sidearm or secondary tool* columns (type, searches, weapon,
+  optic, barrel, underbarrel, tool attachment, canister, battery; the first choice is **Keep current**), then
+  **Equip chosen weapons**, **Clear choices** and **Refresh weapon list**.
+- **Progress**: the equip request's status, **Check progress** and **Cancel equipping**. Shown while a request exists or
+  when background equipping is available. Core keeps one request per owner, so a finished request (done or failed) stays
+  until it is released. The page does that for the player: once the last report says the request finished, the equip
+  buttons are enabled again, the button reads **Clear result**, and pressing an equip button releases the finished request
+  first and then starts the new one. A request still in progress is never released that way; an unreadable report does not
+  count as finished.
+- When background equipping is not available, the page says "Changing gear isn't turned on." and shows no picker or equip
+  button. There is no synchronous equip button: the only equip backend a published SDK describes is background equipping,
+  and a build without it can only refuse. Core ships `game.loadout.async` and `game.cvars.read` OFF; they are opt-in
+  switches in Core (`SCO_LOADOUT_ASYNC=1` and `SCO_CVARS_NATIVE=1`), set by the launcher, not by this plugin.
+
+**Squadron 42**: behind the spoiler confirmation, **Outfit** (search, list, page buttons, **Wear selected outfit**,
+progress; only outfits whose every piece has a Core loadout slot are listed, and the page counts the ones it leaves out,
+because Core has no slot for clothing, hats or faces yet), **Game settings**, **Ships** and **Objects**. The settings cannot be changed from the menu; they appear as plain
+"on/off" lines when the game lets them be read, and otherwise as one line saying they can't be read or changed yet. Ships and
+objects forward to the Ships & vehicles and Build features; when the other feature's command is missing the section shows
+one plain line instead of a button. The visor control (synchronous only) is not on the page.
+
+Removed from the pages, still available as commands: `loadout.equip`, `loadout.wear`, `loadout.slots`, `loadout.submit`,
+`loadout.visor`, `loadout.cvars`, `loadout.cvar_set`, `loadout.console`. The typed manual-slot field and its apply and
+submit buttons were developer plumbing.
+
 ## Commands and selections
 
 | Command | Arguments / behavior |
@@ -190,19 +225,19 @@ deferred rather than silently spawning an ordinary ship as a substitute.
 
 The Player panel offers fourteen independent selectors using the same public
 logical slot names as the manual route below. Every selector starts at
-**Unchanged (omit slot)**. Selecting a class adds only that explicit assignment.
-Apply uses `loadout.slots`' synchronous 1.1 path; Submit uses `loadout.submit`'s
-1.2 job path. Both keep the same parent-first ordering, version/capability gates,
-per-slot partial results and retained-job/cancel policy. Clear curated selection
+**Keep current**. Selecting a class adds only that explicit assignment.
+**Equip chosen weapons** uses `loadout.submit`'s 1.2 job path (the synchronous `loadout.slots`
+route has no button). It keeps the parent-first ordering, version/capability gates,
+per-slot partial results and retained-job/cancel policy. **Clear choices**
 changes only local picks; it does not clear equipment or cancel a retained job.
-The manual assignment field remains a separate selection route.
+The manual assignment route is a command only.
 
 The shared search field filters both the gear browser and curated selectors by
 class or friendly name, ignoring ASCII case (at most 63 printable ASCII characters).
-Every selector keeps **Unchanged (omit slot)** first. A selected class stays
+Every selector keeps **Keep current** first. A selected class stays
 visible even when it does not match the filter; changing the search never clears
-or rebinds it. Friendly labels show the original class in brackets, and apply/jobs
-send that exact class through the existing routes. Invalid filter input preserves
+or rebinds it. Choices show a readable name (the seven display aliases below, otherwise the class split into words);
+the raw class is not shown, but search still matches it, and the request sends that exact class. Invalid filter input preserves
 the previous search and selections. Failed panel publication pauses old callbacks
 until a successful retry; it does not reinterpret an old filtered index.
 
@@ -269,8 +304,8 @@ validate this SDK consumer.
 
 ### Manual weapon and tool slots
 
-The development Player panel has a manual assignment field (255 bytes) and apply,
-submit, progress and cancel buttons. Commands accept up to 2047 bytes. For example,
+The Player panel no longer has the manual assignment field or its apply and submit buttons; the
+curated selectors above replace them. The commands accept up to 2047 bytes. For example,
 `primary=KnownWeaponClass,primary_optic=KnownOpticClass` selects a parent and optic;
 the names here are syntax examples, not an item catalogue. The caller must supply
 known classes; only the provider can report whether they exist or can be equipped.
@@ -303,15 +338,15 @@ at most once per existing 200 ms tick. It is a provider job observation, not a
 live inventory check; it also marks async capability revocation. If the service is
 unavailable or refuses, the display
 shows that instead of the previous observation. An invalid report pauses
-automatic polling; use Inspect to request another observation. A valid manual
-inspection resumes polling. No polling submits, retries, cancels or adds a timeout.
+automatic polling; use **Check progress** to request another observation. A valid manual
+check resumes polling. No polling submits, retries, cancels or adds a timeout.
 If the widget provider rejects a panel replacement, it may continue drawing its
 previous copied panel; the plugin disables that panel's callbacks until a later
 successful publication. The latest observation cannot be shown until then.
 
-Job submit controls are disabled when the public 1.2 lifecycle or async capability
-is unavailable; callbacks recheck admission when invoked. Copied primary and sidearm
-choices are labelled as requiring 1.1 for synchronous apply; jobs require 1.2.
+The equip buttons are disabled when the public 1.2 lifecycle or async capability
+is unavailable, and the page says so in one plain line; callbacks recheck admission when invoked.
+`loadout.items` still marks primary and sidearm choices as requiring 1.1 for synchronous apply.
 
 One job is retained until explicit cancellation/release, including after terminal
 status. While retained, another submit or synchronous equip refuses. Progress
@@ -396,7 +431,8 @@ The exact four bool observations are:
 - `pl_lensdisplay.greebles_enabled`
 - `g_squadron_frontend`
 
-Controls are disabled/read-only even with valid values. The module never opens
+The page shows them as plain on/off lines when readable, never as controls, and one line saying so when none is
+readable. The module never opens
 `game.cvars_write`, invokes console, writes `USER.cfg`, or restores/mutates a
 cvar on unload. Forged write widget events also refuse. Failed reads clear prior
 values to unknown. Tick-driven observations are capped at 5 Hz; explicit refresh
@@ -505,7 +541,7 @@ prefix, not words in a variant suffix. It is a UI grouping, not a native type pr
 Searching keeps an already selected item visible. A type change that excludes the
 selected weapon clears that column's UI assignments, including its attachments;
 switching between two selected weapon classes also resets that column's attachment
-choices. Choosing the first parent or Unchanged preserves independent attachment
+choices. Choosing the first parent or Keep current preserves independent attachment
 assignments. The other column is untouched. Reloading the slot catalogue resets
 types and per-column searches. Filtering never submits/applies equipment, cancels
 a retained job, or unequips anything in the game. Existing version/capability and

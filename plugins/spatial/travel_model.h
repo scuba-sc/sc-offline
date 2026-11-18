@@ -34,6 +34,9 @@ inline std::string SpotText(const Spot& s) {
         std::snprintf(line,sizeof(line),"spot %.6f %.6f %.6f %s\n",z.pos[0],z.pos[1],z.pos[2],z.name.c_str()); out+=line;
         // Additive extension: old readers ignore pose lines; original spot syntax is unchanged.
         std::snprintf(line,sizeof(line),"pose %.17g %.17g %.17g %.17g\n",z.rot[0],z.rot[1],z.rot[2],z.rot[3]); out+=line;
+        // Additive too: the game's id for the zone when it was saved. Resolve tries it first (an id the
+        // game still streams is re-validated by name), so a spot can be reached from outside its zone.
+        if (z.zone) { std::snprintf(line,sizeof(line),"zoneid %llu\n",static_cast<unsigned long long>(z.zone)); out+=line; }
     }
     return out;
 }
@@ -52,6 +55,9 @@ inline bool ParseSpot(const std::string& text,Spot& out) {
             if (!(fields>>z.pos[0]>>z.pos[1]>>z.pos[2])) continue;
             std::getline(fields>>std::ws,z.name);
             if (!z.name.empty() && z.name.size()<96 && Valid(z)) next.z.push_back(z);
+        } else if (line.starts_with("zoneid ") && !next.z.empty()) {
+            unsigned long long id=0; std::istringstream fields(line.substr(7));
+            if (fields>>id && id) next.z.back().zone=id; // a bad hint is ignored; the name still resolves
         } else if (line.starts_with("pose ") && !next.z.empty()) {
             auto z=next.z.back(); std::istringstream fields(line.substr(5));
             if (!(fields>>z.rot[0]>>z.rot[1]>>z.rot[2]>>z.rot[3]) || !Valid(z)) return false;
@@ -84,11 +90,22 @@ inline sco_result Capture(const sc_spatial_v1* old,const sc_game_spatial_v1* sp,
     if (!sp->zone_record(player.zone,&final) || final.epoch!=epoch) return SCO_UNAVAILABLE;
     out=std::move(next); return SCO_OK;
 }
+// game.spatial has no name lookup for zones the player is not inside, but zone_record observes any id the
+// game still streams. So the saved id comes first, accepted only when the record still carries the saved
+// name; the name lookup (the player's own ancestry) is the fallback for spots saved without an id.
+inline bool LookUp(const sc_game_spatial_v1* sp,const ZoneSpot& saved,sc_game_zone& z) {
+    if (saved.zone) {
+        sc_game_zone byId{}; byId.size=sizeof(byId);
+        if (sp->zone_record(saved.zone,&byId) && RecordValid(byId) && byId.zone_id==saved.zone && saved.name==byId.name) { z=byId; return true; }
+    }
+    z={}; z.size=sizeof(z);
+    return sp->find_zone(saved.name.c_str(),&z)!=0;
+}
 inline sco_result Resolve(const sc_game_spatial_v1* sp,const Spot& spot,Restoration& out) {
     if (!TRAVEL_FN(sp,sc_game_spatial_v1,find_zone) || !TRAVEL_FN(sp,sc_game_spatial_v1,zone_record)) return SCO_UNAVAILABLE;
     for (size_t i=0;i<spot.z.size() && i<12;++i) {
         sc_game_zone z{}; z.size=sizeof(z);
-        if (!sp->find_zone(spot.z[i].name.c_str(),&z)) continue;
+        if (!LookUp(sp,spot.z[i],z)) continue;
         if (!RecordValid(z) || (i && !z.parent_id)) return SCO_UNAVAILABLE;
         sc_game_zone current{}; current.size=sizeof(current);
         if (!sp->zone_record(z.zone_id,&current) || current.epoch!=z.epoch || current.parent_id!=z.parent_id || std::strcmp(current.name,z.name)) return SCO_UNAVAILABLE;
@@ -116,10 +133,35 @@ inline sco_result Scan(const sc_game_spatial_v1* sp,std::vector<sc_game_zone>& o
     }
     return SCO_UNAVAILABLE;
 }
+// Already there: the player is within this many metres of the saved spot, so no move is requested.
+// game.relocation only completes when the player is within 0.05 m and facing within about 0.16 degrees
+// of the saved pose, so a player who stands at the spot but has turned slightly, or drifts a little,
+// would wait the whole 30 s timeout. 2 m is far below any move a player would notice (walking pace is
+// about 1.5 m/s) and far above the 6-decimal rounding of a saved position and ordinary standing drift.
+inline constexpr double already_there_metres=2.0;
+inline constexpr const char* already_there_plain="You are already at that spot.";
+// True when the player's current position, expressed in the saved spot's zone, is within
+// already_there_metres of the saved position. Any failed read answers false: the move goes ahead as before.
+inline bool AlreadyThere(const sc_spatial_v1* old,const sc_game_spatial_v1* sp,const Restoration& r) {
+    if (!TRAVEL_FN(old,sc_spatial_v1,player_pose) || !TRAVEL_FN(sp,sc_game_spatial_v1,pose_to_zone) || !r.pose.zone) return false;
+    Pose player;
+    if (!old->player_pose(player.pos,player.rot,&player.zone) || !player.zone || !Valid(player)) return false;
+    double pos[3]{},rot[4]{};
+    if (!sp->pose_to_zone(player.zone,r.pose.zone,player.pos,player.rot,pos,rot)) return false;
+    double d2=0;
+    for (int i=0;i<3;++i) {
+        if (!std::isfinite(pos[i])) return false;
+        const double d=pos[i]-r.pose.pos[i]; d2+=d*d;
+    }
+    return d2<=already_there_metres*already_there_metres;
+}
 // game.relocation 1.0 (sc_relocation.h): one request per move, tracked by ticket across ticks.
 inline constexpr uint32_t relocation_timeout_ms=30000;
 inline constexpr const char* unavailable="Player relocation unavailable: game.relocation service or request is unavailable; not moved";
 inline constexpr const char* switched_off="Moving the player is off in this plugin's settings (relocation = false); not moved";
+// The same two refusals as a player reads them (the strings above stay for command replies and logs).
+inline constexpr const char* unavailable_plain="Travel isn't available in this game right now. You haven't moved.";
+inline constexpr const char* switched_off_plain="Travel is turned off in this plugin's settings. Turn on \"Allow moving the player\" to use it.";
 // Fresh capability and full member extents before every request; ticket unchanged on refusal.
 inline sco_result Relocate(const sco_api* api,const sc_relocation_v1* service,sco_plugin* self,const Pose& target,uint64_t& ticket) {
     if (!TRAVEL_FN(api,sco_api,has) || !api->has(SC_RELOCATION_NAME)) return SCO_UNAVAILABLE;
@@ -151,6 +193,19 @@ inline const char* ReasonText(uint32_t reason) {
     case SC_RELOCATION_REASON_FAULT: return "relocation provider fault";
     case SC_RELOCATION_REASON_NONE: return "no reason given";
     default: return "unknown reason";
+    }
+}
+// ReasonText for the page: no codes, no service names.
+inline const char* PlainReason(uint32_t reason) {
+    switch (reason) {
+    case SC_RELOCATION_REASON_TIMEOUT: return "the game didn't confirm you arrived in time";
+    case SC_RELOCATION_REASON_SESSION: return "your session or star system changed";
+    case SC_RELOCATION_REASON_SAFETY: return "travel isn't allowed right now";
+    case SC_RELOCATION_REASON_SYSTEM: return "that place is in a different star system";
+    case SC_RELOCATION_REASON_TRANSPORT: return "the game didn't start the move";
+    case SC_RELOCATION_REASON_FAULT: return "something went wrong in the game";
+    case SC_RELOCATION_REASON_NONE: return "no reason was given";
+    default: return "the reason isn't known";
     }
 }
 }

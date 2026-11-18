@@ -27,6 +27,8 @@ CLANG=${CLANG:-$(command -v /opt/homebrew/opt/llvm/bin/clang++ || command -v cla
 # Fail closed: a missing tool must never read as "0 new diagnostics".
 [ -n "${CLANG:-}" ] && [ -x "$CLANG" ] || { echo "check: clang++ not found (set CLANG)"; exit 2; }
 command -v python3 >/dev/null || { echo "check: python3 not found"; exit 2; }
+# Host wiring guards (source text): menu start, product capabilities, ASOP section, documented variables.
+python3 "$ROOT/tools/check_host_wiring.py" || exit 1
 [ -d "${MWINC:-}" ] && [ -f "${CXXINC:-}/string" ] || { echo "check: mingw-w64 headers not found (set MINGW_INCLUDE / MINGW_CXX_INCLUDE)"; exit 2; }
 # src/ includes sco-core's headers (sco/*.h, sco_api.h, sco_lua.h, sco_lua_game.h and the Lua C
 # API it brings) from the submodule.

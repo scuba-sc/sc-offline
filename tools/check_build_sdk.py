@@ -34,7 +34,7 @@ def main(args):
     (source / 'plugins').mkdir(parents=True)
     shutil.copytree(ROOT / 'plugins/build', source / 'plugins/build')
     (source / 'tools').mkdir()
-    for name in ('build_picker_test.cpp', 'build_reset_test.cpp', 'workflow_module.h'):
+    for name in ('build_picker_test.cpp', 'build_reset_test.cpp', 'workflow_module.h', 'panel_dump.h'):
         shutil.copy2(ROOT / 'tools' / name, source / 'tools' / name)
     build = work / 'plugin-build'
     configure = ['cmake', '-S', source / 'plugins/build', '-B', build,
@@ -119,7 +119,7 @@ def main(args):
         # The same fixture must detect the missing active picker owner.
         publish = source / 'plugins/build/picker.h'
         publish_original = publish.read_text()
-        if 'Message("Choose a row;' not in publish_original:
+        if 'Message("Choose an item from the list' not in publish_original:
             raise AssertionError('Picker publication red-arm marker missing')
         publish.write_text(publish_original.replace('state.api=api;', 'state.api=nullptr;'))
         run(['cmake', '--build', build, '--target', 'clean'], work)

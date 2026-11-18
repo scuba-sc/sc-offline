@@ -8,8 +8,12 @@ did not). The obtain/proof recipes below use that archive.
 Trusted native code, **GPL-3.0-only**. SDK **2.4.0**, frozen plugin ABI **1.1**,
 Star Citizen game pack **0.8.0**. This source builds independently of the host.
 No private headers, engine memory, custom spawner, network or ImGui dependency.
-The Vehicles panel uses public `sco.widgets`: class filtering/paging, manual
-class, height, seat-name/pilot/none, Flight Ready and owned boarding/cancel/clear.
+The Vehicles panel uses public `sco.widgets`, in sections a player follows top to
+bottom: **Choose a ship** (search, paged list, **Reload ship list**, a typed ship name),
+**Spawn it** (**Height above you**, **After spawning**: *Get in as pilot* or *Stay outside*,
+**Start ready to fly**, **Spawn ship**), **Ships you spawned** (**Get in**, **Remove ship**,
+**Remove all my ships**, **Check status**) and **Last result**. There is no start-place
+button: `spawn.startup` can only refuse, so the panel leaves it out.
 Infinite ship ammo is on the Creative tab, owned by the creative plugin; this panel
 has no creative control and invokes no `creative.*` command.
 Picker actions use the same command handlers/jobs, not legacy engine helpers.
@@ -67,7 +71,7 @@ SDK game-thread path. No workers or private thread handoff are created.
 | Command | Typed arguments / behavior |
 | --- | --- |
 | `spawn.pack_list <ordinal:int>` | Copies one enabled `lists/ships.txt` startup snapshot; zero-based matching-pack ordinal. Discovery order and duplicate names are retained, not merged or silently overwritten. Empty lists succeed; binary lists, insufficient output capacity, missing/short/null service methods and provider failures refuse. Does not spawn a class; the public Vehicles picker consumes the same catalog snapshots. |
-| `spawn.ship <class:string> <height:float>` | Existing ID, argument names/types/count preserved. Class length 1–63; finite height 0–10000 m along the player's current zone Z axis. Returns the final owned session ID before it streams in. No automatic boarding: the Vehicles panel's **Spawn** button runs `spawn.ship_options` with its seat field (default `pilot`) and Flight Ready toggle (default on; greyed out and sent off unless the seat is `pilot`), which is the spawn-and-board behaviour. |
+| `spawn.ship <class:string> <height:float>` | Existing ID, argument names/types/count preserved. Class length 1–63; finite height 0–10000 m along the player's current zone Z axis. Returns the final owned session ID before it streams in. No automatic boarding: the Vehicles panel's **Spawn ship** button runs `spawn.ship_options` with its **After spawning** choice (default *Get in as pilot*, sent as `pilot`; *Stay outside* is sent as `none`) and **Start ready to fly** toggle (default on; greyed out and sent off unless the choice is *Get in as pilot*), which is the spawn-and-board behaviour. |
 | `spawn.ship_options <class:string> <height:float> <seat:string> <power:bool>` | `none` means no boarding; `pilot` selects the known usable pilot seat; another string requires **every word**, case-insensitively, in the copied seat name. Power is accepted only with `pilot`. Boarding providers/capabilities are preflighted before spawn. |
 | `spawn.board <id:int> <seat:string> <power:bool>` | Choose a seat later on an ID this plugin still owns. Uses the same boarding workflow; refuses foreign/retrieved/crew IDs. `none` is not a board target. |
 | `spawn.status` | Reports workflow pending/ready/boarding/removing counts. Ready means workflow completed, not guaranteed ongoing visibility. Missing observation provider is unavailable, never absence. |

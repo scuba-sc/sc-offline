@@ -106,6 +106,35 @@ int main() {
     state=9; assert(Poll(&rel,nullptr,ticket,st)==SCO_FAILED && st.state==SC_RELOCATION_FAILED); // unknown state: output unchanged
     assert(Poll(&rel,nullptr,7,st)==SCO_NOT_FOUND && Poll(&rel,nullptr,0,st)==SCO_UNAVAILABLE);
     cap=false; assert(Relocate(&api,&rel,nullptr,s.z[1],ticket)==SCO_UNAVAILABLE && requests==1); // re-checked per request
+    // Already there: the player (1,0,2 in zone1) is within 2 m of the saved spot, so no move is requested.
+    sp.size=sizeof(sp); sp.find_zone=Find; sp.zone_record=Record; sp.pose_to_zone=Convert; Restoration near;
+    near.pose.zone=1; near.pose.pos[0]=1.5; near.pose.pos[1]=0; near.pose.pos[2]=2; assert(AlreadyThere(&old,&sp,near));
+    near.pose.pos[0]=2.9; assert(AlreadyThere(&old,&sp,near)); near.pose.pos[0]=3.1; assert(!AlreadyThere(&old,&sp,near));
+    near.pose.zone=2; near.pose.pos[0]=0; near.pose.pos[1]=2; near.pose.pos[2]=2; assert(AlreadyThere(&old,&sp,near)); // other zone frame
+    near.pose.pos[1]=5; assert(!AlreadyThere(&old,&sp,near));
+    near.pose.zone=0; assert(!AlreadyThere(&old,&sp,near)); near.pose.zone=1;
+    assert(!AlreadyThere(nullptr,&sp,near) && !AlreadyThere(&old,nullptr,near)); // missing service: move proceeds as before
+    // Zone ids are saved with the spot. game.spatial finds a zone by name only inside the player's own ancestry,
+    // so a spot saved elsewhere resolves through zone_record(id): accepted only while the record keeps the saved name.
+    {
+        sc_game_spatial_v1 far{sizeof(far),Convert,Record,[](const char*,sc_game_zone*)->int{return 0;},List}; // find_zone answers nothing: player is elsewhere
+        Spot saved; assert(Capture(&old,&sp,saved)==SCO_OK);
+        const auto kept=SpotText(saved); assert(kept.find("zoneid 1\n")!=std::string::npos && kept.find("zoneid 3\n")!=std::string::npos);
+        Spot reread; assert(ParseSpot(kept,reread) && reread.z.size()==3 && reread.z[0].zone==1 && reread.z[1].zone==2 && reread.z[2].zone==3 && SpotText(reread)==kept);
+        Restoration far_r; assert(Resolve(&far,reread,far_r)==SCO_OK && far_r.level==0 && !far_r.partial && far_r.pose.zone==1); // exact, by id
+        Spot old_file; assert(ParseSpot("spot 1 2 3 zone1\npose 0 0 0 1\n",old_file) && old_file.z[0].zone==0); // old files carry no id
+        assert(Resolve(&far,old_file,far_r)==SCO_UNAVAILABLE); // and cannot be found by name from outside the zone: honest refusal
+        assert(Resolve(&sp,old_file,far_r)==SCO_OK && far_r.pose.zone==1); // still found by name inside it
+        Spot renamed=reread; renamed.z[0].name="somewhere_else"; // the id now belongs to another place: never trusted
+        assert(Resolve(&far,renamed,far_r)==SCO_OK && far_r.level==1 && far_r.partial && far_r.pose.zone==2);
+        Spot reused=reread; reused.z[1].zone=1; reused.z[0].zone=0; reused.z[0].name="gone"; // zone1 exists under another name, so level 1 must not match;
+        assert(Resolve(&far,reused,far_r)==SCO_UNAVAILABLE); // level 2 is the root, and a root-only match refuses as before
+        Spot junk; assert(ParseSpot("spot 1 2 3 zone1\nzoneid nope\nzoneid 0\n",junk) && junk.z[0].zone==0); // a bad hint is ignored, the spot is kept
+        far.zone_record=nullptr; assert(Resolve(&far,reread,far_r)==SCO_UNAVAILABLE); // a service without zone_record is refused outright
+    }
+    const std::string timeout=PlainReason(SC_RELOCATION_REASON_TIMEOUT);
+    assert(timeout.find("too long")==std::string::npos && timeout.find("time")!=std::string::npos);
+    assert(std::string(already_there_plain)=="You are already at that spot.");
     assert(!ParseSpot("spot nan 0 0 bad\n",again));
     std::puts("travel model: nested rotated poses, legacy format, partial/root refusal, expiry, 256/64 bounded scan, partial/null tails, game.relocation request/status gating: PASS");
 }

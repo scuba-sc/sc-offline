@@ -22,5 +22,5 @@ void  PrettyBuildName(char* out, size_t n, const char* name);
 
 // Closes the menu after this frame (a spawn or equip that should show the game).
 void  MenuClose();
-// Selects the first tab in the next frame (the Squadron 42 spoiler gate's Back).
+// Opens the first page of the sidebar in the next frame (the Squadron 42 spoiler gate's Back).
 void  MenuSelectFirstTab();

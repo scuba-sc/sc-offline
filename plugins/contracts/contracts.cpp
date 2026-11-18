@@ -21,6 +21,45 @@ const sco_plugin_info info{sizeof(sco_plugin_info), SCO_API_MAJOR, SCO_API_MINOR
 enum Action { Summary, Offer, Mission, Accept, Objective, Advance, Abandon, Ingest, Cancel, Resume, Balance, Apply, Receipt, References, Reference };
 struct Spec { const char* name; Action action; uint32_t nargs; };
 const Spec specs[] = {{"contracts.status", Summary, 0}, {"contracts.offer", Offer, 1}, {"contracts.mission", Mission, 1}, {"contracts.accept", Accept, 2}, {"contracts.objective", Objective, 3}, {"contracts.advance", Advance, 2}, {"contracts.abandon", Abandon, 1}, {"contracts.ingest", Ingest, 1}, {"contracts.cancel", Cancel, 0}, {"contracts.resume", Resume, 0}, {"contracts.balance", Balance, 0}, {"contracts.apply", Apply, 3}, {"contracts.receipt", Receipt, 1}, {"contracts.references", References, 2}, {"contracts.reference", Reference, 3}};
+// Core capability each command needs. These commands are deliberately not registered with a Core gate
+// (sco_command.capability stays null): Core refuses a gated command before the plugin runs and returns
+// an empty reply, so the player would get no explanation. Execute() checks has() itself and refuses in
+// plain words. Metadata reads, cancel and resume need no provider. Core has no abandon capability yet,
+// so abandon asks for the accept one (see the Core proposal); a second name covers commands that need
+// two (accept also reads offers).
+struct Needs { const char* first; const char* second; };
+Needs NeedsOf(Action action) {
+    switch (action) {
+    case Summary: case Offer: case Mission: return {"game.missions.read", nullptr};
+    case Accept: return {"game.missions.read", "game.missions.accept"};
+    case Abandon: return {"game.missions.accept", nullptr};
+    case Objective: case Advance: return {"game.missions.progress", nullptr};
+    case Ingest: return {"game.missions.scripts", nullptr};
+    case Balance: case Receipt: return {"game.economy.read", nullptr};
+    case Apply: return {"game.economy.apply", nullptr};
+    default: return {nullptr, nullptr};
+    }
+}
+// Names the first missing capability, or null when all are on. A host that offers no has() cannot
+// say, so the call goes ahead and the provider answers.
+const char* MissingCapability(Action action) {
+    if (!MEMBER(api, sco_api, has)) return nullptr;
+    const auto n = NeedsOf(action);
+    if (n.first && !api->has(n.first)) return n.first;
+    if (n.second && !api->has(n.second)) return n.second;
+    return nullptr;
+}
+// Plain words for the player; the raw Core capability name is never shown.
+const char* PlainNeed(const char* capability) {
+    const std::string_view c = capability ? capability : "";
+    if (c == "game.missions.read") return "reading your contracts";
+    if (c == "game.missions.accept") return "accepting or dropping contracts";
+    if (c == "game.missions.progress") return "updating contract progress";
+    if (c == "game.missions.scripts") return "adding contract scripts";
+    if (c == "game.economy.read") return "reading your wallet";
+    if (c == "game.economy.apply") return "changing your wallet";
+    return "this action";
+}
 const sco_arg_def defs[] = {{"id_or_index", SCO_ARG_INT, 0, "Nonnegative offer index or positive mission ID"}, {"key_or_phase", SCO_ARG_INT, 0, "Receipt key or expected phase"}, {"objective", SCO_ARG_INT, 0, "Expected objective"}};
 const sco_arg_def referenceDefs[] = {{"list_ordinal", SCO_ARG_INT, 0, "Startup-scoped public List ordinal for lists/contract_scripts.txt"}, {"row_index", SCO_ARG_INT, 0, "Zero-based metadata row; comments/blank lines excluded"}, {"reference_index", SCO_ARG_INT, 0, "Zero-based non-dash reference; no native installation claim"}};
 template<class T> const T* Service(const char* name, uint32_t version) {
@@ -118,7 +157,7 @@ bool Declaration(std::string_view bytes) {
 }
 sco_result Execute(const sco_arg* args, uint32_t count, void* context, char* reply, uint32_t capacity) {
     if (!reply || !capacity || !context) return SCO_BAD_ARG;
-    std::snprintf(reply, capacity, "Contracts provider unavailable; no private fallback");
+    std::snprintf(reply, capacity, "Contracts from this tool are not available right now. Your in-game contracts in the mobiGlas still work as usual.");
     if (!api || !self) return SCO_UNAVAILABLE;
     const auto& spec = *static_cast<const Spec*>(context);
     if (spec.action == References || spec.action == Reference)
@@ -134,6 +173,10 @@ sco_result Execute(const sco_arg* args, uint32_t count, void* context, char* rep
     }
     if (cancelled && (spec.action == Accept || spec.action == Objective || spec.action == Advance || spec.action == Ingest || spec.action == Apply)) {
         std::snprintf(reply, capacity, "Consumer cancelled; no provider mutation; receipts preserved"); return SCO_UNAVAILABLE;
+    }
+    if (const char* missing = MissingCapability(spec.action)) {
+        std::snprintf(reply, capacity, "Contracts from this tool are not available yet: this game build does not allow %s yet. Your in-game contracts in the mobiGlas still work as usual.", PlainNeed(missing));
+        return SCO_UNAVAILABLE;
     }
     if (spec.action == Balance || spec.action == Apply || spec.action == Receipt) {
         const auto* e = Service<sc_economy_v1>(SC_ECONOMY_SERVICE_NAME, SC_ECONOMY_SERVICE_VERSION);

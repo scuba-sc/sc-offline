@@ -36,7 +36,7 @@ def main(args):
     shutil.copytree(ROOT / 'plugins/crew', feature)
     shutil.copy2(ROOT / 'plugins/picker.h', source / 'plugins/picker.h')
     (source / 'tools').mkdir()
-    for name in ('crew_workflow_test.cpp', 'workflow_module.h'):
+    for name in ('crew_workflow_test.cpp', 'workflow_module.h', 'panel_dump.h'):
         shutil.copy2(ROOT / 'tools' / name, source / 'tools' / name)
     flags = []
     if args.sanitizers:

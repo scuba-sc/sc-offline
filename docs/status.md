@@ -1,5 +1,25 @@
 # What is not verified in game
 
+## Host wiring fixes (menu-organization branch) — NOT RUN IN GAME
+
+Synthetic and source-text checks only; nothing here was run in game.
+
+- The product capabilities `teleport` and `spawn.ship` follow the rows behind them (Core's
+  registry default is ON). `teleport` used to be forced OFF with the reason "unavailable on this
+  game build"; it now reports the teleport rows, and a plugin that follows the SDK docs
+  (`has("teleport")`) is no longer told a working service is unavailable. `quantum` stays held off
+  by the product and says so in its reason. `src/feature_caps.h` holds the table;
+  `tools/offline-host/feature_caps_test.cpp` checks it against Core's `sdk/status_registry.json`.
+- The menu starts even when the legacy ship spawner did not resolve; only the ship pages depend
+  on the spawner. `tools/check_host_wiring.py` guards it (source text only).
+- The "Your own ships" section is left out unless Core's `game.asop.selection.file` capability is
+  on. The shipped host never composes that provider, so the section would only say "isn't
+  available". `tools/menu_panel_group_test.cpp` covers the rule.
+- Private sessions: the host logs that a LAN needs both `SC_OFFLINE_MULTIPLAYER_BIND` and
+  `SC_OFFLINE_MULTIPLAYER_PEERS`, and that `multiplayer_allow` only narrows firewall evidence.
+  Still owed: correct the `docs/data-files.md` rows and the `sc-offline.ini` comment (tracked in
+  `PENDING_DOCS` of `tools/check_host_wiring.py`).
+
 ## 2026-11-13: process-retained native startup — NOT RUN
 
 With a Core that provides `Composition::ProcessRetained`, the product's native startup

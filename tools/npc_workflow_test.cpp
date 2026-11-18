@@ -4,6 +4,8 @@
 #include "sc_actors.h"
 #include "sc_entities.h"
 #include "sc_spatial.h"
+#include "sco_content.h"
+#include "sco_widgets.h"
 #include <cmath>
 #if defined(NPC_EXTERNAL_TEST)
 namespace entry {
@@ -26,6 +28,7 @@ namespace entry = sco::features::npc;
 #include <set>
 #include <bit>
 #include <string>
+#include <vector>
 
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "FAIL line %d: %s\n", __LINE__, #x); std::exit(1); } } while (0)
 namespace {
@@ -51,6 +54,18 @@ const char* missing_cap = nullptr;
 sc_actors_v1 actors{};
 sc_entities_v1 entities{};
 sc_spatial_v1 spatial{};
+sco_widgets_v1 widgets{};
+sco_content_v1 content{};
+bool publish_widgets = true, publish_content = false, content_fails = false;
+std::vector<std::string> panel_labels;   // labels of the nodes in the last panel the plugin drew
+std::vector<uint32_t> panel_ids;
+sco_widget_event_fn panel_fn = nullptr;
+std::string last_log, last_actor_reason = "synthetic reason";
+std::set<std::string> asked_caps;
+int content_loads = 0;
+// Only names that exist in Core answer yes; a made-up name must read as not ready.
+const std::set<std::string> core_caps{"game.actors.spawn_npc", "game.actors.despawn", "game.actors.local_player",
+    "game.actors.health", "game.actors.state", "game.entities.transform", "game.entities.lookup"};
 int Alive(uint64_t id) { CHECK(id == spawn_id); return streamed; }
 sco_result Transform(uint64_t id, double pos[3], double rot[4], uint64_t* zone) {
     CHECK(id == spawn_id); ++transform_calls;
@@ -63,11 +78,41 @@ sco_result QueryService(const char* name, uint32_t version, const void** out) {
     CHECK(version == 0x10000);
     *out = !std::strcmp(name, SC_ACTORS_NAME) ? (publish_actors ? static_cast<const void*>(&actors) : nullptr) :
            !std::strcmp(name, SC_ENTITIES_NAME) ? (publish_entities ? static_cast<const void*>(&entities) : nullptr) :
-           (publish_spatial ? static_cast<const void*>(&spatial) : nullptr);
+           !std::strcmp(name, SC_SPATIAL_SERVICE_NAME) ? (publish_spatial ? static_cast<const void*>(&spatial) : nullptr) :
+           !std::strcmp(name, SCO_WIDGETS_NAME) ? (publish_widgets ? static_cast<const void*>(&widgets) : nullptr) :
+           !std::strcmp(name, SCO_CONTENT_NAME) ? (publish_content ? static_cast<const void*>(&content) : nullptr) : nullptr;
     return *out ? SCO_OK : SCO_NOT_FOUND;
 }
-int Has(const char* cap) { return !missing_cap || std::strcmp(cap, missing_cap); }
-void Log(sco_plugin* self, sco_log_level, const char*) { CHECK(self == owner); }
+int Has(const char* cap) {
+    asked_caps.insert(cap);
+    return core_caps.count(cap) && (!missing_cap || std::strcmp(cap, missing_cap));
+}
+void Log(sco_plugin* self, sco_log_level, const char* text) { CHECK(self == owner); last_log = text; }
+sco_result SetPanel(sco_plugin*, const char*, const char*, const sco_widget_node* nodes, uint32_t count, uint32_t stride,
+                    sco_widget_event_fn fn, void*) {
+    CHECK(stride == sizeof(sco_widget_node));
+    panel_labels.clear(); panel_ids.clear(); panel_fn = fn;
+    for (uint32_t i = 0; i < count; ++i) { panel_labels.push_back(nodes[i].label ? nodes[i].label : ""); panel_ids.push_back(nodes[i].id); }
+    return SCO_OK;
+}
+sco_result RemovePanel(sco_plugin*, const char*) { return SCO_OK; }
+sco_result ContentItem(sco_plugin*, sco_content_kind kind, uint32_t ordinal, sco_content_item* out) {
+    if (content_fails) { ++content_loads; return SCO_FAILED; }
+    if (kind != SCO_CONTENT_LIST || ordinal > 0) return SCO_NOT_FOUND;
+    ++content_loads; out->kind = kind; out->id = 7;
+    std::snprintf(out->pack, sizeof(out->pack), "base"); std::snprintf(out->name, sizeof(out->name), "lists/npcs.txt");
+    return SCO_OK;
+}
+sco_result ContentRead(sco_plugin*, uint64_t, void* out, uint32_t* size) {
+    static const char text[] = "synthetic_actor\n";
+    const uint32_t n = sizeof(text) - 1;
+    if (!out) { *size = n; return SCO_OK; }
+    std::memcpy(out, text, n); *size = n; return SCO_OK;
+}
+sco_result ActorReason(sco_plugin*, char* out, uint32_t* size) {
+    std::snprintf(out, *size, "%s", last_actor_reason.c_str()); return SCO_OK;
+}
+bool PanelHas(uint32_t id) { for (auto v : panel_ids) if (v == id) return true; return false; }
 sco_result Register(sco_plugin* self, const sco_command* cmd) {
     CHECK(self == owner); CHECK(cmd->ctx);
     if (registrations++ == fail_registration) return SCO_FAILED;
@@ -104,7 +149,11 @@ void Reset() {
     foreign_ids = foreign_sentinels; crew_ids = crew_sentinels; despawn_attempts.clear();
     pose_pos[0]=1; pose_pos[1]=2; pose_pos[2]=3; pose_rot[0]=pose_rot[1]=pose_rot[2]=0; pose_rot[3]=1;
     spawn_result = remove_result = transform_result = SCO_OK;
-    actors = {}; actors.size = sizeof(actors); actors.spawn_npc = Spawn; actors.despawn = Remove;
+    publish_widgets = true; publish_content = false; content_fails = false; content_loads = 0; last_log.clear(); asked_caps.clear();
+    panel_labels.clear(); panel_ids.clear(); panel_fn = nullptr; last_actor_reason = "synthetic reason";
+    widgets = {}; widgets.size = sizeof(widgets); widgets.set_panel = SetPanel; widgets.remove_panel = RemovePanel;
+    content = {}; content.size = sizeof(content); content.item = ContentItem; content.read = ContentRead;
+    actors = {}; actors.size = sizeof(actors); actors.spawn_npc = Spawn; actors.despawn = Remove; actors.last_error = ActorReason;
     spatial = {}; spatial.size = sizeof(spatial); spatial.player_pose = Pose;
     entities = {}; entities.size = sizeof(entities); entities.alive = Alive; entities.get_transform = Transform;
 }
@@ -130,14 +179,14 @@ void Lifecycle() {
     CHECK(Load(&api, owner) == SCO_OK); CHECK(commands.size() == 4);
     CHECK(std::strcmp(Query()->name, "npc") == 0);
     CHECK(SpawnOne() == SCO_OK && spawned == 1);
-    CHECK(Run("npc.observe") == SCO_OK); Contains("pending=1"); Contains("visible=0");
+    CHECK(Run("npc.observe") == SCO_OK); Contains("1 still appearing"); CHECK(reply.find("visible") == std::string::npos);
     streamed = true;
-    CHECK(Run("npc.observe") == SCO_OK); Contains("visible=1"); CHECK(transform_calls == 1);
+    CHECK(Run("npc.observe") == SCO_OK); Contains("1 visible"); CHECK(transform_calls == 1);
     CHECK(RemoveId(999) == SCO_NOT_FOUND && removed == 0);
     CHECK(RemoveId(101) == SCO_OK && removed == 1);
     CHECK(RemoveId(101) == SCO_NOT_FOUND && removed == 1);
     streamed = false;
-    CHECK(Run("npc.observe") == SCO_OK); Contains("removing=1");
+    CHECK(Run("npc.observe") == SCO_OK); Contains("1 being removed");
     Unload(); Unload(); CHECK(removed == 1);
     CHECK(Run("npc.observe") == SCO_UNAVAILABLE);
 }
@@ -177,7 +226,7 @@ void DeferredRemovalAndCleanup() {
     CHECK(Load(&api, owner) == SCO_OK); CHECK(SpawnOne() == SCO_OK);
     CHECK(!streamed); CHECK(RemoveId(101) == SCO_OK && removed == 1 && issued.empty()); // Pre-stream ticket.
     CHECK(despawn_attempts.at(101) == 1);
-    CHECK(Run("npc.observe") == SCO_OK); Contains("removing=1");
+    CHECK(Run("npc.observe") == SCO_OK); Contains("1 being removed");
     Unload(); Unload(); CHECK(removed == 1 && despawn_attempts.at(101) == 1);
     Reset(); api = Api(); CHECK(Load(&api, owner) == SCO_OK); CHECK(SpawnOne() == SCO_OK);
     remove_result = SCO_WRONG_THREAD;
@@ -229,9 +278,9 @@ void ProviderAndMemberNegatives() {
     entities.size = sizeof(entities); entities.alive = nullptr; CHECK(Run("npc.observe") == SCO_UNAVAILABLE); entities.alive = Alive;
     entities.get_transform = nullptr; CHECK(Run("npc.observe") == SCO_UNAVAILABLE); entities.get_transform = Transform;
     streamed = true; pose_pos[0] = std::numeric_limits<double>::infinity();
-    CHECK(Run("npc.observe") == SCO_OK); Contains("unknown=1"); Contains("visible=0");
+    CHECK(Run("npc.observe") == SCO_OK); Contains("1 couldn't be checked"); CHECK(reply.find("visible") == std::string::npos);
     pose_pos[0] = 1; transform_result = SCO_WRONG_THREAD;
-    CHECK(Run("npc.observe") == SCO_OK); Contains("unknown=1");
+    CHECK(Run("npc.observe") == SCO_OK); Contains("1 couldn't be checked");
     actors.size = offsetof(sc_actors_v1, despawn) + sizeof(actors.despawn) - 1;
     CHECK(RemoveId(101) == SCO_UNAVAILABLE && removed == 0); actors.size = sizeof(actors);
     Unload(); CHECK(removed == 1);
@@ -297,6 +346,52 @@ void CommandNegatives() {
     CHECK(Run("npc.clear") == SCO_OK); CHECK(removed == 1);
     Unload();
 }
+void RefusalsAreHonest() {
+    Reset(); auto api = Api(); using namespace entry;
+    CHECK(Load(&api, owner) == SCO_OK);
+    spawn_result = SCO_NOT_FOUND; last_actor_reason = "unknown entity class";
+    CHECK(SpawnOne() == SCO_NOT_FOUND);
+    Contains("isn't available in this game build"); CHECK(reply.find("refused") == std::string::npos);
+    CHECK(last_log.find("unknown entity class") != std::string::npos);   // Core's reason reaches the log
+    CHECK(last_log.find("result=") != std::string::npos);
+    spawn_result = SCO_UNAVAILABLE; last_actor_reason = "no release hook";
+    CHECK(SpawnOne() == SCO_UNAVAILABLE);
+    Contains("can't be spawned right now"); CHECK(last_log.find("no release hook") != std::string::npos);
+    spawn_result = SCO_FAILED; last_actor_reason = "the game faulted";
+    CHECK(SpawnOne() == SCO_FAILED); Contains("The game refused the rest."); CHECK(last_log.find("the game faulted") != std::string::npos);
+    // An older actors table without last_error still works; the log just has no reason.
+    actors.size = offsetof(sc_actors_v1, last_error); last_actor_reason = "must not be read";
+    spawn_result = SCO_NOT_FOUND; CHECK(SpawnOne() == SCO_NOT_FOUND);
+    Contains("isn't available in this game build"); CHECK(last_log.find("must not be read") == std::string::npos);
+    // The plugin may only ask for capability names that exist in Core.
+    CHECK(!asked_caps.empty()); for (const auto& name : asked_caps) CHECK(core_caps.count(name));
+    Unload();
+}
+void ReloadOnlyWhenItCanHelp() {
+    // The content service is not published: the list is a startup snapshot, so a retry could only fail. No button.
+    Reset(); auto api = Api(); using namespace entry;
+    CHECK(Load(&api, owner) == SCO_OK);
+    CHECK(!PanelHas(8)); CHECK(panel_fn);
+    for (const auto& l : panel_labels) CHECK(l != "Reload character list");
+    Unload();
+    // The service answers but the read fails: the retry button is offered, and pressing it reads again.
+    Reset(); publish_content = true; content_fails = true; api = Api();
+    CHECK(Load(&api, owner) == SCO_OK);
+    CHECK(PanelHas(8));
+    const int failed_loads = content_loads;
+    { sco_widget_event r{}; r.size = sizeof(r); r.node_id = 8; r.kind = SCO_WIDGET_BUTTON; panel_fn("npc.npcs", &r, nullptr); }
+    CHECK(content_loads > failed_loads);
+    Unload();
+    // The list loaded fine: a reload could not change anything, so there is no such button.
+    Reset(); publish_content = true; api = Api();
+    CHECK(Load(&api, owner) == SCO_OK);
+    CHECK(content_loads > 0); CHECK(!PanelHas(8));
+    const int loads = content_loads;
+    sco_widget_event e{}; e.size = sizeof(e); e.node_id = 8; e.kind = SCO_WIDGET_BUTTON;
+    panel_fn("npc.npcs", &e, nullptr);   // a stale press must not reload either
+    CHECK(content_loads == loads);
+    Unload();
+}
 }
 int main(int argc, char** argv) {
 #ifdef WORKFLOW_DYNAMIC_TEST
@@ -306,14 +401,15 @@ int main(int argc, char** argv) {
 #endif
     Lifecycle(); ClearAndUnloadOwnershipIsolation(); DeferredRemovalAndCleanup(); LocationNegatives(); ProviderAndMemberNegatives();
     HostAndRegistrationNegatives(); CommandNegatives(); BoundedPartialAndHighId();
+    RefusalsAreHonest(); ReloadOnlyWhenItCanHelp();
 #ifdef NPC_EXTERNAL_TEST
     Reset(); auto api = Api();
     CHECK(sco_plugin_query() == sco::features::npc::Query());
     CHECK(sco_plugin_load(&api, owner) == SCO_OK); CHECK(SpawnOne() == SCO_OK);
     sco_plugin_unload(); sco_plugin_unload(); CHECK(removed == 1);
-    std::puts("npc_workflow: 9 cases passed (including external adapter)");
+    std::puts("npc_workflow: 11 cases passed (including external adapter)");
 #else
-    std::puts("npc_workflow: 8 cases passed");
+    std::puts("npc_workflow: 10 cases passed");
 #ifdef WORKFLOW_DYNAMIC_TEST
     test_module::Close();
 #endif

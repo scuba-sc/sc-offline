@@ -20,7 +20,7 @@ std::map<std::string,sco_command_fn> commands;
 sco_widget_event_fn panel_event=nullptr;
 void* panel_context=nullptr;
 std::map<uint32_t,sco_widget_node> player;
-std::string copied_status;
+std::string copied_status, copied_cancel_label;
 bool apply_cap=true, weapons_cap=true, async_cap=true, present=true;
 uint32_t supported=SC_LOADOUT_VERSION_1_2, queried=0;
 sc_loadout_v1_2 service{};
@@ -120,6 +120,7 @@ sco_result SetPanel(sco_plugin*,const char* id,const char*,const sco_widget_node
         player.clear(); for (uint32_t i=0;i<count;++i) {
             player[nodes[i].id]=nodes[i];
             if (nodes[i].id==14) copied_status=nodes[i].label ? nodes[i].label : "";
+            if (nodes[i].id==24) copied_cancel_label=nodes[i].label ? nodes[i].label : "";
         }
         panel_event=event;
         panel_context=context;
@@ -144,15 +145,15 @@ void Reset() {
     service={}; service.size=sizeof(service); service.apply=Apply; service.submit=Submit; service.status=Status; service.cancel=Cancel;
     publication=&service; supported=SC_LOADOUT_VERSION_1_2; present=apply_cap=weapons_cap=async_cap=true;
     apply_result=submit_result=status_result=cancel_result=SCO_OK; submitted_id=42; corrupt=0; reenter_submit=false; reenter_cancel=false; unload_on_lookup=false;
-    applies=submits=statuses=cancels=0; captured.clear(); copied_status.clear(); reply[0]=0;
+    applies=submits=statuses=cancels=0; captured.clear(); copied_status.clear(); copied_cancel_label.clear(); reply[0]=0;
     static unsigned char token=0; owner=reinterpret_cast<sco_plugin*>(&token);
     static sco_api api{}; api={}; api.size=sizeof(api); api.major=SCO_API_MAJOR; api.minor=SCO_API_MINOR;
     api.register_command=Register; api.query_service=WidgetsQuery; api.has=Has; api.subscribe=Subscribe; api.unsubscribe=Unsubscribe;
     Require(sco::features::loadout::Load(&api,owner)==SCO_OK,"load consumer");
 }
-void Send(uint32_t node,uint32_t kind,const char* text=nullptr) {
+void Send(uint32_t node,uint32_t kind,const char* text=nullptr,int32_t index=0) {
     Require(panel_event!=nullptr,"player callback");
-    sco_widget_event event{}; event.size=sizeof(event); event.node_id=node; event.kind=kind; event.text=text;
+    sco_widget_event event{}; event.size=sizeof(event); event.node_id=node; event.kind=kind; event.text=text; event.index=index;
     panel_event("loadout.player",&event,panel_context);
 }
 void SetProgress(sc_loadout_job_state state,uint32_t completed) {
@@ -216,41 +217,33 @@ void Sync() {
     apply_result=SCO_WRONG_THREAD; Require(Call("loadout.slots","primary=Fixture")==SCO_WRONG_THREAD,"provider thread refusal forwarded"); apply_result=SCO_OK;
     for (corrupt=1;corrupt<=6;++corrupt) Require(Call("loadout.slots","primary=Fixture")==SCO_FAILED,"inconsistent sync report refused");
     corrupt=0;
-    Require(player.count(20) && player.count(21) && player.count(22) && player.count(23) && player.count(24),"bounded manual controls published");
-    Send(20,SCO_WIDGET_TEXT_INPUT,"sidearm_barrel=FixtureBarrel"); Send(21,SCO_WIDGET_BUTTON);
-    Require(captured.size()==1 && captured[0].slot==14,"widget action routes to public slot");
-    const auto calls=applies; Send(20,SCO_WIDGET_TEXT_INPUT,std::string(256,'x').c_str()); Send(21,SCO_WIDGET_BUTTON);
-    Require(applies==calls+1 && captured[0].slot==14,"oversized forged widget text preserves bounded field");
-    for (const char* text:{"","primary=None"}) {
-        const auto before_none=applies; Send(20,SCO_WIDGET_TEXT_INPUT,text); Send(21,SCO_WIDGET_BUTTON);
-        Require(applies==before_none && copied_status.find("Choose at least one slot")!=std::string::npos &&
-                copied_status.find("refused")==std::string::npos,"widget with nothing chosen shows a choose-a-slot status");
-    }
+    // Typed slot entry and the refusal-only synchronous buttons are developer plumbing: the commands keep them, the page does not.
+    Require(!player.count(20) && !player.count(21) && !player.count(22) && !player.count(6) && !player.count(220) && player.count(24),
+            "manual slot controls and synchronous equip buttons are not on the page");
+    // A refusal reaches the panel as a plain sentence; the command reply and log keep the detail.
+    Require(Call("loadout.slots","unknown=Fixture")==SCO_BAD_ARG && std::strstr(reply,"Manual slots refused"),"command reply keeps its detail");
+    Send(1,SCO_WIDGET_TEXT_INPUT,"");
+    Require(copied_status=="Those weapon choices aren't valid.","widget shows the refusal as a plain sentence");
+    Require(Call("loadout.slots","primary=None")==SCO_BAD_ARG && std::strstr(reply,"Choose at least one slot"),"nothing chosen asks to choose a slot");
+    Send(1,SCO_WIDGET_TEXT_INPUT,"");
+    Require(copied_status=="Choose at least one weapon or attachment.","widget asks to choose something");
+    Require(Call("loadout.slots","primary=FixtureWeapon")==SCO_OK,"apply after plain refusals");
+    Send(1,SCO_WIDGET_TEXT_INPUT,"");
+    Require(copied_status=="Equipped 1 item.","widget shows a plain receipt");
 }
-void ManualRefusals(const char* command,uint32_t button,bool command_only=false) {
+// Invalid manual input keeps its descriptive refusal on the command reply and makes no provider request.
+void ManualRefusals(const char* command) {
     for (const char* invalid:{"primary=", "primary=Fixture,primary=Other",
                               "unknown=Fixture", "primary=Bad-Class", "primary=Fixture,"}) {
         Reset();
         Require(Call("loadout.slots","primary=FixtureWeapon")==SCO_OK,"prior successful apply");
         const auto before_apply=applies,before_submit=submits;
-        if (command_only) {
-            Require(Call(command,invalid)==SCO_BAD_ARG,"direct command parse refusal result");
-            Require(std::strstr(reply,"Manual slots refused") && std::strstr(reply,"skipped") &&
-                    !std::strstr(reply,"applied="),"direct command replaces empty reply with refusal");
-            Require(applies==before_apply && submits==before_submit,"direct command refusal makes no provider request");
-            continue;
-        }
-        Send(20,SCO_WIDGET_TEXT_INPUT,invalid);
-        Require(copied_status.find("applied=1/1")!=std::string::npos,"copied panel holds previous receipt");
-        Send(button,SCO_WIDGET_BUTTON);
-        Require(copied_status.find("Manual slots refused")!=std::string::npos &&
-                copied_status.find("skipped")!=std::string::npos &&
-                copied_status.find("applied=")==std::string::npos,"widget replaces prior success with refusal");
-        Require(applies==before_apply && submits==before_submit,"widget parse refusal makes no provider request");
-        Require(Call(command,invalid)==SCO_BAD_ARG,"manual command parse refusal result");
+        Require(Call(command,invalid)==SCO_BAD_ARG,"direct command parse refusal result");
         Require(std::strstr(reply,"Manual slots refused") && std::strstr(reply,"skipped") &&
-                !std::strstr(reply,"applied="),"manual command returns descriptive refusal");
-        Require(applies==before_apply && submits==before_submit,"command parse refusal makes no provider request");
+                !std::strstr(reply,"applied="),"direct command replaces empty reply with refusal");
+        Require(applies==before_apply && submits==before_submit,"direct command refusal makes no provider request");
+        Send(1,SCO_WIDGET_TEXT_INPUT,"");
+        Require(copied_status=="Those weapon choices aren't valid." && copied_status.find("applied")==std::string::npos,"panel replaces the prior receipt with a plain refusal");
     }
     Reset();
     sco_arg wrong{}; wrong.type=SCO_ARG_INT;
@@ -337,6 +330,40 @@ void CopiedAsync() {
     SetProgress(SC_LOADOUT_JOB_PENDING,1); Require(Call("loadout.progress")==SCO_OK && std::strstr(reply,"Armor_Torso=applied"),"copied result order");
     Require(Call("loadout.cancel")==SCO_OK,"release outfit job");
 }
+// A finished request (complete or failed) must not keep the next Equip waiting for a Cancel press.
+void FinishedJob() {
+    Reset();
+    const auto disabled=[](uint32_t id) { return (player.at(id).flags&SCO_WIDGET_DISABLED)!=0; };
+    Send(2,SCO_WIDGET_COMBO,nullptr,2); Send(27,SCO_WIDGET_BUTTON);
+    Require(submits==1 && disabled(27) && copied_cancel_label=="Cancel equipping","a running request blocks Equip and offers Cancel");
+    Send(27,SCO_WIDGET_BUTTON); Require(submits==1,"a running request still refuses a second submit");
+    SetProgress(SC_LOADOUT_JOB_PENDING,0); Send(23,SCO_WIDGET_BUTTON);
+    Require(disabled(27) && copied_cancel_label=="Cancel equipping","pending stays blocked after a progress check");
+    for (const auto state:{SC_LOADOUT_JOB_COMPLETE,SC_LOADOUT_JOB_FAILED}) {
+        SetProgress(state,1); Send(23,SCO_WIDGET_BUTTON);
+        Require(!disabled(27) && copied_cancel_label=="Clear result","a finished request leaves Equip enabled and relabels Cancel");
+        const auto before_cancels=cancels,before_submits=submits;
+        Send(27,SCO_WIDGET_BUTTON);
+        Require(cancels==before_cancels+1 && submits==before_submits+1 && disabled(27),"Equip releases the finished request itself and starts the next one");
+        SetProgress(SC_LOADOUT_JOB_PENDING,0); Send(23,SCO_WIDGET_BUTTON);
+    }
+    // The command route does the same: no Cancel needed after a finished request.
+    SetProgress(SC_LOADOUT_JOB_COMPLETE,1); Require(Call("loadout.progress")==SCO_OK,"finished observed");
+    { const auto c=cancels,m=submits; Require(Call("loadout.submit","primary=Fixture")==SCO_OK && cancels==c+1 && submits==m+1,"command submit after a finished request needs no Cancel"); }
+    // A request still in progress is not released by a new submit.
+    { const auto c=cancels,m=submits; Require(Call("loadout.submit","primary=Fixture")==SCO_UNAVAILABLE && cancels==c && submits==m,"pending request is never released by a new submit"); }
+    // If Core refuses to release the finished request, nothing is sent and the player is told in plain words.
+    SetProgress(SC_LOADOUT_JOB_FAILED,1); Require(Call("loadout.progress")==SCO_OK,"failed observed");
+    cancel_result=SCO_UNAVAILABLE; { const auto m=submits; Send(27,SCO_WIDGET_BUTTON);
+        Require(submits==m && copied_status=="Couldn't clear the last result. Try again.","refused release sends nothing and says so"); }
+    cancel_result=SCO_OK;
+    // Clearing the result by hand uses honest words, and Equip works afterwards.
+    Send(23,SCO_WIDGET_BUTTON); Send(24,SCO_WIDGET_BUTTON);
+    Require(copied_status=="Cleared the last result. Anything equipped stays on." && !disabled(27) && copied_cancel_label=="Cancel equipping","clearing a finished result is not called stopping");
+    // An unreadable report is not a finished request: it stays blocked.
+    Send(27,SCO_WIDGET_BUTTON); SetProgress(SC_LOADOUT_JOB_PENDING,1); progress.completed=9; Send(23,SCO_WIDGET_BUTTON);
+    Require(disabled(27) && copied_cancel_label=="Cancel equipping","a malformed report does not count as finished");
+}
 void ReentrantCancel() {
     Reset(); Require(Call("loadout.submit","primary=Fixture")==SCO_OK,"job for reentrant cancellation");
     reenter_cancel=true; Require(Call("loadout.cancel")==SCO_OK,"outer cancellation"); reenter_cancel=false;
@@ -414,8 +441,8 @@ void Async() {
     Require(Call("loadout.cancel")==SCO_OK,"cancel allowed after capability revocation");
     Require(Call("loadout.progress")==SCO_NOT_FOUND,"local job released after cancel");
     async_cap=apply_cap=weapons_cap=true;
-    Send(20,SCO_WIDGET_TEXT_INPUT,"sidearm_tool_module=FixtureModule"); Send(22,SCO_WIDGET_BUTTON);
-    Require(captured.size()==1 && captured[0].slot==19,"widget submit after cancellation");
+    Send(2,SCO_WIDGET_COMBO,nullptr,2); Send(27,SCO_WIDGET_BUTTON);
+    Require(captured.size()==1 && captured[0].slot==SC_LOADOUT_SLOT_PRIMARY,"widget submit after cancellation");
     SetProgress(SC_LOADOUT_JOB_PENDING,0); Send(23,SCO_WIDGET_BUTTON);
     Require(statuses>0,"widget progress");
     const auto cancelled=cancels; async_cap=apply_cap=weapons_cap=false;
@@ -436,13 +463,11 @@ void Async() {
 }
 }
 int main(int argc,char** argv) {
-    if (argc==2 && !std::strcmp(argv[1],"--refusal-apply")) ManualRefusals("loadout.slots",21);
-    else if (argc==2 && !std::strcmp(argv[1],"--refusal-submit")) ManualRefusals("loadout.submit",22);
-    else if (argc==2 && !std::strcmp(argv[1],"--command-refusal-apply")) ManualRefusals("loadout.slots",21,true);
-    else if (argc==2 && !std::strcmp(argv[1],"--command-refusal-submit")) ManualRefusals("loadout.submit",22,true);
+    if (argc==2 && (!std::strcmp(argv[1],"--refusal-apply") || !std::strcmp(argv[1],"--command-refusal-apply"))) ManualRefusals("loadout.slots");
+    else if (argc==2 && (!std::strcmp(argv[1],"--refusal-submit") || !std::strcmp(argv[1],"--command-refusal-submit"))) ManualRefusals("loadout.submit");
     else {
         Require(argc==1,"unknown test option");
-        Sync(); Async(); CopiedAsync(); ReentrantCancel(); ManualRefusals("loadout.slots",21); ManualRefusals("loadout.submit",22);
+        Sync(); Async(); FinishedJob(); CopiedAsync(); ReentrantCancel(); ManualRefusals("loadout.slots"); ManualRefusals("loadout.submit");
     }
     sco::features::loadout::Unload();
     std::printf("loadout public route: %u checks PASS (synthetic providers; not run in game)\n",checks);

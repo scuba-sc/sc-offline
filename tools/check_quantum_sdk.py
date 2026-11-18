@@ -18,7 +18,7 @@ QUANTUM = {
     'test_source': 'quantum_workflow_test.cpp',
     'extra_tests': [('quantum_content_test.cpp', 'quantum-content-test', 'quantum-content'),
                     ('quantum_gamerules_test.cpp', 'quantum-gamerules-test', 'quantum-gamerules')],
-    'extra_test_files': ('quantum_test_directory.h', 'quantum_temp_concurrency_test.py'),
+    'extra_test_files': ('quantum_test_directory.h', 'quantum_temp_concurrency_test.py', 'panel_dump.h'),
     'extra_ctests': ('quantum-concurrency',),
     'checks': [
         # quantum.travel takes arguments, so it is invoked explicitly.

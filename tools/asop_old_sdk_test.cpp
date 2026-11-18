@@ -11,7 +11,7 @@ int main(int argc,char** argv) {
     if(!owner || test_module::Load(api,owner)!=SCO_OK)return 1;
     bool found=false;
     for(const auto& panel:sco::widgets::Panels())if(panel.id=="spawn.asop")
-        for(const auto& node:panel.nodes)if(node.label=="ASOP selection unavailable on this SDK")found=true;
+        for(const auto& node:panel.nodes)if(node.label=="Ships from your in-game fleet can't be used with this version.")found=true;
     test_module::Unload();if(sco::Release(owner)!=sco::Result::Ok)return 1;
     sco::widgets::Stop();test_module::Close();
     if(!found)return 1;

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
+#include "panel_dump.h"
 #include <sco/host.h>
 #include <sco/runtime.h>
 #include <sco/storage.h>
@@ -47,7 +48,7 @@ static sco_result SetPanel(sco_plugin* self,const char* id,const char* title,con
     if(throw_panel) { throw_panel=false; throw std::bad_alloc{}; }
     if(fail_panel) { fail_panel=false; return SCO_FAILED; }
     const auto r=real_widgets->set_panel(self,id,title,nodes,count,stride,fn,ctx);
-    if(r==SCO_OK) { last_callback=fn; last_context=ctx; }
+    if(r==SCO_OK) { last_callback=fn; last_context=ctx; sc_offline::panel_dump::Record(id,title,nodes,count,stride); }
     return r;
 }
 static sco_result Query(const char* name,uint32_t version,const void** out) {
@@ -96,6 +97,20 @@ static bool Has(const char* part) {
     for(const auto& node:panels[0].nodes) if(node.label.find(part)!=std::string::npos) return true;
     return false;
 }
+static bool HasNode(uint32_t id) {
+    for(const auto& panel:W::Panels()) for(const auto& node:panel.nodes) if(node.id==id) return true;
+    return false;
+}
+// Nothing a player reads on the page may carry developer words, ids or raw category numbers.
+static void PlainWords() {
+    static const char* const forbidden[]{"preset","category","captur","layout","class","picker","slot","(saved","job","sdk","_"};
+    const auto panels=W::Panels(); Check(panels.size()==1);
+    for(const auto& node:panels[0].nodes) {
+        std::string text=node.label; for(const auto& item:node.items) text+=" "+item;
+        for(auto& c:text) if(c>='A' && c<='Z') c=static_cast<char>(c+('a'-'A'));
+        for(const char* bad:forbidden) if(text.find(bad)!=std::string::npos) { std::fprintf(stderr,"workflow wording: '%s' (%s)\n",text.c_str(),bad); std::exit(1); }
+    }
+}
 static size_t Choices() {
     for(const auto& panel:W::Panels()) for(const auto& node:panel.nodes) if(node.id==5) return node.items.size();
     return 0;
@@ -129,26 +144,27 @@ int main(int argc,char** argv) {
     Check(sco::storage::Start(options)==sco::Result::Ok); Check(W::Start()==sco::Result::Ok);
     Check(S::StartGameInventoryWithLayout({}, {&world,true,Admitted,Read})==sco::Result::Ok);
     auto* owner=sco::host::NewPlugin("gear_presets"); Check(owner && load(&wrapped,owner)==SCO_OK);
-    Check(Has("Capture a complete layout") && Choices()==0);
-    Event(1,SCO_WIDGET_TEXT_INPUT,0,"Helmet kit"); Event(2,SCO_WIDGET_BUTTON); Check(Has("Captured complete layout"));
+    Check(Has("then save it as an outfit") && Choices()==0);
+    Check(HasNode(20) && HasNode(21) && !HasNode(22)); PlainWords(); // two labelled sections, no differences yet
+    Event(1,SCO_WIDGET_TEXT_INPUT,0,"Helmet kit"); Event(2,SCO_WIDGET_BUTTON); Check(Has("Checked what you're wearing"));
     // A post-save presentation exception must not replace the completed result.
     auto save_callback=last_callback; auto* save_context=last_context;
     throw_panel=true; Event(3,SCO_WIDGET_BUTTON); Check(Choices()==0);
     sco_widget_event no_op{}; no_op.size=sizeof(no_op); no_op.node_id=999; no_op.kind=SCO_WIDGET_BUTTON;
     save_callback("gear_presets.main",&no_op,save_context);
-    Check(Has("Preset saved") && Choices()==1);
+    Check(Has("Outfit saved") && Choices()==1);
     std::string reply; Check(api->invoke(owner,"gear_presets.list",nullptr,0,Done,&reply)==SCO_OK && reply.find("1")!=std::string::npos);
-    Event(5,SCO_WIDGET_COMBO,0); Event(6,SCO_WIDGET_BUTTON); Check(Has("same category; exact class unknown"));
+    Event(5,SCO_WIDGET_COMBO,0); Event(6,SCO_WIDGET_BUTTON); Check(Has("Everything is the same kind of item as when you saved") && !Has("Helmet:") && !HasNode(22)); PlainWords();
     world.category=23; world.storage=101; ++world.generation;
-    Event(6,SCO_WIDGET_BUTTON); Check(Has("different category") && !Has("pack:"));
-    world.admitted=false; Event(2,SCO_WIDGET_BUTTON); Check(Has("unavailable or incomplete"));
+    Event(6,SCO_WIDGET_BUTTON); Check(Has("different kind of item") && !Has("Pack") && HasNode(22) && Has("The differences are below"));
+    world.admitted=false; Event(2,SCO_WIDGET_BUTTON); Check(Has("Couldn't read what you're wearing"));
     Event(3,SCO_WIDGET_BUTTON); Check(Choices()==1); // disabled save never persists stale capture
     world.admitted=true;
-    Event(2,SCO_WIDGET_BUTTON); Check(Has("Captured complete layout"));
+    Event(2,SCO_WIDGET_BUTTON); Check(Has("Checked what you're wearing"));
     sco_arg arg{}; arg.type=SCO_ARG_STRING; arg.v.s="Second kit";
     fail_storage_query_after=2; reply.clear();
     Check(api->invoke(owner,"gear_presets.save",&arg,1,Done,&reply)==SCO_OK);
-    Check(reply.find("saved, but the picker could not refresh")!=std::string::npos && Choices()==1);
+    Check(reply.find("saved, but the list couldn't refresh")!=std::string::npos && Choices()==1);
     reply.clear(); Check(api->invoke(owner,"gear_presets.list",nullptr,0,Done,&reply)==SCO_OK && reply.find(" 2")!=std::string::npos && Choices()==2);
     Event(3,SCO_WIDGET_BUTTON); Check(Choices()==2); // a committed capture cannot be saved twice
     last_result=SCO_OK; Check(api->invoke(owner,"gear_presets.save",&arg,1,Done,&reply)==SCO_UNAVAILABLE && last_result==SCO_UNAVAILABLE && Choices()==2);
@@ -169,26 +185,26 @@ int main(int argc,char** argv) {
     id.v.i=2; Check(api->invoke(owner,"gear_presets.delete",&id,1,Done,&reply)==SCO_NOT_FOUND);
     id.v.i=1; fail_storage_query_after=2; reply.clear();
     Check(api->invoke(owner,"gear_presets.delete",&id,1,Done,&reply)==SCO_OK);
-    Check(reply.find("deleted, but the picker could not refresh")!=std::string::npos && Choices()==0);
+    Check(reply.find("deleted, but the list couldn't refresh")!=std::string::npos && Choices()==0);
     Event(2,SCO_WIDGET_BUTTON); Event(3,SCO_WIDGET_BUTTON); Check(Choices()==1);
     reply.clear(); Check(api->invoke(owner,"gear_presets.list",nullptr,0,Done,&reply)==SCO_OK && reply.find(" 3")!=std::string::npos);
     auto old_callback=last_callback; auto* old_context=last_context;
     unload(); Check(W::Panels().empty()); Check(sco::Release(owner)==sco::Result::Ok);
     owner=sco::host::NewPlugin("gear_presets"); Check(owner && load(&wrapped,owner)==SCO_OK && Choices()==1);
-    Event(5,SCO_WIDGET_COMBO,0); Event(6,SCO_WIDGET_BUTTON); Check(Has("same category"));
+    Event(5,SCO_WIDGET_COMBO,0); Event(6,SCO_WIDGET_BUTTON); Check(Has("same kind of item"));
     old_callback("gear_presets.main",&stale,old_context); Check(Choices()==1);
     id.v.i=3; fail_delete=1; Check(api->invoke(owner,"gear_presets.delete",&id,1,Done,&reply)==SCO_FAILED);
-    Check(Has("outcome is unknown") && Choices()==1);
+    Check(Has("Couldn't confirm the delete") && Choices()==1);
     fail_delete=2; Check(api->invoke(owner,"gear_presets.delete",&id,1,Done,&reply)==SCO_FAILED);
-    Check(Has("outcome is unknown") && Choices()==0); fail_delete=0;
+    Check(Has("Couldn't confirm the delete") && Choices()==0); fail_delete=0;
     Event(2,SCO_WIDGET_BUTTON); fail_commit=2;
     Check(api->invoke(owner,"gear_presets.save",&arg,1,Done,&reply)==SCO_FAILED);
-    Check(Has("outcome is unknown")); fail_commit=0;
+    Check(Has("Couldn't confirm the save")); fail_commit=0;
     reply.clear(); Check(api->invoke(owner,"gear_presets.list",nullptr,0,Done,&reply)==SCO_OK && reply.find(" 4")!=std::string::npos && Choices()==1);
     S::StopGameInventory();
     static sc_inventory_v1 old{sizeof(old),0,nullptr};
     Check(sco::host::ProvideGameService(SC_INVENTORY_SERVICE_NAME,SC_INVENTORY_SERVICE_VERSION_1_1,&old)==sco::Result::Ok);
-    Event(2,SCO_WIDGET_BUTTON); Check(Has("unavailable or incomplete") && Choices()==1);
+    Event(2,SCO_WIDGET_BUTTON); Check(Has("Couldn't read what you're wearing") && Choices()==1);
     unload(); Check(sco::Release(owner)==sco::Result::Ok);
     Check(sco::host::WithdrawGameService(SC_INVENTORY_SERVICE_NAME)==sco::Result::Ok);
     W::Stop(); sco::storage::Stop();

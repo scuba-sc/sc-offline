@@ -7,10 +7,12 @@
 #include <sc_actors.h>
 #include <sc_spatial.h>
 #include "../plugins/picker.h"
+#include "panel_dump.h"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
 #include <cassert>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -38,10 +40,14 @@ std::map<uint64_t,sco_plugin*> owners;
 sco_result Set(sco_plugin* self,const char* id,const char* title,const sco_widget_node* nodes,uint32_t count,uint32_t stride,sco_widget_event_fn fn,void* ctx) {
     assert(self && id && title && nodes && count>0 && count<=SCO_WIDGETS_MAX_NODES && stride>=sizeof(*nodes));
     Panel p;p.title=title;p.owner=self;p.fn=fn;p.ctx=ctx;
+    std::vector<uint32_t> open; // ancestors of the current node: a parent must be a preceding ROW/COLUMN and subtrees contiguous
     for(uint32_t i=0;i<count;++i) {
         const auto& n=*reinterpret_cast<const sco_widget_node*>(reinterpret_cast<const char*>(nodes)+i*stride);
         assert(n.size>=sizeof(n) && n.id && !p.nodes.count(n.id) && n.item_count<=SCO_WIDGETS_MAX_ITEMS);
         assert(n.label && std::strlen(n.label)<=SCO_WIDGETS_MAX_TEXT);
+        if(n.kind!=SCO_WIDGET_LABEL && n.kind!=SCO_WIDGET_ROW)assert(*n.label); // interactive labels and section headings are named
+        if(n.parent){while(!open.empty() && open.back()!=n.parent)open.pop_back();assert(!open.empty());}else open.clear();
+        if(n.kind==SCO_WIDGET_ROW || n.kind==SCO_WIDGET_COLUMN)open.push_back(n.id);
         if(n.kind==SCO_WIDGET_SLIDER)assert(std::isfinite(n.value) && n.value>=n.minimum && n.value<=n.maximum);
         if(n.kind==SCO_WIDGET_COMBO || n.kind==SCO_WIDGET_LIST)assert(n.index==-1 || (n.index>=0 && static_cast<uint32_t>(n.index)<n.item_count));
         if(n.kind==SCO_WIDGET_TABLE)assert(n.columns && n.item_count%n.columns==0);
@@ -49,6 +55,8 @@ sco_result Set(sco_plugin* self,const char* id,const char* title,const sco_widge
         for(uint32_t j=0;j<n.item_count;++j){assert(n.items && n.items[j] && std::strlen(n.items[j])<=SCO_WIDGETS_MAX_TEXT);out.items.emplace_back(n.items[j]);}
         p.nodes.emplace(n.id,std::move(out));
     }
+    {const auto why=sc_offline::panel_dump::Violation(nodes,count,stride);if(!why.empty())std::fprintf(stderr,"%s: %s\n",id,why.c_str());assert(why.empty());}
+    sc_offline::panel_dump::Record(id,title,nodes,count,stride);
     panels[id]=std::move(p);return SCO_OK;
 }
 sco_result RemovePanel(sco_plugin*,const char* id){panels.erase(id);return SCO_OK;}
@@ -102,6 +110,15 @@ sco_result Register(sco_plugin*,const sco_command* cmd){commands[cmd->name]=*cmd
 sco_result Subscribe(sco_plugin*,const char*,sco_event_fn,void*){return SCO_OK;}
 sco_result Unsubscribe(sco_plugin*,const char*,sco_event_fn){return SCO_OK;}
 sco_result Invoke(sco_plugin*,const char*,const sco_arg*,uint32_t,sco_invoke_done done,void* ctx){if(done)done(SCO_NOT_FOUND,"plugin absent",ctx);return SCO_NOT_FOUND;}
+// Rule 2 of docs/plugin-ui.md: no developer words in anything the player reads.
+void NoInternalWords(const char* id) {
+    static const char* const words[]={"archetype","owned","ticket","phase","catalog","sdk","g2","g3","payload","pagination","adapter","gamerules","retained","preview","session id"};
+    const auto check=[&](const std::string& text) {
+        std::string lower;for(char ch:text)lower+=static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        for(const char* word:words)if(lower.find(word)!=std::string::npos){std::fprintf(stderr,"%s shows '%s' in \"%s\"\n",id,word,text.c_str());std::abort();}
+    };
+    for(const auto& entry:panels.at(id).nodes){check(entry.second.label);if(entry.second.kind!=SCO_WIDGET_LIST)for(const auto& item:entry.second.items)check(item);} // list rows are pack data
+}
 void Event(const char* panel,uint32_t id,uint32_t kind,int32_t index=-1,const char* text=nullptr,double value=0) {
     auto fn=panels.at(panel).fn;auto ctx=panels.at(panel).ctx;
     sco_widget_event e{sizeof(e),id,kind,index,value,text};fn(panel,&e,ctx);
@@ -166,88 +183,95 @@ int main(int argc,char** argv) {
     assert(ship.load(&api,reinterpret_cast<sco_plugin*>(1))==SCO_OK);
     assert(crew.load(&api,reinterpret_cast<sco_plugin*>(2))==SCO_OK);
     assert(npc.load(&api,reinterpret_cast<sco_plugin*>(3))==SCO_OK);
-    assert(panels.size()==4 && panels.at("spawn.vehicles").title=="Vehicles" && panels.at("crew.crew").title=="Crew" && panels.at("npc.npcs").title=="NPCs" && panels.at("spawn.asop").title=="ASOP selection");
+    assert(panels.size()==4 && panels.at("spawn.vehicles").title=="Vehicles" && panels.at("crew.crew").title=="Crew" && panels.at("npc.npcs").title=="NPCs" && panels.at("spawn.asop").title=="Your own ships");
 #if __has_include(<sc_asop_selection.h>)
-    assert(panels.at("spawn.asop").nodes.size()==8 &&
-           panels.at("spawn.asop").nodes.at(71).label=="ASOP selection service unavailable" &&
-           panels.at("spawn.asop").nodes.at(72).label.find("native publication and observation unavailable")!=std::string::npos);
+    assert(panels.at("spawn.asop").nodes.size()==16 &&
+           panels.at("spawn.asop").nodes.at(71).label=="Your fleet list isn't available right now." &&
+           panels.at("spawn.asop").nodes.at(72).label=="Page 1 of 1. 0 selected.");
 #else
     assert(panels.at("spawn.asop").nodes.size()==1 &&
-           panels.at("spawn.asop").nodes.at(1).label=="ASOP selection unavailable on this SDK");
+           panels.at("spawn.asop").nodes.at(1).label=="Ships from your in-game fleet can't be used with this version.");
 #endif
+    for(const char* id:{"spawn.vehicles","spawn.asop","crew.crew","npc.npcs"})NoInternalWords(id);
     const auto& shipLabels=panels.at("spawn.vehicles").nodes.at(2).items;
     assert(shipLabels.size()==3);
-    assert(shipLabels[0]=="Synthetic Shuttle [synthetic_ship_alpha] [ship_pack_a]");
-    assert(shipLabels[1]=="synthetic_ship_beta [ship_pack_a]");
-    assert(shipLabels[2]=="Synthetic Shuttle [synthetic_ship_alpha] [ship_pack_b]");
+    assert(shipLabels[0]=="Synthetic Shuttle (ship_pack_a)"); // the same name from two packs says which pack
+    assert(shipLabels[1]=="synthetic ship beta");
+    assert(shipLabels[2]=="Synthetic Shuttle (ship_pack_b)");
+    {   // Page structure: named sections, plain labels, nothing to press before a ship is chosen.
+        auto& vp=panels.at("spawn.vehicles");
+        assert(vp.nodes.at(30).kind==SCO_WIDGET_COLUMN && vp.nodes.at(30).label=="Choose a ship" && vp.nodes.at(1).label=="Search ships" && vp.nodes.at(2).label=="Ships");
+        assert(vp.nodes.at(19).label=="Page 1 of 1 (3 ships)");
+        assert(vp.nodes.at(7).label=="Spawn ship" && (vp.nodes.at(7).flags&SCO_WIDGET_DISABLED) && vp.nodes.at(34).label=="Choose a ship first.");
+        assert(vp.nodes.count(11)==0 && vp.nodes.at(37).label=="You haven't spawned any ships yet." && (vp.nodes.at(12).flags&SCO_WIDGET_DISABLED) && (vp.nodes.at(14).flags&SCO_WIDGET_DISABLED));
+        assert(vp.nodes.at(12).label=="Get in" && vp.nodes.at(13).label=="Remove ship" && vp.nodes.at(14).label=="Remove all my ships");
+        assert(vp.nodes.at(20).label=="Nothing yet." && vp.nodes.count(17)==0);
+    }
     {   // Flight Ready is offered only with the pilot seat; otherwise it is disabled, explained and sent as false.
         auto& vp=panels.at("spawn.vehicles");
-        assert(vp.nodes.at(5).text=="pilot" && vp.nodes.at(6).value==1 && !(vp.nodes.at(6).flags&SCO_WIDGET_DISABLED) && vp.nodes.count(21)==0);
+        assert(vp.nodes.at(5).kind==SCO_WIDGET_COMBO && vp.nodes.at(5).index==0 && vp.nodes.at(5).items.size()==2 && vp.nodes.at(6).label=="Start ready to fly");
+        assert(vp.nodes.at(6).value==1 && !(vp.nodes.at(6).flags&SCO_WIDGET_DISABLED) && vp.nodes.count(21)==0);
         Event("spawn.vehicles",3,SCO_WIDGET_TEXT_INPUT,-1,"synthetic_ship_alpha");
-        for(const char* seat:{"none","synthetic seat 1"}) {
-            Event("spawn.vehicles",5,SCO_WIDGET_TEXT_INPUT,-1,seat);
-            auto& np=panels.at("spawn.vehicles");
-            assert(np.nodes.at(5).text==seat && (np.nodes.at(6).flags&SCO_WIDGET_DISABLED) && np.nodes.at(6).value==0);
-            assert(np.nodes.at(21).label=="Flight Ready needs the pilot seat");
-            Event("spawn.vehicles",7,SCO_WIDGET_BUTTON);
-            assert(panels.at("spawn.vehicles").nodes.at(20).label.find("Power requires")==std::string::npos);
-        }
-        Event("spawn.vehicles",5,SCO_WIDGET_TEXT_INPUT,-1,"pilot");
+        assert(!(panels.at("spawn.vehicles").nodes.at(7).flags&SCO_WIDGET_DISABLED) && panels.at("spawn.vehicles").nodes.count(34)==0);
+        Event("spawn.vehicles",5,SCO_WIDGET_COMBO,1);
+        auto& np=panels.at("spawn.vehicles");
+        assert(np.nodes.at(5).index==1 && (np.nodes.at(6).flags&SCO_WIDGET_DISABLED) && np.nodes.at(6).value==0);
+        assert(np.nodes.at(21).label=="Ready to fly needs the pilot seat.");
+        Event("spawn.vehicles",7,SCO_WIDGET_BUTTON);
+        assert(panels.at("spawn.vehicles").nodes.at(20).label.find("Ready to fly needs")==std::string::npos);
+        Event("spawn.vehicles",5,SCO_WIDGET_COMBO,0);
         assert(panels.at("spawn.vehicles").nodes.at(6).value==1 && !(panels.at("spawn.vehicles").nodes.at(6).flags&SCO_WIDGET_DISABLED) && panels.at("spawn.vehicles").nodes.count(21)==0);
     }
     Event("spawn.vehicles",1,SCO_WIDGET_TEXT_INPUT,-1,"synthetic shuttle");
     assert(panels.at("spawn.vehicles").nodes.at(2).items.size()==2);
-    assert(panels.at("spawn.vehicles").nodes.at(2).items[0]=="Synthetic Shuttle [synthetic_ship_alpha] [ship_pack_a]");
-    assert(panels.at("spawn.vehicles").nodes.at(2).items[1]=="Synthetic Shuttle [synthetic_ship_alpha] [ship_pack_b]");
+    assert(panels.at("spawn.vehicles").nodes.at(2).items[0]=="Synthetic Shuttle (ship_pack_a)");
+    assert(panels.at("spawn.vehicles").nodes.at(2).items[1]=="Synthetic Shuttle (ship_pack_b)");
     Event("spawn.vehicles",2,SCO_WIDGET_LIST,1);
     assert(panels.at("spawn.vehicles").nodes.at(3).text=="synthetic_ship_alpha");
     Event("spawn.vehicles",1,SCO_WIDGET_TEXT_INPUT,-1,"synthetic_ship_beta");
     assert(panels.at("spawn.vehicles").nodes.at(2).items.size()==1);
-    assert(panels.at("spawn.vehicles").nodes.at(2).items[0]=="synthetic_ship_beta [ship_pack_a]");
+    assert(panels.at("spawn.vehicles").nodes.at(2).items[0]=="synthetic ship beta");
     assert(panels.at("npc.npcs").nodes.at(2).items.size()==64);
     Event("npc.npcs",7,SCO_WIDGET_BUTTON);Event("npc.npcs",2,SCO_WIDGET_LIST,0);
     assert(panels.at("npc.npcs").nodes.at(3).text=="synthetic_actor_64");
     Event("npc.npcs",1,SCO_WIDGET_TEXT_INPUT,-1,"actor_299");
     assert(panels.at("npc.npcs").nodes.at(2).items.size()==2); // Same row in two distinct packs is retained.
-    assert(panels.at("npc.npcs").nodes.at(2).items[0]=="Synthetic Pilot [synthetic_actor_299] [synthetic_catalog]");
-    assert(panels.at("npc.npcs").nodes.at(2).items[1]=="Synthetic Pilot [synthetic_actor_299] [second_pack]");
+    assert(panels.at("npc.npcs").nodes.at(2).items[0]=="Synthetic Pilot (synthetic_catalog)");
+    assert(panels.at("npc.npcs").nodes.at(2).items[1]=="Synthetic Pilot (second_pack)");
     Event("npc.npcs",1,SCO_WIDGET_TEXT_INPUT,-1,"synthetic pilot");
     assert(panels.at("npc.npcs").nodes.at(2).items.size()==2); // Alias search keeps both source rows.
     Event("npc.npcs",2,SCO_WIDGET_LIST,1);Event("npc.npcs",5,SCO_WIDGET_BUTTON);
     assert(spawned==1 && lastNpc=="synthetic_actor_299");
     Event("npc.npcs",1,SCO_WIDGET_TEXT_INPUT,-1,"synthetic_actor_0");
-    assert(panels.at("npc.npcs").nodes.at(2).items[0]=="synthetic_actor_0 [synthetic_catalog]");
+    assert(panels.at("npc.npcs").nodes.at(2).items[0]=="synthetic actor 0 (synthetic_catalog)");
     Event("npc.npcs",2,SCO_WIDGET_LIST,1);Event("npc.npcs",5,SCO_WIDGET_BUTTON);
     assert(spawned==2 && lastNpc=="synthetic_actor_0"); // No alias: exact legacy identifier stays selectable.
     contentFiles.push_back({"alias_conflict_a","lists/npcs.aliases.txt","synthetic_actor_298\tFirst Human Name\n"});
     contentFiles.push_back({"alias_conflict_b","lists/npcs.aliases.txt","synthetic_actor_298\tSecond Human Name\n"});
-    Event("npc.npcs",8,SCO_WIDGET_BUTTON);
-    assert(panels.at("npc.npcs").nodes.at(15).label.find("ambiguous=1")!=std::string::npos);
+    Event("npc.npcs",8,SCO_WIDGET_BUTTON); // two packs name this character differently: neither name is shown
     Event("npc.npcs",1,SCO_WIDGET_TEXT_INPUT,-1,"first human");
     assert(panels.at("npc.npcs").nodes.at(2).items.empty());
     Event("npc.npcs",1,SCO_WIDGET_TEXT_INPUT,-1,"synthetic_actor_298");
     assert(panels.at("npc.npcs").nodes.at(2).items.size()==2);
-    assert(panels.at("npc.npcs").nodes.at(2).items[0]=="synthetic_actor_298 [synthetic_catalog]");
+    assert(panels.at("npc.npcs").nodes.at(2).items[0]=="synthetic actor 298 (synthetic_catalog)");
     contentFiles.push_back({"incomplete_alias","lists/npcs.aliases.txt","synthetic_actor_297\tIncomplete Read\n"});
     failingReadId=contentFiles.size();
-    Event("npc.npcs",8,SCO_WIDGET_BUTTON);
-    assert(panels.at("npc.npcs").nodes.at(15).label.find("aliases ignored")!=std::string::npos);
+    Event("npc.npcs",8,SCO_WIDGET_BUTTON); // an unreadable name file is ignored as a whole
     Event("npc.npcs",1,SCO_WIDGET_TEXT_INPUT,-1,"synthetic pilot");
     assert(panels.at("npc.npcs").nodes.at(2).items.empty());
     Event("npc.npcs",1,SCO_WIDGET_TEXT_INPUT,-1,"synthetic_actor_299");
-    assert(panels.at("npc.npcs").nodes.at(2).items[0]=="synthetic_actor_299 [synthetic_catalog]");
+    assert(panels.at("npc.npcs").nodes.at(2).items[0]=="synthetic actor 299 (synthetic_catalog)");
     failingReadId=0;contentFiles.pop_back();
     std::string invalidAlias="synthetic_actor_297\tInvalid ";
     invalidAlias.push_back(static_cast<char>(0xc3));invalidAlias.push_back('(');invalidAlias.push_back('\n');
     contentFiles.push_back({"malformed_alias","lists/npcs.aliases.txt",invalidAlias});
-    Event("npc.npcs",8,SCO_WIDGET_BUTTON);
-    assert(panels.at("npc.npcs").nodes.at(15).label.find("aliases ignored")!=std::string::npos);
+    Event("npc.npcs",8,SCO_WIDGET_BUTTON); // an unreadable name file is ignored as a whole
     Event("npc.npcs",1,SCO_WIDGET_TEXT_INPUT,-1,"synthetic pilot");
     assert(panels.at("npc.npcs").nodes.at(2).items.empty());
     Event("npc.npcs",1,SCO_WIDGET_TEXT_INPUT,-1,"synthetic_actor_299");
-    assert(panels.at("npc.npcs").nodes.at(2).items[0]=="synthetic_actor_299 [synthetic_catalog]");
+    assert(panels.at("npc.npcs").nodes.at(2).items[0]=="synthetic actor 299 (synthetic_catalog)");
     Event("npc.npcs",9,SCO_WIDGET_COMBO,0);Event("npc.npcs",10,SCO_WIDGET_BUTTON);assert(removed==1);
-    assert(panels.at("crew.crew").nodes.at(21).items.size()==128);
+    assert(panels.at("crew.crew").nodes.at(21).items.size()==96); // 32 seats a page, 3 columns
     Event("crew.crew",16,SCO_WIDGET_BUTTON);assert(panels.at("crew.crew").nodes.at(4).items[0]=="synthetic seat 32");
     Event("crew.crew",1,SCO_WIDGET_TEXT_INPUT,-1,"synthetic pilot");
     assert(panels.at("crew.crew").nodes.at(2).items.size()==2);
@@ -259,14 +283,15 @@ int main(int argc,char** argv) {
     occupants[32]=102;Event("crew.crew",19,SCO_WIDGET_BUTTON);assert(ejected==1);
     occupants[32]=102;Event("crew.crew",20,SCO_WIDGET_BUTTON);assert(removed==2);
     occupants[32]=9999;Event("crew.crew",20,SCO_WIDGET_BUTTON);Event("crew.crew",19,SCO_WIDGET_BUTTON);assert(removed==2 && ejected==1);
-    assert(panels.at("spawn.vehicles").nodes.count(16)==0 && panels.at("spawn.vehicles").nodes.count(17)==1); // the ammo toggle moved to the Creative tab; other ids unchanged
+    assert(panels.at("spawn.vehicles").nodes.count(16)==0 && panels.at("spawn.vehicles").nodes.count(17)==0); // the ammo toggle moved to the Creative tab; the start-place button could only refuse
     Event("spawn.vehicles",16,SCO_WIDGET_TOGGLE,-1,nullptr,1);assert(panels.at("spawn.vehicles").nodes.count(16)==0); // a forged event for it is ignored
-    Event("spawn.vehicles",17,SCO_WIDGET_BUTTON);assert(panels.at("spawn.vehicles").nodes.at(20).label.find("unavailable")!=std::string::npos);
+    {const auto before=panels.at("spawn.vehicles").nodes.at(20).label;Event("spawn.vehicles",17,SCO_WIDGET_BUTTON);assert(panels.at("spawn.vehicles").nodes.at(20).label==before);}
     vehicle=false;Event("crew.crew",17,SCO_WIDGET_BUTTON);assert(panels.at("crew.crew").nodes.at(21).items.empty());
     auto fn=panels.at("npc.npcs").fn;auto ctx=panels.at("npc.npcs").ctx;sco_widget_event shortEvent{};shortEvent.size=sizeof(shortEvent)-1;fn("npc.npcs",&shortEvent,ctx);
+    for(const char* id:{"spawn.vehicles","spawn.asop","crew.crew","npc.npcs"})NoInternalWords(id);
     npc.unload();crew.unload();ship.unload();assert(panels.empty());
     widgets=false;assert(npc.load(&api,reinterpret_cast<sco_plugin*>(3))==SCO_OK);assert(panels.empty());npc.unload();
     widgets=true;content=false;assert(npc.load(&api,reinterpret_cast<sco_plugin*>(3))==SCO_OK);assert(panels.at("npc.npcs").nodes.at(2).items.empty());
     Event("npc.npcs",3,SCO_WIDGET_TEXT_INPUT,-1,"manual_actor");Event("npc.npcs",5,SCO_WIDGET_BUTTON);assert(lastNpc=="manual_actor");npc.unload();assert(panels.empty());
-    std::puts("PASS picker-module-workflow: 3 actual modules; catalogs/filter/paging, owned seat actions, foreign refusal, unavailable services, no creative control, startup refusal, unload/reload");
+    std::puts("PASS picker-module-workflow: 3 actual modules; catalogs/filter/paging, owned seat actions, foreign refusal, unavailable services, no creative control, no start-place button, plain labels and sections, unload/reload");
 }

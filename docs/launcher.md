@@ -397,3 +397,20 @@ launcher read the INI file; game acceptance remains pending.
 | `eac_hosts` | `on` | Add the EAC hosts line while you play. |
 | `eac_rename` | `on` | Rename `EasyAntiCheat_EOS.exe` while you play. |
 | `registry_probe` | (off) | Test only. `1` writes `data/registry-dump.txt` 15 s after you spawn: one `name<TAB>vehicleSize` line per entity class the probe walked and the game's own name lookup resolved back to that class. It stops at the first fault and writes nothing, so a partial list never looks complete. |
+| `exp_loadout_async` | `on` | Lets the menu equip gear (`game.loadout.async`). Passes `SCO_LOADOUT_ASYNC=1` to the game. Not run in game. See [Game capability switches](#game-capability-switches). |
+| `exp_inventory_read` | `on` | Lets plugins read what you wear and carry (`game.inventory.read`). Passes `SCO_INVENTORY_READ=1`. Not run in game. |
+| `exp_actor_stats_write` | `on` | Lets plugins change your survival stats (`game.actor_stats.write`). Passes `SCO_ACTOR_STATS_WRITE=1`. Not run in game. |
+| `exp_cvars_native` | `on` | Lets plugins read four console settings, read only (`game.cvars.read`). Passes `SCO_CVARS_NATIVE=1`. Not run in game. |
+| `exp_audio_native` | `on` | Asks sco-core for native one-shot sounds (`SCO_AUDIO_NATIVE=1`). The pinned sco-core refuses them and logs why. Not run in game. |
+| `exp_entities_diag` | `off` | Installs log-only entity hooks and writes one walk to `mod.log` (`SCO_ENTITIES_DIAG=1`). Diagnostics only, no gameplay change. Not run in game. |
+
+### Game capability switches
+
+sco-core starts some capabilities only when a variable is `1` inside the game process. The launcher sets these variables for you from the `exp_` keys above, so you never edit the environment by hand. The keys are in `sc-offline.ini` and you can turn any of them off.
+
+- **On by default.** Every capability switch is on in the release packages. Each is a visible setting you can turn off, and each says it has not been run in game. Turn one off with `exp_<name> = off`. Values are `on`/`off` (also `yes`/`no`, `1`/`0`, `true`/`false`); anything else keeps the default and is reported.
+- **Not run in game.** None of these capabilities has been run in game. A switch being on means the launcher asks sco-core to start the capability. It does not mean it works.
+- **Off means unset.** When a key is off the launcher removes its variable from the game's environment. A variable left in your shell or in Windows therefore cannot turn a capability on: only the ini can. The launcher prints `[i] removed ... from the game's environment` when it removes one that was set.
+- **One line at start.** The launcher prints `Capability switches on:` with each key that is on and the variable it sets, followed by `not run in game`.
+
+Only variables that sco-core reads are listed (`SCO_LOADOUT_ASYNC`, `SCO_INVENTORY_READ`, `SCO_ACTOR_STATS_WRITE`, `SCO_CVARS_NATIVE`, `SCO_AUDIO_NATIVE`, `SCO_ENTITIES_DIAG`). The launcher window's Settings page does not have toggles for these yet: edit the ini (Settings > Edit sc-offline.ini). When an update adds a key to an existing ini, it is appended commented out with its explanatory line above it, and the default applies.

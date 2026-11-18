@@ -225,6 +225,13 @@ jobs:
       - name: tools/check.sh (pinned host source)
         run: tools/check.sh
 
+      # A game.* capability name Core does not define is never granted, so the feature is refused in game.
+      - name: game.* capability names exist in the pinned Core
+        run: |
+          python3 tools/check_capability_names.py --self-test
+          python3 tools/check_capability_names.py --core external/sco-core
+          python3 tools/check_host_wiring.py
+
       - name: Test harness shutdown retention (pinned host headers)
         run: |
           tools/test_app_stop.sh external/sco-core
@@ -277,6 +284,19 @@ jobs:
 
       - name: Test ASOP consumer
         run: ctest --test-dir "$RUNNER_TEMP/spawn-development" -R '^asop-selection-workflow$' --no-tests=error --output-on-failure
+
+      - name: Test the Vehicles, Crew and NPC pages together (picker fixture)
+        run: |
+          set -eu
+          SDK_VERSION=$(cat "$RUNNER_TEMP/sdk-development/sdk-version.txt")
+          SDK_SHA256=$(cat "$RUNNER_TEMP/sdk-development/sdk-sha256.txt")
+          SDK_INCLUDE="$RUNNER_TEMP/sdk-development/extracted/sco-sdk-$SDK_VERSION/include"
+          cmake -S plugins -B "$RUNNER_TEMP/picker-development" -DSCO_SDK_INCLUDE_DIR="$SDK_INCLUDE" \
+            -DSCO_SDK_VERSION="$SDK_VERSION" -DSCO_SDK_SHA256="$SDK_SHA256" \
+            -DSCO_SDK_ARCHIVE="$RUNNER_TEMP/sdk-development/first/sco-sdk-$SDK_VERSION.zip" \
+            -DSCO_PICKER_TEST=ON -DSCO_WORKFLOW_TESTS=OFF
+          cmake --build "$RUNNER_TEMP/picker-development" --target picker-module-test --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/picker-development" -R '^picker-module-workflow$' --no-tests=error --output-on-failure
 
       - name: Restore pinned host source for remaining checks
         run: |
@@ -386,8 +406,11 @@ jobs:
           python3 tools/test_host_menu_gate.py
           python3 tools/test_asop_composition_gate.py
 
-      - name: Headless menu size and tab overflow tests
+      - name: Headless menu size, tab overflow and sidebar navigation tests
         run: python3 tools/check_menu_window.py
+
+      - name: Plain wording on the menu pages players see
+        run: python3 tools/check_menu_wording.py
 
       - name: Install discovery identity and priority tests
         run: python3 tools/check_install_discovery.py

@@ -73,6 +73,89 @@ static void TestConfig(const fs::path& root) {
     CHECK(shipped.cleanLogs == LogChoice::Ask);
 }
 
+// The capability switches: on by default, off by the ini, a typo keeps the default, and the env block follows the ini.
+static bool EnvIs(const wchar_t* name, const wchar_t* want) {   // want == nullptr: the variable must be unset
+    wchar_t buf[8] = {};
+    const DWORD n = GetEnvironmentVariableW(name, buf, ARRAYSIZE(buf));
+    return want ? (n == 1 && !wcscmp(buf, want)) : n == 0;
+}
+
+static void TestExperimental(const fs::path& root) {
+    const fs::path ini = root / "experimental.ini";
+    Config defaults;
+    for (size_t i = 0; i < ARRAYSIZE(kExperimental); ++i) CHECK(defaults.experimental[i] == kExperimental[i].defaultOn);
+    // Every capability switch is on by default; the entity diagnostics (log-only hooks, not a feature) are off.
+    CHECK(defaults.experimental[ExperimentalIndex(L"exp_loadout_async")] && defaults.experimental[ExperimentalIndex(L"exp_inventory_read")] &&
+          defaults.experimental[ExperimentalIndex(L"exp_actor_stats_write")] && !defaults.experimental[ExperimentalIndex(L"exp_entities_diag")]);
+    CHECK(ExperimentalIndex(L"EXP_LOADOUT_ASYNC") >= 0 && ExperimentalIndex(L"exp_nothing") < 0);
+
+    // The shipped ini lists every key, with the same values as the defaults.
+    Config shipped;
+    const fs::path shippedIni = fs::weakly_canonical(fs::path(__FILE__)).parent_path().parent_path() / "launcher" / "sc-offline.ini";
+    CHECK(ReadConfig(shippedIni.wstring(), shipped));
+    const std::string shippedText = Get(shippedIni);
+    for (size_t i = 0; i < ARRAYSIZE(kExperimental); ++i) {
+        CHECK(shipped.experimental[i] == kExperimental[i].defaultOn);
+        std::string key;
+        for (const wchar_t* c = kExperimental[i].key; *c; ++c) key += static_cast<char>(*c);   // the keys are ASCII
+        key += " = ";
+        CHECK(shippedText.find("\n" + key + (kExperimental[i].defaultOn ? "on" : "off")) != std::string::npos);
+    }
+
+    // off, case and legacy words; a typo keeps the default.
+    Put(ini, "exp_loadout_async = off\r\nEXP_INVENTORY_READ = No\r\nexp_actor_stats_write = maybe\r\nexp_entities_diag = yes\r\n");
+    Config parsed;
+    CHECK(ReadConfig(ini.wstring(), parsed));
+    CHECK(!parsed.experimental[ExperimentalIndex(L"exp_loadout_async")] && !parsed.experimental[ExperimentalIndex(L"exp_inventory_read")]);
+    CHECK(parsed.experimental[ExperimentalIndex(L"exp_actor_stats_write")]);   // typo: default on
+    CHECK(parsed.experimental[ExperimentalIndex(L"exp_entities_diag")]);
+    CHECK(parsed.experimental[ExperimentalIndex(L"exp_cvars_native")]);        // not in the file: default
+
+    // The env block: on sets 1, off removes, including a value that was already in the environment.
+    SetEnvironmentVariableW(L"SCO_LOADOUT_ASYNC", L"1");     // inherited, but the ini says off
+    SetEnvironmentVariableW(L"SCO_INVENTORY_READ", L"0");    // inherited junk, ini says off
+    SetEnvironmentVariableW(L"SCO_ACTOR_STATS_WRITE", nullptr);
+    wstring removed;
+    const wstring on = ApplyExperimentalEnv(parsed, removed);
+    CHECK(EnvIs(L"SCO_LOADOUT_ASYNC", nullptr) && EnvIs(L"SCO_INVENTORY_READ", nullptr));
+    CHECK(EnvIs(L"SCO_ACTOR_STATS_WRITE", L"1") && EnvIs(L"SCO_CVARS_NATIVE", L"1") && EnvIs(L"SCO_AUDIO_NATIVE", L"1") && EnvIs(L"SCO_ENTITIES_DIAG", L"1"));
+    CHECK(removed == L"SCO_LOADOUT_ASYNC, SCO_INVENTORY_READ");
+    CHECK(on.find(L"exp_actor_stats_write (SCO_ACTOR_STATS_WRITE=1)") != wstring::npos && on.find(L"exp_loadout_async") == wstring::npos);
+
+    // With the defaults the capability switches are set to 1; the diagnostics switch is off, so an inherited value is removed.
+    SetEnvironmentVariableW(L"SCO_ENTITIES_DIAG", L"1");
+    wstring removed2;
+    const wstring onDefaults = ApplyExperimentalEnv(defaults, removed2);
+    CHECK(EnvIs(L"SCO_LOADOUT_ASYNC", L"1") && EnvIs(L"SCO_INVENTORY_READ", L"1") && EnvIs(L"SCO_ACTOR_STATS_WRITE", L"1"));
+    CHECK(EnvIs(L"SCO_ENTITIES_DIAG", nullptr) && removed2 == L"SCO_ENTITIES_DIAG");
+    CHECK(onDefaults.find(L"SCO_ENTITIES_DIAG") == wstring::npos && onDefaults.find(L"SCO_LOADOUT_ASYNC=1") != wstring::npos);
+
+    // All off: nothing listed, nothing set.
+    Config none;
+    for (bool& b : none.experimental) b = false;
+    wstring removed3;
+    CHECK(ApplyExperimentalEnv(none, removed3).empty() && !removed3.empty());   // the defaults set above are removed
+    CHECK(ApplyExperimentalEnv(none, removed3).empty() && removed3.empty());    // a second pass finds nothing left
+    for (const ExperimentalSwitch& s : kExperimental) CHECK(EnvIs(s.var, nullptr));
+}
+
+// An update adds missing keys to an old ini commented out, with the line above each key, so the
+// "not run in game" sentence is not lost for upgraded players.
+static void TestMergeIniKeepsNotes(const fs::path& root) {
+    const fs::path dir = root / "merge";
+    fs::create_directories(dir);
+    { std::ofstream o(dir / "sc-offline.ini", std::ios::binary); o << "clean_logs = off\r\n"; }
+    const fs::path shipped = fs::weakly_canonical(fs::path(__FILE__)).parent_path().parent_path() / "launcher" / "sc-offline.ini";
+    MergeIni(dir.wstring(), shipped.wstring(), "v-test");
+    const std::string merged = Get(dir / "sc-offline.ini");
+    CHECK(merged.find("# exp_loadout_async = on") != std::string::npos);
+    const size_t note = merged.find("# exp_loadout_async: ");
+    CHECK(note != std::string::npos && note < merged.find("# exp_loadout_async = on"));
+    CHECK(merged.find("Not run in game.", note) < merged.find("# exp_loadout_async = on"));
+    Config c;
+    CHECK(ReadConfig((dir / "sc-offline.ini").wstring(), c) && c.experimental[ExperimentalIndex(L"exp_loadout_async")]);
+}
+
 static void TestAnswers() {
     CHECK(ParseLogAnswer("y\n") == LogAnswer::Delete && ParseLogAnswer("Y") == LogAnswer::Delete && ParseLogAnswer("yes\r\n") == LogAnswer::Delete);
     CHECK(ParseLogAnswer("n\n") == LogAnswer::Keep && ParseLogAnswer("\n") == LogAnswer::Keep && ParseLogAnswer("") == LogAnswer::Keep);
@@ -788,6 +871,8 @@ int wmain(int argc, wchar_t** argv) {
     owned /= L"status-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64());
     CHECK(fs::create_directories(owned));
     TestConfig(owned);
+    TestExperimental(owned);
+    TestMergeIniKeepsNotes(owned);
     TestAnswers();
     TestIniWriter(owned);
     TestStatusReadOnly(owned);

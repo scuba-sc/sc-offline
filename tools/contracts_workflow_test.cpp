@@ -8,6 +8,8 @@
 #include <cstddef>
 #include <cstring>
 #include <map>
+#include <set>
+#include <vector>
 #include <string>
 #include <tuple>
 #include <cstdio>
@@ -154,6 +156,12 @@ sco_result Receipt(sco_plugin* self, uint64_t key, sc_economy_receipt* out) {
     return found->second.result;
 }
 sc_economy_v1 economy{sizeof(sc_economy_v1), 0, Balance, Apply, Receipt};
+// Fake capability gate. It answers only for names Core really publishes for these services (a fake
+// that said yes to any string would hide a misspelled gate); every other name is 0.
+const std::set<std::string> core_names = {"game.missions.read", "game.missions.accept", "game.missions.progress", "game.missions.scripts", "game.economy.read", "game.economy.apply"};
+std::set<std::string> disabled;
+unsigned has_calls = 0;
+int Has(const char* name) { ++has_calls; return core_names.count(name) && !disabled.count(name) ? 1 : 0; }
 sco_api api{};
 std::string reply;
 sco_arg Int(int64_t value) { sco_arg a{}; a.type = SCO_ARG_INT; a.v.i = value; return a; }
@@ -163,6 +171,65 @@ sco_result Call(const char* name, std::initializer_list<sco_arg> args = {}) {
     char buffer[512]{};
     auto r = it->second.fn(args.begin(), static_cast<uint32_t>(args.size()), it->second.ctx, buffer, sizeof(buffer));
     reply = buffer; return r;
+}
+sco_result CallVec(const char* name, const std::vector<sco_arg>& args) {
+    auto it = commands.find(name);
+    if (it == commands.end()) return SCO_NOT_FOUND;
+    char buffer[512]{};
+    auto r = it->second.fn(args.data(), static_cast<uint32_t>(args.size()), it->second.ctx, buffer, sizeof(buffer));
+    reply = buffer; return r;
+}
+// Commands that need the provider are registered without a Core gate (Core would refuse them with an
+// empty reply before the plugin runs), so the plugin itself refuses in plain words, with a pointer to
+// the mobiGlas, when the capability is off. This calls the registered function directly, as the plugin
+// receives it; it does not go through Core's registry.
+void CapabilityCase() {
+    const std::map<std::string, std::string> gate = {
+        {"contracts.status", "game.missions.read"}, {"contracts.offer", "game.missions.read"}, {"contracts.mission", "game.missions.read"},
+        {"contracts.accept", "game.missions.accept"}, {"contracts.abandon", "game.missions.accept"},
+        {"contracts.objective", "game.missions.progress"}, {"contracts.advance", "game.missions.progress"},
+        {"contracts.ingest", "game.missions.scripts"},
+        {"contracts.balance", "game.economy.read"}, {"contracts.receipt", "game.economy.read"}, {"contracts.apply", "game.economy.apply"}};
+    for (const auto& [name, cap] : gate) {
+        assert(commands.count(name) && !commands[name].capability);
+        assert(core_names.count(cap));
+    }
+    for (const char* name : {"contracts.cancel", "contracts.resume", "contracts.references", "contracts.reference"})
+        assert(commands.count(name) && !commands[name].capability);
+    assert(commands.size() == gate.size() + 4);
+    const std::map<std::string, std::vector<sco_arg>> sample = {
+        {"contracts.status", {}}, {"contracts.offer", {Int(0)}}, {"contracts.mission", {Int(77)}}, {"contracts.accept", {Int(0), Int(1)}},
+        {"contracts.abandon", {Int(77)}}, {"contracts.objective", {Int(77), Int(0), Int(0)}}, {"contracts.advance", {Int(77), Int(0)}},
+        {"contracts.ingest", {Int(0)}}, {"contracts.balance", {}}, {"contracts.receipt", {Int(9)}}, {"contracts.apply", {Int(9), Int(100), Int(1)}}};
+    // Capability off: no provider call, a plain refusal with no developer name.
+    const std::map<std::string, std::string> plain = {
+        {"game.missions.read", "reading your contracts"}, {"game.missions.accept", "accepting or dropping contracts"},
+        {"game.missions.progress", "updating contract progress"}, {"game.missions.scripts", "adding contract scripts"},
+        {"game.economy.read", "reading your wallet"}, {"game.economy.apply", "changing your wallet"}};
+    for (const auto& [name, cap] : gate) {
+        disabled = {cap};
+        const unsigned read_before = reads, accept_before = accept_effects, pay_before = payment_effects;
+        assert(CallVec(name.c_str(), sample.at(name)) == SCO_UNAVAILABLE);
+        assert(reply.find(plain.at(cap)) != std::string::npos && reply.find("mobiGlas") != std::string::npos);
+        assert(reply.find("game.") == std::string::npos && reply.find("capabilit") == std::string::npos);
+        assert(reads == read_before && accept_effects == accept_before && payment_effects == pay_before);
+    }
+    // Accept needs both names; the read name alone being off also refuses it, naming that one.
+    disabled = {"game.missions.read"};
+    assert(Call("contracts.accept", {Int(0), Int(1)}) == SCO_UNAVAILABLE && reply.find("reading your contracts") != std::string::npos && reply.find("game.") == std::string::npos);
+    // Everything on: the commands work as before.
+    disabled.clear();
+    assert(Call("contracts.status") == SCO_OK && Call("contracts.balance") == SCO_OK);
+    // Metadata reads, cancel and resume never depend on a provider capability.
+    for (const auto& n : core_names) disabled.insert(n);
+    assert(Call("contracts.cancel") == SCO_OK && Call("contracts.resume") == SCO_OK);
+    assert(reply.find("game.") == std::string::npos);
+    // A host without has() cannot say: the call goes ahead and the provider answers.
+    disabled.clear(); test_module::Unload(); commands.clear();
+    sco_api no_has = api; no_has.has = nullptr;
+    assert(test_module::Load(&no_has, owner) == SCO_OK);
+    const unsigned calls = has_calls;
+    assert(Call("contracts.status") == SCO_OK && has_calls == calls);
 }
 void EconomyCase() {
     assert(Call("contracts.balance") == SCO_OK && reply.find("100") != std::string::npos);
@@ -296,7 +363,7 @@ void ReadCase() {
     assert(Call("contracts.offer", {Int(-1)}) == SCO_BAD_ARG);
     unsigned before = reads;
     available = false;
-    assert(Call("contracts.status") == SCO_UNAVAILABLE && reply.find("unavailable") != std::string::npos);
+    assert(Call("contracts.status") == SCO_UNAVAILABLE && reply.find("not available") != std::string::npos && reply.find("mobiGlas") != std::string::npos && reply.find("fallback") == std::string::npos);
     assert(reads == before); available = true;
     auto saved = missions.status; missions.status = nullptr;
     assert(Call("contracts.mission", {Int(77)}) == SCO_UNAVAILABLE); missions.status = saved;
@@ -319,7 +386,7 @@ int main(int argc, char** argv) {
     assert(!std::strcmp(test_module::Query()->name, "contracts"));
     missions_table = &missions; economy_table = &economy; content_table = &content;
     api.size = sizeof(api); api.major = SCO_API_MAJOR; api.minor = SCO_API_MINOR;
-    api.register_command = Register; api.query_service = Query;
+    api.register_command = Register; api.query_service = Query; api.has = Has;
     // Check API admission before version/pointer tails, and do not retain failed opens.
     size_t api_length = offsetof(sco_api, query_service) + 1;
     void* partial_api = std::malloc(api_length); std::memset(partial_api, 0, api_length);
@@ -334,6 +401,7 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(argv[2], "progress")) ProgressCase();
     else if (!std::strcmp(argv[2], "script")) ScriptCase();
     else if (!std::strcmp(argv[2], "economy")) EconomyCase();
+    else if (!std::strcmp(argv[2], "capability")) CapabilityCase();
     else return 2;
     test_module::Unload(); test_module::Close();
     std::printf("contracts %s: PASS (dynamic module, synthetic public provider; not run in game)\n", argv[2]);
