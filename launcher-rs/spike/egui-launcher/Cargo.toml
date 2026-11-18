@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# P4 UI spike. Not a workspace member (launcher-rs/Cargo.toml excludes spike).
+[package]
+name = "egui-launcher-spike"
+version = "0.0.1"
+edition = "2021"
+license = "GPL-3.0-only"
+publish = false
+
+[workspace]
+
+[features]
+default = []
+glow = ["eframe/glow"]
+wgpu = ["eframe/wgpu"]
+
+[dependencies]
+eframe = { version = "0.37.0", default-features = false }
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = "s"
+strip = true
+codegen-units = 1
