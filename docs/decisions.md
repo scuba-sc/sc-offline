@@ -59,3 +59,21 @@ held, plus the game thread's own service start, which is a known deviation to re
 after in-game evidence. A Core without the composition keeps the native-startup refusal.
 No in-game result supports this yet; see [host composition](host-composition.md) and the
 [pending acceptance ledger](status.md).
+
+## 2026-11-17: Rust launcher and in-game menu
+
+Product-owner decisions for the Rust launcher plan, recorded in full in
+[Rust launcher design](rust-launcher.md):
+
+1. Rust scope is the launcher and the in-game menu. The in-game host (dinput8.dll, hooks,
+   Core host kit) stays C++. The Rust menu reads `sco.widgets` panels through a new versioned C
+   interface to be added in sco-core.
+2. sco-core 2.4.1 is held until the Rust launcher, Rust menu, catalogue and reference launcher
+   are in it.
+3. Catalogue: signed index. First-party and reviewed native plugins are allowed. Every pulled
+   plugin lands disabled with a native-code warning. Local plugins are always allowed.
+4. Capability switches are on by default in all release packages. Each is a visible setting the
+   player can turn off, and its text says it has not been run in game.
+
+The remaining items of the design's decision list are still pending owner answers. Only the P0
+skeleton exists (`launcher-rs/`). No in-game result supports any of this.

@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[package]
+name = "scol-cli"
+description = "sc-offline Rust launcher command line. Toolchain proof only in P0."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "scol-hello"
+path = "src/main.rs"
+
+[dependencies]
+scol-contract = { path = "../scol-contract" }

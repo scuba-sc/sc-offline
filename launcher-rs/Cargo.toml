@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[workspace]
+resolver = "2"
+# New crates under crates/ join the workspace without a root edit.
+members = ["crates/*"]
+# Spike folders are throwaway experiments and never part of the build.
+exclude = ["spikes", "spike", "target"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.99"
+license = "GPL-3.0-only"
+publish = false
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = "s"
+strip = true
+codegen-units = 1
+
+[profile.dev]
+panic = "abort"
