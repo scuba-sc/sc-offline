@@ -8,7 +8,7 @@ the same files), and requires the same exit code and the same text. Only `help`,
 argument errors run; the C++ `play`, `install`, `uninstall` and `update` are never started.
 
 It also proves, for the Rust program, that `status` writes nothing (a file tree comparison of the
-whole scratch scenario before and after) and that the exe imports no network library.
+whole scratch scenario before and after) and that the exe imports no network library other than WinHTTP (the updater's).
 
 No real game folder is used. Folders, the ProgramData, ProgramFiles(x86), APPDATA and SystemRoot
 variables all point into the scratch folder. The registry and the fixed drives cannot be redirected,
@@ -625,16 +625,21 @@ NETWORK_DLLS = [b"ws2_32", b"wsock32", b"winhttp", b"wininet", b"mswsock", b"dns
                 b"httpapi", b"wldap32", b"sensapi", b"rasapi32"]
 
 
+# The sc-offline exe holds the updater and the catalogue client, which use WinHTTP and nothing else. `status`
+# and `mcp` never call them (the status run below writes nothing and the CLI tests check the dispatch).
+ALLOWED_NETWORK_DLLS = {"winhttp"}
+
+
 def network_imports(exe):
     data = exe.read_bytes().lower()
-    return [d.decode() for d in NETWORK_DLLS if d + b".dll" in data]
+    return [d.decode() for d in NETWORK_DLLS if d + b".dll" in data and d.decode() not in ALLOWED_NETWORK_DLLS]
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--cpp", default=os.environ.get("SC_OFFLINE_EXE"), help="built C++ sc-offline.exe")
     ap.add_argument("--rust", default=str(RUST_DEFAULT), help="built Rust scol.exe")
-    ap.add_argument("--work", default="D:/t/status-parity", help="scratch folder (emptied first)")
+    ap.add_argument("--work", default=os.environ.get("SCOL_SCRATCH", "D:/t") + "/status-parity", help="scratch folder (emptied first)")
     ap.add_argument("--machine", action="store_true", help="also run the unhinted drive-search scenario")
     ap.add_argument("--only", default="", help="run scenarios whose name contains this")
     ap.add_argument("--keep", action="store_true", help="keep the scratch folder")

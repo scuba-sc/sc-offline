@@ -93,6 +93,13 @@ template<class T> const T* Open(const char* name,uint32_t version=0x10000u) {
     return static_cast<const T*>(table);
 }
 bool Cap(const char* name) { return HAS(g.api,sco_api,has) && g.api->has(name); }
+// Which of the Core 1.3 outfit slots are on right now. Read once per decision, not once per piece.
+struct OutfitCapabilities { bool outfit=false, appearance=false; };
+OutfitCapabilities OutfitCaps() { return {Cap("game.loadout.outfit"),Cap("game.loadout.appearance")}; }
+bool SlotOffered(uint32_t slot,const OutfitCapabilities& caps) {
+    if (slot<22 || slot>34 || !caps.outfit) return false;
+    return (slot<29 || slot>31) || caps.appearance;
+}
 // `message` is the detailed text for the command reply and the log. `plain` is the sentence the player
 // reads in the panel; it never carries command names, versions or reason codes.
 sco_result Answer(sco_result result,char* reply,uint32_t size,const char* message,const char* plain) {
@@ -137,6 +144,19 @@ bool Class(std::string_view name) {
     for (unsigned char c:name) if (!((c>='a' && c<='z') || (c>='A' && c<='Z') || (c>='0' && c<='9') || c=='_')) return false;
     return true;
 }
+// Core 1.3 outfit slots, same numbers as sc_loadout.h (SC_LOADOUT_SLOT_CLOTHING_TORSO_0 .. SC_LOADOUT_SLOT_JEWELLERY).
+// Written as numbers so this file still builds against an SDK kit that predates them.
+constexpr uint32_t kFirstOutfitSlot=22, kLastOutfitSlot=34;
+constexpr uint32_t kHairSlot=29, kEyebrowSlot=31;   // 29-31 (hair, hair colour, eyebrow) are permanent overlays: also need game.loadout.appearance
+struct ClothingPort { const char* port; uint32_t slot; };
+constexpr ClothingPort kClothingPorts[]{
+    {"Clothing_Torso_0",22},{"Clothing_Torso_1",23},{"Clothing_Torso2",24},{"Clothing_Legs",25},{"Clothing_Feet",26},
+    {"Clothing_Hands",27},{"Hat_ItemPort",28},{"Hair_ItemPort",29},{"Hair_Color",30},{"Eyebrow_ItemPort",31},
+    {"Head_Accessory_ItemPort",32},{"Head_Horn_ItemPort",33},{"Jewellery_ItemPort",34}};
+#ifdef SC_LOADOUT_VERSION_1_3
+static_assert(SC_LOADOUT_SLOT_CLOTHING_TORSO_0==kFirstOutfitSlot && SC_LOADOUT_SLOT_HAIR==kHairSlot && SC_LOADOUT_SLOT_EYEBROW==kEyebrowSlot &&
+              SC_LOADOUT_SLOT_JEWELLERY==kLastOutfitSlot,"outfit slot numbers follow sc_loadout.h");
+#endif
 uint32_t Slot(std::string_view name,bool outfit) {
     struct Map { const char* item; const char* port; uint32_t slot; };
     // These are logical consumer selections only; the game pack must verify actual engine mapping.
@@ -145,6 +165,9 @@ uint32_t Slot(std::string_view name,bool outfit) {
         {"arms","Armor_Arms",SC_LOADOUT_SLOT_ARMS},{"legs","Armor_Legs",SC_LOADOUT_SLOT_LEGS},
         {"backpack","backpack",SC_LOADOUT_SLOT_BACKPACK},{"visor","Lens_ItemPort",SC_LOADOUT_SLOT_VISOR} };
     for (const auto& m:map) if (Same(name,outfit ? m.port : m.item)) return m.slot;
+    // Outfit-only ports. Core 1.3 gives these logical slots (22-34); whether one can be sent is decided
+    // when the request is made, from the capabilities Core reports, not here.
+    if (outfit) for (const auto& c:kClothingPorts) if (Same(name,c.port)) return c.slot;
     if (!outfit && Same(name,"primary")) return SC_LOADOUT_SLOT_PRIMARY;
     if (!outfit && Same(name,"sidearm")) return SC_LOADOUT_SLOT_SIDEARM;
     return 0;
@@ -295,6 +318,8 @@ sco_result Apply(const std::vector<Piece>& pieces,char* out,uint32_t size,uint32
             const auto message="Unsupported legacy slot/port '"+p.port+"': whole selection refused; this consumer does not map that slot.";
             return Answer(SCO_UNAVAILABLE,out,size,message.c_str(),"That item can't be equipped from here.");
         }
+        if (p.slot>SC_LOADOUT_SLOT_SIDEARM_TOOL_BATTERY)
+            return Answer(SCO_UNAVAILABLE,out,size,"Outfit slots (22-34) go only through the background equip route; the synchronous apply reports them unsupported. Nothing sent.","That item can't be equipped from here.");
         if (!Class(p.name) || Same(p.name,"none") || Same(p.name,"default"))
             return Answer(SCO_BAD_ARG,out,size,"Invalid or clear/default class; entire selection refused.","That item isn't valid.");
         for (size_t j=0;j<i;++j) if (pieces[j].slot==p.slot) return Answer(SCO_BAD_ARG,out,size,"Duplicate logical slot: entire selection refused before equip.","Two of the chosen items go in the same place.");
@@ -373,9 +398,10 @@ sco_result SubmitPieces(std::vector<Piece> pieces,char* out,uint32_t size) {
     if (g.job || job_submitting || job_cancelling) return Answer(SCO_UNAVAILABLE,out,size,"An equip request is already pending or being sent: check its progress or cancel it before sending another.","Finish or cancel the current equipping first.");
     if (pieces.empty()) return Answer(SCO_BAD_ARG,out,size,"No selected pieces; nothing was sent.","Nothing is selected.");
     if (pieces.size()>SC_LOADOUT_MAX_ITEMS) return Answer(SCO_TOO_MANY,out,size,"More than 16 pieces; nothing was sent.","That is too many items at once. Choose 16 or fewer.");
+    const auto caps=OutfitCaps();
     for (size_t i=0;i<pieces.size();++i) {
         const auto& p=pieces[i];
-        if (!p.slot || p.slot>SC_LOADOUT_SLOT_SIDEARM_TOOL_BATTERY)
+        if (!p.slot || (p.slot>SC_LOADOUT_SLOT_SIDEARM_TOOL_BATTERY && !SlotOffered(p.slot,caps)))
             return Answer(SCO_UNAVAILABLE,out,size,"Unsupported legacy slot/port; entire selection refused.","That item can't be equipped from here.");
         if (!Class(p.name) || Same(p.name,"none") || Same(p.name,"default")) return Answer(SCO_BAD_ARG,out,size,"Invalid or clear/default class; entire selection refused.","That item isn't valid.");
         for (size_t j=0;j<i;++j) if (pieces[j].slot==p.slot)
@@ -554,14 +580,15 @@ sco_result EquipSelection(const sco_arg* args,uint32_t n,char* out,uint32_t size
 sco_result Equip(const sco_arg* a,uint32_t n,void*,char* o,uint32_t z) { return EquipSelection(a,n,o,z,false); }
 sco_result SubmitGear(const sco_arg* a,uint32_t n,void*,char* o,uint32_t z) { return EquipSelection(a,n,o,z,true); }
 // An outfit can be worn only when every piece goes in a slot this menu can set, no two pieces share a
-// slot and the whole outfit fits one request. Core has no slot for clothing, hats or faces, so
-// an outfit with one of those pieces can never be worn and is not offered.
-bool PiecesMapped(const Outfit& outfit) {
-    return !outfit.pieces.empty() && std::all_of(outfit.pieces.begin(),outfit.pieces.end(),[](const Piece& p) {
-        return p.slot && p.slot<=SC_LOADOUT_SLOT_SIDEARM_TOOL_BATTERY; });
+// slot and the whole outfit fits one request. Clothing, hat, hair and similar parts have a slot only
+// while Core reports game.loadout.outfit (hair, hair colour and eyebrow also need game.loadout.appearance).
+// Body, head, eyes and teeth have no slot at all, so an outfit with one of those is never offered.
+bool PiecesMapped(const Outfit& outfit,const OutfitCapabilities& caps) {
+    return !outfit.pieces.empty() && std::all_of(outfit.pieces.begin(),outfit.pieces.end(),[&](const Piece& p) {
+        return p.slot && (p.slot<=SC_LOADOUT_SLOT_SIDEARM_TOOL_BATTERY || SlotOffered(p.slot,caps)); });
 }
-bool Wearable(const Outfit& outfit) {
-    if (!PiecesMapped(outfit) || outfit.pieces.size()>SC_LOADOUT_MAX_ITEMS) return false;
+bool Wearable(const Outfit& outfit,const OutfitCapabilities& caps) {
+    if (!PiecesMapped(outfit,caps) || outfit.pieces.size()>SC_LOADOUT_MAX_ITEMS) return false;
     for (size_t i=0;i<outfit.pieces.size();++i) for (size_t j=0;j<i;++j) if (outfit.pieces[j].slot==outfit.pieces[i].slot) return false;
     return true;
 }
@@ -578,7 +605,7 @@ sco_result WearSelection(const sco_arg* args,uint32_t n,char* out,uint32_t size,
         found=&outfit;
     }
     if (!found) return Answer(SCO_NOT_FOUND,out,size,"Outfit not in copied outfits.txt.","That outfit isn't in the list.");
-    if (!PiecesMapped(*found)) return Answer(SCO_UNAVAILABLE,out,size,"Outfit has a piece in a port with no public loadout slot; whole outfit refused, nothing sent.","That outfit has parts the game can't change yet.");
+    if (!PiecesMapped(*found,OutfitCaps())) return Answer(SCO_UNAVAILABLE,out,size,"Outfit has a piece in a port with no public loadout slot; whole outfit refused, nothing sent.","That outfit has parts the game can't change yet.");
     return async ? SubmitPieces(found->pieces,out,size) : Apply(found->pieces,out,size);
 }
 sco_result Wear(const sco_arg* a,uint32_t n,void*,char* o,uint32_t z) { return WearSelection(a,n,o,z,false); }
@@ -696,13 +723,13 @@ std::vector<size_t> Filtered() {
     }
     return matches;
 }
-bool OutfitMatch(const Outfit& outfit) {
-    if (!Wearable(outfit)) return false;   // never offer an outfit that can only be refused
+bool OutfitMatch(const Outfit& outfit,const OutfitCapabilities& caps) {
+    if (!Wearable(outfit,caps)) return false;   // never offer an outfit that can only be refused
     return catalogue::Contains(outfit.name,g.outfit_filter) || catalogue::Contains(Readable(outfit.name),g.outfit_filter);
 }
 size_t OutfitMatches() {
-    size_t count=0;
-    for (const auto& outfit:g.lists.outfits) if (OutfitMatch(outfit)) ++count;
+    size_t count=0; const auto caps=OutfitCaps();
+    for (const auto& outfit:g.lists.outfits) if (OutfitMatch(outfit,caps)) ++count;
     return count;
 }
 // "Helmet: Fixture Helmet": the slot heading and the item, spelled for reading.
@@ -1012,7 +1039,9 @@ void Publish() {
         // Outfits that use parts Core has no slot for (clothing, hats, faces) can never be worn, so they are
         // not offered; the page says so in plain words, and shows no picker at all when none can be worn.
         const size_t outfit_total=g.lists.outfits.size();
-        const size_t outfit_wearable=static_cast<size_t>(std::count_if(g.lists.outfits.begin(),g.lists.outfits.end(),Wearable));
+        const auto outfit_caps=OutfitCaps();
+        const size_t outfit_wearable=static_cast<size_t>(std::count_if(g.lists.outfits.begin(),g.lists.outfits.end(),
+            [&](const Outfit& o) { return Wearable(o,outfit_caps); }));
         const size_t outfit_hidden=outfit_total-outfit_wearable;
         if (can_wear && outfit_total && !outfit_wearable)
             under(400,SCO_WIDGET_LABEL,116,"None of these outfits can be worn yet. They use parts the game can't change yet.");
@@ -1020,7 +1049,7 @@ void Publish() {
         under(400,SCO_WIDGET_TEXT_INPUT,135,"Search outfits").text=g.outfit_filter.c_str();
         int32_t selected_row=-1;
         std::vector<size_t> outfit_matches;   // paged like the Player gear list: at most 64 rows per combo
-        for (size_t i=0;i<g.lists.outfits.size();++i) if (OutfitMatch(g.lists.outfits[i])) outfit_matches.push_back(i);
+        for (size_t i=0;i<g.lists.outfits.size();++i) if (OutfitMatch(g.lists.outfits[i],outfit_caps)) outfit_matches.push_back(i);
         if (static_cast<size_t>(g.outfit_page)*64>=outfit_matches.size()) g.outfit_page=0;
         for (size_t i=static_cast<size_t>(g.outfit_page)*64;i<outfit_matches.size() && outfit_rows.size()<64;++i) {
             if (g.outfit>=0 && static_cast<size_t>(g.outfit)==outfit_matches[i]) selected_row=static_cast<int32_t>(outfit_rows.size());

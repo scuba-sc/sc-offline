@@ -24,6 +24,7 @@ pub mod paths;
 pub mod status;
 pub mod version;
 mod win;
+pub use win::on_wine;
 
 pub use install::{run as run_install, Io as InstallIo, PcUndo};
 pub use status::{collect_status, run_status, StatusReport};

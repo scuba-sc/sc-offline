@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[package]
+name = "scol-update"
+description = "Self-update of the sc-offline Rust launcher: GitHub release check, manifest format 1, journaled swap with rollback, WinHTTP fetcher, and the catalogue fetch trait implementation."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Test hooks, like the C++ SCO_UPDATE_TEST build: `--apply-zip <zip> <tag> <sha256>` and the
+# SCO_TEST_FAIL_AFTER=N swap failure. Never in a release build.
+test-hooks = []
+
+[dependencies]
+scol-catalogue = { path = "../scol-catalogue" }
+scol-plugins = { path = "../scol-plugins" }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Networking_WinHttp",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Threading",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_UI_Shell",
+  "Win32_System_Registry",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[[test]]
+name = "update"
+path = "../../tests/update/update.rs"

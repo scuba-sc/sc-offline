@@ -209,7 +209,7 @@ if(TARGET sco_widgets_imgui)
   target_compile_definitions(dinput8 PRIVATE SCO_WIDGETS_HOST_RENDERER)
   if(SCO_HOST_MENU_CLIENT AND EXISTS "${SCO_CORE_SOURCE_DIR}/include/sco/host_menu.h")
     if(SCO_WIDGETS_13_DECL)
-      target_sources(dinput8 PRIVATE src/menu_widgets.cpp)
+      target_sources(dinput8 PRIVATE src/menu_widgets.cpp src/menu_rust.cpp)
       target_compile_definitions(dinput8 PRIVATE SCO_HOST_MENU_CLIENT)
       # Explicit synthetic target; this test uses no graphics backend or game process.
       add_executable(menu_imgui_numeric_test EXCLUDE_FROM_ALL tools/menu_imgui_numeric_test.cpp)

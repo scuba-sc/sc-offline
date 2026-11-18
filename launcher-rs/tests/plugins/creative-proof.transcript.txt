@@ -1,0 +1,84 @@
+zip: creative-1.1.0.zip, 104694 bytes, sha256 d2859569cf06669195fcc451989910f64df6879c0c1575eea3f5fada02ed8f57
+index 'first': sequence 10, 717 bytes, signed with the TEST key
+$ plugins catalogue list --source <scratch>\catalogue
+  first index seen: sequence 10 is now pinned; older ones will be refused
+  index sequence 10, issued 2026-11-18T08:08:56Z, expires 2026-12-18T09:08:56Z, digest 4bc42880f0f27616ed7992f4f38ac2a3b7ee4c763d1d910e19827a832da93525
+  creative 1.1.0 (native), plugin api 1.1, SDK >=2.4.1, <2.5, licence GPL-3.0-only, maintainers scuba-sc, review first-party
+      evidence: Proof run: files taken from an existing build, not built or run here, not run in game.
+      not installed; can be installed here (it starts disabled)
+  exit 0
+  file-tree diff after 'catalogue list':
+  + data/launcher
+  + data/launcher/catalogue-state.json
+
+$ plugins catalogue install creative --source <scratch>\catalogue
+  installed creative 1.1.0 (native plugin, 2 files) from index sequence 10; it is disabled
+  warning: This plugin is native code. It runs inside the game with your Windows rights. The launcher checked the file against the signed index and did not run it. It starts disabled; turn it on only if you trust its authors.
+  turn it on with: plugins enable creative
+  exit 0
+  file-tree diff after 'catalogue install':
+  + data/launcher/installed.json
+  + data/plugins/creative
+  + data/plugins/creative/creative.dll
+  + data/plugins/creative/disabled
+  + data/plugins/creative/plugin.ini
+
+  checked: it landed disabled, creative.dll and plugin.ini are byte for byte the originals
+
+$ plugins list
+  creative  Creative  1.1.0  [disabled]  native plugin, api 1.1, source catalogue, by sc-offline
+  hand_copied  Hand copied  1.0.0  [enabled]  data plugin, api 1.1, source local
+  exit 0
+  file-tree diff after 'list': none
+
+$ plugins enable creative
+  creative is now enabled
+  warning: this plugin is native code; it runs inside the game with your Windows rights
+  exit 0
+  file-tree diff after 'enable':
+  ~ data/launcher/installed.json
+  - data/plugins/creative/disabled
+
+$ plugins list
+  creative  Creative  1.1.0  [enabled]  native plugin, api 1.1, source catalogue, by sc-offline
+      native code: runs inside the game with your Windows rights
+  hand_copied  Hand copied  1.0.0  [enabled]  data plugin, api 1.1, source local
+  exit 0
+  file-tree diff after 'list': none
+
+$ plugins catalogue list --source <scratch>\catalogue
+  index sequence 10, issued 2026-11-18T08:08:56Z, expires 2026-12-18T09:08:56Z, digest 4bc42880f0f27616ed7992f4f38ac2a3b7ee4c763d1d910e19827a832da93525
+  creative 1.1.0 (native), plugin api 1.1, SDK >=2.4.1, <2.5, licence GPL-3.0-only, maintainers scuba-sc, review first-party
+      evidence: Proof run: files taken from an existing build, not built or run here, not run in game.
+      installed here: 1.1.0 (catalogue); can be installed here (it starts disabled)
+  exit 0
+  file-tree diff after 'catalogue list (same index again)': none
+
+index 'older': sequence 9, 716 bytes, signed with the TEST key
+$ plugins catalogue list --source <scratch>\catalogue
+  refused (rollback): index sequence 9 is older than the last accepted 10
+  exit 1
+  file-tree diff after 'replayed older index': none
+
+index 'same sequence, different bytes': sequence 10, 717 bytes, signed with the TEST key
+index 'same sequence, different bytes': sequence 10, 727 bytes, signed with the TEST key
+$ plugins catalogue list --source <scratch>\catalogue
+  refused (sequence-replay): index sequence 10 was already accepted with different contents
+  exit 1
+  file-tree diff after 'same sequence, different bytes': none
+
+$ plugins remove creative
+  removed creative
+  exit 0
+  file-tree diff after 'remove':
+  ~ data/launcher/installed.json
+  - data/plugins/creative
+  - data/plugins/creative/creative.dll
+  - data/plugins/creative/plugin.ini
+
+file-tree diff of the whole run (before the first command, after remove):
+  + data/launcher
+  + data/launcher/catalogue-state.json
+  + data/launcher/installed.json
+PASS: catalogue list, install, enable, list, remove; only data/plugins/creative/ and data/launcher/ changed;
+      the pinned sequence survived across runs and the replays were refused. Not run in game.

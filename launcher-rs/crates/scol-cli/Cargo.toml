@@ -1,18 +1,24 @@
 # SPDX-License-Identifier: GPL-3.0-only
 [package]
 name = "scol-cli"
-description = "sc-offline Rust launcher command line: help and the read-only status command (P3 first slice)."
+description = "The sc-offline Rust launcher command line: play, install, uninstall, status, mcp, help and the hidden helper and self-test modes."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
+# `cargo run` without --bin starts the real command line.
+default-run = "sc-offline"
 
-# The command line. Only `help` and `status` are built; play, install, uninstall and update print that
-# they are not available yet and exit 1.
+# The command line. Same arguments, text and exit codes as the C++ sc-offline.exe, plus `plugins`.
+[[bin]]
+name = "sc-offline"
+path = "src/main.rs"
+
+# The older name of the same program, kept because the parity scripts run it. It costs one small file.
 [[bin]]
 name = "scol"
-path = "src/main.rs"
+path = "src/scol.rs"
 
 # The P0 toolchain proof. CI still checks this binary's imports.
 [[bin]]
@@ -24,3 +30,15 @@ scol-contract = { path = "../scol-contract" }
 
 [target.'cfg(windows)'.dependencies]
 scol-install = { path = "../scol-install" }
+scol-mcp = { path = "../scol-mcp" }
+scol-config = { path = "../scol-config" }
+scol-catalogue = { path = "../scol-catalogue" }
+scol-update = { path = "../scol-update" }
+scol-plugin-manager = { path = "../scol-plugin-manager" }
+# The window. Linked in, so `sc-offline.exe --window` needs no second file.
+scol-ui = { path = "../scol-ui" }
+# `real` compiles the real host: the helper process, the named events, the game start and the PC changes.
+scol-play = { path = "../scol-play", features = ["real"] }
+
+[dev-dependencies]
+scol-pcchanges = { path = "../scol-pcchanges" }

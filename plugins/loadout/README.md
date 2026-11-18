@@ -183,7 +183,7 @@ names never appear on a page, and the plugin uses 1.0 widget nodes, so there are
 
 **Squadron 42**: behind the spoiler confirmation, **Outfit** (search, list, page buttons, **Wear selected outfit**,
 progress; only outfits whose every piece has a Core loadout slot are listed, and the page counts the ones it leaves out,
-because Core has no slot for clothing, hats or faces yet), **Game settings**, **Ships** and **Objects**. The settings cannot be changed from the menu; they appear as plain
+because Core has no slot for body, head, eyes or teeth; with a Core 1.3 that reports `game.loadout.outfit`, clothing, hat, head accessory, horn and jewellery ports have a slot too, and hair, hair colour and eyebrow also need `game.loadout.appearance`; the Core capability is checked each time the page is drawn and each time an outfit is sent. Not run in game), **Game settings**, **Ships** and **Objects**. The settings cannot be changed from the menu; they appear as plain
 "on/off" lines when the game lets them be read, and otherwise as one line saying they can't be read or changed yet. Ships and
 objects forward to the Ships & vehicles and Build features; when the other feature's command is missing the section shows
 one plain line instead of a button. The visor control (synchronous only) is not on the page.
@@ -405,7 +405,7 @@ for the selected copied gear and confirmed outfit, respectively. Commands
 `loadout.submit_gear` and `loadout.submit_outfit` use the same selections and
 one retained job; progress and cancel are available on both panels. The async
 gear routes map the copied `primary` and `sidearm` sections to the matching
-public logical weapon slots. Outfit ports receive no new mapping.
+public logical weapon slots. Outfit ports Clothing_Torso_0/1/2, Clothing_Legs, Clothing_Feet, Clothing_Hands, Hat, Hair, Hair_Color, Eyebrow, Head_Accessory, Head_Horn and Jewellery map to Core 1.3 slots 22-34, only through the background route and only while `game.loadout.outfit` is on (29-31 also need `game.loadout.appearance`). Body, head, eyes and teeth ports stay unmapped.
 Unknown ports, duplicate slots, `None`/`Default`, and batches exceeding 16 items
 refuse before submission. The separate manual and curated-selector routes use the published
 1.1/1.2 contracts without assigning meanings to old catalogue ports. Public

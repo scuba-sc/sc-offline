@@ -1,0 +1,12 @@
+# kind tag value-or-index   (each line is one event the click-through must produce)
+TOGGLE  flight.assist  value=0
+SLIDER  flight.mix     value~57.5 integral
+SLIDER  flight.gain    value>1.8
+COMBO   flight.mode    index=2
+TEXT    flight.name    text=Zed
+BUTTON  flight.reset
+# flight.calibrate is disabled: no event
+LIST    list.ships     index=2
+PAGE    list.ships     row=4
+PAGE    table.stats    row=3
+TOGGLE  cols.details   value=1

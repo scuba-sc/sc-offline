@@ -140,20 +140,33 @@ inline sco_result Scan(const sc_game_spatial_v1* sp,std::vector<sc_game_zone>& o
 // about 1.5 m/s) and far above the 6-decimal rounding of a saved position and ordinary standing drift.
 inline constexpr double already_there_metres=2.0;
 inline constexpr const char* already_there_plain="You are already at that spot.";
-// True when the player's current position, expressed in the saved spot's zone, is within
-// already_there_metres of the saved position. Any failed read answers false: the move goes ahead as before.
-inline bool AlreadyThere(const sc_spatial_v1* old,const sc_game_spatial_v1* sp,const Restoration& r) {
-    if (!TRAVEL_FN(old,sc_spatial_v1,player_pose) || !TRAVEL_FN(sp,sc_game_spatial_v1,pose_to_zone) || !r.pose.zone) return false;
+// True when the player's current position, expressed in the target's zone, is within `metres`
+// of the target position. Any failed read answers false.
+inline bool PlayerWithin(const sc_spatial_v1* old,const sc_game_spatial_v1* sp,const Pose& target,double metres) {
+    if (!TRAVEL_FN(old,sc_spatial_v1,player_pose) || !TRAVEL_FN(sp,sc_game_spatial_v1,pose_to_zone) || !target.zone) return false;
     Pose player;
     if (!old->player_pose(player.pos,player.rot,&player.zone) || !player.zone || !Valid(player)) return false;
     double pos[3]{},rot[4]{};
-    if (!sp->pose_to_zone(player.zone,r.pose.zone,player.pos,player.rot,pos,rot)) return false;
+    if (!sp->pose_to_zone(player.zone,target.zone,player.pos,player.rot,pos,rot)) return false;
     double d2=0;
     for (int i=0;i<3;++i) {
         if (!std::isfinite(pos[i])) return false;
-        const double d=pos[i]-r.pose.pos[i]; d2+=d*d;
+        const double d=pos[i]-target.pos[i]; d2+=d*d;
     }
-    return d2<=already_there_metres*already_there_metres;
+    return d2<=metres*metres;
+}
+// True when the player is within already_there_metres of the saved position. A failed read answers
+// false: the move goes ahead as before.
+inline bool AlreadyThere(const sc_spatial_v1* old,const sc_game_spatial_v1* sp,const Restoration& r) {
+    return PlayerWithin(old,sp,r.pose,already_there_metres);
+}
+// Core can report a timeout or failure after the move really happened. When it says the move had
+// been applied, the player's own pose decides: within this distance of the target counts as arrived.
+inline constexpr double arrived_after_report_metres=2.0;
+inline constexpr const char* at_saved_spot_plain="You are at your saved spot.";
+inline bool ArrivedDespiteReport(const sc_spatial_v1* old,const sc_game_spatial_v1* sp,const Pose& target,uint32_t state,uint32_t applied) {
+    return state!=SC_RELOCATION_COMPLETE && state!=SC_RELOCATION_CANCELLED && state!=SC_RELOCATION_PENDING && applied &&
+        PlayerWithin(old,sp,target,arrived_after_report_metres);
 }
 // game.relocation 1.0 (sc_relocation.h): one request per move, tracked by ticket across ticks.
 inline constexpr uint32_t relocation_timeout_ms=30000;

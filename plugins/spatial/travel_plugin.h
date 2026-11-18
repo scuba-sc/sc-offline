@@ -34,6 +34,7 @@ struct State {
 #ifndef TRAVEL_TELEPORT
     std::string curated_status="Not read";
 #endif
+    Pose target; // where the tracked move was aimed; read back if Core reports a failure after the move was applied
     uint64_t ticket=0; bool ticking=false; std::string moving; // one tracked game.relocation request; never persisted
 } g;
 // Opaque, never dereferenced; do not reuse a publication identity after reload.
@@ -321,6 +322,11 @@ void TravelTick(const char*,const void*,void*) noexcept {
         if (r!=SCO_OK) { text="Lost track of the move to "+g.moving+" (game.relocation status unavailable); arrival not confirmed";
             plain="Lost track of the move to "+g.moving+". Check where you are."; }
         else if (s.state==SC_RELOCATION_COMPLETE) { result=SCO_OK; text="Arrived at "+g.moving; plain="Arrived at "+g.moving+"."; }
+        else if (ArrivedDespiteReport(Open<sc_spatial_v1>(SC_SPATIAL_SERVICE_NAME),Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),g.target,s.state,s.applied)) {
+            result=SCO_OK; const bool saved=g.moving.find("saved spot")!=std::string::npos&&g.moving.find("area around")==std::string::npos;
+            text="Core reported "+std::string(ReasonText(s.reason))+" but the move had been applied and the player is within 2 m of "+g.moving+"; counted as arrived";
+            plain=saved?std::string(at_saved_spot_plain):"You are at "+g.moving+".";
+        }
         else {
             text=std::string(s.state==SC_RELOCATION_CANCELLED?"Move cancelled":"Move failed")+" ("+ReasonText(s.reason)+"): "+g.moving+(s.applied?"; the move had started":"; not moved");
             plain="The move to "+g.moving+(s.state==SC_RELOCATION_CANCELLED?" was cancelled":" failed: "+std::string(PlainReason(s.reason)))+
@@ -347,7 +353,7 @@ sco_result Move(const Pose& target,const std::string& label,char* out,uint32_t n
         if (TRAVEL_FN(service,sc_relocation_v1,cancel)) service->cancel(g.self,ticket);
         return Reply(SCO_FAILED,out,n,"Cannot follow the move (tick subscription refused); request cancelled","Couldn't start the move. You haven't moved.");
     }
-    g.ticking=true; g.ticket=ticket; g.moving=label;
+    g.ticking=true; g.ticket=ticket; g.moving=label; g.target=target;
     const auto started=Reply(SCO_OK,out,n,"Moving to "+label+(note.empty()?"":" ["+note+"]")+" (game.relocation); arrival is reported when the game confirms it",
         "Moving to "+label+". You'll see a message when you arrive.");
     Announce(); return started;

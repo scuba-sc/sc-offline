@@ -632,9 +632,15 @@ jobs:
       - name: Launcher UTF-8 text, glyphs and atomic language settings
         run: python tools/check_launcher_localization.py
 
-  # Rust launcher skeleton (P0). Builds the workspace with the pinned toolchain, checks that the
-  # release exe imports no dynamic CRT, runs the unit tests and the dependency gate. Source and
-  # build evidence only: nothing here runs in game.
+  # Rust launcher. Builds the whole workspace (CLI sc-offline, window, updater, plugin manager, in-game
+  # menu DLL) with the pinned toolchain, runs the unit and flow tests, checks that the release exes import
+  # no dynamic CRT and no network library but WinHTTP, runs the dependency gate, then compares the Rust
+  # exe with a C++ sc-offline.exe built from the same source (status and dry-run text, exit codes, file
+  # trees) and runs the real helper process and named events against a stand-in game process.
+  # Source, build and synthetic evidence only: nothing here runs in game.
+  # Not in CI (run by hand, see docs/rust-launcher.md): the C++ update contract (needs a C++ build with
+  # -DSCO_UPDATE_TEST), the creative plugin proof (needs the plugins-index tools and a built creative.dll)
+  # and the in-game menu host (needs a Core checkout with sco/widgets_view.h).
   rust-launcher:
     runs-on: windows-2025-vs2026
     defaults:
@@ -660,6 +666,28 @@ jobs:
         run: cargo build --locked --release
       - name: Test (locked)
         run: cargo test --locked
+      - name: Window self test (no window, no GPU; fixture index and TEST key, never a release build)
+        run: cargo run --locked -p scol-ui --features fixtures -- --ui-self-test
+      - name: Build the C++ launcher from the same source for the parity checks
+        working-directory: .
+        shell: pwsh
+        run: |
+          cmake -S . -B build-cpp -G "Visual Studio 18 2026" -A x64
+          cmake --build build-cpp --config Release --target sc-offline --parallel
+      - name: Status and dry-run play match the C++ launcher; stand-in game with the real helper
+        working-directory: .
+        shell: pwsh
+        env:
+          SCOL_SCRATCH: ${{ runner.temp }}\scol-scratch
+        run: |
+          New-Item -ItemType Directory -Force $env:SCOL_SCRATCH | Out-Null
+          $rs = "launcher-rs/target/release"
+          python launcher-rs/tests/status/compare_status.py --cpp build-cpp/bin/Release/sc-offline.exe --rust "$rs/sc-offline.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python launcher-rs/tests/play/compare_dryrun.py --cpp build-cpp/bin/Release/sc-offline.exe --rust "$rs/sc-offline.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python launcher-rs/tests/play/real_standin.py --rust "$rs/sc-offline.exe" --standin "$rs/scol-play-standin.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Plugin zip corpus matches its generator
         working-directory: .
         run: python launcher-rs/tests/zip-corpus/generate.py --check
@@ -672,9 +700,16 @@ jobs:
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $dumpbin = & $vswhere -latest -products * -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' | Select-Object -First 1
           if (-not $dumpbin) { throw 'dumpbin.exe not found: the VC tools component is missing on this runner' }
-          $out = & $dumpbin /dependents target\release\scol-hello.exe
-          $out
-          if ($out -match '(?i)vcruntime|ucrtbase|msvcp|api-ms-win-crt') { throw 'dynamic CRT import found' }
+          foreach ($exe in 'scol-hello.exe', 'sc-offline.exe', 'scol-pm.exe', 'sc_offline_menu.dll') {
+            $out = & $dumpbin /dependents "target\release\$exe"
+            $out
+            if ($out -match '(?i)vcruntime|ucrtbase|msvcp|api-ms-win-crt') { throw "dynamic CRT import found in $exe" }
+          }
+          # WinHTTP is the one network library (the updater and the catalogue); none in scol-hello, scol-pm or the menu.
+          foreach ($exe in 'scol-hello.exe', 'scol-pm.exe', 'sc_offline_menu.dll') {
+            $out = & $dumpbin /dependents "target\release\$exe"
+            if ($out -match '(?i)winhttp|wininet|ws2_32|wsock32') { throw "network library import found in $exe" }
+          }
       - name: Dependency gate (cargo-deny)
         run: |
           # Slow (builds from source), pinned to the version tested locally.

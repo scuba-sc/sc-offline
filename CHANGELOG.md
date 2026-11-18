@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Rust launcher preview (`launcher-rs/`), not the launcher that starts the game.**
+  - A Rust build of the launcher now has the whole command line: `play`, `install`, `uninstall`, `status`, `update`, `mcp`, `help`, the new `plugins` commands (list, enable, disable, install from a folder or zip, remove, catalogue), the hidden modes, and the window (`--window`, or no arguments when double-clicked). Status and dry-run output match the C++ launcher in synthetic scenarios.
+  - The window (egui) has Home, Output, Plugins with a Catalogue tab, Capabilities (the six `exp_*` switches) and Settings, in English and Russian. The Rust in-game menu (`sc_offline_menu.dll`, opt-in with `SC_OFFLINE_MENU=rust`, ImGui stays the default) has a first version that draws `sco.widgets` panels.
+  - The `dev241.15` test package carries `sc-offline-rs.exe` and `sc_offline_menu.dll` as an optional preview; `sc-offline.exe` is still the C++ launcher. `docs/rust-launcher.md` lists what is built and what is not.
+  - Not run in game. The elevated helper, the real PC changes and the live update download were not run on a real PC. The plugin catalogue has no production signing key yet, so it refuses every real index.
 - **Launcher: game capability switches in `sc-offline.ini`.**
   - sco-core starts the loadout, inventory and actor-stats capabilities (and three smaller ones) only when a variable is set inside the game. They were reachable only by setting environment variables by hand. They are now ini keys: `exp_loadout_async`, `exp_inventory_read`, `exp_actor_stats_write`, `exp_cvars_native`, `exp_audio_native` and `exp_entities_diag`.
   - The five capability switches are `on` in the release packages; `exp_entities_diag` (log-only diagnostics, not a feature) is `off`. Change any with `on` or `off`. Each key's text says the capability has not been run in game.

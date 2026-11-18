@@ -114,6 +114,20 @@ int main() {
     near.pose.pos[1]=5; assert(!AlreadyThere(&old,&sp,near));
     near.pose.zone=0; assert(!AlreadyThere(&old,&sp,near)); near.pose.zone=1;
     assert(!AlreadyThere(nullptr,&sp,near) && !AlreadyThere(&old,nullptr,near)); // missing service: move proceeds as before
+    // Core can report a timeout after the move really happened. Applied plus a pose within 2 m of the target is arrival.
+    {
+        Pose t; t.zone=1; t.pos[0]=2.5; t.pos[1]=0; t.pos[2]=2; // player is at 1,0,2 in zone1: 1.5 m away
+        assert(ArrivedDespiteReport(&old,&sp,t,SC_RELOCATION_FAILED,1));
+        assert(!ArrivedDespiteReport(&old,&sp,t,SC_RELOCATION_FAILED,0)); // never applied: still a failure
+        assert(!ArrivedDespiteReport(&old,&sp,t,SC_RELOCATION_COMPLETE,1) && !ArrivedDespiteReport(&old,&sp,t,SC_RELOCATION_CANCELLED,1));
+        assert(!ArrivedDespiteReport(&old,&sp,t,SC_RELOCATION_PENDING,1));
+        t.pos[0]=3.5; assert(!ArrivedDespiteReport(&old,&sp,t,SC_RELOCATION_FAILED,1)); // 2.5 m away: real failure
+        t.pos[0]=2.9; assert(ArrivedDespiteReport(&old,&sp,t,SC_RELOCATION_FAILED,1)); // 1.9 m: arrived
+        t.zone=2; t.pos[0]=0; t.pos[1]=2; t.pos[2]=2; assert(ArrivedDespiteReport(&old,&sp,t,SC_RELOCATION_FAILED,1)); // other zone frame
+        t.pos[1]=9; assert(!ArrivedDespiteReport(&old,&sp,t,SC_RELOCATION_FAILED,1));
+        assert(!ArrivedDespiteReport(nullptr,&sp,t,SC_RELOCATION_FAILED,1) && !ArrivedDespiteReport(&old,nullptr,t,SC_RELOCATION_FAILED,1)); // unreadable pose: failure stands
+        assert(std::string(at_saved_spot_plain)=="You are at your saved spot.");
+    }
     // Zone ids are saved with the spot. game.spatial finds a zone by name only inside the player's own ancestry,
     // so a spot saved elsewhere resolves through zone_record(id): accepted only while the record keeps the saved name.
     {

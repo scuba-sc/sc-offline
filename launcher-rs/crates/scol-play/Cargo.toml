@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[package]
+name = "scol-play"
+description = "The play, install and uninstall flow of the sc-offline Rust launcher, with the elevated --helper mode, behind a host trait with a fake."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# Off by default. Compiles `real::RealHost`: it starts processes, creates named events, asks for
+# administrator rights and (through scol-pcchanges) edits the firewall, the hosts file and the EAC exe.
+# Only the CLI binary turns it on. Tests must not name it.
+real = ["scol-pcchanges/real-system"]
+
+[dependencies]
+scol-config = { path = "../scol-config" }
+scol-contract = { path = "../scol-contract" }
+scol-pcchanges = { path = "../scol-pcchanges" }
+scol-plugins = { path = "../scol-plugins" }
+scol-redact = { path = "../scol-redact" }
+
+[target.'cfg(windows)'.dependencies]
+scol-install = { path = "../scol-install" }
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Threading",
+  "Win32_System_Console",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Environment",
+  "Win32_System_SystemInformation",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+# A stand-in for the game in tests: sleeps and exits. Never the real game.
+[[bin]]
+name = "scol-play-standin"
+path = "src/bin/standin.rs"

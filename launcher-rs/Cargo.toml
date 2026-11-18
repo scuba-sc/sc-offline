@@ -14,11 +14,10 @@ license = "GPL-3.0-only"
 publish = false
 
 [profile.release]
-panic = "abort"
+# `unwind` (the default) on purpose: scol-menu is a DLL inside the game and catches panics at its
+# exported functions, which does nothing under `abort`.
 lto = true
 opt-level = "s"
 strip = true
 codegen-units = 1
 
-[profile.dev]
-panic = "abort"

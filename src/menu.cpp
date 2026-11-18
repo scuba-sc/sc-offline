@@ -29,7 +29,15 @@
 #include "sco/plugins.h"
 static sc_offline::menu_sdk::Client g_widgetMenu;
 static std::atomic<bool> g_imguiUsable{false};
-sco::app::HostMenuClient MenuHostDescriptor() { return g_widgetMenu.Descriptor(); }
+#include "menu_rust.h"   // defines SCO_MENU_RUST only when the Core in use has sco/widgets_view.h
+sco::app::HostMenuClient MenuHostDescriptor() {
+#ifdef SCO_MENU_RUST
+    // Opt-in Rust menu (SC_OFFLINE_MENU=rust); returns the descriptor unchanged for the ImGui default.
+    return sc_offline::menu_rust::Wrap(g_widgetMenu.Descriptor());
+#else
+    return g_widgetMenu.Descriptor();
+#endif
+}
 #endif
 #ifdef SCO_WIDGETS_HOST_RENDERER
 #include "sco/widgets.h"

@@ -40,7 +40,7 @@ uint32_t tick_time=0;
 sco_content_v1 content{};
 sco_widgets_v1 widgets{};
 sc_loadout_v1_2 loadout{};
-bool async_cap=true, provider=true; uint32_t supported=SC_LOADOUT_VERSION_1_2;
+bool async_cap=true, provider=true, outfit_cap=false, appearance_cap=false; uint32_t supported=SC_LOADOUT_VERSION_1_2;
 unsigned spawns=0; std::string spawn_class, spawn_seat; double spawn_height=0; int64_t spawn_ready=0;
 unsigned submits=0, cancels=0; std::vector<sc_loadout_item> captured;
 sco_result Submit(sco_plugin*,const sc_loadout_request* request,uint64_t* job) {
@@ -147,7 +147,10 @@ sco_result Subscribe(sco_plugin*,const char* name,sco_event_fn callback,void*) {
     return SCO_OK;
 }
 sco_result Unsubscribe(sco_plugin*,const char*,sco_event_fn) { ++unsubscribed; return SCO_OK; }
-int Has(const char* name) { return async_cap && !std::strcmp(name,"game.loadout.async"); }
+int Has(const char* name) {
+    return (async_cap && !std::strcmp(name,"game.loadout.async")) || (outfit_cap && !std::strcmp(name,"game.loadout.outfit")) ||
+           (appearance_cap && !std::strcmp(name,"game.loadout.appearance"));
+}
 void Send(const char* id,Panel& panel,uint32_t node,uint32_t kind,const char* text=nullptr) {
     Require(panel.event!=nullptr,"missing panel callback");
     sco_widget_event event{}; event.size=sizeof(event); event.node_id=node; event.kind=kind; event.text=text;
@@ -530,10 +533,10 @@ void Paging(unsigned outfits,unsigned builds) {
 }
 // Outfits that use a port Core has no slot for (clothing, hats, faces) can never be worn. The page must not
 // offer them, must say so in plain words, and every outfit it does offer must really be submittable.
-void StartSq42(const std::string& outfits) {
+void StartSq42(const std::string& outfits,bool outfit=false,bool appearance=false) {
     files={{"fixture_armory","lists/items.txt","[helmet]\nFixtureHelmet\n"},{"sq42_catalog","lists/outfits.txt",outfits}};
     files[0].id=1; files[1].id=2;
-    player={}; sq42={}; rejected=0; removed=0; unsubscribed=0; fail_sq=false; reload_command=nullptr; items_command=nullptr; wear_command=nullptr; tick_event=nullptr; tick_time=0; submits=0; cancels=0; captured.clear(); async_cap=provider=true; supported=SC_LOADOUT_VERSION_1_2;
+    player={}; sq42={}; rejected=0; removed=0; unsubscribed=0; fail_sq=false; reload_command=nullptr; items_command=nullptr; wear_command=nullptr; tick_event=nullptr; tick_time=0; submits=0; cancels=0; captured.clear(); async_cap=provider=true; outfit_cap=outfit; appearance_cap=appearance; supported=SC_LOADOUT_VERSION_1_2;
     static sco_api api{}; api={};   // the plugin keeps the pointer until Unload
     api.size=sizeof(api); api.major=SCO_API_MAJOR; api.minor=SCO_API_MINOR;
     api.has=Has; api.register_command=Register; api.query_service=Query; api.invoke=Invoke; api.list_commands=ListCommands; spawn_listed=build_listed=true;
@@ -570,6 +573,54 @@ void UnwearableOutfits() {
     Require(!sq42.flags.count(106) && Said(sq42,"Changing outfits isn't turned on."),"async off: one plain sentence, no Wear button");
     sco::features::loadout::Unload();
 }
+// Core 1.3 gives clothing, hat, jewellery and so on a slot while game.loadout.outfit is on; hair, hair colour and
+// eyebrow also need game.loadout.appearance. Outfits that use only those ports become wearable; body, head, eyes and
+// teeth stay out, and the "left out" count is kept for the rest.
+void ClothingOutfits() {
+    const std::string list="[Armour]\nArmor_Helmet FixtureHelmet\n[Clothes]\nClothing_Torso_1 FixtureJacket\nClothing_Legs FixturePants\nClothing_Feet FixtureBoots\n"
+        "[Hat]\nHat_ItemPort FixtureHat\nJewellery_ItemPort FixtureRing\n[Hair]\nHair_ItemPort FixtureHair\nEyebrow_ItemPort FixtureBrow\n"
+        "[Face]\nHead_ItemPort FixtureHead\nClothing_Torso_1 FixtureJacket\n[Twice]\nClothing_Legs A\nClothing_Legs B\n";
+    // Capability off: as before, only the armour outfit.
+    StartSq42(list);
+    Require(sq42.outfit_labels==std::vector<std::string>({"Armour"}),"outfit capability off: clothing outfits stay out");
+    Require(Said(sq42,"5 outfits aren't shown because they use parts the game can't change yet."),"capability off: five left out");
+    sco::features::loadout::Unload();
+    // Outfit capability on, appearance off: clothing and hat are wearable, hair is not.
+    StartSq42(list,true,false);
+    Require(sq42.outfit_labels==std::vector<std::string>({"Armour","Clothes","Hat"}),"outfit capability on: clothing and hat outfits are offered");
+    Require(Said(sq42,"3 outfits aren't shown because they use parts the game can't change yet."),"hair, face and duplicate outfits are still left out");
+    ReadableOnly(sq42,"squadron 42 (clothing outfits)");
+    Select("loadout.sq42",sq42,101,1); // Clothes
+    const auto before=submits; Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON);
+    Require(submits==before+1 && captured.size()==3,"a clothing outfit is submitted");
+    Require(captured[0].slot==23 && captured[1].slot==25 && captured[2].slot==26 &&
+            !std::strcmp(captured[0].item_class,"FixtureJacket"),"clothing pieces go to the Core 1.3 outfit slots");
+    Send("loadout.sq42",sq42,108,SCO_WIDGET_BUTTON);
+    Select("loadout.sq42",sq42,101,2); // Hat
+    Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON);
+    Require(captured.size()==2 && captured[0].slot==28 && captured[1].slot==34,"hat and jewellery slots");
+    // The capability is revoked after the page was drawn: the request is refused, nothing is sent.
+    outfit_cap=false;
+    Send("loadout.sq42",sq42,108,SCO_WIDGET_BUTTON);
+    sco_arg name{}; name.type=SCO_ARG_STRING; name.v.s="Clothes"; char reply[512]{};
+    const auto sent=submits;
+    Require(wear_command(&name,1,nullptr,reply,sizeof(reply))==SCO_UNAVAILABLE && submits==sent,"capability off: a clothing outfit by name sends nothing");
+    // The synchronous route never carries outfit slots, even with the capability on.
+    outfit_cap=true;
+    sco::features::loadout::Unload();
+    // Both on: hair and eyebrow outfits become wearable. Face, body and duplicates stay out.
+    StartSq42(list,true,true);
+    Require(sq42.outfit_labels==std::vector<std::string>({"Armour","Clothes","Hat","Hair"}),"appearance capability on: hair outfit offered");
+    Require(Said(sq42,"2 outfits aren't shown because they use parts the game can't change yet."),"face and duplicate outfits stay out");
+    Select("loadout.sq42",sq42,101,3);
+    Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON);
+    Require(captured.size()==2 && captured[0].slot==29 && captured[1].slot==31,"hair and eyebrow slots");
+    sco::features::loadout::Unload();
+    // Appearance without the outfit capability offers nothing new.
+    StartSq42(list,false,true);
+    Require(sq42.outfit_labels==std::vector<std::string>({"Armour"}),"appearance alone does not open clothing slots");
+    sco::features::loadout::Unload();
+}
 // The shipped data/outfits.txt, parsed here without the plugin: every outfit the page offers can be submitted.
 void ShippedOutfits(const char* path) {
     std::ifstream file(path,std::ios::binary); Require(bool(file),"shipped outfits file readable");
@@ -599,6 +650,27 @@ void ShippedOutfits(const char* path) {
         Send("loadout.sq42",sq42,108,SCO_WIDGET_BUTTON); Require(cancels==static_cast<unsigned>(i+1),"released for the next outfit");
     }
     sco::features::loadout::Unload();
+    // With both Core 1.3 capabilities on, the offered set grows to outfits whose ports are all armour or clothing-class.
+    std::set<std::string> wider=mapped;
+    for (const char* p:{"Clothing_Torso_0","Clothing_Torso_1","Clothing_Torso2","Clothing_Legs","Clothing_Feet","Clothing_Hands","Hat_ItemPort",
+                        "Hair_ItemPort","Hair_Color","Eyebrow_ItemPort","Head_Accessory_ItemPort","Head_Horn_ItemPort","Jewellery_ItemPort"}) wider.insert(p);
+    size_t grown=0;
+    for (const auto& e:all) {
+        if (!std::all_of(e.ports.begin(),e.ports.end(),[&](const std::string& p) { return wider.count(p)!=0; })) continue;
+        std::set<std::string> distinct(e.ports.begin(),e.ports.end());
+        if (distinct.size()==e.ports.size() && e.ports.size()<=16) ++grown;   // same rule the plugin applies: no shared slot, one request
+    }
+    Require(grown>expected.size(),"shipped data has outfits that only the new slots make wearable");
+    StartSq42(bytes,true,true);
+    Require(sq42.outfit_labels.size()==grown,"with the outfit capabilities on the page offers every outfit whose parts all have a slot");
+    Require(Said(sq42,std::to_string(all.size()-grown)+" outfits aren't shown because they use parts the game can't change yet."),"the remainder is still counted as left out");
+    for (size_t i=0;i<sq42.outfit_labels.size();++i) {
+        Select("loadout.sq42",sq42,101,static_cast<int>(i));
+        const auto before=submits; Send("loadout.sq42",sq42,106,SCO_WIDGET_BUTTON);
+        Require(submits==before+1,"every outfit offered with the new slots is accepted by the equip route");
+        Send("loadout.sq42",sq42,108,SCO_WIDGET_BUTTON);
+    }
+    sco::features::loadout::Unload();
 }
 }
 int main(int argc,char** argv) {
@@ -609,6 +681,7 @@ int main(int argc,char** argv) {
     Paging(65,64); Paging(64,65); Paging(65,65);
     MissingFeatures();
     UnwearableOutfits();
+    ClothingOutfits();
     if (argc>1) ShippedOutfits(argv[1]);
     std::puts("loadout widget workflow: PASS (synthetic public services; not run in game)");
 }

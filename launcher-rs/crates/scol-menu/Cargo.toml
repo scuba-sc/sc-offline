@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[package]
+name = "scol-menu"
+description = "sc-offline in-game menu in Rust: reads sco.widgets panels through the widgets view C interface and draws them with egui."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "sc_offline_menu"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# glow backend (the launcher spike picked it: smaller, fewer crates). Runs on its own thread, so
+# the winit event loop is built with any_thread through the NativeOptions hook.
+eframe = { version = "0.37.0", default-features = false, features = ["glow"] }
+png = "0.18"
+egui = { version = "0.37.0", default-features = false }
+# Same version eframe pulls in (0.30), needed for the any-thread event loop hook.
+winit = { version = "0.30", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging", "Win32_System_LibraryLoader", "Win32_System_Threading"] }
+
+[dev-dependencies]
