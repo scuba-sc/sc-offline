@@ -609,6 +609,53 @@ jobs:
       - name: Launcher UTF-8 text, glyphs and atomic language settings
         run: python tools/check_launcher_localization.py
 
+  # Rust launcher skeleton (P0). Builds the workspace with the pinned toolchain, checks that the
+  # release exe imports no dynamic CRT, runs the unit tests and the dependency gate. Source and
+  # build evidence only: nothing here runs in game.
+  rust-launcher:
+    runs-on: windows-2025-vs2026
+    defaults:
+      run:
+        working-directory: launcher-rs
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: true
+      - name: Capability table is current and its wording is honest
+        working-directory: .
+        run: python tools/capabilities.py --core external/sco-core --check
+      - name: Install the pinned Rust toolchain
+        run: |
+          channel="$(sed -n 's/^channel *= *"\(.*\)".*/\1/p' rust-toolchain.toml)"
+          rustup toolchain install "$channel" --profile minimal --component clippy --component rustfmt --target x86_64-pc-windows-msvc
+          cargo --version
+      - name: Build (release, locked)
+        run: cargo build --locked --release
+      - name: Test (locked)
+        run: cargo test --locked
+      - name: Plugin zip corpus matches its generator
+        working-directory: .
+        run: python launcher-rs/tests/zip-corpus/generate.py --check
+      - name: C++ launcher still matches the golden contract files the Rust crates load
+        working-directory: .
+        run: python tools/check_launcher_contract.py
+      - name: No dynamic CRT import in the release exe
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products * -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' | Select-Object -First 1
+          if (-not $dumpbin) { throw 'dumpbin.exe not found: the VC tools component is missing on this runner' }
+          $out = & $dumpbin /dependents target\release\scol-hello.exe
+          $out
+          if ($out -match '(?i)vcruntime|ucrtbase|msvcp|api-ms-win-crt') { throw 'dynamic CRT import found' }
+      - name: Dependency gate (cargo-deny)
+        run: |
+          # Slow (builds from source), pinned to the version tested locally.
+          cargo install cargo-deny --locked --version 0.21.0
+          cargo deny check
+
   # Contracts: the built-in is gone (G1 refuses builtin inputs with early DataCore), so its
   # published-SDK proof is what stands between the feature and shipping nothing. Refuses in game
   # until the missions/economy providers land; no built-in fallback, no host-side tick.
