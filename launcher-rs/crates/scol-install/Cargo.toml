@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 [package]
 name = "scol-install"
-description = "Game discovery and the read-only install status checks of the sc-offline Rust launcher (no UI, no network, writes nothing)."
+description = "Game discovery, install status checks, and install and uninstall of the mod files for the sc-offline Rust launcher (no UI, no network)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -26,5 +26,6 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_Threading",
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_Console",
+  "Win32_System_SystemInformation",
   "Win32_UI_Shell",
 ] }

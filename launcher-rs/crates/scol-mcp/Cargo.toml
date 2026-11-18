@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[package]
+name = "scol-mcp"
+description = "Read-only MCP server of the sc-offline Rust launcher: JSON-RPC over stdio, four tools (status, plugins, logs, settings). No network, writes nothing."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+scol-redact = { path = "../scol-redact" }
+
+# The real install behind the server (status checks, version, ini name). Windows only, like the launcher.
+[target.'cfg(windows)'.dependencies]
+scol-contract = { path = "../scol-contract" }
+scol-install = { path = "../scol-install" }
+
+# Tests read the shared vector files with an independent JSON reader.
+[dev-dependencies]
+serde_json = "1"

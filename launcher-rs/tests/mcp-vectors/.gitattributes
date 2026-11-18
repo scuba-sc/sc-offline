@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# The vectors are compared byte for byte: keep LF line endings.
+*.json text eol=lf
+*.md text eol=lf

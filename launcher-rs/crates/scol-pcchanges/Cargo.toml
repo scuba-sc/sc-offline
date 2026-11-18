@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[package]
+name = "scol-pcchanges"
+description = "The PC changes of the sc-offline launcher (firewall rules, EAC hosts line, EAC exe rename), their record, their undo and the --helper mode, behind one system trait."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+scol-contract = { path = "../scol-contract" }
+scol-config = { path = "../scol-config" }
+
+[features]
+# Off by default. Only the CLI binary turns it on. It compiles `real::RealSystem`, which runs
+# netsh as administrator, edits the real hosts file and renames the real EAC exe. Tests must not
+# enable it (see tests/no_real_system.rs).
+real-system = []
+
+# Windows API for the real system implementation only (registry read, token query, local time).
+# Licence MIT OR Apache-2.0, both on the deny.toml allow list. No test runs this code.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_UI_Shell",
+  "Win32_System_Registry",
+  "Win32_System_Threading",
+  "Win32_System_LibraryLoader",
+  "Win32_System_SystemInformation",
+] }

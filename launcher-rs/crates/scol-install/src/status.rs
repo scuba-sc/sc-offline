@@ -258,41 +258,62 @@ pub fn run_status(here: &str, game_arg: &str, out: &mut dyn Write) -> i32 {
             Config::default()
         }
     };
-    let bin;
+    let bin = match find_game(here, game_arg, &cfg, out) {
+        Ok((bin, _discovered)) => bin,
+        Err(code) => return code,
+    };
+    let _ = writeln!(out, "Folder:   {bin}");
+    self_checks(here, &cfg, &GamePaths::new(&bin), out);
+    let _ = writeln!(out);
+    exit_code::OK
+}
+
+/// Step 1 of the C++ `wmain`, shared with `RunStatus`: the game folder from `--game`, then `game =`
+/// in sc-offline.ini, then discovery. Prints what the launcher prints. Returns the folder and
+/// whether discovery found it (`install` then remembers it in `data\game-path.txt`), or the exit
+/// code of the failure. The folder picker of the C++ launcher is not ported: with nothing found the
+/// "set game =" message is the answer, as it is in the C++ launcher without a console.
+pub fn find_game(
+    here: &str,
+    game_arg: &str,
+    cfg: &Config,
+    out: &mut dyn Write,
+) -> Result<(String, bool), i32> {
     if !game_arg.is_empty() {
-        bin = to_bin64(game_arg, &cfg.channel);
+        let bin = to_bin64(game_arg, &cfg.channel);
         if bin.is_empty() {
-            return fail(
+            return Err(fail(
                 out,
                 &format!(
                     "no {GAME_EXE} under --game {game_arg} (channel {})",
                     cfg.channel
                 ),
-            );
+            ));
         }
+        Ok((bin, false))
     } else if !cfg.game.is_empty() {
-        bin = to_bin64(&cfg.game, &cfg.channel);
+        let bin = to_bin64(&cfg.game, &cfg.channel);
         if bin.is_empty() {
-            return fail(
+            return Err(fail(
                 out,
                 &format!(
                     "no {GAME_EXE} under game = {} in sc-offline.ini (channel {})",
                     cfg.game, cfg.channel
                 ),
-            );
+            ));
         }
+        Ok((bin, false))
     } else {
         let found: Vec<Found> = detect_bin64(here, &cfg.channel, out);
         if found.is_empty() {
-            return fail(
+            return Err(fail(
                 out,
                 &format!(
                     "couldn't find Star Citizen ({}). Open sc-offline.ini and set\n    game = <your StarCitizen folder>\nor pass --game <folder>",
                     cfg.channel
                 ),
-            );
+            ));
         }
-        bin = found[0].bin.clone();
         let _ = writeln!(out, "[i] found the game {}", found[0].how);
         for f in &found[1..] {
             let _ = writeln!(
@@ -301,11 +322,8 @@ pub fn run_status(here: &str, game_arg: &str, out: &mut dyn Write) -> i32 {
                 f.bin
             );
         }
+        Ok((found[0].bin.clone(), true))
     }
-    let _ = writeln!(out, "Folder:   {bin}");
-    self_checks(here, &cfg, &GamePaths::new(&bin), out);
-    let _ = writeln!(out);
-    exit_code::OK
 }
 
 /// What the window's Status panel shows: the same read-only checks, gathered into fields instead of

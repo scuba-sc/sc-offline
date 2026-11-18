@@ -119,19 +119,33 @@ pub fn parent_dir(path: &str) -> String {
     }
 }
 
-/// `GamePaths`: the files of an install that the read-only checks look at.
+/// `GamePaths`: the files of an install that the checks, `install` and `uninstall` look at.
 pub struct GamePaths {
     pub bin: String,
     pub dll: String,
+    /// `dinput8.dll.sc-offline-backup`: another mod's DLL, set aside while sc-offline's is in.
+    pub dll_backup: String,
     pub marker: String,
+    /// `<channel>\user\client\0`.
+    pub user_dir: String,
+    /// `default_1.xml` in `user_dir`.
+    pub xml: String,
+    pub xml_backup: String,
 }
 
 impl GamePaths {
     pub fn new(bin: &str) -> Self {
+        let dll = format!("{bin}\\{}", scol_contract::files::MOD_DLL);
+        let user_dir = format!("{}\\{}", parent_dir(bin), scol_contract::files::USER_DIR);
+        let xml = format!("{user_dir}\\{}", scol_contract::files::DEFAULT_XML);
         Self {
             bin: bin.to_string(),
-            dll: format!("{bin}\\{}", scol_contract::files::MOD_DLL),
+            dll_backup: format!("{dll}{}", scol_contract::files::BACKUP_SUFFIX),
+            dll,
             marker: format!("{bin}\\{}", scol_contract::files::MARKER),
+            xml_backup: format!("{xml}{}", scol_contract::files::BACKUP_SUFFIX),
+            xml,
+            user_dir,
         }
     }
 }

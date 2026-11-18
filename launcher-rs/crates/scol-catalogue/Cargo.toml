@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[package]
+name = "scol-catalogue"
+description = "Signed plugin catalogue client for the sc-offline Rust launcher: index parsing and verification, compatibility rules, zip check and install planning (no network code, no UI)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+scol-plugins = { path = "../scol-plugins" }
+# Ed25519 verification. ed25519-compact: MIT, no dependencies (default features off), one small
+# audited-by-use implementation with strict verification (rejects non-canonical signatures and
+# small-order keys). See the crate docs of scol-catalogue for why it was chosen.
+ed25519-compact = { version = "2", default-features = false, features = ["std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

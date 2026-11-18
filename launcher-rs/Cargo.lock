@@ -24,6 +24,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ed25519-compact"
+version = "2.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9547879431a90e352a35863a54416d92898a787b9af09e6ae2e09a96bd78be80"
+
+[[package]]
 name = "flate2"
 version = "1.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -74,6 +80,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "scol-catalogue"
+version = "0.0.1"
+dependencies = [
+ "ed25519-compact",
+ "scol-plugins",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "scol-cli"
 version = "0.0.1"
 dependencies = [
@@ -106,11 +122,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "scol-mcp"
+version = "0.0.1"
+dependencies = [
+ "scol-contract",
+ "scol-install",
+ "scol-redact",
+ "serde_json",
+]
+
+[[package]]
+name = "scol-pcchanges"
+version = "0.0.1"
+dependencies = [
+ "scol-config",
+ "scol-contract",
+ "windows-sys",
+]
+
+[[package]]
 name = "scol-plugins"
 version = "0.0.1"
 dependencies = [
  "flate2",
  "unicode-normalization",
+]
+
+[[package]]
+name = "scol-redact"
+version = "0.0.1"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
@@ -120,6 +162,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba"
 dependencies = [
  "serde_core",
+ "serde_derive",
 ]
 
 [[package]]

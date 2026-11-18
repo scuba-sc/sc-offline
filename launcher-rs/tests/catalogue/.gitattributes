@@ -1,0 +1,2 @@
+# The signed golden files are compared byte for byte. Never convert line endings.
+golden/* -text
