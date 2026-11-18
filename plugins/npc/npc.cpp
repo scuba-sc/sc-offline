@@ -73,6 +73,7 @@ sco_result Spawn(const sco_arg* args, uint32_t nargs, void*, char* reply, uint32
     const double up[3] = {2*(rot[0]*rot[2]+rot[3]*rot[1]), 2*(rot[1]*rot[2]-rot[3]*rot[0]), 1-2*(rot[0]*rot[0]+rot[1]*rot[1])};
     uint32_t spawned = 0;
     sco_result result = SCO_OK;
+    std::string reason;
     for (int64_t i = 0; i < args[1].v.i; ++i) {
         if (g.count == SC_ACTORS_MAX_NPCS) { result = SCO_TOO_MANY; break; }
         const double side = (static_cast<double>(i) - (static_cast<double>(args[1].v.i)-1)*.5)*1.2;
@@ -81,7 +82,18 @@ sco_result Spawn(const sco_arg* args, uint32_t nargs, void*, char* reply, uint32
         if (!std::isfinite(near[0]) || !std::isfinite(near[1]) || !std::isfinite(near[2])) { result = SCO_BAD_ARG; break; }
         uint64_t id = 0;
         result = actors->spawn_npc(g.self, args[0].v.s, zone, near, &id);
-        if (result != SCO_OK) break;
+        if (result != SCO_OK) {
+            // Keep Core's own reason for the log; the size guard covers an older, shorter table.
+            if (HAS_FN(actors, sc_actors_v1, last_error)) {
+                char why[160]{};
+                uint32_t why_size = sizeof(why);
+                if (actors->last_error(g.self, why, &why_size) == SCO_OK && why[0]) {
+                    why[sizeof(why) - 1] = 0;
+                    reason = why;
+                }
+            }
+            break;
+        }
         bool duplicate = false;
         for (uint32_t n = 0; n < g.count; ++n) if (g.entries[n].id == id) duplicate = true;
         if (!id || duplicate) { result = SCO_FAILED; break; }
@@ -91,16 +103,19 @@ sco_result Spawn(const sco_arg* args, uint32_t nargs, void*, char* reply, uint32
         std::snprintf(text, sizeof(text), "NPC id=%llu pending streaming", static_cast<unsigned long long>(id));
         g.api->log(g.self, SCO_LOG_INFO, text);
     }
-    char text[128];
-    std::snprintf(text, sizeof(text), "Spawn requested for %u of %lld owned NPCs (result=%u)",
-                  spawned, static_cast<long long>(args[1].v.i), static_cast<unsigned>(result));
+    char text[320];
+    std::snprintf(text, sizeof(text), "Spawn requested for %u of %lld owned NPCs (result=%u)%s%s",
+                  spawned, static_cast<long long>(args[1].v.i), static_cast<unsigned>(result),
+                  reason.empty() ? "" : ": ", reason.c_str());
     // Partial success is still a failed batch: the reply states how many are already owned.
     char shown[160];
     if (result == SCO_OK)
         std::snprintf(shown, sizeof(shown), "Spawned %u %s in front of you. They can take a moment to appear.", spawned, spawned == 1 ? "character" : "characters");
     else
         std::snprintf(shown, sizeof(shown), "Spawned %u of %lld characters. %s", spawned, static_cast<long long>(args[1].v.i),
-                      result == SCO_TOO_MANY ? "That is the most this session allows." : "The game refused the rest.");
+                      result == SCO_TOO_MANY ? "That is the most this session allows." :
+                      result == SCO_NOT_FOUND ? "That character isn't available in this game build." :
+                      result == SCO_UNAVAILABLE ? "Characters can't be spawned right now." : "The game refused the rest.");
     return Answer(result, reply, size, text, shown);
 }
 

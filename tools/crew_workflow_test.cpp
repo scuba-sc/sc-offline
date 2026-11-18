@@ -4,11 +4,14 @@
 #include "sc_actors.h"
 #include "sc_spatial.h"
 #include "sc_vehicles.h"
+#include "sco_widgets.h"
 #include <cstdio>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <set>
+#include <vector>
 #include <string>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr,"FAIL line %d: %s\n",__LINE__,#x); std::exit(1); } } while (0)
 namespace {
@@ -19,9 +22,23 @@ sco_event_fn tick = nullptr;
 int queries = 0;
 bool published = false, player = true, partial = false, unknown_usable = false, accept_link = true;
 const char* missing_cap = nullptr;
+// Capability names Core actually defines (core-capabilities listing). A name outside this set is never granted
+// in game, so the fake must refuse it too, or a misspelt request would pass here and fail for players.
+const std::set<std::string> core_names = {
+    "game.actor_stats.read","game.actor_stats.write","game.actors.despawn","game.actors.health","game.actors.local_player",
+    "game.actors.spawn_npc","game.actors.state","game.vehicles.flight_ready","game.vehicles.seat","game.vehicles.seats",
+    "game.entities.spawn","game.entities.transform","game.entities.lookup","game.entities.query_radius","game.world.raycast",
+    "game.events.vehicle_seat","game.events.player_spawned","game.inventory.read","game.loadout.apply","game.loadout.async"};
+std::set<std::string> asked_names;
+struct PanelNode { uint32_t flags = 0; std::string label; };
+std::map<uint32_t,PanelNode> panel_nodes;
+sco_widget_event_fn panel_fn = nullptr;
+bool widgets_on = false;
+extern sco_widgets_v1 widgets_table;
 sco_result seat_result = SCO_OK, remove_result = SCO_OK, seats_result = SCO_OK;
 int fail_spawn_at = -1, fail_register_at = -1, register_count = 0;
 bool fail_subscribe = false;
+sco_result spawn_result = SCO_OK, ship_result = SCO_OK;
 const void* actors_override = nullptr;
 const void* vehicles_override = nullptr;
 const void* spatial_override = nullptr;
@@ -33,7 +50,7 @@ sc_spatial_v1 spatial{};
 sc_vehicles_v1 vehicles{};
 // The actor id differs from the entity id: game.vehicles takes the entity id (700).
 sco_result Player(uint64_t* actor,uint64_t* entity) { if (actor) *actor = player ? 9700u : 0u; if (entity) *entity = player ? 700u : 0u; return player ? SCO_OK : SCO_NOT_FOUND; }
-sco_result Ship(uint64_t* id) { ++ship_queries; *id = 800; return SCO_OK; }
+sco_result Ship(uint64_t* id) { ++ship_queries; if (ship_result != SCO_OK) { *id = 0; return ship_result; } *id = 800; return SCO_OK; }
 sco_result Seats(uint64_t ship,sc_vehicle_seat* out,uint32_t max,uint32_t* n,uint32_t* more) {
     CHECK(ship == 800); *n = max ? (partial ? 1u : 3u) : 0u; *more = partial || !max;
     for (uint32_t i = 0; i < *n; ++i) {
@@ -56,12 +73,12 @@ sco_result Eject(sco_plugin* self,uint64_t id) {
 sco_result Power(sco_plugin* self,uint64_t ship) { CHECK(self == owner && ship == 800); ++powered; return SCO_OK; }
 int Pose(double p[3],double q[4],uint64_t* z) { if (!player) return 0; p[0]=1; p[1]=2; p[2]=3; q[0]=q[1]=q[2]=0; q[3]=1; *z=900; return 1; }
 sco_result Spawn(sco_plugin* self,const char* name,uint64_t zone,const double*,uint64_t* id) {
-    CHECK(self == owner && zone == 900 && !std::strcmp(name,"synthetic_actor")); *id = 1000u + static_cast<uint64_t>(++spawned); if (spawned == fail_spawn_at) return SCO_FAILED; owned[*id] = true; return SCO_OK;
+    CHECK(self == owner && zone == 900 && !std::strcmp(name,"synthetic_actor")); *id = 1000u + static_cast<uint64_t>(++spawned); if (spawned == fail_spawn_at) return SCO_FAILED; if (spawn_result != SCO_OK) return spawn_result; owned[*id] = true; return SCO_OK;
 }
 sco_result Remove(sco_plugin* self,uint64_t id) { CHECK(self == owner && owned[id]); ++removed; if (remove_result == SCO_OK) owned[id] = false; return remove_result; }
 void Providers() {
-    published = player = accept_link = true; partial = unknown_usable = false;
-    missing_cap = nullptr; fail_spawn_at = -1; seat_result = remove_result = seats_result = SCO_OK;
+    published = player = accept_link = true; partial = unknown_usable = false; widgets_on = false; panel_nodes.clear(); panel_fn = nullptr;
+    missing_cap = nullptr; fail_spawn_at = -1; spawn_result = ship_result = SCO_OK; seat_result = remove_result = seats_result = SCO_OK;
     actors_override = vehicles_override = spatial_override = nullptr; spawned = removed = seated = ejected = powered = ship_queries = 0;
     owned.clear(); for (auto& in : occupants) in = 0;
     actors = {}; actors.size = sizeof(actors); actors.local_player = Player; actors.spawn_npc = Spawn; actors.despawn = Remove;
@@ -75,10 +92,30 @@ sco_result Query(const char* name, uint32_t version, const void** out) {
         if (!std::strcmp(name,SC_ACTORS_NAME)) *out = actors_override ? actors_override : &actors;
         if (!std::strcmp(name,SC_SPATIAL_SERVICE_NAME)) *out = spatial_override ? spatial_override : &spatial;
         if (!std::strcmp(name,SC_VEHICLES_SERVICE_NAME)) *out = vehicles_override ? vehicles_override : &vehicles;
+        if (widgets_on && !std::strcmp(name,SCO_WIDGETS_NAME)) *out = &widgets_table;
     }
     return *out ? SCO_OK : SCO_NOT_FOUND;
 }
-int Has(const char* name) { return !missing_cap || std::strcmp(name,missing_cap); }
+int Has(const char* name) {
+    asked_names.insert(name);
+    if (!core_names.count(name)) return 0;
+    return !missing_cap || std::strcmp(name,missing_cap);
+}
+sco_result SetPanel(sco_plugin* self,const char* id,const char* title,const sco_widget_node* nodes,uint32_t count,uint32_t stride,sco_widget_event_fn fn,void*) {
+    CHECK(self == owner && id && title && nodes && count > 0); CHECK(!std::strcmp(id,"crew.crew"));
+    panel_nodes.clear(); panel_fn = fn;
+    for (uint32_t i = 0; i < count; ++i) {
+        const auto& n = *reinterpret_cast<const sco_widget_node*>(reinterpret_cast<const char*>(nodes) + i*stride);
+        panel_nodes[n.id] = {n.flags,n.label ? n.label : ""};
+    }
+    return SCO_OK;
+}
+sco_result RemovePanel(sco_plugin*,const char*) { panel_nodes.clear(); panel_fn = nullptr; return SCO_OK; }
+sco_widgets_v1 widgets_table{sizeof(sco_widgets_v1),0,SetPanel,RemovePanel};
+void PanelEvent(uint32_t id,uint32_t kind,const char* text = nullptr) {
+    CHECK(panel_fn); sco_widget_event e{sizeof(e),id,kind,-1,0,text}; panel_fn("crew.crew",&e,nullptr);
+}
+bool Disabled(uint32_t id) { CHECK(panel_nodes.count(id)); return (panel_nodes.at(id).flags & SCO_WIDGET_DISABLED) != 0; }
 void Log(sco_plugin* self, sco_log_level, const char*) { CHECK(self == owner); }
 sco_result Register(sco_plugin* self, const sco_command* c) {
     CHECK(self == owner); CHECK(c->ctx);
@@ -243,7 +280,13 @@ void ReopenTimeoutPending() {
     // Accepted removals never make room in the finite session ticket budget.
     Providers(); CHECK(test_module::Load(&api,owner) == SCO_OK);
     for (int batch = 0; batch < 32; ++batch) { CHECK(Run("crew.fill","synthetic_actor") == SCO_OK); CHECK(Run("crew.clear") == SCO_OK); }
-    CHECK(spawned == 64 && removed == 64); CHECK(Run("crew.fill","synthetic_actor") == SCO_TOO_MANY); CHECK(spawned == 64); End();
+    CHECK(spawned == 64 && removed == 64); CHECK(Run("crew.fill","synthetic_actor") == SCO_TOO_MANY); CHECK(spawned == 64);
+    // The refusal says what is true: removing crew cannot free a place, a restart can. Never the generic stop text.
+    CHECK(reply.find("Restart the game") != std::string::npos);
+    CHECK(reply.find("Remove your crew first") == std::string::npos && reply.find("stopped early") == std::string::npos);
+    CHECK(Run("crew.sit","pilot 0") == SCO_TOO_MANY);
+    CHECK(reply.find("Restart the game") != std::string::npos && reply.find("Remove your crew first") == std::string::npos);
+    End();
     // Unload starts a new session with a fresh ticket budget.
     Providers(); CHECK(test_module::Load(&api,owner) == SCO_OK);
     CHECK(Run("crew.fill","synthetic_actor") == SCO_OK); CHECK(spawned == 2); End();
@@ -262,6 +305,69 @@ void BadInputsAndCapabilities() {
     CHECK(powered == 0); missing_cap = nullptr; seats_result = SCO_WRONG_THREAD;
     CHECK(Run("crew.fill","synthetic_actor") == SCO_WRONG_THREAD); CHECK(spawned == 0); End();
     std::puts("PASS invalid input / missing capability / provider wrong-thread propagation");
+}
+void FillExplainsRefusal() {
+    Providers(); auto api = Api(); CHECK(test_module::Load(&api,owner) == SCO_OK);
+    // An unknown class name or an unloaded zone is SCO_NOT_FOUND from the game: say so, not "stopped early".
+    spawn_result = SCO_NOT_FOUND;
+    CHECK(Run("crew.fill","synthetic_actor") == SCO_NOT_FOUND);
+    CHECK(reply.find("doesn't know that character name") != std::string::npos && reply.find("stopped early") == std::string::npos);
+    CHECK(spawned == 1 && removed == 0);
+    spawn_result = SCO_FAILED;
+    CHECK(Run("crew.fill","synthetic_actor") == SCO_FAILED); CHECK(reply.find("stopped early") != std::string::npos);
+    spawn_result = SCO_OK; End();
+    std::puts("PASS fill refusal says unknown name, crew limit, or stopped early as appropriate");
+}
+void ClearWithoutShip() {
+    Providers(); widgets_on = true; auto api = Api(); CHECK(test_module::Load(&api,owner) == SCO_OK);
+    uint32_t now = 0; tick("tick",&now,nullptr);
+    CHECK(Run("crew.fill","synthetic_actor") == SCO_OK); CHECK(spawned == 2);
+    // The player leaves the ship: the game no longer reports one. The crew stay in the world until removed.
+    ship_result = SCO_NOT_FOUND; seats_result = SCO_NOT_FOUND;
+    now = 2000; tick("tick",&now,nullptr);
+    CHECK(!Disabled(10)); // Remove all my crew works with no ship
+    CHECK(Disabled(8));   // Stand everyone up still needs the ship
+    CHECK(Run("crew.clear") == SCO_OK); CHECK(removed == 2);
+    CHECK(reply.find("Removing 2 crew members") != std::string::npos && reply.find("seats") == std::string::npos);
+    CHECK(Run("crew.clear") == SCO_OK); CHECK(removed == 2); CHECK(reply.find("2 already being removed") != std::string::npos);
+    now = 4000; tick("tick",&now,nullptr);
+    CHECK(Disabled(10)); CHECK(panel_nodes.count(45)); // nothing left to remove: say so instead of a dead button
+    End();
+    // Removals the game refused for a moment are still reachable without a ship.
+    Providers(); remove_result = SCO_WRONG_THREAD; CHECK(test_module::Load(&api,owner) == SCO_OK);
+    now = 0; tick("tick",&now,nullptr); CHECK(Run("crew.fill","synthetic_actor") == SCO_OK);
+    ship_result = SCO_NOT_FOUND; seats_result = SCO_NOT_FOUND;
+    CHECK(Run("crew.clear") == SCO_WRONG_THREAD); CHECK(removed == 2);
+    CHECK(reply.find("Try again") != std::string::npos && reply.find("seats") == std::string::npos);
+    remove_result = SCO_OK; CHECK(Run("crew.clear") == SCO_OK); CHECK(removed == 4); End();
+    std::puts("PASS clear and the panel button work from the plugin's own records with no ship");
+}
+void PanelLimit() {
+    Providers(); widgets_on = true; auto api = Api(); CHECK(test_module::Load(&api,owner) == SCO_OK);
+    uint32_t now = 0; tick("tick",&now,nullptr);
+    PanelEvent(3,SCO_WIDGET_TEXT_INPUT,"synthetic_actor");
+    CHECK(!Disabled(9) && !panel_nodes.count(44));
+    CHECK(Disabled(10)); // no crew yet: no control that can only fail
+    for (int batch = 0; batch < 32; ++batch) { CHECK(Run("crew.fill","synthetic_actor") == SCO_OK); CHECK(Run("crew.clear") == SCO_OK); }
+    now = 5000; tick("tick",&now,nullptr);
+    CHECK(Disabled(9)); CHECK(panel_nodes.count(44) && panel_nodes.at(44).label.find("Restart the game") != std::string::npos);
+    CHECK(Disabled(10)); // everything was already removed
+    End();
+    std::puts("PASS panel disables adding crew and explains once the session limit is reached");
+}
+void OnlyCoreCapabilities() {
+    Providers(); auto api = Api(); CHECK(test_module::Load(&api,owner) == SCO_OK);
+    asked_names.clear();
+    CHECK(Run("crew.target") == SCO_OK); CHECK(Run("crew.power_on") == SCO_OK);
+    CHECK(Run("crew.fill","synthetic_actor") == SCO_OK); CHECK(Run("crew.sit","pilot 0") != SCO_UNAVAILABLE);
+    CHECK(Run("crew.stand_all") == SCO_OK); CHECK(Run("crew.clear") == SCO_OK);
+    uint32_t now = 1000; tick("tick",&now,nullptr);
+    CHECK(!asked_names.empty());
+    for (const auto& name : asked_names) { if (!core_names.count(name)) std::fprintf(stderr,"crew asked for a name Core does not define: %s\n",name.c_str()); CHECK(core_names.count(name)); }
+    for (const auto& name : {"game.vehicles.seats","game.vehicles.seat","game.actors.spawn_npc","game.actors.despawn","game.actors.local_player","game.vehicles.flight_ready"})
+        CHECK(asked_names.count(name));
+    End();
+    std::puts("PASS the fake grants only Core capability names and crew asks for no others");
 }
 void EpochBeforeFirstTick() {
     Providers(); auto api = Api(); CHECK(test_module::Load(&api,owner) == SCO_OK);
@@ -285,5 +391,5 @@ void FifthLink() {
 }
 int main(int argc,char** argv) {
     test_module::Open(argc,argv); CHECK(!std::strcmp(test_module::Query()->name,"crew"));
-    Missing(); Jobs(); FifthLink(); Reservation(); Guards(); PartialForeignNoPlayer(); ReopenTimeoutPending(); BadInputsAndCapabilities(); EpochBeforeFirstTick(); test_module::Close(); return 0;
+    Missing(); Jobs(); FifthLink(); Reservation(); Guards(); PartialForeignNoPlayer(); ReopenTimeoutPending(); BadInputsAndCapabilities(); FillExplainsRefusal(); ClearWithoutShip(); PanelLimit(); OnlyCoreCapabilities(); EpochBeforeFirstTick(); test_module::Close(); return 0;
 }

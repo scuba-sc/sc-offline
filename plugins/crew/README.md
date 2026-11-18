@@ -73,7 +73,7 @@ in this module. The command IDs remain available through the host's typed
 | `crew.sit <seat>` | Case-insensitive words from seat name, at most 47 bytes. Seat the local player only; foreign/unknown occupants and pending crew reservations are refused. Selecting the player's current seat cancels an older queued player move. A seated NPC spawned by this plugin may be removed before the player seat job starts. |
 | `crew.stand_all` | Cancel target-ship seating jobs, then eject the local player and this plugin's owned crew only. Foreign/unknown occupants are counted, not moved. |
 | `crew.fill <npc>` | Caller-supplied archetype, at most 127 bytes. Spawn owned NPCs beside the current player pose and queue empty, known-usable seats. Report copied-batch truncation, skipped seats and partial spawn failure. |
-| `crew.clear` | Start actors-specific removal of target-ship NPCs spawned by this plugin. Refused removals retain retry authority; accepted removal is not confirmed world disappearance. Never delete player, foreign occupants or another plugin's NPCs. |
+| `crew.clear` | Start actors-specific removal of every NPC spawned by this plugin, from its own records: it needs no ship, so it works after the player leaves the ship. Refused removals retain retry authority; accepted removal is not confirmed world disappearance. Never delete player, foreign occupants or another plugin's NPCs. |
 | `crew.power_on` | Request Flight Ready for the target ship. The provider validates ship authority; a dashboard not yet streamed may refuse. Retry the command later; no private power-on fallback. |
 
 Only `game.vehicles` 1.0 (`player_ship`, `seats`, `seat_occupant`, `seat`,
@@ -101,7 +101,7 @@ removal service, network transport, new SDK contract or persistent storage.
   bounded per tick. Accepted/not-owned removal retains a ticket until unload;
   streaming absence cannot prove disappearance, and no `alive=0` recycling is
   used. The 64-ticket lifetime budget can therefore require normal unload/reload
-  before more crew are spawned; repeated `clear` never repeats accepted removal.
+  before more crew are spawned; repeated `clear` never repeats accepted removal. At the limit the panel disables the add buttons and says, in plain words, that a game restart is needed; `crew.fill` and `crew.sit` give the same sentence, and an unknown class name or unloaded zone (`SCO_NOT_FOUND`) is reported as such.
 - `Unload` withdraws the tick subscription and resets local state, idempotently.
   It performs no game mutation during shutdown. The host withdraws commands and
   the actors provider releases remaining owned NPCs, as required by the published

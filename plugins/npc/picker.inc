@@ -8,6 +8,11 @@ struct Picker {
     char reply[256]{};
 } picker;
 void RenderPicker();
+// The list is a startup snapshot: a retry can only help when the content service answered but the read itself
+// failed. If the service is missing, or the file is simply absent or empty, a retry would only fail again.
+static bool ListReadFailed(const sco::picker::Catalog& cat){
+    return cat.choices.empty() && std::strstr(cat.status,"result=") && !std::strstr(cat.status,"result=0;");
+}
 // Player-facing list rows: the pack's display name when it has one, else the class name read as words.
 // The pack is added only when the same name comes from two packs.
 std::string ChoiceName(const sco::picker::Choice& c) {
@@ -49,7 +54,7 @@ void PickerEvent(const char* panel,const sco_widget_event* e,void*) {
         case 5:(void)Spawn(args,2,nullptr,picker.reply,sizeof(picker.reply));break;
         case 6:picker.catalog.Previous();break;
         case 7:picker.catalog.Next();break;
-        case 8:picker.catalog.Load(g.api,g.self,"lists/npcs.txt",127);break;
+        case 8:if(ListReadFailed(picker.catalog))picker.catalog.Load(g.api,g.self,"lists/npcs.txt",127);break;
         case 10:if(picker.selected>=0 && static_cast<uint32_t>(picker.selected)<g.count) {
             auto id=Int(static_cast<int64_t>(g.entries[picker.selected].id));(void)Remove(&id,1,nullptr,picker.reply,sizeof(picker.reply));}break;
         case 11:(void)Clear(nullptr,0,nullptr,picker.reply,sizeof(picker.reply));break;
@@ -92,7 +97,8 @@ void RenderPicker() {
     add(SCO_WIDGET_ROW,21,"",20);
     add(SCO_WIDGET_BUTTON,6,"Previous",21,cat.page?0u:off);
     add(SCO_WIDGET_BUTTON,7,"Next",21,(static_cast<size_t>(cat.page)+1)*cat.pageSize<matches?0u:off);
-    add(SCO_WIDGET_BUTTON,8,"Reload character list",21);
+    // The list is read once when the game starts, so reloading can only help when that first read failed.
+    if(ListReadFailed(cat))add(SCO_WIDGET_BUTTON,8,"Try loading the character list again",21);
     add(SCO_WIDGET_LABEL,16,page,20);
     add(SCO_WIDGET_TEXT_INPUT,3,"Character name",20).text=picker.archetype.c_str();
     add(SCO_WIDGET_COLUMN,22,"Spawn them");

@@ -68,6 +68,11 @@ sco_result Validate(const sco_arg* args,uint32_t nargs,bool string,char* reply,u
         (string && (!args || args[0].type != SCO_ARG_STRING || !args[0].v.s || !*args[0].v.s))) return SCO_BAD_ARG;
     return SCO_OK;
 }
+// The crew limit shown to players. Removed crew keep their place until the game restarts.
+const char* const kCrewLimit = "You've added as many crew as this session allows. Restart the game to add more.";
+uint32_t FreeCount() { uint32_t n = 0; for (const auto& j : g.jobs) if (j.phase == Phase::empty) ++n; return n; }
+// Crew this plugin added that can still be removed (not yet accepted for removal).
+uint32_t RemovableCount() { uint32_t n = 0; for (const auto& j : g.jobs) if (!j.player && (j.phase == Phase::seating || j.phase == Phase::seated || j.phase == Phase::remove_pending)) ++n; return n; }
 Job* Free() { for (auto& j : g.jobs) if (j.phase == Phase::empty) return &j; return nullptr; }
 Job* Actor(uint64_t id) { for (auto& j : g.jobs) if (j.phase != Phase::empty && j.actor == id) return &j; return nullptr; }
 bool Owned(const Job* j) { return j && !j->player && (j->phase == Phase::seating || j->phase == Phase::seated); }
@@ -173,7 +178,9 @@ sco_result FillSeats(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t s
     char text[192]; std::snprintf(text,sizeof(text),"Seating %u owned NPCs; skipped=%u; partial seats=%u; batch result=%u",added,skipped,more ? 1u : 0u,static_cast<unsigned>(r));
     std::string shown = added ? "Adding " + std::to_string(added) + (added == 1 ? " crew member" : " crew members") + " to empty seats." : "No crew added.";
     if (skipped) shown += (added ? " Skipped " : " ") + std::to_string(skipped) + (skipped == 1 ? " seat that is taken or unusable." : " seats that are taken or unusable.");
-    if (r != SCO_OK) shown += " The game stopped early.";
+    if (r == SCO_TOO_MANY) shown += std::string(" ") + kCrewLimit;
+    else if (r == SCO_NOT_FOUND) shown += " The game doesn't know that character name, or the area around you hasn't loaded yet.";
+    else if (r != SCO_OK) shown += " The game stopped early.";
     if (more) shown += " Some seats weren't checked.";
     return Answer(r != SCO_OK ? r : added || !count ? SCO_OK : SCO_FAILED,reply,size,text,shown.c_str());
 }
@@ -202,7 +209,7 @@ sco_result SitSeat(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t siz
                                 "A crew member is already on their way to that seat. Wait a moment, or remove your crew first.");
         auto* crew = Actor(s.occupant_id);
         if ((s.occupant_id || (s.flags & SC_SEAT_OCCUPIED)) && !Owned(crew)) return Answer(SCO_FAILED,reply,size,"Foreign/unknown occupant is not ours to move","Someone else is in that seat, so you can't move them.");
-        auto* j = Actor(me); if (!j) j = Free(); if (!j) return Answer(SCO_TOO_MANY,reply,size,"Crew session ticket budget full","Too many crew actions this session. Remove your crew first.");
+        auto* j = Actor(me); if (!j) j = Free(); if (!j) return Answer(SCO_TOO_MANY,reply,size,"Crew session ticket budget full",kCrewLimit);
         if (Owned(crew)) { r = Remove(*crew,a); if (r != SCO_OK) return Answer(r,reply,size,"Owned crew removal refused; retained for retry",
                                                                                    "Couldn't move your crew member out of that seat right now. Try again."); }
         *j = {Phase::seating,true,me,ship,s.index,g.now,g.now,0};
@@ -234,11 +241,11 @@ sco_result Stand(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size)
 }
 sco_result Clear(const sco_arg* args,uint32_t n,void*,char* reply,uint32_t size) {
     const auto valid = Validate(args,n,false,reply,size); if (valid != SCO_OK) return valid;
-    const auto* v = Open<sc_vehicles_v1>(SC_VEHICLES_SERVICE_NAME); uint64_t ship = 0;
-    auto r = Ship(v,ship); if (r != SCO_OK) return Answer(r,reply,size,"Ship seats unavailable","Couldn't read this ship's seats. Get into a ship, then update the seat list.");
     const auto* a = Open<sc_actors_v1>(SC_ACTORS_NAME);
-    uint32_t started = 0,pending = 0;
-    for (auto& j : g.jobs) if (j.phase != Phase::empty && !j.player && j.ship == ship) {
+    if (!Cap("game.actors.despawn") || !HAS_FN(a,sc_actors_v1,despawn)) return Answer(SCO_UNAVAILABLE,reply,size,"Owned crew removal unavailable","Can't remove crew right now.");
+    // Removal needs only the plugin's own records: it works wherever the player is, aboard or not.
+    sco_result r = SCO_OK; uint32_t started = 0,pending = 0;
+    for (auto& j : g.jobs) if (j.phase != Phase::empty && !j.player) {
         if (j.phase == Phase::removing) { ++pending; continue; }
         const auto removed = Remove(j,a); if (removed == SCO_OK) ++started; else r = removed;
     }
