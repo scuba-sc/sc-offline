@@ -4,7 +4,8 @@
 #include "sco/caps.h"
 
 // Returns the result of the capability write so the caller can log a refusal.
+inline constexpr const char* kShipSpawnUnavailable = "ship spawner unavailable (see [ship] lines in mod.log)";
+
 inline sco::Result SetShipSpawnCapability(bool spawnerReady) {
-    return sco::caps::Set("spawn.ship", spawnerReady,
-                          spawnerReady ? nullptr : "ship spawner unavailable (see [ship] lines in mod.log)");
+    return sco::caps::Set("spawn.ship", spawnerReady, spawnerReady ? nullptr : kShipSpawnUnavailable);
 }

@@ -21,6 +21,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include "sco/caps.h"
 #include "sco/ui.h"
 #ifdef SCO_HOST_MENU_CLIENT
 #include "menu_widgets.h"
@@ -565,9 +566,12 @@ static bool DrawMenu() {
     // Copied neutral panels are rendered on the same game-thread frame. The
     // public widget dispatcher guards owner callbacks and rejects stale events.
     const auto panels = sco::widgets::Panels();
-    const bool groupAsop = sc_offline::menu_panels::GroupAsop(panels);
+    // The game's own ship list has no provider in this host (the capability stays off), so its
+    // section is left out rather than shown with a message that suggests it will load.
+    const bool asopAvailable = sco::caps::Has("game.asop.selection.file");
+    const bool groupAsop = sc_offline::menu_panels::GroupAsop(panels, asopAvailable);
     for (const auto& panel : panels) {
-        if (groupAsop && sc_offline::menu_panels::IsAsop(panel)) continue;
+        if (sc_offline::menu_panels::SkipAsopPage(panel, groupAsop, asopAvailable)) continue;
 #ifdef SCO_HOST_MENU_CLIENT
         if (sco::app::IsHostMenuPanel(panel.id.c_str())) continue;
 #endif

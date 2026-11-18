@@ -227,7 +227,10 @@ jobs:
 
       # A game.* capability name Core does not define is never granted, so the feature is refused in game.
       - name: game.* capability names exist in the pinned Core
-        run: python3 tools/check_capability_names.py --core external/sco-core
+        run: |
+          python3 tools/check_capability_names.py --self-test
+          python3 tools/check_capability_names.py --core external/sco-core
+          python3 tools/check_host_wiring.py
 
       - name: Test harness shutdown retention (pinned host headers)
         run: |

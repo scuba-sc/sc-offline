@@ -6,7 +6,7 @@
 #include "hooks.h"
 #include "teleport.h"
 #include "spawner.h"
-#include "ship_caps.h"
+#include "feature_caps.h"
 #include "npc.h"
 #include "build.h"
 #include "cvars.h"
@@ -559,7 +559,7 @@ static void LogStartup() {
     if (g_quitHookStatus) Log("[app] game quit hook: %s", g_quitHookStatus);
     Log("[app] teleport: moves use game.relocation and report their own result");
     if (SpawnerReady()) Log("[+] ship spawner: ready (M = menu)");
-    else                Log("[!] ship spawner: unavailable (see above)");
+    else                Log("[!] ship spawner: unavailable (see above); the menu still starts");
 #ifndef SCO_ASOP_HOST_COMPOSITION
     LogFleet();
     LogHangars();
@@ -572,20 +572,19 @@ static void LogStartup() {
 
 // --- sco-core's host kit (sco/app.h), on the game thread -----------------------------------------
 
-static void SetCap(const char* name, bool ready) {
-    const sco::Result r = sco::caps::Set(name, ready, ready ? nullptr : "unavailable on this game build (see mod.log)");
-    if (r != sco::Result::Ok) Log("[!] capability %s: %s", name, sco::ResultName(r));
+static void LogCapRefusal(const char* name, sco::Result result) {
+    Log("[!] capability %s: %s", name, sco::ResultName(result));
 }
 
-// One capability per feature, from the same readiness LogStartup prints.
+// One capability per feature, from the same readiness LogStartup prints. The table, the reasons a
+// plugin sees and the one capability held off by decision live in feature_caps.h.
 static void SetFeatureCaps() {
-    SetCap("offline", g_offline);
-    SetCap("teleport", false); // G2 mutation not approved; read tables remain independently available
-    SetCap("npc", SpawnerReady());
-    if (const sco::Result r = SetShipSpawnCapability(SpawnerReady()); r != sco::Result::Ok)
-        Log("[!] capability spawn.ship: %s", sco::ResultName(r));
-    SetCap("quantum", false); // movement remains REFUSE; external read commands have their own availability
-    SetCap("contracts", ContractsReady());
+    sc_offline::feature_caps::Readiness ready;
+    ready.offline = g_offline;
+    ready.teleportRows = g_tp.ok;   // the teleport.* rows resolved: Core's registry default is ON
+    ready.spawner = SpawnerReady();
+    ready.contracts = ContractsReady();
+    sc_offline::feature_caps::Apply(ready, LogCapRefusal);
 #ifndef SCO_ASOP_HOST_COMPOSITION
     SetFleetCaps();
     SetHangarCaps();
@@ -607,7 +606,13 @@ static void ConfigurePrivateSession(sco::app::Platform& pf) {
     char bind[32]{}, peers[272]{};
     const DWORD bn = GetEnvironmentVariableA("SC_OFFLINE_MULTIPLAYER_BIND", bind, sizeof(bind));
     const DWORD pn = GetEnvironmentVariableA("SC_OFFLINE_MULTIPLAYER_PEERS", peers, sizeof(peers));
-    if ((!bn || (bn < sizeof(bind) && !std::strcmp(bind, "127.0.0.1"))) && !pn) return; // exact loopback only
+    if ((!bn || (bn < sizeof(bind) && !std::strcmp(bind, "127.0.0.1"))) && !pn) {   // exact loopback only
+        // multiplayer_allow never widens this: it only narrows which firewall gaps count as proof.
+        // A LAN needs BOTH variables below, set in the process environment (no launcher key sets them).
+        Log("[G13] private session: loopback only; a LAN needs SC_OFFLINE_MULTIPLAYER_BIND (this machine's private address) "
+            "and SC_OFFLINE_MULTIPLAYER_PEERS (exact peer addresses, comma separated)");
+        return;
+    }
     if (!bn || !pn || bn >= sizeof(bind) || pn >= sizeof(peers)) {
         pf.privateSession.enabled = false;
         Log("[G13] invalid/incomplete host bind + exact peer configuration; disabled");
@@ -1006,7 +1011,10 @@ static void RunMainThreadService() {
         if (g_stopChannel.Create(GetCurrentProcessId(), &error)) Log("[app] launcher stop channel: ready");
         else Log("[app] launcher stop channel unavailable (%lu); the launcher closes the window directly", error);
     }
-    if (SpawnerReady()) Menu_Start(hwnd);
+    // The menu is the one place every plugin page and the M key live, so it starts whether or not the
+    // legacy ship spawner resolved. The spawn plugin has its own gate (the spawn.ship capability).
+    Menu_Start(hwnd);
+    if (!SpawnerReady()) Log("[menu] started without the ship spawner: only the ship pages are unavailable");
 #ifdef SCO_OFFLINE_G1_HOST
     for (;;) {
         const auto phase = sco::game::host::Status().phase;
