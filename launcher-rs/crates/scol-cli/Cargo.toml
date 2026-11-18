@@ -1,16 +1,26 @@
 # SPDX-License-Identifier: GPL-3.0-only
 [package]
 name = "scol-cli"
-description = "sc-offline Rust launcher command line. Toolchain proof only in P0."
+description = "sc-offline Rust launcher command line: help and the read-only status command (P3 first slice)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+# The command line. Only `help` and `status` are built; play, install, uninstall and update print that
+# they are not available yet and exit 1.
+[[bin]]
+name = "scol"
+path = "src/main.rs"
+
+# The P0 toolchain proof. CI still checks this binary's imports.
 [[bin]]
 name = "scol-hello"
-path = "src/main.rs"
+path = "src/hello.rs"
 
 [dependencies]
 scol-contract = { path = "../scol-contract" }
+
+[target.'cfg(windows)'.dependencies]
+scol-install = { path = "../scol-install" }

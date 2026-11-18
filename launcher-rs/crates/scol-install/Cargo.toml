@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[package]
+name = "scol-install"
+description = "Game discovery and the read-only install status checks of the sc-offline Rust launcher (no UI, no network, writes nothing)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+scol-config = { path = "../scol-config" }
+scol-contract = { path = "../scol-contract" }
+# Only the SHA-256 module is used.
+scol-plugins = { path = "../scol-plugins" }
+
+# Windows API for the registry, drive list, process list and file identity. Licence MIT OR Apache-2.0
+# (both on the deny.toml allow list); no network or C code is pulled in with it.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Registry",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Threading",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_Console",
+  "Win32_UI_Shell",
+] }
