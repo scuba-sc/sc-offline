@@ -1,0 +1,720 @@
+{
+  "schema": 1,
+  "generated_by": "tools/capabilities.py",
+  "registry_schema_version": 2,
+  "registry_sha256": "ae60104759ca76009e371a395d28e20bb4c43c62d58f9298041531af6136c1a5",
+  "release_policy": "Every capability switch is on by default in every release package and is a visible setting the player can turn off. Nothing here was run in game.",
+  "switches": [
+    {
+      "name": "SCO_ACTOR_STATS_WRITE",
+      "capabilities": [
+        "game.actor_stats.write"
+      ],
+      "on_value": "1",
+      "release_default": "on",
+      "player_can_turn_off": true,
+      "source": [
+        "src/game/services/actor_stats.cpp"
+      ],
+      "note": "On by default in every release package; a visible setting the player can turn off. The registry says OFF pending in-game confirmation. The release package still sets it on by owner decision; you can turn it off. Not run in game."
+    },
+    {
+      "name": "SCO_AUDIO_NATIVE",
+      "capabilities": [
+        "game.audio.triggers",
+        "game.audio.play_once"
+      ],
+      "on_value": "1",
+      "release_default": "on",
+      "player_can_turn_off": true,
+      "source": [
+        "src/game/services/audio_engine.cpp"
+      ],
+      "note": "On by default in every release package; a visible setting the player can turn off. Core currently refuses the native audio adapter even with this on, so both audio capabilities stay off. The switch only asks Core to try. Not run in game."
+    },
+    {
+      "name": "SCO_CVARS_NATIVE",
+      "capabilities": [
+        "game.cvars.read"
+      ],
+      "on_value": "1",
+      "release_default": "on",
+      "player_can_turn_off": true,
+      "source": [
+        "src/game/services/cvars_production.cpp"
+      ],
+      "note": "On by default in every release package; a visible setting the player can turn off. Not run in game."
+    },
+    {
+      "name": "SCO_INVENTORY_READ",
+      "capabilities": [
+        "game.inventory.read"
+      ],
+      "on_value": "1",
+      "release_default": "on",
+      "player_can_turn_off": true,
+      "source": [
+        "src/game/services/inventory_host.cpp"
+      ],
+      "note": "On by default in every release package; a visible setting the player can turn off. Not run in game."
+    },
+    {
+      "name": "SCO_LOADOUT_ASYNC",
+      "capabilities": [
+        "game.loadout.async"
+      ],
+      "on_value": "1",
+      "release_default": "on",
+      "player_can_turn_off": true,
+      "source": [
+        "src/game/services/loadout_engine.cpp"
+      ],
+      "note": "On by default in every release package; a visible setting the player can turn off. Not run in game."
+    }
+  ],
+  "diagnostics": [
+    {
+      "name": "SCO_ENTITIES_DIAG",
+      "source": [
+        "src/game/services/entities.cpp"
+      ],
+      "release_default": "off",
+      "note": "Installs the entity streaming hooks log-only and runs one diagnostic walk. Not a capability. Log only. Off by default."
+    }
+  ],
+  "capabilities": [
+    {
+      "capability": "game.asop.selection.file",
+      "service": "game.asop.selection",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Unpublished candidate fixed-document coordinator with synthetic adapter tests. Product file adapter and native terminal integration are not admitted or game verified.",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.audio.triggers",
+      "service": "game.audio",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": "SCO_AUDIO_NATIVE",
+      "evidence": "Owner-bound trigger/playback tokens, actual host release cleanup and bounded synthetic provider tests. No native or audible output verification; not run in game."
+    },
+    {
+      "capability": "game.audio.play_once",
+      "service": "game.audio",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": "SCO_AUDIO_NATIVE",
+      "evidence": "Independent default-OFF capability with owner-bound tokens, extent-checked v1.1 tail, fault latch until process restart and synthetic provider tests. The native adapter resolves the Wwise one-shot exports by name from the client export directory and refuses to install without a grounded witness that the pump's game object is still registered at submission. Not run in game."
+    },
+    {
+      "capability": "game.inventory.contents.read",
+      "service": "game.inventory.contents",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Copied bounded container-item read provider with real-host consumer and ABI fixtures; no native adapter, not run in game.",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.datacore_live",
+      "service": "game.datacore_live",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Default-OFF native counted read adapter with validated lifecycle locators, serialized text-blob bytes and inherited record metadata. Requires shell-enforced pre-engine quiescence, lifecycle exclusion and fresh admission. Native writes unavailable; synthetic service/hook/fault tests, not run in game.",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.input.registry",
+      "service": "game.input",
+      "registry_default": "ON",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Static metadata lookups only. The C++20 header-only consumer wrapper is available; synthetic checks do not establish live production-provider availability. 1,297 actions, ids 1..1297, re-derived statically from the 4.10.197.2878 action registry (F-4.10.197.2878-050). No input dispatch; not run in game.",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "teleport",
+      "service": "teleport.spatial",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "spawn.ship",
+      "service": "spawn.entities",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.actors.local_player",
+      "service": "game.actors",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.actors.spawn_npc",
+      "service": "game.actors",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.actors.despawn",
+      "service": "game.actors",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.actors.health",
+      "service": "game.actors",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.actors.state",
+      "service": "game.actors",
+      "registry_default": "OFF",
+      "evidence_level": "off_pending_probe",
+      "switch": null,
+      "evidence": "OFF pending in-game confirmation",
+      "reason": "Core source reads no environment switch for this capability. Off until an in-game probe settles an open question. Not run in game."
+    },
+    {
+      "capability": "game.actor_stats.read",
+      "service": "game.actor_stats",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.197.2878 (sigcheck); actor.stat_names keeps each named stat on its game index (F-4.10.197.2878-006); stat units, range and direction not run in game",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.actor_stats.write",
+      "service": "game.actor_stats_write",
+      "registry_default": "OFF",
+      "evidence_level": "off_pending_probe",
+      "switch": "SCO_ACTOR_STATS_WRITE",
+      "evidence": "OFF pending in-game confirmation"
+    },
+    {
+      "capability": "game.vehicles.seats",
+      "service": "game.vehicles",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.vehicles.seat",
+      "service": "game.vehicles",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.vehicles.flight_ready",
+      "service": "game.vehicles",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.world.raycast_filtered_many",
+      "service": "game.world.control",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Bounded scoped multi-hit policy and lifecycle tests; no native grid/hit adapter, not run in game",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.world.raycast_filtered",
+      "service": "game.world.control",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Synthetic policy only; no verified offline engine adapter: the native single-hit seam installs nothing without the resolved zone/world/grid and a skip-request lifetime; no Windows/game proof",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.world.free_camera",
+      "service": "game.world.control",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Synthetic policy only; no verified offline engine adapter, no Windows/game proof",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.world.raycast",
+      "service": "game.world",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.world.camera",
+      "service": "game.world",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.world.free_camera_flag",
+      "service": "game.world",
+      "registry_default": "OFF",
+      "evidence_level": "off_pending_probe",
+      "switch": null,
+      "evidence": "OFF pending in-game confirmation",
+      "reason": "Core source reads no environment switch for this capability. Off until an in-game probe settles an open question. Not run in game."
+    },
+    {
+      "capability": "game.entities.lookup",
+      "service": "game.entities",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Copied registry/name/typed-presence provider policy and ABI tests; the native point-lookup seam installs nothing without the registry receiver lifetime, so no native adapter binds; not run in game",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.entities.transform",
+      "service": "game.entities",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.entities.spawn",
+      "service": "game.entities",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.entities.class_of",
+      "service": "game.entities",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.entities.query_radius",
+      "service": "game.entities",
+      "registry_default": "OFF",
+      "evidence_level": "off_pending_probe",
+      "switch": null,
+      "evidence": "OFF pending in-game confirmation",
+      "reason": "Core source reads no environment switch for this capability. Off until an in-game probe settles an open question. Not run in game."
+    },
+    {
+      "capability": "game.entities.watch",
+      "service": "game.entities",
+      "registry_default": "OFF",
+      "evidence_level": "off_pending_probe",
+      "switch": null,
+      "evidence": "OFF pending in-game confirmation",
+      "reason": "Core source reads no environment switch for this capability. Off until an in-game probe settles an open question. Not run in game."
+    },
+    {
+      "capability": "game.events.player_spawned",
+      "service": "game.*",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.events.player_died",
+      "service": "game.*",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.events.actor_died",
+      "service": "game.*",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck); the same row as player_died, one hook two events",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.events.zone_changed",
+      "service": "game.*",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.events.vehicle_seat",
+      "service": "game.*",
+      "registry_default": "OFF",
+      "evidence_level": "off_pending_probe",
+      "switch": null,
+      "evidence": "OFF pending in-game confirmation",
+      "reason": "Core source reads no environment switch for this capability. Off until an in-game probe settles an open question. Not run in game."
+    },
+    {
+      "capability": "game.events.mission_changed",
+      "service": "game.*",
+      "registry_default": "ON",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "ON by owner ruling (2026-10-16): a product default, not a verified claim. No rows; published once a bound, admitted game.missions backend reports active missions. Synthetic only: backend adapters are synthetic today, so it does not fire; not run in game",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.events.loadout_respawn_completed",
+      "service": "game.*",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Verified offline host producer seam only; native hook signature/site unresolved (F-INTAKE-004, T-3); not run in game.",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "mining.cell",
+      "service": "game.mining",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.creative.god_mode",
+      "service": "game.creative",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.creative.fly",
+      "service": "game.creative",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.creative.ammo",
+      "service": "game.creative",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.creative.ship_ammo",
+      "service": "game.creative",
+      "registry_default": "ON",
+      "evidence_level": "sigcheck_resolved",
+      "switch": null,
+      "evidence": "row resolved on 4.10.196.36804 (sigcheck)",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.hangar.lift",
+      "service": "game.hangar",
+      "registry_default": "OFF",
+      "evidence_level": "off_pending_probe",
+      "switch": null,
+      "evidence": "OFF pending in-game confirmation",
+      "reason": "Core source reads no environment switch for this capability. Off until an in-game probe settles an open question. Not run in game."
+    },
+    {
+      "capability": "game.hangar.atc_cancel",
+      "service": "game.hangar",
+      "registry_default": "OFF",
+      "evidence_level": "off_pending_probe",
+      "switch": null,
+      "evidence": "OFF pending in-game confirmation",
+      "reason": "Core source reads no environment switch for this capability. Off until an in-game probe settles an open question. Not run in game."
+    },
+    {
+      "capability": "game.reputation.checks",
+      "service": "game.reputation",
+      "registry_default": "OFF",
+      "evidence_level": "off_pending_probe",
+      "switch": null,
+      "evidence": "OFF pending in-game confirmation",
+      "reason": "Core source reads no environment switch for this capability. Off until an in-game probe settles an open question. Not run in game."
+    },
+    {
+      "capability": "game.asop.claim_timeout",
+      "service": "game.asop",
+      "registry_default": "OFF",
+      "evidence_level": "off_pending_probe",
+      "switch": null,
+      "evidence": "OFF pending in-game confirmation",
+      "reason": "Core source reads no environment switch for this capability. Off until an in-game probe settles an open question. Not run in game."
+    },
+    {
+      "capability": "game.asop.shard_persisted",
+      "service": "game.asop",
+      "registry_default": "OFF",
+      "evidence_level": "off_pending_probe",
+      "switch": null,
+      "evidence": "OFF pending in-game confirmation",
+      "reason": "Core source reads no environment switch for this capability. Off until an in-game probe settles an open question. Not run in game."
+    },
+    {
+      "capability": "game.contracts.stream_radius",
+      "service": "game.contracts",
+      "registry_default": "OFF",
+      "evidence_level": "off_pending_probe",
+      "switch": null,
+      "evidence": "OFF pending in-game confirmation",
+      "reason": "Core source reads no environment switch for this capability. Off until an in-game probe settles an open question. Not run in game."
+    },
+    {
+      "capability": "game.entities.prefabs",
+      "service": "game.prefabs",
+      "registry_default": "ON",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "ON by owner approval for R1; synthetic admission/ABI fixtures only; Windows/MSVC, native SEH and gameplay NOT VERIFIED",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.loadout.apply",
+      "service": "game.loadout",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Synthetic/native-boundary checks only; typed engine methods unverified; not run in game",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.loadout.weapons",
+      "service": "game.loadout",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Synthetic policy only; no verified engine backend, no in-game proof",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.loadout.async",
+      "service": "game.loadout",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": "SCO_LOADOUT_ASYNC",
+      "evidence": "Opt-in native spawn/attach/readback adapter, Windows synthetic-object fixture and current-build locator checks; not run in game"
+    },
+    {
+      "capability": "game.quantum.control",
+      "service": "game.quantum",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Default production adapter ported from v0.7.7 under the maintainer's 2026-10-15 amended rule: writes four int quantum cvars and one shared drive parameter cell only while holding, after fresh offline admission, first prior saved, restored on every release path; ON only when its rows resolve and admission is positive at start; synthetic fake-engine tests only; Windows/MSVC and gameplay NOT VERIFIED",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.build.info",
+      "service": "game.build",
+      "registry_default": "ON",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "No rows: reads TimeDateStamp/SizeOfImage from the running module header and the pack's own verified-build pin; starts only when the numeric mirrors agree with the strings; host-side compile and layout pins verified, not run in game",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.gamerules.read",
+      "service": "game.gamerules",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Read-only snapshot of server GameRules parameters; rows gamerules.params_label/params_sync resolve on 4.10.196.36804 and 4.10.197.2878 in local sco-sigcheck runs (F-4.10.196.36804-007/-008); default production backend binds nothing (read returns UNAVAILABLE) and the native read seam installs nothing without a read-only accessor; Windows/MSVC and gameplay NOT VERIFIED",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.gamerules.params",
+      "service": "game.gamerules",
+      "registry_default": "ON",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Static definitions of the 15 GameRules parameter names verified on 4.10.197.2878 (F-4.10.197.2878-054); types not verified; no values; not run in game.",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.inventory.read",
+      "service": "game.inventory",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": "SCO_INVENTORY_READ",
+      "evidence": "Read-only item-port snapshot of the local player (whole attached tree, depth first, 128 ports max with TRUNCATED and total_seen); adapter grounded on the private corpus (F-4.10.197.2878-011..-016, static analysis only) and bound in production behind fail-closed guards; the signature rows resolve against the 4.10.197.2878 executable on disk, and the adapter is exercised against synthetic game objects only; switched off by default; not run in game"
+    },
+    {
+      "capability": "game.inventory.layout",
+      "service": "game.inventory",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Copied stable logical-port identities and roles through an explicitly bound synthetic host producer; no production native layout producer is installed and no gameplay validation is claimed.",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.private_session",
+      "service": "game.private_session",
+      "registry_default": "ON",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "ON by owner approval for R1 (loopback broker, no socket until Host/Join); synthetic service and ABI checks only; Windows/MSVC, private LAN, EAC inspection and gameplay NOT VERIFIED",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.cvars.read",
+      "service": "game.cvars",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": "SCO_CVARS_NATIVE",
+      "evidence": "Opt-in Windows reference-integer native read adapter with exact receiver/method checks, fresh admission and synthetic native-object fixtures; not run in game"
+    },
+    {
+      "capability": "game.cvars.write",
+      "service": "game.cvars_write",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Production native writes refused pending object and backing lifetime across callbacks/leases; setter and cleanup admission tested with synthetic native objects and actual host Stop; not run in game",
+      "reason": "Core refuses production native cvar writes; no switch enables them. Not run in game."
+    },
+    {
+      "capability": "game.economy.read",
+      "service": "game.economy",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Default provider unavailable pending an owner-approved Windows adapter; synthetic callbacks only",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.economy.apply",
+      "service": "game.economy",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Default provider unavailable pending an owner-approved Windows adapter; synthetic callbacks only",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.missions.read",
+      "service": "game.missions",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Default provider unavailable pending an owner-approved Windows adapter; synthetic callbacks only",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.missions.accept",
+      "service": "game.missions",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Default provider unavailable pending an owner-approved Windows adapter; synthetic callbacks only",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.missions.progress",
+      "service": "game.missions",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Default provider unavailable pending an owner-approved Windows adapter; synthetic callbacks only",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.missions.scripts",
+      "service": "game.missions",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Default provider unavailable pending an owner-approved Windows adapter; synthetic callbacks only",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.mining",
+      "service": "game.mining",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Off by default; native adapter not verified on Windows or in game; synthetic provider tests only",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.relocation",
+      "service": "game.relocation",
+      "registry_default": "ON",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "ON only while the host certifies offline admission, the engine rows resolve, a live player and a known star system exist and the product switch is on; otherwise OFF. Portable and Windows/MSVC synthetic provider/ABI tests; native engine behavior and gameplay not verified",
+      "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
+    },
+    {
+      "capability": "game.relocation.position",
+      "service": "game.relocation",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "Explicit position-only request and shared provider/socket fixtures; no native position transport, independent target-instance/epoch producer or fresh readback adapter. Existing FullPose adapter does not supply this path. Portable and Windows/MSVC synthetic provider/ABI tests; not run in game.",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
+    },
+    {
+      "capability": "game.pak.all_files",
+      "service": "game.pak",
+      "registry_default": "OFF",
+      "evidence_level": "off_pending_probe",
+      "switch": null,
+      "evidence": "OFF pending in-game confirmation",
+      "reason": "Core source reads no environment switch for this capability. Off until an in-game probe settles an open question. Not run in game."
+    }
+  ]
+}
