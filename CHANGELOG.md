@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Launcher: game capability switches in `sc-offline.ini`.**
+  - sco-core starts the loadout, inventory and actor-stats capabilities (and three smaller ones) only when a variable is set inside the game. They were reachable only by setting environment variables by hand. They are now ini keys: `exp_loadout_async`, `exp_inventory_read`, `exp_actor_stats_write`, `exp_cvars_native`, `exp_audio_native` and `exp_entities_diag`.
+  - The five capability switches are `on` in the release packages; `exp_entities_diag` (log-only diagnostics, not a feature) is `off`. Change any with `on` or `off`. Each key's text says the capability has not been run in game.
+  - The launcher sets the matching variable to `1` when a key is on and removes it when the key is off, so a variable left in your shell cannot turn one on. It prints one line listing the switches that are on.
+  - Behaviour change: `play` now removes an inherited `SCO_*` capability variable when its key is off, so set the key in the ini instead of the shell.
+  - The window's Settings page has no toggles for them yet. Synthetic tests only (`tools/launcher_status_config_test.cpp`); not run in game.
 - **In-game menu: a sidebar of pages, and every page rewritten for players.**
   - The menu (**M**) now opens on a sidebar grouped by purpose, which replaces the row of a dozen tabs in plugin load order. The groups are Character, Travel, Ships & vehicles, Build, People, Squadron 42, Multiplayer, More plugins and Settings.
   - Each page opens under a header that says what it is for. The open page is remembered in `menu-view.ini`.

@@ -171,6 +171,23 @@ static int FailCode(int code, const char* fmt, ...) {
 // What to do with the game's logs from this session once the game closes (clean_logs).
 enum class LogChoice { Ask, Always, Never };
 
+// The "Game capability switches" block of sc-offline.ini (docs/launcher.md). Each key is one sco-core capability that
+// sco-core only starts when a variable is 1 inside the game process (src/game/services). They are ON by default in
+// every release package and visible in the ini: the player turns one off with "off". None has been run in game.
+// Only variables that sco-core's source reads are listed. The game inherits this process's environment, so
+// ApplyExperimentalEnv sets the variable to 1 when its key is on and removes it when the key is off: a value inherited
+// from the shell or from Windows can't turn a switch on without the ini saying so. Each key is "exp_" and the
+// variable's name without "SCO_", in lower case. Every switch is on by default in release packages (owner decision); the player can turn each off.
+struct ExperimentalSwitch { const wchar_t* key; const wchar_t* var; bool defaultOn; };
+static const ExperimentalSwitch kExperimental[] = {
+    { L"exp_loadout_async",     L"SCO_LOADOUT_ASYNC",     true  },  // game.loadout.async: the menu equips gear
+    { L"exp_inventory_read",    L"SCO_INVENTORY_READ",    true  },  // game.inventory.read: what the player wears and carries
+    { L"exp_actor_stats_write", L"SCO_ACTOR_STATS_WRITE", true  },  // game.actor_stats.write: the player's survival stats
+    { L"exp_cvars_native",      L"SCO_CVARS_NATIVE",      true  },  // game.cvars.read: four console settings, read only
+    { L"exp_audio_native",      L"SCO_AUDIO_NATIVE",      true  },  // native one-shot sounds; this Core refuses them and logs why
+    { L"exp_entities_diag",     L"SCO_ENTITIES_DIAG",     false },  // entity diagnostics in mod.log: log-only hooks, one walk. Not a feature: off unless asked for
+};
+
 // sc-offline.ini: `key = value` lines; a line starting with '#' is a comment. Unknown keys are reported, not ignored.
 struct Config {
     wstring game, channel = L"LIVE", bootMap = L"PU_All", startShip = L"DRAK_Cutlass_Black", start, registryProbe;
@@ -202,7 +219,36 @@ struct Config {
     bool asop = true;
     // Which ship list the terminals show with asop on: ships (ships.txt) or game (the game's own,
     // empty offline). ships when the ini doesn't say, so an older ini gets a usable terminal too.
-    wstring asopFleetList = L"ships";};
+    wstring asopFleetList = L"ships";
+    // The capability switches, indexed like kExperimental; the constructor sets each to its default.
+    bool experimental[ARRAYSIZE(kExperimental)];
+    Config() { for (size_t i = 0; i < ARRAYSIZE(kExperimental); ++i) experimental[i] = kExperimental[i].defaultOn; }};
+
+// Index of an Experimental key in kExperimental (any case), or -1.
+static int ExperimentalIndex(const wstring& key) {
+    for (size_t i = 0; i < ARRAYSIZE(kExperimental); ++i)
+        if (!_wcsicmp(key.c_str(), kExperimental[i].key)) return static_cast<int>(i);
+    return -1;
+}
+
+// Sets each Experimental variable to 1 when its key is on and removes it when the key is off. Returns the keys that
+// are on with their variables ("exp_loadout_async (SCO_LOADOUT_ASYNC=1), ..."), empty when none is. removed gets the
+// variables that were set although their key is off (inherited from the shell or Windows), comma separated.
+static wstring ApplyExperimentalEnv(const Config& c, wstring& removed) {
+    wstring on;
+    removed.clear();
+    for (size_t i = 0; i < ARRAYSIZE(kExperimental); ++i) {
+        const ExperimentalSwitch& s = kExperimental[i];
+        if (c.experimental[i]) {
+            SetEnvironmentVariableW(s.var, L"1");
+            on += (on.empty() ? L"" : L", ") + wstring(s.key) + L" (" + s.var + L"=1)";
+        } else {
+            if (GetEnvironmentVariableW(s.var, nullptr, 0) > 0) removed += (removed.empty() ? L"" : L", ") + wstring(s.var);
+            SetEnvironmentVariableW(s.var, nullptr);
+        }
+    }
+    return on;
+}
 
 static bool ParseOnOff(const wstring& v, bool& out) {
     if (!_wcsicmp(v.c_str(), L"1") || !_wcsicmp(v.c_str(), L"on") || !_wcsicmp(v.c_str(), L"yes") || !_wcsicmp(v.c_str(), L"true")) { out = true; return true; }
@@ -352,6 +398,14 @@ static bool ReadConfig(const wstring& path, Config& c) {
             if (!ParseCleanLogs(v, c.cleanLogs)) Out("[!] sc-offline.ini line %d: clean_logs must be ask, always or never\n", lineNo);
         }
         else if (!_wcsicmp(k.c_str(), L"registry_probe")) c.registryProbe = v;
+        else if (const int x = ExperimentalIndex(k); x >= 0) {
+            // Anything but on or off keeps the default for that switch.
+            if (!ParseOnOff(v, c.experimental[x])) {
+                c.experimental[x] = kExperimental[x].defaultOn;
+                Out("[!] sc-offline.ini line %d: %ls must be on or off; left %ls\n", lineNo, kExperimental[x].key,
+                    kExperimental[x].defaultOn ? L"on" : L"off");
+            }
+        }
         else Out("[!] sc-offline.ini line %d: unknown key '%ls'\n", lineNo, k.c_str());
     }
     return true;
@@ -903,15 +957,21 @@ static void MergeIni(const wstring& here, const wstring& newIni, const std::stri
     if (!ReadAll(here + L"\\sc-offline.ini", mine) || !ReadAll(newIni, theirs)) return;
     auto keys = [](const std::string& t) {
         std::vector<std::pair<std::string, std::string>> out;
+        std::string note;   // the comment line right above a key travels with it (it holds the "not run in game" text)
         for (size_t p = 0; p < t.size();) {
             size_t n = t.find('\n', p); if (n == std::string::npos) n = t.size();
             std::string l = t.substr(p, n - p); p = n + 1;
             while (!l.empty() && (l.back() == '\r' || l.back() == ' ')) l.pop_back();
-            size_t b = l.find_first_not_of(" \t#"); if (b == std::string::npos) continue;
-            const size_t eq = l.find('=', b); if (eq == std::string::npos) continue;
-            std::string k = l.substr(b, eq - b); while (!k.empty() && isspace((unsigned char)k.back())) k.pop_back();
-            if (k.empty() || k.find(' ') != std::string::npos) continue;
-            out.push_back({ k, l.substr(b) });
+            size_t b = l.find_first_not_of(" \t#"); if (b == std::string::npos) { note.clear(); continue; }
+            const size_t eq = l.find('=', b);
+            std::string k = eq == std::string::npos ? std::string() : l.substr(b, eq - b);
+            while (!k.empty() && isspace((unsigned char)k.back())) k.pop_back();
+            if (k.empty() || k.find(' ') != std::string::npos) {
+                note = (l[0] == '#' && eq == std::string::npos) ? l + "\r\n" : std::string();
+                continue;
+            }
+            out.push_back({ k, note + "# " + l.substr(b) });
+            note.clear();
         }
         return out;
     };
@@ -920,7 +980,7 @@ static void MergeIni(const wstring& here, const wstring& newIni, const std::stri
     for (const auto& kv : keys(theirs)) {
         bool have = false;
         for (const auto& m : mineKeys) if (!_stricmp(m.first.c_str(), kv.first.c_str())) { have = true; break; }
-        if (!have) { add += "# " + kv.second + "\r\n"; Out("[i] sc-offline.ini: new setting %s (added commented out; the default applies)\n", kv.first.c_str()); }
+        if (!have) { add += kv.second + "\r\n"; Out("[i] sc-offline.ini: new setting %s (added commented out; the default applies)\n", kv.first.c_str()); }
     }
     if (add.empty()) return;
     if (!mine.empty() && mine.back() != '\n') mine += "\r\n";
@@ -5313,6 +5373,13 @@ int wmain(int argc, wchar_t** argv) {
         SetVar(L"SC_OFFLINE_ASOP_FLEET_LIST", cfg.asopFleetList);
         SetVar(L"SC_USER", g.userDir);
         SetVar(L"SC_OFFLINE_REGISTRY_PROBE", cfg.registryProbe);
+        // sco-core's own opt-in variables come from the Experimental block only (see kExperimental).
+        wstring expRemoved;
+        const wstring expOn = ApplyExperimentalEnv(cfg, expRemoved);
+        Out("Capability switches on: %ls\n", expOn.empty() ? L"none" : (expOn + L"; not run in game").c_str());
+        if (!expRemoved.empty())
+            Out("[i] removed %ls from the game's environment: only the exp_ keys in sc-offline.ini set these\n",
+                expRemoved.c_str());
         if (dry)
             Out("[dry-run] would set SC_OFFLINE_BOOT_MAP=%ls SC_OFFLINE_START_SHIP=%ls SC_OFFLINE_START=%ls SC_OFFLINE_PLUGINS=%ls\n"
                 "          SC_OFFLINE_RELOCATION=%ls SC_OFFLINE_ASOP=%ls; SC_OFFLINE_MOD_LOG, _SPAWN_FILE, _SHIPS_FILE under %ls; SC_USER=%ls\n",
