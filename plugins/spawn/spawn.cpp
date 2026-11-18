@@ -37,6 +37,26 @@ sco_result Answer(sco_result r, char* out, uint32_t size, const char* text, cons
     if (g.api) g.api->log(g.self,r == SCO_OK ? SCO_LOG_INFO : SCO_LOG_WARN,text);
     return r;
 }
+int32_t& OwnedSelection(); // the panel's chosen ship row (defined with the panel)
+// A ticket in Removing was released to the game (despawn accepted: the id is no longer owned),
+// so its slot is free again. Keeps the panel's selected row on the same ship.
+void ReleaseRemoved(bool onlyGone) {
+    const auto* ent=Open<sc_entities_v1>(SC_ENTITIES_NAME);
+    const bool known=HAS(ent,sc_entities_v1,alive) && g.api->has("game.entities.transform");
+    int32_t& sel=OwnedSelection();
+    const uint64_t selected=(sel>=0 && static_cast<uint32_t>(sel)<g.count) ? g.tickets[sel].id : 0;
+    uint32_t kept=0;
+    for(uint32_t i=0;i<g.count;++i) {
+        const Ticket& t=g.tickets[i];
+        if(t.phase==Phase::Removing && (!onlyGone || (known && !ent->alive(t.id)))) continue;
+        if(kept!=i) g.tickets[kept]=t;
+        ++kept;
+    }
+    for(uint32_t i=kept;i<g.count;++i) g.tickets[i]=Ticket{};
+    g.count=kept;
+    sel=-1;
+    if(selected) for(uint32_t i=0;i<g.count;++i) if(g.tickets[i].id==selected) sel=static_cast<int32_t>(i);
+}
 sco_result RemoveTicket(Ticket& t) {
     if (t.phase == Phase::Removing) return SCO_NOT_FOUND;
     t.phase = Phase::Cancelling; // Stop seat/power retries even if cleanup is refused.
@@ -105,6 +125,7 @@ sco_result Ship(const sco_arg* args,uint32_t n,void*,char* out,uint32_t size) {
         std::snprintf(text,sizeof(text),"spawn unavailable: %s (class %s); no fallback",missing,args[0].v.s);
         return Answer(SCO_UNAVAILABLE,out,size,text,"Ships can't be spawned right now.");
     }
+    if (g.count == kMaxTickets) ReleaseRemoved(false); // slots of ships already released to the game are reusable
     if (g.count == kMaxTickets) return Answer(SCO_TOO_MANY,out,size,"Loaded-session ticket quota reached (including pending removal)",
                                               "You've spawned as many ships as this session allows.");
     if (!cls->class_exists(args[0].v.s)) return Answer(SCO_NOT_FOUND,out,size,"Not a spawnable class on this build",
@@ -294,6 +315,7 @@ void Tick(const char*,const void* data,void*) {
     PollAsop();
     if (!g.api || !data) return;
     const uint32_t now=*static_cast<const uint32_t*>(data);
+    ReleaseRemoved(true); // forget removed ships once they are gone, so they stop filling the list
     const auto* ent=Open<sc_entities_v1>(SC_ENTITIES_NAME);
     for(uint32_t i=0;i<g.count;++i) {
         auto& t=g.tickets[i];

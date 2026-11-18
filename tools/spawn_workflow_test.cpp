@@ -49,7 +49,12 @@ sco_result Query(const char* name,uint32_t,const void** out) {
  if(reopen_name && !std::strcmp(name,reopen_name) && ++reopen_calls==reopen_at) return SCO_FAILED; // Output may be non-null on refusal.
  return *out? SCO_OK:SCO_NOT_FOUND;
 }
-int Has(const char* name) {return !missing_cap || std::strcmp(name,missing_cap);}
+// Answers yes only to capability names that exist in Core, so a misspelt name in the plugin fails here.
+int Has(const char* name) {
+ static const char* const known[]={"spawn.ship","game.entities.spawn","game.entities.transform","game.vehicles.seats","game.vehicles.seat",
+  "game.vehicles.flight_ready","game.actors.local_player"};
+ bool exists=false;for(auto k:known)if(!std::strcmp(name,k))exists=true;
+ return exists && (!missing_cap || std::strcmp(name,missing_cap));}
 sco_result Player(uint64_t* actor,uint64_t* entity){if(!player_present)return SCO_NOT_FOUND;if(actor)*actor=9007;if(entity)*entity=7;return SCO_OK;} // game.vehicles takes the entity id (7), never the actor id
 sco_result PlayerShip(uint64_t* id){*id=linked?101:0;return linked?SCO_OK:SCO_NOT_FOUND;}
 sco_result Seats(uint64_t id,sc_vehicle_seat* out,uint32_t max,uint32_t* count,uint32_t* more){
@@ -196,8 +201,16 @@ void HostAndCommandNegatives(){Reset();auto api=Api();
 }
 void BoundedOwnership(){Reset();auto api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);
  for(int i=0;i<64;++i)CHECK(Ship()==SCO_OK);CHECK(Ship()==SCO_TOO_MANY && spawned==64);
- CHECK(Run("spawn.clear")==SCO_OK && removed==64 && issued.empty());CHECK(Ship()==SCO_TOO_MANY); // Removal tickets retained; no alive-based recycling.
- Advance(1);CHECK(Run("spawn.status")==SCO_OK);Contains("64 being removed");test_module::Unload();CHECK(removed==64);
+ CHECK(Run("spawn.clear")==SCO_OK && removed==64 && issued.empty());
+ // Removed ships that still show as present stay listed until they are gone.
+ visible=true;Advance(1);CHECK(Run("spawn.status")==SCO_OK);Contains("64 being removed");
+ // Once the quota is full of released ships, a new spawn reuses their slots (the quota counts live ships).
+ CHECK(Ship()==SCO_OK && spawned==65);CHECK(Run("spawn.status")==SCO_OK);Contains("1 appearing");
+ CHECK(Run("spawn.clear")==SCO_OK && removed==65);
+ // Gone ships drop off the list on their own.
+ visible=false;Advance(2);CHECK(Run("spawn.status")==SCO_OK);Contains("haven't spawned");
+ for(int round=0;round<3;++round){for(int i=0;i<64;++i)CHECK(Ship()==SCO_OK);CHECK(Ship()==SCO_TOO_MANY);CHECK(Run("spawn.clear")==SCO_OK);}
+ test_module::Unload();
 }
 void TimeoutCancel(){Reset();auto api=Api();CHECK(test_module::Load(&api,owner)==SCO_OK);CHECK(Options()==SCO_OK);
  Advance(0xfffffff0u);Advance(0x0000ea50u);CHECK(removed==1 && issued.empty()); // uint32 wrap, 60000 ms.

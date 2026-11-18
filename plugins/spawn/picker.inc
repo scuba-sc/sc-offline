@@ -8,6 +8,7 @@ struct Picker {
     int32_t owned=-1;
     char reply[256]{};
 } picker;
+int32_t& OwnedSelection(){return picker.owned;}
 void RenderPicker();
 // Flight Ready is only meaningful with the pilot seat; spawn.ship_options still refuses it otherwise.
 bool PickerPower(){return picker.power && picker.seat=="pilot";}
