@@ -1,0 +1,13 @@
+game_exe=StarCitizen.exe
+exit.ok=0
+exit.error=1
+exit.eac=2
+exit.running=3
+exit.restart=10
+eac_host=modules-cdn.eac-prod.on.epicgames.com
+hosts_tag=# added by sc-offline, removed when the game closes
+fw_rule.firewall=sc-offline: block StarCitizen.exe
+fw_rule.fw_launcher=sc-offline: block RSI Launcher.exe
+fw_rule.fw_crash=sc-offline: block CrashHandler.exe
+fw_rule.fw_mp=sc-offline: allow StarCitizen.exe multiplayer (LAN)
+pc_changes_rel=sc-offline\pc-changes.txt

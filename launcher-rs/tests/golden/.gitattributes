@@ -1,0 +1,2 @@
+# Golden files are compared byte for byte (CRLF, BOM and missing final newlines matter).
+* -text

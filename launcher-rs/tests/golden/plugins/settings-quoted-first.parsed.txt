@@ -1,0 +1,8 @@
+id=settings-quoted-first
+name=settings-quoted-first
+version=
+author=
+about=
+kind=
+settings_bad=true
+settings=0

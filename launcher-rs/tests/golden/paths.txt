@@ -1,0 +1,6 @@
+dll=C:\Games\StarCitizen\LIVE\Bin64\dinput8.dll
+dll_backup=C:\Games\StarCitizen\LIVE\Bin64\dinput8.dll.sc-offline-backup
+marker=C:\Games\StarCitizen\LIVE\Bin64\sc-offline.installed
+user_dir=C:\Games\StarCitizen\LIVE\user\client\0
+xml=C:\Games\StarCitizen\LIVE\user\client\0\default_1.xml
+xml_backup=C:\Games\StarCitizen\LIVE\user\client\0\default_1.xml.sc-offline-backup

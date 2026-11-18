@@ -1,0 +1,25 @@
+save_ok=true
+rows:
+sco.settings.count	int:7
+sco.settings.enabled	bool:false
+sco.settings.speed	float:0.69999999999999996
+sco.settings.title	string:New title
+loaded:
+enabled	false	true
+count	7	true
+speed	0.69999999999999996	true
+title	New title	true
+mode	slow	false
+plain	0	false
+ratio	1000	false
+invalid_save_ok=false
+rows_after_invalid:
+sco.settings.count	int:7
+sco.settings.enabled	bool:false
+sco.settings.speed	float:0.69999999999999996
+sco.settings.title	string:New title
+loaded_after_redeclare:
+count	1	false
+enabled		false
+reset_ok=true
+rows_after_reset:

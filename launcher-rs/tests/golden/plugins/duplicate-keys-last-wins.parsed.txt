@@ -1,0 +1,8 @@
+id=duplicate-keys-last-wins
+name=Two
+version=2
+author=
+about=
+kind=
+settings_bad=false
+settings=0

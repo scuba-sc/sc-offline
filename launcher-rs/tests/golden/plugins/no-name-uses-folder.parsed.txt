@@ -1,0 +1,8 @@
+id=no-name-uses-folder
+name=no-name-uses-folder
+version=2
+author=
+about=
+kind=
+settings_bad=false
+settings=0

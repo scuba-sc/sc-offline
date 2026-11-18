@@ -1,0 +1,8 @@
+id=bom-crlf
+name=Bom
+version=9
+author=
+about=
+kind=
+settings_bad=false
+settings=0

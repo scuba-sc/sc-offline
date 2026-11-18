@@ -1,0 +1,8 @@
+id=settings-enum-needs-list
+name=settings-enum-needs-list
+version=
+author=
+about=
+kind=
+settings_bad=true
+settings=0

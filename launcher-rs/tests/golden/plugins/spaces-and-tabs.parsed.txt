@@ -1,0 +1,8 @@
+id=spaces-and-tabs
+name=Tabbed
+version=1.5
+author=
+about=
+kind=
+settings_bad=false
+settings=0

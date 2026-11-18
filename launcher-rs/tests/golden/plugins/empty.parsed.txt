@@ -1,0 +1,8 @@
+id=empty
+name=empty
+version=
+author=
+about=
+kind=
+settings_bad=false
+settings=0

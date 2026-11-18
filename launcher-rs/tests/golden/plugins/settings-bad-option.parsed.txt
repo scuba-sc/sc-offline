@@ -1,0 +1,8 @@
+id=settings-bad-option
+name=settings-bad-option
+version=
+author=
+about=
+kind=
+settings_bad=true
+settings=0

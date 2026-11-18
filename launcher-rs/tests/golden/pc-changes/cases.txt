@@ -1,0 +1,6 @@
+fresh-all
+fresh-hosts-only
+leftover-keeps-time
+leftover-crlf-same-value
+leftover-other-value
+leftover-no-newline

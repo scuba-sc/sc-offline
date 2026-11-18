@@ -56,6 +56,7 @@
 #include "localization_win32.h"
 #include "locale_ru_builtin.h"
 #include "plugin_startup_snapshot.h"
+#include "contract_text.h"
 #include "../src/version.h"
 #include "../src/private_network_ranges.h"
 #include "../src/stop_channel.h"
@@ -1760,17 +1761,7 @@ static const char* kPrebuiltSha256 = "57e0e5ed2151acc1020fd2ee300944842385f84bb6
 
 // "key=value" lines, as in sc-offline.installed.
 static std::string Field(const std::string& text, const char* key) {
-    const std::string k = std::string(key) + "=";
-    for (size_t pos = 0; pos < text.size();) {
-        size_t nl = text.find('\n', pos); if (nl == std::string::npos) nl = text.size();
-        if (!text.compare(pos, k.size(), k)) {
-            std::string v = text.substr(pos + k.size(), nl - pos - k.size());
-            while (!v.empty() && (v.back() == '\r' || v.back() == ' ')) v.pop_back();
-            return v;
-        }
-        pos = nl + 1;
-    }
-    return "";
+    return sco::launcher::contract::RecordField(text, key);   // moved to contract_text.h unchanged
 }
 
 // The sc-offline part of a version string: "0.9.0-rc1 / sc-offline 0.2.0-rc4" -> "sc-offline 0.2.0-rc4".
@@ -1873,12 +1864,10 @@ static int PutMod(const wstring& here, const GamePaths& g, const char* mode, boo
     }
 
     SYSTEMTIME t; GetLocalTime(&t);
-    char when[32];
-    std::snprintf(when, sizeof(when), "%04u-%02u-%02u %02u:%02u:%02u", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
+    const std::string when = sco::launcher::contract::MarkerTime(t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond);
     std::string bytes;
     const DllInfo mod = Identify(dllSrc);
-    const std::string marker = std::string("version=") + (mod.version.empty() ? mod.what : mod.version) +
-                               "\nsha256=" + mod.sha + "\nmode=" + mode + "\ntime=" + when + "\nxml=" + xmlState + "\n";
+    const std::string marker = sco::launcher::contract::MarkerText(mod.version.empty() ? mod.what : mod.version, mod.sha, mode, when, xmlState);
     if (Step(dry, "write %ls", g.marker.c_str()) && !WriteAll(g.marker, marker))
         Out("[!] couldn't write %ls (error %lu); uninstall still works, but can't tell whether default_1.xml was yours\n",
             g.marker.c_str(), GetLastError());
@@ -2270,14 +2259,12 @@ static int ApplyPcChanges(const PcWanted& w, const wstring& gameExe, bool dry) {
     const wstring dir = ParentDir(PcChangesPath());
     if (!dry) CreateDirectoryW(dir.c_str(), nullptr);
     auto record = [&](const char* key, const char* value) {
-        if (Field(rec, key) == value) return;
-        rec += std::string(key) + "=" + value + "\n";
+        if (!sco::launcher::contract::RecordAdd(rec, key, value)) return;
         if (!WriteAll(PcChangesPath(), rec)) Out("[!] couldn't write %ls (error %lu)\n", PcChangesPath().c_str(), GetLastError());
     };
     if (!dry && rec.find("time=") == std::string::npos) {
         SYSTEMTIME t; GetLocalTime(&t);
-        char ts[32]; std::snprintf(ts, sizeof(ts), "%04u-%02u-%02u %02u:%02u", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute);
-        record("time", ts);
+        record("time", sco::launcher::contract::PcTime(t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute).c_str());
     }
 
     if (w.firewall) {
@@ -5299,20 +5286,12 @@ int wmain(int argc, wchar_t** argv) {
     // 3. What the mod reads (the SC_OFFLINE_* variables, see docs/data-files.md).
     const bool play = command == L"play";
     if (play) {
-        SetVar(L"SC_OFFLINE_BOOT_MAP", cfg.bootMap);
-        SetVar(L"SC_OFFLINE_MOD_LOG", data + L"\\mod.log");
-        SetVar(L"SC_OFFLINE_SPAWN_FILE", data + L"\\spawn.txt");
-        SetVar(L"SC_OFFLINE_SHIPS_FILE", data + L"\\ships.txt");
-        SetVar(L"SC_OFFLINE_START", cfg.start);
-        SetVar(L"SC_OFFLINE_START_SHIP", cfg.startShip);
-        SetVar(L"SC_OFFLINE_PLUGINS", cfg.plugins ? L"on" : L"off");
-        SetVar(L"SC_OFFLINE_RELOCATION", cfg.relocation ? L"on" : L"off");
-        SetVar(L"SC_OFFLINE_MULTIPLAYER", cfg.multiplayer ? L"on" : L"off");
-        SetVar(L"SC_OFFLINE_MULTIPLAYER_ALLOW", cfg.multiplayerAllow);
-        SetVar(L"SC_OFFLINE_ASOP", cfg.asop ? L"on" : L"off");
-        SetVar(L"SC_OFFLINE_ASOP_FLEET_LIST", cfg.asopFleetList);
-        SetVar(L"SC_USER", g.userDir);
-        SetVar(L"SC_OFFLINE_REGISTRY_PROBE", cfg.registryProbe);
+        sco::launcher::contract::PlayEnvInput envIn;
+        envIn.bootMap = cfg.bootMap; envIn.start = cfg.start; envIn.startShip = cfg.startShip;
+        envIn.multiplayerAllow = cfg.multiplayerAllow; envIn.asopFleetList = cfg.asopFleetList;
+        envIn.registryProbe = cfg.registryProbe; envIn.data = data; envIn.userDir = g.userDir;
+        envIn.plugins = cfg.plugins; envIn.relocation = cfg.relocation; envIn.multiplayer = cfg.multiplayer; envIn.asop = cfg.asop;
+        for (const auto& kv : sco::launcher::contract::PlayEnv(envIn)) SetVar(kv.first.c_str(), kv.second);
         if (dry)
             Out("[dry-run] would set SC_OFFLINE_BOOT_MAP=%ls SC_OFFLINE_START_SHIP=%ls SC_OFFLINE_START=%ls SC_OFFLINE_PLUGINS=%ls\n"
                 "          SC_OFFLINE_RELOCATION=%ls SC_OFFLINE_ASOP=%ls; SC_OFFLINE_MOD_LOG, _SPAWN_FILE, _SHIPS_FILE under %ls; SC_USER=%ls\n",

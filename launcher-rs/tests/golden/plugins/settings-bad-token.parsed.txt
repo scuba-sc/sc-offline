@@ -1,0 +1,8 @@
+id=settings-bad-token
+name=settings-bad-token
+version=
+author=
+about=
+kind=
+settings_bad=true
+settings=0

@@ -1,0 +1,3 @@
+play-backup	0.7.8.3	0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef	play	2026-11-17 09:05:03	backup
+install-none	sc-offline 0.2.0-rc4	ABCDEF	install	2026-01-02 03:04:05	none
+play-skip			play	2026-12-31 23:59:59	skip

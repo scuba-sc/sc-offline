@@ -1,0 +1,8 @@
+id=settings-unterminated-quote
+name=settings-unterminated-quote
+version=
+author=
+about=
+kind=
+settings_bad=true
+settings=0

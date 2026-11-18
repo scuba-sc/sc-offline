@@ -1,0 +1,14 @@
+marker	xml	backup
+marker-time	time	2026-11-17 09:05:03
+crlf	xml	backup
+trailing-spaces	xml	backup
+trailing-tab-kept	xml	backup	
+duplicate-first-wins	xml	none
+missing	xml	
+prefix-is-not-key	xml	
+indented-is-not-key	xml	
+equals-in-value	xml	a=b
+empty-value	xml	
+last-line-no-newline	xml	backup
+empty-text	xml	
+case-sensitive	xml	

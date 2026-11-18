@@ -1,0 +1,8 @@
+id=full-meta
+name=Full
+version=1.0
+author=A. Author
+about=About text
+kind=lua
+settings_bad=false
+settings=0

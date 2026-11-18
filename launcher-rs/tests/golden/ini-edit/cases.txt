@@ -1,0 +1,25 @@
+drop-discord-crlf	drop	discord_presence		present	true	written
+drop-discord-lf	drop	discord_presence		present	true	written
+drop-indented-and-case	drop	discord_presence		present	true	written
+drop-spaced-equals	drop	discord_presence		present	true	written
+drop-keeps-comment	drop	discord_presence		present	true	written
+drop-keeps-longer-key	drop	discord_presence		present	true	written
+drop-duplicates	drop	discord_presence		present	true	written
+drop-last-line-no-newline	drop	discord_presence		present	true	written
+drop-absent-key	drop	discord_presence		present	true	written
+drop-empty-file	drop	discord_presence		present	true	written
+drop-missing-file	drop	discord_presence		missing	false	unwritten
+set-clean-logs-replace-crlf	set	clean_logs	never	present	true	written
+set-clean-logs-replace-lf	set	clean_logs	always	present	true	written
+set-clean-logs-duplicates	set	clean_logs	never	present	true	written
+set-clean-logs-append-crlf	set	clean_logs	never	present	true	written
+set-clean-logs-append-no-newline	set	clean_logs	never	present	true	written
+set-clean-logs-append-lf	set	clean_logs	never	present	true	written
+set-clean-logs-comment-only	set	clean_logs	never	present	true	written
+set-clean-logs-indented-case	set	clean_logs	ask	present	true	written
+set-clean-logs-longer-key	set	clean_logs	never	present	true	written
+set-clean-logs-empty-file	set	clean_logs	never	present	true	written
+set-clean-logs-missing-file	set	clean_logs	never	missing	true	written
+set-plugins-off	set	plugins	off	present	true	written
+set-language-keeps-others	set	language	ru	present	true	written
+set-bom-file	set	clean_logs	never	present	true	written

@@ -1,0 +1,8 @@
+id=settings-min-on-bool
+name=settings-min-on-bool
+version=
+author=
+about=
+kind=
+settings_bad=true
+settings=0

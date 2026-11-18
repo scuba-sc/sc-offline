@@ -1,0 +1,8 @@
+id=keys-case-sensitive
+name=Lower
+version=
+author=
+about=
+kind=
+settings_bad=false
+settings=0

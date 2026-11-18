@@ -1,0 +1,8 @@
+id=comments
+name=Cm
+version=1
+author=A#B
+about="a # b"
+kind=
+settings_bad=false
+settings=0

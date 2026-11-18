@@ -1,0 +1,64 @@
+bool	true	ok	true
+bool	false	ok	false
+bool	True	fail	
+bool	1	fail	
+bool		fail	
+int	5	ok	5
+int	+5	ok	5
+int	-0	ok	0
+int	007	ok	7
+int	5.0	fail	
+int		fail	
+int	-	fail	
+int	999999999999999999	ok	999999999999999999
+int	1000000000000000000	fail	
+int	-999999999999999999	ok	-999999999999999999
+int	12a	fail	
+int	 5	fail	
+int min 1 max 10	0	fail	
+int min 1 max 10	1	ok	1
+int min 1 max 10	10	ok	10
+int min 1 max 10	11	fail	
+int min -5	-5	ok	-5
+int min -5	-6	fail	
+int max 0	1	fail	
+float	1	ok	1
+float	1.50	ok	1.5
+float	1e2	ok	100
+float	.5	fail	
+float	5.	fail	
+float	-0	ok	-0
+float	0.1	ok	0.10000000000000001
+float	+0.25	ok	0.25
+float	1e400	fail	
+float	00012	ok	12
+float	1E-3	ok	0.001
+float	abc	fail	
+float	1e	fail	
+float		fail	
+float	123456789012345678901234567890	ok	1.2345678901234568e+29
+float	0.30000000000000004	ok	0.30000000000000004
+float	1e21	ok	1e+21
+float	1e16	ok	10000000000000000
+float	1e17	ok	1e+17
+float	123456789012345678	ok	1.2345678901234568e+17
+float	0.0001	ok	0.0001
+float	0.00001	ok	1.0000000000000001e-05
+float min 0 max 2.5	-0.1	fail	
+float min 0 max 2.5	2.5	ok	2.5
+float min 0 max 2.5	2.6	fail	
+float min 0.1	0.1	ok	0.10000000000000001
+string	hello	ok	hello
+string		ok	
+string	with space	ok	with space
+string	ab	fail	
+string	café	fail	
+string	~	ok	~
+string		fail	
+enum(a,b,c)	a	ok	a
+enum(a,b,c)	c	ok	c
+enum(a,b,c)	A	fail	
+enum(a,b,c)	d	fail	
+enum(a,b,c)		fail	
+string	<255 x a>	ok	len 255
+string	<256 x a>	fail	

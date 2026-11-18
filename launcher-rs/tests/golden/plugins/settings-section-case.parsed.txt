@@ -1,0 +1,8 @@
+id=settings-section-case
+name=settings-section-case
+version=
+author=
+about=
+kind=
+settings_bad=false
+settings=0
