@@ -39,10 +39,10 @@
 #include "offline_host.h"
 #include "admission_probe.h"
 #include "start_retry.h"
-#include "stop_channel.h"
 #include <mutex>
 #include <cstdio>
 #endif
+#include "stop_channel.h"   // used with and without the G1 host
 #include "sco/runtime.h"
 #ifdef SCO_OFFLINE_RELOCATION_SWITCH
 #include "sco/game/services.h"

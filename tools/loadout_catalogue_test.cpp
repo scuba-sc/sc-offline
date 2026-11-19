@@ -247,7 +247,8 @@ int main(int argc,char** argv){
     files[0].bytes=all;reload();
     for(uint32_t i=0;i<14;++i)Select(i,1);
     Button(221);Check(captured.size()==14,"all fourteen independent selections");
-    for(uint32_t i=0;i<14;++i)Check(captured[i].slot==8+i,"canonical parent-before-attachment order");Button(24);
+    for(uint32_t i=0;i<14;++i)Check(captured[i].slot==8+i,"canonical parent-before-attachment order");
+    Button(24);
     const auto loadedReads=reads;files[0].bytes="[primary]\nChanged\n";Button(221);Check(captured.size()==14&&reads==loadedReads,"widget selections own startup copies, no read on apply");Button(24);
     stale=panel;Check(Call("loadout.reload_slots")==SCO_OK,"explicit reload");oldSubmits=submits;Send(stale,221,SCO_WIDGET_BUTTON);Check(submits==oldSubmits,"reload invalidates old mapping before publication");Tick();Check(Disabled(221)&&panel.nodes[200].options[1]=="Changed","reload clears picks and installs new copied snapshot");
     Select(0,1);stale=panel;panelResult=SCO_FAILED;Button(222);Send(stale,221,SCO_WIDGET_BUTTON);Check(submits==oldSubmits,"failed publication pauses old actions");panelResult=SCO_OK;Tick();Check(Disabled(221),"publication retry retains clear selection");
