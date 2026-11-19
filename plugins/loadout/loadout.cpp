@@ -93,12 +93,11 @@ template<class T> const T* Open(const char* name,uint32_t version=0x10000u) {
     return static_cast<const T*>(table);
 }
 bool Cap(const char* name) { return HAS(g.api,sco_api,has) && g.api->has(name); }
-// Which of the Core 1.3 outfit slots are on right now. Read once per decision, not once per piece.
-struct OutfitCapabilities { bool outfit=false, appearance=false; };
-OutfitCapabilities OutfitCaps() { return {Cap("game.loadout.outfit"),Cap("game.loadout.appearance")}; }
+// Whether Core's outfit slots (22 to 31) are on right now. Read once per decision, not once per piece.
+struct OutfitCapabilities { bool outfit=false; };
+OutfitCapabilities OutfitCaps() { return {Cap("game.loadout.outfit")}; }
 bool SlotOffered(uint32_t slot,const OutfitCapabilities& caps) {
-    if (slot<22 || slot>34 || !caps.outfit) return false;
-    return (slot<29 || slot>31) || caps.appearance;
+    return caps.outfit && slot>=22 && slot<=31;
 }
 // `message` is the detailed text for the command reply and the log. `plain` is the sentence the player
 // reads in the panel; it never carries command names, versions or reason codes.
@@ -145,16 +144,17 @@ bool Class(std::string_view name) {
     return true;
 }
 // Core 1.3 outfit slots, same numbers as sc_loadout.h (SC_LOADOUT_SLOT_CLOTHING_TORSO_0 .. SC_LOADOUT_SLOT_JEWELLERY).
-// Written as numbers so this file still builds against an SDK kit that predates them.
-constexpr uint32_t kFirstOutfitSlot=22, kLastOutfitSlot=34;
-constexpr uint32_t kHairSlot=29, kEyebrowSlot=31;   // 29-31 (hair, hair colour, eyebrow) are permanent overlays: also need game.loadout.appearance
+// Written as numbers so this file still builds against an SDK kit that predates them. Core has no slot for
+// hair, hair colour, eyebrows, head, body, eyes or teeth: those ports map to slot 0 and an outfit using one is refused whole.
+constexpr uint32_t kFirstOutfitSlot=22, kLastOutfitSlot=31;
 struct ClothingPort { const char* port; uint32_t slot; };
 constexpr ClothingPort kClothingPorts[]{
     {"Clothing_Torso_0",22},{"Clothing_Torso_1",23},{"Clothing_Torso2",24},{"Clothing_Legs",25},{"Clothing_Feet",26},
-    {"Clothing_Hands",27},{"Hat_ItemPort",28},{"Hair_ItemPort",29},{"Hair_Color",30},{"Eyebrow_ItemPort",31},
-    {"Head_Accessory_ItemPort",32},{"Head_Horn_ItemPort",33},{"Jewellery_ItemPort",34}};
+    {"Clothing_Hands",27},{"Hat_ItemPort",28},{"Head_Accessory_ItemPort",29},{"Head_Horn_ItemPort",30},{"Jewellery_ItemPort",31}};
 #ifdef SC_LOADOUT_VERSION_1_3
-static_assert(SC_LOADOUT_SLOT_CLOTHING_TORSO_0==kFirstOutfitSlot && SC_LOADOUT_SLOT_HAIR==kHairSlot && SC_LOADOUT_SLOT_EYEBROW==kEyebrowSlot &&
+static_assert(SC_LOADOUT_SLOT_CLOTHING_TORSO_0==kFirstOutfitSlot && SC_LOADOUT_SLOT_CLOTHING_TORSO_1==23 && SC_LOADOUT_SLOT_CLOTHING_TORSO_2==24 &&
+              SC_LOADOUT_SLOT_CLOTHING_LEGS==25 && SC_LOADOUT_SLOT_CLOTHING_FEET==26 && SC_LOADOUT_SLOT_CLOTHING_HANDS==27 &&
+              SC_LOADOUT_SLOT_HAT==28 && SC_LOADOUT_SLOT_HEAD_ACCESSORY==29 && SC_LOADOUT_SLOT_HEAD_HORN==30 &&
               SC_LOADOUT_SLOT_JEWELLERY==kLastOutfitSlot,"outfit slot numbers follow sc_loadout.h");
 #endif
 uint32_t Slot(std::string_view name,bool outfit) {
@@ -165,7 +165,7 @@ uint32_t Slot(std::string_view name,bool outfit) {
         {"arms","Armor_Arms",SC_LOADOUT_SLOT_ARMS},{"legs","Armor_Legs",SC_LOADOUT_SLOT_LEGS},
         {"backpack","backpack",SC_LOADOUT_SLOT_BACKPACK},{"visor","Lens_ItemPort",SC_LOADOUT_SLOT_VISOR} };
     for (const auto& m:map) if (Same(name,outfit ? m.port : m.item)) return m.slot;
-    // Outfit-only ports. Core 1.3 gives these logical slots (22-34); whether one can be sent is decided
+    // Outfit-only ports. Core 1.3 gives these logical slots (22-31); whether one can be sent is decided
     // when the request is made, from the capabilities Core reports, not here.
     if (outfit) for (const auto& c:kClothingPorts) if (Same(name,c.port)) return c.slot;
     if (!outfit && Same(name,"primary")) return SC_LOADOUT_SLOT_PRIMARY;
@@ -580,12 +580,27 @@ sco_result EquipSelection(const sco_arg* args,uint32_t n,char* out,uint32_t size
 sco_result Equip(const sco_arg* a,uint32_t n,void*,char* o,uint32_t z) { return EquipSelection(a,n,o,z,false); }
 sco_result SubmitGear(const sco_arg* a,uint32_t n,void*,char* o,uint32_t z) { return EquipSelection(a,n,o,z,true); }
 // An outfit can be worn only when every piece goes in a slot this menu can set, no two pieces share a
-// slot and the whole outfit fits one request. Clothing, hat, hair and similar parts have a slot only
-// while Core reports game.loadout.outfit (hair, hair colour and eyebrow also need game.loadout.appearance).
-// Body, head, eyes and teeth have no slot at all, so an outfit with one of those is never offered.
+// slot and the whole outfit fits one request. Clothing, hat, head accessory, head horn and jewellery have a
+// slot only while Core reports game.loadout.outfit. Hair, hair colour, eyebrows, body, head, eyes and teeth
+// have no slot at all, so an outfit with one of those is never offered.
 bool PiecesMapped(const Outfit& outfit,const OutfitCapabilities& caps) {
     return !outfit.pieces.empty() && std::all_of(outfit.pieces.begin(),outfit.pieces.end(),[&](const Piece& p) {
         return p.slot && (p.slot<=SC_LOADOUT_SLOT_SIDEARM_TOOL_BATTERY || SlotOffered(p.slot,caps)); });
+}
+// The player's word for an outfit part, for a refusal that names it.
+std::string PartName(const std::string& port) {
+    static const struct { const char* port; const char* name; } names[]{
+        {"Hair_ItemPort","hair"},{"Hair_Color","hair colour"},{"Eyebrow_ItemPort","eyebrows"},{"Body_ItemPort","body"},
+        {"Head_ItemPort","head"},{"Eyes_ItemPort","eyes"},{"Teeth_ItemPort","teeth"},{"Eye_Accessories_ItemPort","eye accessories"}};
+    for (const auto& n:names) if (Same(port,n.port)) return n.name;
+    auto text=Readable(port);
+    for (auto& c:text) if (c>='A' && c<='Z') c=static_cast<char>(c+('a'-'A'));
+    return text;
+}
+// First piece that has no slot at all in this Core (hair, eyebrows, face, body and similar), or null.
+const Piece* PieceWithoutSlot(const Outfit& outfit) {
+    for (const auto& p:outfit.pieces) if (!p.slot) return &p;
+    return nullptr;
 }
 bool Wearable(const Outfit& outfit,const OutfitCapabilities& caps) {
     if (!PiecesMapped(outfit,caps) || outfit.pieces.size()>SC_LOADOUT_MAX_ITEMS) return false;
@@ -605,7 +620,10 @@ sco_result WearSelection(const sco_arg* args,uint32_t n,char* out,uint32_t size,
         found=&outfit;
     }
     if (!found) return Answer(SCO_NOT_FOUND,out,size,"Outfit not in copied outfits.txt.","That outfit isn't in the list.");
-    if (!PiecesMapped(*found,OutfitCaps())) return Answer(SCO_UNAVAILABLE,out,size,"Outfit has a piece in a port with no public loadout slot; whole outfit refused, nothing sent.","That outfit has parts the game can't change yet.");
+    if (const auto* missing=PieceWithoutSlot(*found))
+        return Answer(SCO_UNAVAILABLE,out,size,("Outfit piece "+missing->port+" has no public loadout slot in this Core; whole outfit refused, nothing sent.").c_str(),
+            ("This outfit includes "+PartName(missing->port)+", and the game has nowhere to put it yet. Nothing was changed.").c_str());
+    if (!found->pieces.empty() && !PiecesMapped(*found,OutfitCaps())) return Answer(SCO_UNAVAILABLE,out,size,"Outfit slots are switched off in Core; whole outfit refused, nothing sent.","Changing outfits isn't turned on.");
     return async ? SubmitPieces(found->pieces,out,size) : Apply(found->pieces,out,size);
 }
 sco_result Wear(const sco_arg* a,uint32_t n,void*,char* o,uint32_t z) { return WearSelection(a,n,o,z,false); }

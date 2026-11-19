@@ -105,4 +105,4 @@ Core switches the launcher never sets:
 
 Where the Core default is OFF, a switch changes only what the launcher asks for. Core still decides whether the capability turns on.
 
-Source: Core `sdk/status_registry.json` (schema 2, sha256 `317607bdfa836b3e`).
+Source: Core `sdk/status_registry.json` (schema 2, sha256 `b485ebf59f3f99c3`).

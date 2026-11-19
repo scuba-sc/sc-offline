@@ -6,16 +6,26 @@ Which sco-core SDK sc-offline builds against, and how to check an archive before
 
 sc-offline 0.8.0 is built for sco-core SDK **2.4.1**, game pack **0.8.1**, plugin ABI **1.1**, game build **4.10.200.58746**. The release job refuses to package until the maintainer publishes SDK 2.4.1 and the `external/sco-core` pin matches it. The pin currently selects a development revision of the 2.4.1 line.
 
-The consumer proofs for 0.8.0 ran against a local, unpublished development archive (`--candidate`, profile `legacy`):
+The consumer proofs for 0.8.0 ran against the final local, unpublished SDK 2.4.1 archive (`--candidate`, profile `legacy`):
 
 | Item | Value |
 |---|---|
 | Archive | `sco-sdk-2.4.1.zip` |
-| SHA-256 | `634ec29627646c37200d4cc570fed1fb5d487bfb3b161fc1271581e491bc4aa7` |
-| Core source (`COMPATIBILITY.json`) | `5858fdb65bf816ae28133d14683828ad63e451b3` |
-| Proofs that passed | inspector, crew, npc, spawn, build, loadout, mining, discord, teleport, quantum, contracts (read slice). Synthetic, MSVC 2022. |
+| SHA-256 | `cc06697a2522984427703ab9c6af53b14cd4c2d1622535f90a138f61ed7c0188` |
+| Core source (`COMPATIBILITY.json`) | `9735742ca1bf117691ad4da27055544ef79018f8` |
+| Proofs that passed | inspector, crew, npc, spawn, build, loadout, mining, discord, teleport, quantum, creative, and contracts (all six slices). Synthetic, MSVC 2022. |
 
-These are development receipts. When the SDK is published, the release's own `SHA256SUMS` and `release.json` replace them. Nothing built from these archives has been run in game; see [status.md](status.md). Earlier development archives (`2.4.1-dev.2`, `2.4.1-dev.3` and `2.4.1-dev.6`) are superseded, and their hashes are in this file's git history.
+The five archives of this build, packaged twice from a clean LF export of that Core commit (every pair byte for byte equal):
+
+| Profile | Archive | SHA-256 |
+|---|---|---|
+| Combined core and game SDK (`legacy`) | `sco-sdk-2.4.1.zip` | `cc06697a2522984427703ab9c6af53b14cd4c2d1622535f90a138f61ed7c0188` |
+| Core SDK | `sco-sdk-core-2.4.1.zip` | `fb164acba437beca5d9d904d596700338ff46fe254223ab2930408f6f4dc34cd` |
+| Core source | `sco-sdk-core-source-2.4.1.zip` | `df5ff6fc7debe4b1b62bab9d4293ba84f53749c349d5d1a9601ca9083e9cd047` |
+| Star Citizen game overlay | `sco-sdk-game-sc-0.8.1.zip` | `6609b4dc45ab0f9d48591c7f108c96927a5f23199bbf49eb235c6a46453535aa` |
+| Star Citizen host source | `sco-sdk-host-source-sc-2.4.1.zip` | `de0de34c1ec6df1277789b7382326f50c85a6fdce018c48f4783d6d5111a995c` |
+
+The packager reads file bytes from the working tree, so a CRLF checkout gives different hashes from CI. These hashes are from the LF export. These are development receipts. When the SDK is published, the release's own `SHA256SUMS` and `release.json` replace them. Nothing built from these archives has been run in game; see [status.md](status.md). Earlier development archives (`2.4.1-dev.2`, `2.4.1-dev.3`, `2.4.1-dev.6` and the pre-final `5858fdb6` archive) are superseded, and their hashes are in this file's git history.
 
 ## Published SDK 2.4.0
 

@@ -42,8 +42,10 @@ def prove(sdk_include, sdk_archive, sdk_version, sdk_sha256):
              "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON"], root)
         run(["cmake", "--build", str(build), "--target", "sc-offline-npc", "sc-offline-inspector"], root)
         all_commands = json.loads((build / "compile_commands.json").read_text())
+        # The creative plugin's sources sit outside plugins/ (external/sc-creative); only the two features are checked here.
         commands = [command for command in all_commands
-                    if Path(command["file"]).resolve().relative_to(source).parts[0] in {"npc", "inspector"}]
+                    if Path(command["file"]).resolve().is_relative_to(source)
+                    and Path(command["file"]).resolve().relative_to(source).parts[0] in {"npc", "inspector"}]
         if len(commands) != 4:
             raise AssertionError(f"Expected exactly four SDK-only translation units, saw {len(commands)}")
         # Ask the same compiler for non-system dependencies. Directory prefixes do not

@@ -50,7 +50,7 @@ def main():
     source = work / 'owned-source'
     files = ['plugins/CMakeLists.txt', 'plugins/picker.h', 'tools/check_inspector_sdk.py',
              'tools/check_npc_sdk.py', 'tools/inspector_test.cpp',
-             'tools/npc_workflow_test.cpp', 'tools/workflow_module.h']
+             'tools/npc_workflow_test.cpp', 'tools/workflow_module.h', 'tools/panel_dump.h']
     for feature in ('npc', 'inspector'):
         files.extend(str(path.relative_to(ROOT)) for path in
                      sorted((ROOT / 'plugins' / feature).iterdir())

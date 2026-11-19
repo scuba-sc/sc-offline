@@ -93,9 +93,7 @@ def scan(root):
 
 # Names the product asks Core for before Core 2.4.1 defines them. `has` answers false for an unknown name, so the
 # query is harmless: the feature behind it stays off. Add a name here only with a comment saying which Core adds it.
-FUTURE_OPTIONAL = {
-    'game.loadout.appearance',   # hair, hair colour and eyebrow outfit slots; Core 2.4.1 has no slot for them
-}
+FUTURE_OPTIONAL = {}
 
 
 def check(root, core):

@@ -2,7 +2,7 @@
   "schema": 1,
   "generated_by": "tools/capabilities.py",
   "registry_schema_version": 2,
-  "registry_sha256": "317607bdfa836b3eea6ebe27c085027f99186acf7a5ae7ba80766708ed285282",
+  "registry_sha256": "b485ebf59f3f99c3af56fbae54be058880c69f7000e01ee52330f9df89795079",
   "release_policy": "Every capability switch is on by default in every release package and is a visible setting the player can turn off. The diagnostic switch is not a feature and is off by default. Only game.loadout.async was seen once in game; nothing else here was run in game.",
   "switches": [
     {

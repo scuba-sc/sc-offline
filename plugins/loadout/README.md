@@ -20,7 +20,9 @@ Equipping goes through Core's background route (`game.loadout` 1.2, capability `
 
 The clothing row needs a second Core capability. Core 2.4.1 defines outfit slots 22 to 31 in `sc_loadout.h`: clothing torso 0, 1 and 2, clothing legs, feet and hands, hat, head accessory, head horn and jewellery. They exist only on the background route, and the capability `game.loadout.outfit` is on only when `SCO_LOADOUT_ASYNC=1` and `SCO_LOADOUT_OUTFIT=1` are both set. The launcher does not set `SCO_LOADOUT_OUTFIT` and has no switch for it, so the capability stays off. The plugin checks it each time the page is drawn and each time a request is sent. With it off, no clothing slot is offered and Core would refuse the whole request anyway.
 
-The Squadron 42 page lists only outfits whose pieces all go into slots the page can set. With the capability off, those are outfits made of armour pieces only. Of the 35 outfits in `data/outfits.txt`, 8 qualify (four Navy pilot flight suits, two Navy pilot light armours, Navy pilot Fleet Week and Navy gunner). The page says how many outfits it leaves out. An outfit never goes on partly: one piece with no slot, two pieces in one slot, or more than 16 pieces keeps the whole outfit off the list.
+The Squadron 42 page lists only outfits whose pieces all go into slots the page can set. With the capability off, those are outfits made of armour pieces only. Of the 35 outfits in `data/outfits.txt`, 8 qualify (four Navy pilot flight suits, two Navy pilot light armours, Navy pilot Fleet Week and Navy gunner). With it on, clothing, hat, head accessory, head horn and jewellery pieces also have a slot, and 28 of the 35 qualify. Hair, hair colour and eyebrows never have a slot, so an outfit that uses one stays off the list in both cases. The page says how many outfits it leaves out. An outfit never goes on partly: one piece with no slot, two pieces in one slot, or more than 16 pieces keeps the whole outfit off the list.
+
+If the command `loadout.submit_outfit` or `loadout.wear` names such an outfit anyway, the whole outfit is refused and nothing is sent. The page says which part is the problem, for example "This outfit includes hair, and the game has nowhere to put it yet. Nothing was changed." When the outfit slots are simply off, it says "Changing outfits isn't turned on."
 
 ## Gear page
 
@@ -86,7 +88,7 @@ The file has one section per slot, named exactly like the 14 slot names above (c
 ## What it needs
 
 - Services: `game.loadout` 1.2, `sco.content` 1.0, `sco.widgets` 1.0, and `game.cvars` 1.0 for the settings readout.
-- Capabilities: `game.loadout.async` (needed for every equip button), `game.loadout.outfit` (optional, clothing slots) and `game.cvars.read` (optional, settings readout; the `exp_cvars_native` switch turns it on).
+- Capabilities: `game.loadout.async` (needed for every equip button), `game.loadout.outfit` (optional, outfit slots 22 to 31) and `game.cvars.read` (optional, settings readout; the `exp_cvars_native` switch turns it on).
 - Missing services leave the commands in place and they refuse with a plain reason. There is no private fallback.
 
 Seen in game (owner, build 4.10.200.58746): equipping gear on the Gear page attached the items. Not run in game. Everything else on this page, including weapon attachments, outfits and the Squadron 42 page. See [docs/status.md](../../docs/status.md).
@@ -107,7 +109,5 @@ cmake --install build-loadout --config Release --prefix <stage> --component load
 The tests are `loadout-widget-workflow`, `loadout-public-route`, `loadout-curated-catalogue`, `loadout-weapon-picker`, `loadout-outfit-recipe` and `loadout-outfit-import`. They run the real module against stand-in services. `python tools/check_loadout_sdk.py --archive <sdk zip> --sums <SHA256SUMS> --work <new folder outside the checkout>` runs them from a verified SDK archive; add `--candidate` and the digest options for an unpublished SDK (see [docs/sdk-candidate.md](../../docs/sdk-candidate.md)). Its raw result includes two `NOT_FOUND` observations from the SDK's generic checker for `loadout.progress` and `loadout.cancel` with no request. The helper accepts exactly those two.
 
 To stage a release-style folder with this plugin, run `python -B tools/stage_loadout_candidate.py --artifact-root <absolute artifact root> --staging-parent <absolute existing folder outside any game install>`. It creates a new `sco-loadout-candidate-*` folder, refuses to replace files and refuses a dirty checkout. Add `--lists-source <folder>` to include caller-supplied `items.txt` and `outfits.txt`.
-
-Known gap to close in `loadout.cpp`: it maps outfit ports to slots 22 to 34 and names hair, hair colour and eyebrow slots plus the capability `game.loadout.appearance`. Core 2.4.1 has slots 22 to 31 only, with head accessory 29, head horn 30 and jewellery 31, and no hair slots or `game.loadout.appearance`. Against that header the source does not compile (a `static_assert` names `SC_LOADOUT_SLOT_HAIR`). Even after it compiles, head accessory, head horn and jewellery would be sent as slots 32 to 34, which Core reports as unsupported. The product is not affected today because `game.loadout.outfit` stays off.
 
 `outfit_import.cpp` and `outfit_recipe.cpp` keep the 0.7.7 outfit file parser and recipe model with a source-audit trail. Nothing in the module calls them, and their two standalone tests do not show any game behavior.
