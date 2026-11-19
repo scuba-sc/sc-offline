@@ -72,6 +72,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from urllib.parse import unquote
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -112,6 +113,70 @@ FILE_SUFFIXES = {'h', 'hpp', 'cpp', 'inc', 'ini', 'txt', 'dll', 'exe', 'db', 'xm
 COMMAND_RE = re.compile(r'^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$')
 LIST_RE = re.compile(r'lists/([a-z0-9_]+)\.txt')
 CALL_RE = re.compile(r'(?<![A-Za-z0-9_])(Invoke|Forward|invoke|BindBuiltinHotkey)\s*\(')
+
+
+# Pages the package must carry, and folders of the repository that must stay out of it.
+REQUIRED_PAGES = ('README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'SECURITY.md', 'CONTRIBUTING.md')
+NOT_PACKAGED = ('docs/handoff/',)
+SCHEME_RE = re.compile(r'^(?:[A-Za-z][A-Za-z0-9+.\-]*:|//)')
+INLINE_LINK_RE = re.compile(r'\]\(([^)\s]+)')
+REF_LINK_RE = re.compile(r'^\s{0,3}\[[^\]]+\]:\s*(\S+)')
+CODE_SPAN_RE = re.compile(r'(`+)(?:(?!\1).)+?\1')
+
+
+def package_files_under(tree, prefixes):
+    """Package files whose '/' path starts with one of the prefixes."""
+    found = []
+    for path in sorted(tree.rglob('*')):
+        rel = path.relative_to(tree).as_posix()
+        if path.is_file() and rel.startswith(prefixes):
+            found.append(rel)
+    return found
+
+
+def markdown_link_targets(text):
+    """(line number, target) of each link target outside fenced blocks and inline code."""
+    fence = None
+    for number, line in enumerate(text.split('\n'), 1):
+        marker = line.lstrip()[:3]
+        if marker in ('```', '~~~'):
+            fence = marker if fence is None else (None if fence == marker else fence)
+            continue
+        if fence is not None:
+            continue
+        spans = [m.span() for m in CODE_SPAN_RE.finditer(line)]
+        found = [(m.start(1), m.group(1)) for m in INLINE_LINK_RE.finditer(line)]
+        ref = REF_LINK_RE.match(line)
+        if ref:
+            found.append((ref.start(1), ref.group(1)))
+        for start, target in found:
+            if not any(a <= start < b for a, b in spans):
+                yield number, target
+
+
+def check_links(tree, problems):
+    """Error for each relative Markdown link in the package that does not resolve to a file or folder inside it."""
+    root = tree.resolve()
+    for md in sorted(tree.rglob('*.md')):
+        rel = md.relative_to(tree).as_posix()
+        try:
+            text = md.read_bytes().decode('utf-8')
+        except UnicodeDecodeError:
+            continue
+        for number, target in markdown_link_targets(text):
+            if not target or target.startswith('#') or SCHEME_RE.match(target):
+                continue
+            path = unquote(target.partition('#')[0].partition('?')[0])
+            if not path:
+                continue
+            resolved = (md.parent / path).resolve()
+            try:
+                resolved.relative_to(root)
+            except ValueError:
+                problems.error(f'{rel}:{number}: link {target} leaves the package')
+                continue
+            if not resolved.exists():
+                problems.error(f'{rel}:{number}: link {target} points at a file that is not in the package')
 
 
 class Problems:
@@ -477,6 +542,14 @@ def check(tree, source, allow=()):
                 if name in known or ('.' in name and head in enabled_ids):
                     continue
                 problems.error(f"{p['id']}: requires {name}, which no host capability, framework service or enabled plugin provides")
+
+    # d. a self-contained package: no maintainer notes, and every relative Markdown link resolves inside it
+    for rel in package_files_under(tree, NOT_PACKAGED):
+        problems.error(f'{rel} is a maintainer page and must not be in the package')
+    for name in REQUIRED_PAGES:
+        if not (tree / name).is_file():
+            problems.error(f'{name} is missing from the package')
+    check_links(tree, problems)
     return problems, report
 
 

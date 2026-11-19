@@ -1,6 +1,6 @@
 # ASOP host composition
 
-ASOP (the in-game ship terminals and hangars) is unavailable in 0.8.0, and nothing on this page has been run in game; see [status.md](status.md).
+This page is about the Core-owned ASOP host (`sco::game::asop_host`), which is not in 0.8.0. The ship terminals, hangars and ATC in [Features](features.md#ship-terminals-hangars-and-atc) are a different thing: the mod's own code (`src/fleet.cpp` and `src/hooks.cpp`), which is compiled into both game DLLs and on by default (`asop = on`). It has not been run in game on this build. Nothing on this page has been run in game either; see [status.md](status.md).
 
 Both CMake options `SCO_ASOP_HOST_COMPOSITION` and `SCO_ASOP_SELECTION_COMPOSITION` default to `OFF`, and CMake rejects either one with an error. They stay rejected until the product has a reviewed, non-blocking stop request and an ordered control-thread drain. This is separate from native startup, which is on with a Core that provides the process-retained composition ([host composition](host-composition.md)).
 

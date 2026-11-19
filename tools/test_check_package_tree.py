@@ -26,6 +26,8 @@ def make_tree(base, disabled=('creative', 'discord'), packs=None, plugins_in_tre
     for name in ('dinput8.dll', 'dinput8-rust-menu.dll', 'sc-offline.exe', 'sc-offline-classic.exe',
                  'sc_offline_menu.dll'):
         write(base / name, RUST_MENU_HOST if name == 'dinput8-rust-menu.dll' else '')
+    for name in ('README.md', 'CHANGELOG.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'SECURITY.md', 'CONTRIBUTING.md'):
+        write(base / name, 'A page with no links.\n')
     plugins = base / 'data' / 'plugins'
     for plugin in plugins_in_tree:
         write(plugins / plugin / 'plugin.ini',
@@ -208,6 +210,30 @@ def main():
         expect(code == 1 and 'creative: no sources in source-no-submodule/external/sc-creative/plugins/creative' in out
                and 'no plugin in the tree registers it' in out,
                'without the submodule checkout creative commands are not provided', out)
+
+        # 3. Links. A relative link that resolves inside the package passes; one that does not is an error; links in
+        # code, absolute links and anchors alone are not checked; a maintainer page in the package is an error.
+        tree = make_tree(work / 'links', disabled=('discord',), packs=FULL_PACKS)
+        write(tree / 'docs' / 'a.md', 'See [b](b.md#part) and [up](../README.md) and [home](../docs/).\n')
+        write(tree / 'docs' / 'b.md', '# Part\n[web](https://example.com/x) [here](#part) `[code](nowhere.md)`\n'
+                                      '```\n[fenced](missing.md)\n```\n')
+        code, out = run(tree)
+        expect(code == 0, 'links that resolve inside the package must pass', out)
+        write(tree / 'docs' / 'c.md', 'A [gone](../CONTRIBUTING-GUIDE.md) link and an [anchor one](../tools/x.py#L3).\n')
+        code, out = run(tree)
+        expect(code == 1 and 'docs/c.md:1: link ../CONTRIBUTING-GUIDE.md points at a file that is not in the package' in out
+               and 'docs/c.md:1: link ../tools/x.py#L3 points at a file that is not in the package' in out,
+               'an unresolved relative link must be an error naming the page and line', out)
+        expect('docs/a.md' not in out and 'docs/b.md' not in out, 'resolved links must not be reported', out)
+        (tree / 'docs' / 'c.md').unlink()
+        write(tree / 'docs' / 'handoff' / 'note.md', 'maintainer notes\n')
+        code, out = run(tree)
+        expect(code == 1 and 'docs/handoff/note.md is a maintainer page and must not be in the package' in out,
+               'docs/handoff must stay out of the package', out)
+        (tree / 'docs' / 'handoff' / 'note.md').unlink()
+        (tree / 'SECURITY.md').unlink()
+        code, out = run(tree)
+        expect(code == 1 and 'SECURITY.md is missing from the package' in out, 'SECURITY.md is required', out)
     print('package tree preflight tests: PASS (static, synthetic trees; not run in game)')
 
 

@@ -91,7 +91,7 @@ The file has one section per slot, named exactly like the 14 slot names above (c
 - Capabilities: `game.loadout.async` (needed for every equip button), `game.loadout.outfit` (optional, outfit slots 22 to 31) and `game.cvars.read` (optional, settings readout; the `exp_cvars_native` switch turns it on).
 - Missing services leave the commands in place and they refuse with a plain reason. There is no private fallback.
 
-Seen in game (owner, build 4.10.200.58746): equipping gear on the Gear page attached the items. Not run in game. Everything else on this page, including weapon attachments, outfits and the Squadron 42 page. See [docs/status.md](../../docs/status.md).
+Run in game (maintainer, build 4.10.200.58746): equipping gear on the Gear page attached the items. Not run in game. Everything else on this page, including weapon attachments, outfits and the Squadron 42 page. See [docs/status.md](../../docs/status.md).
 
 ## Developer notes
 

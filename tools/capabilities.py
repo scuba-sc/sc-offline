@@ -11,7 +11,7 @@ reads. Writes:
   python tools/capabilities.py --core external/sco-core --check    fail if either file is stale
                                                                    or the wording check trips
 
-Release policy (owner decision 2026-11-17): every capability switch is ON by default in every
+Release policy (maintainer decision 2026-11-17): every capability switch is ON by default in every
 release package, is a visible setting the player can turn OFF, and its text says it has not been
 run in game. The diagnostic switch (exp_entities_diag) is not a feature: its hooks patch game
 functions to write log lines, and it is OFF by default. The "registry default" column is what Core

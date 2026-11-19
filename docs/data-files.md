@@ -120,7 +120,7 @@ When one of these files is in `data/`, `src/contracts.cpp` or `src/spawner.cpp` 
 | `SC_OFFLINE_START_SHIP` | Legacy startup ship request, from `start_ship`. The spawn plugin does not act on it. |
 | `SC_OFFLINE_START` | Legacy destination request, from `start`. `Daymar` does not enable destination startup. |
 | `SC_OFFLINE_PLUGINS` | From `plugins`: `on` loads plugins from `plugins\` beside the ship list (`data\plugins`); anything else is off. |
-| `SC_OFFLINE_MULTIPLAYER` | From `multiplayer`: `off` removes the Multiplayer tab; anything else, or unset, leaves it on. |
+| `SC_OFFLINE_MULTIPLAYER` | From `multiplayer` (`off` in the shipped `sc-offline.ini`): `off` removes the Multiplayer tab and adds no multiplayer firewall rule; anything else, or unset, leaves it on. |
 | `SC_OFFLINE_MULTIPLAYER_ALLOW` | From `multiplayer_allow`, checked by the launcher: extra IPv4 ranges a session may use as firewall exceptions. They do not authorize a session by themselves. |
 | `SC_OFFLINE_ASOP_FLEET_LIST` | From `asop_fleet_list`: `ships` lists `ships.txt` at the terminals; unset or anything else leaves the game's own list (with `asop` on). |
 | `SC_OFFLINE_ASOP` | From `asop`: `off` (or `0`, `no`, `false`) leaves the ship terminals, hangars and ATC alone; unset or anything else is on. |

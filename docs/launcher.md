@@ -17,7 +17,7 @@ sc-offline.exe [play|install|uninstall|status|mcp|update|stop|plugins|help] [--g
 | `uninstall` | Takes the mod out, puts back what it replaced, and undoes leftover [PC changes](#pc-changes). Refuses while the game runs. The window's **Repair** button runs it. |
 | `status` | Runs the [checks below](#checks-it-runs-every-time). It only reads: it writes no file, changes nothing, opens no folder picker and makes no network request. If it cannot find the game folder it says so. |
 | `mcp` | A read-only server that lets an [AI agent](ai-agents.md) see status, plugins, log tails and `sc-offline.ini`. `Game.log` is served only with `--game-log`, because it can hold account names. |
-| `update` | Checks GitHub for a newer sc-offline and offers to install it ([Updates](#updates)). `--check` only checks, `--yes` does not ask, `--prerelease` also offers test builds. |
+| `update` | Checks GitHub for a newer sc-offline and offers to install it ([Updates](#updates)). `--check` only checks, `--yes` does not ask, `--prerelease` also offers test builds. The binary accepts these three flags, but `sc-offline.exe help` does not list them. |
 | `stop` | Asks the running game of this install to close, like the window's Stop ([below](#stop)). Exit `0` when it closed or nothing was running, `1` when the game folder is unknown or the game is still running. `--end` ends the process if it is still open a minute later. |
 | `plugins` | Manages the plugins in `data\plugins` ([Plugin commands](#plugin-commands)). |
 
@@ -27,7 +27,7 @@ sc-offline.exe [play|install|uninstall|status|mcp|update|stop|plugins|help] [--g
 | `--dry-run` | Prints every step it would take and stops. Nothing is copied, deleted or started. |
 | `--skip-eac-check` | Don't stop when Easy Anti-Cheat looks active. |
 
-`help` prints the usage. Exit codes: `0` ok, `1` error, `2` Easy Anti-Cheat is active, `3` the game is running, `5` a PC change failed (in `launcher.log`). Everything the launcher prints also goes to `data\launcher.log`, except for `status`. Each run starts a new file and keeps the previous one as `launcher.log.1`.
+`help` prints the usage. Exit codes: `0` ok, `1` error, `2` Easy Anti-Cheat is active, `3` the game is running. A PC change that fails is exit `1` too: the launcher prints "the helper failed" with the elevated helper's own code (`5` for a PC change) and `data\launcher.log` has the details. Everything the launcher prints also goes to `data\launcher.log`, except for `status`. Each run starts a new file and keeps the previous one as `launcher.log.1`.
 
 ### Plugin commands
 
@@ -50,7 +50,7 @@ A double-click opens the window. It speaks English and Russian (**Language** on 
 
 **Output** shows what the running command prints, with a **Copy** button. **Plugins** is described [below](#the-plugins-page). **Capabilities** lists the [capability switches](#capability-switches-in-sc-offlineini) as toggles; a change applies at the next Play.
 
-**Settings** has **Repair: undo PC changes**, **Game logs after a session**, **Language**, **In-game menu** (**Classic**, or **New**, which has not been tested in game), **Plugins** on or off, **Check for updates**, **Edit sc-offline.ini** and **Open folder**. They are read-only while the game or a command runs. Browse (the folder picker, also shown when no game is found) and the restart after an update have not been run in game.
+**Settings** has **Repair: undo PC changes**, **Game logs after a session**, **Language**, **In-game menu** (**Classic**, or **New**, which has not been run in game), **Plugins** on or off, **Check for updates**, **Edit sc-offline.ini** and **Open folder**. They are read-only while the game or a command runs. Browse (the folder picker, also shown when no game is found) and the restart after an update have not been run in game.
 
 ### Stop
 
@@ -80,11 +80,11 @@ Closing the game window yourself skips the mod's exit work, so the wallet is not
 - It uses the same ini, `data` folder and PC-change record, so you can switch between the two launchers at any time.
 - **Undo PC changes with it:** `sc-offline-classic.exe uninstall` takes the mod out of the game folder and undoes every change in `%ProgramData%\sc-offline\pc-changes.txt`. It refuses while the game runs. Then `sc-offline-classic.exe status` must show nothing left over. If neither launcher runs, [PC changes](#pc-changes) lists each change so you can undo it by hand.
 - It always installs `dinput8.dll`, the mod with the classic menu. With `menu = rust` you still get the classic menu, and the mod logs one line saying the new menu needs `sc-offline.exe`.
-- Do not update with it. Run `sc-offline.exe update`; the classic launcher's own update would replace the new `sc-offline.exe`.
+- **Update only with `sc-offline.exe update`.** Never run the classic launcher's `update`: it would put the old launcher back in place of the new `sc-offline.exe`.
 
 ### Updating from 0.7.x
 
-Extract 0.8.0 into the old folder, or run the old launcher's update. Your `sc-offline.ini` and your files in `data\` (wallet, saved places, logs, saves) are kept. The update replaces `sc-offline.exe` with the new launcher, checks that it starts, and runs it. If that check fails, the old files are put back. Settings that are new in this release are added to your ini, commented out, so their defaults apply. Afterwards `sc-offline-classic.exe`, `sc_offline_menu.dll`, `dinput8-rust-menu.dll` and the new plugin folders are in place. No real update from 0.7.x has been run yet ([Status](status.md#ships-in-080-but-not-run-in-game)).
+To go from 0.7.x to 0.8.0 once, do one of two things: extract the 0.8.0 zip into the old folder, or run `update` in the 0.7.x launcher you have now. From then on, update only with `sc-offline.exe update`. Your `sc-offline.ini` and your files in `data\` (wallet, saved places, logs, saves) are kept. The update replaces `sc-offline.exe` with the new launcher, checks that it starts, and runs it. If that check fails, the old files are put back. Settings that are new in this release are added to your ini, commented out, so their defaults apply. Afterwards `sc-offline-classic.exe`, `sc_offline_menu.dll`, `dinput8-rust-menu.dll` and the new plugin folders are in place. No real update from 0.7.x has been run yet ([Status](status.md#ships-in-080-but-not-run-in-game)).
 
 ## Checks it runs every time
 
@@ -122,7 +122,7 @@ While you play, the helper makes three changes outside the game folder and undoe
 
 | Key | Going in | Coming out |
 | --- | --- | --- |
-| `block_network` | Windows Firewall rules in both directions: `sc-offline: block StarCitizen.exe` (this install's exe only), `sc-offline: block RSI Launcher.exe` and `sc-offline: block CrashHandler.exe` (CIG's crash reporter). A rule is added only if its exe exists. `sc-offline.exe` itself stays online for updates. With `multiplayer = on` (the default), the game's rule leaves your local network open (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, loopback and `multiplayer_allow`) and one more rule, `sc-offline: allow StarCitizen.exe multiplayer (LAN)`, lets PCs on your subnet reach the game over UDP. All IPv6 stays blocked. If Windows refuses the narrower rule, every address is blocked and the launcher says so. | Deleted. |
+| `block_network` | Windows Firewall rules in both directions: `sc-offline: block StarCitizen.exe` (this install's exe only), `sc-offline: block RSI Launcher.exe` and `sc-offline: block CrashHandler.exe` (CIG's crash reporter). A rule is added only if its exe exists. `sc-offline.exe` itself stays online for updates. With `multiplayer = on` (the code default; the shipped `sc-offline.ini` sets `off`), the game's rule leaves your local network open (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, loopback and `multiplayer_allow`) and one more rule, `sc-offline: allow StarCitizen.exe multiplayer (LAN)`, lets PCs on your subnet reach the game over UDP. All IPv6 stays blocked. If Windows refuses the narrower rule, every address is blocked and the launcher says so. | Deleted. |
 | `eac_hosts` | `127.0.0.1 modules-cdn.eac-prod.on.epicgames.com # added by sc-offline...` is added to the hosts file, then DNS is flushed. Skipped if the hosts file already blocks it. | Only the tagged line is removed; DNS flushed. |
 | `eac_rename` | `EasyAntiCheat_EOS.exe` is renamed to `EasyAntiCheat_EOS.exe.bak`. Skipped if it is not there. | Renamed back. |
 
@@ -135,7 +135,7 @@ While you play, the helper makes three changes outside the game folder and undoe
 
 The launcher never asks to run as administrator, and the game never runs as administrator. Windows asks once, only for a step that needs it: the helper (when the firewall, EAC or a protected game folder is involved), deleting session logs from a protected game folder, and updating a folder only administrators can write, such as one under Program Files.
 
-If the mod folder's `data` cannot be written, the mod cannot save your wallet or places, and the launcher tells you to move the folder (for example to your Desktop). Start `sc-offline.exe` with normal rights. To launch the game with normal rights, remove *Run this program as an administrator* from the `StarCitizen.exe` properties. On NVIDIA GPUs, turn off **Smooth Motion** for Star Citizen in the NVIDIA App first; with it on the game can crash during startup.
+If the mod folder's `data` cannot be written, the mod cannot save your wallet or places, and the launcher tells you to move the folder (for example to your Desktop). Start `sc-offline.exe` with normal rights. To launch the game with normal rights, remove *Run this program as an administrator* from the `StarCitizen.exe` properties.
 
 ## Updates
 
@@ -173,6 +173,12 @@ When the game closes, the launcher lists the logs the game wrote this session (`
 
 Under Wine none of the PC changes run; `sc-offline.sh` handles the hosts file there, and the firewall rules do not apply ([Linux](linux.md)).
 
+## Troubleshooting
+
+- **The game crashes during startup on an NVIDIA GPU.** Turn off **Smooth Motion** for Star Citizen in the NVIDIA App, then start the game again.
+- **The new launcher does not start or a step fails.** Use `sc-offline-classic.exe` ([how](#the-classic-launcher)).
+- **A PC change is left over after a crash.** Run **Repair** in the window, or `sc-offline.exe uninstall` ([PC changes](#pc-changes)).
+
 ## `sc-offline.ini`
 
 Each line is `key = value`. A line that starts with `#` is a comment. The launcher reports an unknown key at start. Your aUEC balance is in `data\wallet.txt` ([Features](features.md#player)), not in the ini.
@@ -189,7 +195,7 @@ Each line is `key = value`. A line that starts with `#` is a comment. The launch
 | `menu` | `imgui` | The in-game menu. `imgui` is the classic menu. `rust` is the new menu and works only with `sc-offline.exe` ([Which game DLL](#which-game-dll)). It opens on **M**. The Settings page writes this key. |
 | `asop` | `on` | `off` leaves the ship terminals, personal hangars, the hangar lift and ATC hails as the game has them offline ([Features](features.md#ship-terminals-hangars-and-atc)). |
 | `asop_fleet_list` | `ships` | The ship list the terminals show: `ships` (every ship in `data\ships.txt`) or `game` (the game's own; offline it is empty). |
-| `multiplayer` | `on` | The [Multiplayer tab](features.md#multiplayer-lan-or-vpn). Nothing connects until you press Host or Join. With `block_network` on, the firewall leaves your LAN open for it. `off` removes the tab, and the firewall blocks every address. |
+| `multiplayer` | `off` (shipped ini; `on` if the key is missing) | Only for the separate co-presence plugin, [sc-mp](features.md#multiplayer), which is not in this package. `on` changes two firewall rules (see `block_network` under [PC changes](#pc-changes)): the game's block rule leaves your local network open, and an inbound UDP allow rule is added for it. `off` adds neither, and the block rule covers every address. An `sc-offline.ini` you already have keeps its own value. |
 | `multiplayer_allow` | empty | Firewall exceptions besides your LAN, for a VPN: up to 8 IPv4 ranges separated by commas (Tailscale: `100.64.0.0/10`). Each whole range must lie within `10/8`, `127/8`, `169.254/16`, `172.16/12`, `192.168/16` or `100.64/10`; allow only your VPN's range. The launcher clears values that do not parse and warns. |
 | `block_network` | `on` | Block `StarCitizen.exe`, the RSI Launcher and `CrashHandler.exe` in Windows Firewall while you play ([PC changes](#pc-changes)). |
 | `eac_hosts`, `eac_rename` | `on` | Add the EAC hosts line, and rename `EasyAntiCheat_EOS.exe`, while you play. |
@@ -205,14 +211,14 @@ Some parts of the mod start only when you ask for them. Each is a `key = on` or 
 
 | Key | Default | What it asks for |
 | --- | --- | --- |
-| `exp_loadout_async` | `on` | The menu equips gear. This is the one that was seen working in game. |
+| `exp_loadout_async` | `on` | The menu equips gear. This is the one that was run in game and worked. |
 | `exp_inventory_read` | `on` | Plugins read what you wear and carry. |
 | `exp_actor_stats_write` | `on` | Plugins change your survival stats. |
 | `exp_cvars_native` | `on` | Plugins read four console settings, read only. |
 | `exp_audio_native` | `on` | Native one-shot sounds. This build refuses them and logs why. |
 | `exp_entities_diag` | `off` | Extra log lines about game entities, for bug reports. No gameplay change. |
 
-- **A switch asks, the game decides.** On means the launcher asks the mod to start the capability. It does not mean the capability works. [Status](status.md#ships-in-080-but-not-run-in-game) says which have been seen in game. [Capabilities](capabilities.md) has the full table.
+- **A switch asks, the game decides.** On means the launcher asks the mod to start the capability. It does not mean the capability works. [Status](status.md#ships-in-080-but-not-run-in-game) says which have been run in game. [Capabilities](capabilities.md) has the full table.
 - **Off means off.** A variable left in your shell or in Windows cannot turn a capability on behind your back: the launcher removes it from the game's environment.
 - **Values.** `on` or `off` (also `yes`/`no`, `1`/`0`, `true`/`false`). Anything else keeps the default and is reported.
 - **At start** the launcher prints one line listing the switches that are on. When an update adds a key to your ini, it is appended commented out, and the default applies.

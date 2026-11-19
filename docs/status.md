@@ -6,7 +6,7 @@ A build, a mock, a signature match or a test without the game does not count as 
 
 ## Seen in game
 
-The maintainer ran seven things on game build **4.10.200.58746**, in one or two sessions each. The runs used development packages with the classic launcher (`sc-offline-classic.exe`), the classic menu and the same `dinput8.dll` that is in the 0.8.0 package. They did not use the 0.8.0 zip itself.
+The maintainer ran seven things on game build **4.10.200.58746**, in one or two sessions each. The runs used development packages with the classic launcher (`sc-offline-classic.exe`) and the classic menu. They did not use the 0.8.0 zip. Every binary in the 0.8.0 package (the game DLLs, both launchers and all plugins) was built after those runs, from later sources. The default game DLL is built the same way as the one that ran (classic menu), but it is a new build.
 
 1. **Startup.** The game started with the mod loaded, and the classic menu opened.
 2. **Gear.** Equipping items from the Gear page attached them to the character. The game log shows each attachment.
@@ -29,9 +29,9 @@ Everything below is in the package and has been checked without the game. None o
 
 If the new launcher does not work on your PC, use `sc-offline-classic.exe`. It is the launcher the maintainer's game runs used, and it undoes the PC changes the new one makes ([how](launcher.md#the-classic-launcher)).
 
-**The new menu** (`menu = rust` in `sc-offline.ini`, [Which menu](../README.md#which-menu)). Neither the menu nor the second game DLL it needs has been loaded in game. That covers opening it with **M**, giving the keyboard and mouse back to the game, resizing, and the "Classic pages" entry. The classic menu is the default and is the one that was seen.
+**The new menu** (`menu = rust` in `sc-offline.ini`, [Which menu](../README.md#which-menu)). Neither the menu nor the second game DLL it needs has been run in game. That covers opening it with **M**, giving the keyboard and mouse back to the game, resizing, and the "Classic pages" entry. The classic menu is the default and is the one that was seen.
 
-**Capability switches other than gear.** Four switches are on by default and have not run: reading what you wear and carry, changing survival stats, reading four console settings, and native sounds. This build refuses native sounds and logs why. One diagnostic switch is off by default. The gear switch is the one that was seen working. [Capabilities](capabilities.md) lists them all.
+**Capability switches other than gear.** Four switches are on by default and have not run: reading what you wear and carry, changing survival stats, reading four console settings, and native sounds. This build refuses native sounds and logs why. One diagnostic switch is off by default. The gear switch is the one that was run in game and worked. [Capabilities](capabilities.md) lists them all.
 
 **Travel.** The Travel page and `quantum.travel` have not run, including the quantum drive boost and named saved spots. They work only inside the star system you are in.
 

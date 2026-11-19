@@ -47,7 +47,7 @@ PRs are squash-merged. Keep one change per PR.
 
 ## Releases
 
-Maintainers tag releases; contributors don't need to bump versions. See [Release policy](docs/build.md#release-policy).
+Maintainers tag releases; contributors don't need to bump versions. See [Release policy](docs/build.md#release-policy) and the [release runbook](docs/release-runbook.md).
 
 ## License
 

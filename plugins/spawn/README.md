@@ -44,7 +44,7 @@ None.
 - Capabilities: `spawn.ship`, `game.entities.spawn`, `game.entities.transform`, `game.actors.local_player`, `game.vehicles.seats`, `game.vehicles.seat`, `game.vehicles.flight_ready`.
 - A missing service or capability makes the action refuse with a reason. Boarding services are checked before the ship is spawned.
 
-Seen in game (owner, build 4.10.200.58746): a ship spawned, the owner boarded it and Flight Ready worked. Not run in game. Removal, several ship classes and the ASOP page. See [docs/status.md](../../docs/status.md).
+Run in game (maintainer, build 4.10.200.58746): a ship spawned, the maintainer boarded it and Flight Ready worked. Not run in game. Removal, several ship classes and the ASOP page. See [docs/status.md](../../docs/status.md).
 
 ## Developer notes
 

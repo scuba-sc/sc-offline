@@ -50,7 +50,7 @@ The spot is saved in `data/storage/teleport.db`. An existing `spawn.txt` (lines 
 - Services: `game.relocation` 1.0, `game.spatial` 1.0, `teleport.spatial` 1.0, `sco.storage`, `sco.settings`, `sco.ui` (the keys), `sco.widgets` 1.0 (the page; without it the commands still work).
 - Capability: `game.relocation` (on in Core).
 
-Seen in game (owner, build 4.10.200.58746): F7 then F8 really moved the player to the spot, but Core did not confirm the arrival. The 2 m arrival message is new. Not run in game. See [docs/status.md](../../docs/status.md).
+Run in game (maintainer, build 4.10.200.58746): F7 then F8 really moved the player to the spot, but Core did not confirm the arrival. The 2 m arrival message is new. Not run in game. See [docs/status.md](../../docs/status.md).
 
 ## Developer notes
 

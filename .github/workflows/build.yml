@@ -421,6 +421,8 @@ jobs:
       - name: Release manifest and NPC external wiring tests
         run: |
           python3 tools/test_release_manifest.py
+          python3 tools/test_package_release.py
+          python3 tools/test_bump_sdk_pin.py
           python3 tools/test_npc_release.py
           python3 tools/test_external_release.py
           python3 tools/test_release_plugin_profile.py
@@ -1044,10 +1046,34 @@ jobs:
           persist-credentials: false
           # tools/check_package_tree.py reads the creative plugin's commands from external/sc-creative.
           submodules: true
-      - name: Refuse packaging an unpublished development Core with stable plugin artifacts
+      # The plugins in the package are built from the published SDK that tools/check_inspector_sdk.py pins,
+      # and the game DLLs from the Core at the external/sco-core gitlink. Those must be the same SDK:
+      # the gitlink commit has to be the commit of that SDK's release tag (sdk-v<version>), the Core there
+      # has to say the same version, and the release has to be published (not a draft, not a pre-release).
+      # Until then there is nothing safe to package, so the job stops here.
+      - name: Refuse packaging unless Core is a published SDK release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "Development Core requires a separately reviewed matching release SDK and plugin artifacts." >&2
-          exit 1
+          set -euo pipefail
+          sdk_version=$(python3 -c "import sys; sys.path.insert(0, 'tools'); from check_inspector_sdk import SDK_VERSION; print(SDK_VERSION)")
+          sdk_tag="sdk-v$sdk_version"
+          fail() { echo "Not packaging: $1" >&2; exit 1; }
+          python3 tools/bump_sdk_pin.py --check > "$RUNNER_TEMP/pin-check.txt" \
+            || { cat "$RUNNER_TEMP/pin-check.txt" >&2; fail "the SDK pins in the repository do not all name SDK $sdk_version."; }
+          gitlink=$(git rev-parse HEAD:external/sco-core)
+          git -C external/sco-core fetch --no-tags origin "refs/tags/$sdk_tag:refs/tags/$sdk_tag" \
+            || fail "the tag $sdk_tag does not exist in scuba-sc/sco-core. Publish SDK $sdk_version first."
+          tag_commit=$(git -C external/sco-core rev-parse "refs/tags/$sdk_tag^{commit}")
+          [ "$gitlink" = "$tag_commit" ] \
+            || fail "external/sco-core is at $gitlink, but $sdk_tag is $tag_commit. Move the Core pin to the tagged commit."
+          [ "$(tr -d '[:space:]' < external/sco-core/sdk/VERSION)" = "$sdk_version" ] \
+            || fail "the Core at external/sco-core says SDK $(tr -d '[:space:]' < external/sco-core/sdk/VERSION), but the plugins are pinned to SDK $sdk_version."
+          state=$(gh release view "$sdk_tag" --repo scuba-sc/sco-core --json isDraft,isPrerelease --jq '"draft=\(.isDraft) prerelease=\(.isPrerelease)"') \
+            || fail "$sdk_tag has no published release in scuba-sc/sco-core."
+          [ "$state" = "draft=false prerelease=false" ] \
+            || fail "the $sdk_tag release is not published as a full release ($state)."
+          echo "external/sco-core is $gitlink, the published $sdk_tag (SDK $sdk_version)."
 
       - name: Download DLL + classic launcher artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1

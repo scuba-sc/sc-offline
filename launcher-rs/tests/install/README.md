@@ -50,7 +50,7 @@ Known limit shared with the C++ launcher (kept for parity, pinned by the scenari
 no marker is written, and `uninstall` only says it left the xml in place because it has no record of
 it. Other half-done states (a foreign DLL set aside, an xml backup made) are put back by `uninstall`
 even without a marker. A fix (write the marker before the first change, or delete the fresh xml when
-the DLL copy fails) must change both launchers together, so it is an owner decision and not done here.
+the DLL copy fails) must change both launchers together, so it is a maintainer decision and not done here.
 
 Line endings are normalised, the world path is replaced by `@W` and times by `<T>`.
 

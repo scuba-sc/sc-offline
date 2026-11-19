@@ -1,10 +1,14 @@
 # Decisions
 
-Maintainer: **scubamount**. This page records product decisions with their dates. A decision here is policy, not a claim that the work is finished or that anything was seen in game; [Status](status.md) records that. Nothing here tags, publishes or certifies a release.
+Maintainer: **scubamount**. This page records product decisions with their dates. A decision here is policy, not a claim that the work is finished or that anything was run in game; [Status](status.md) records that. Nothing here tags, publishes or certifies a release.
+
+## 2026-11-18: multiplayer is off in the shipped settings
+
+The shipped `sc-offline.ini` sets `multiplayer = off`. With it on, the launcher changes two firewall rules while you play: the game's block rule leaves your local network open, and an inbound UDP allow rule is added for the local subnet. The multiplayer plugin (sc-mp) is not in the 0.8.0 package, so the package should not open an inbound rule for a feature it does not contain. The code default of both launchers is unchanged (`on` when the key is missing), so the parity goldens stay valid. The tradeoff: people who add the co-presence plugin must turn the key on.
 
 ## 2026-11-18: The loadout plugin ships in 0.8.0
 
-The loadout plugin (the Gear page, the Squadron 42 page and the `loadout.*` commands) ships on in 0.8.0, with the list pack it needs. Gear equip is the one switch-gated feature seen working in game, and the packages the maintainer ran had this plugin.
+The loadout plugin (the Gear page, the Squadron 42 page and the `loadout.*` commands) ships on in 0.8.0, with the list pack it needs. Gear equip is the one switch-gated feature run in game, and it worked, and the packages the maintainer ran had this plugin.
 
 The release plugin list is therefore 12 native plugins: spawn, crew, build, mining, npc, inspector, teleport, quantum, contracts, creative and loadout (all on), and discord (off). See [Features](features.md#plugins).
 
@@ -26,7 +30,7 @@ The maintainer will do no more testing before 0.8.0, so these close the question
 
 1. **Launcher names.** The Rust launcher is `sc-offline.exe` in the package. The C++ launcher ships beside it as `sc-offline-classic.exe`, the documented fallback. It can undo PC changes from the same `%ProgramData%\sc-offline\pc-changes.txt` record ([the classic launcher](launcher.md#the-classic-launcher)).
 2. **In-game menu.** The new (Rust) menu ships opt-in: ini key `menu = rust`, default `imgui`. It has never run in game. How the package carries it: [Two game DLLs](#2026-11-18-two-game-dlls).
-3. **Capability switches.** `exp_loadout_async`, `exp_inventory_read`, `exp_actor_stats_write`, `exp_cvars_native` and `exp_audio_native` default **on**. `exp_entities_diag` (log-only diagnostics) defaults **off**. Only the loadout switch has been seen working in game.
+3. **Capability switches.** `exp_loadout_async`, `exp_inventory_read`, `exp_actor_stats_write`, `exp_cvars_native` and `exp_audio_native` default **on**. `exp_entities_diag` (log-only diagnostics) defaults **off**. Only the loadout switch has been run in game and worked.
 4. **Travel.** Travel to another planet, which needs a zone lookup beyond the player's own chain, is **not** in 0.8.0. It is a documented gap ([Features](features.md#travel-between-places)).
 5. **Core defaults.** sco-core's capability defaults are unchanged. What the maintainer saw in game is recorded as evidence text in [Status](status.md), not as a changed default.
 6. **Plugin catalogue.** A signed index. First-party and reviewed native plugins are allowed, and everything lands disabled. No production signing key exists yet, so the shipped trust root is empty and the catalogue works from a local folder (`plugins catalogue ... --source <folder>`). Adding a key is a release-time act of the maintainer.

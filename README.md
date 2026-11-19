@@ -47,11 +47,11 @@ A green status means the mod is out of the game folder and the recorded PC chang
 
 ## What works
 
-[Status](docs/status.md) is the one page that says what was seen in game and what was not. Read it before you rely on a feature. [Features](docs/features.md) says what each part is for.
+[Status](docs/status.md) is the one page that says what was run in game and what was not. Read it before you rely on a feature. [Features](docs/features.md) says what each part is for.
 
 ## Which menu
 
-The default in-game menu is the **classic** menu. In `sc-offline.ini` that is `menu = imgui`. A **new** menu is optional: choose **New** under **Settings > In-game menu** in the launcher window, or set `menu = rust`. It works only with `sc-offline.exe`, it has not been seen in game ([Status](docs/status.md#ships-in-080-but-not-run-in-game)), and the change takes effect on the next **Play**. [Why there are two game DLLs](docs/decisions.md#2026-11-18-two-game-dlls).
+The default in-game menu is the **classic** menu. In `sc-offline.ini` that is `menu = imgui`. A **new** menu is optional: choose **New** under **Settings > In-game menu** in the launcher window, or set `menu = rust`. It works only with `sc-offline.exe`, it has not been run in game ([Status](docs/status.md#ships-in-080-but-not-run-in-game)), and the change takes effect on the next **Play**. [Why there are two game DLLs](docs/decisions.md#2026-11-18-two-game-dlls).
 
 ## What is in the folder
 

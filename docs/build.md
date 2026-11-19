@@ -212,13 +212,14 @@ This builds the C++ launcher with `-DSCO_UPDATE_TEST` and runs 14 update scenari
 8. `external-sdk` builds, checks and stages discord, crew, spawn, build, mining, teleport and quantum on Windows against the same published archive. `creative-sdk` does the same for Creative from the `external/sc-creative` submodule, running that repository's `tools/check_creative_sdk.py`. `contracts-sdk` supplies the command-first contracts folder; its providers stay deferred.
 9. `launcher-mcp` runs `tools/check_launcher_mcp.py`: protocol, schema, log-limit and redaction tests on Windows. The `build` job runs it again with `--exe` against the built launcher in a scratch install and checks that the server wrote nothing.
 10. `development-sdk-proofs` runs the isolated consumer proofs against the Core the gitlink selects.
-11. `release` runs on tags only and needs the jobs above. It runs `tools/package_release.py` as in the section above, with `--check-tree`. Its first step fails on purpose ("Refuse packaging an unpublished development Core with stable plugin artifacts"), so no tag builds a release until matching release SDK and plugin artifacts have been reviewed. `gear_presets`, multiplayer, bridges and test plugins are not staged.
+11. `release` runs on tags only and needs the jobs above. It runs `tools/package_release.py` as in the section above, with `--check-tree`. Its first step ("Refuse packaging unless Core is a published SDK release") stops the job unless the `external/sco-core` gitlink is the commit of the published `sdk-v<version>` release, where `<version>` is the SDK that `tools/check_inspector_sdk.py` pins, and every pin in the repository agrees (`tools/bump_sdk_pin.py --check`). The steps to a release are in the [release runbook](release-runbook.md). `gear_presets`, multiplayer, bridges and test plugins are not staged.
 
 Every action is pinned to a commit SHA. The workflow defaults to `contents: read`, and only `release` gets `contents: write`.
 
 ## Release policy
 
 - `v1.x` tags publish as full releases. Every other tag publishes as a pre-release.
+- The launcher's default `update_channel = stable` asks GitHub for `/releases/latest`, which never returns a pre-release, and it also refuses one. A `v0.x` release therefore reaches no player through updates until a maintainer promotes it. The [release runbook](release-runbook.md) says when.
 - A maintainer can promote a pre-release to Latest with `gh release edit <tag> --prerelease=false --latest`. That can happen before anyone has played the build. When it does, the release notes and the CHANGELOG say the build is untested.
 - If a promoted build turns out broken, mark an earlier release as Latest again: `gh release edit <tag> --latest`.
 

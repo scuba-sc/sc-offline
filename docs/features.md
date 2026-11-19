@@ -1,6 +1,6 @@
 # Features
 
-This page says what each feature is for and how to use it. What has been run in game is recorded once, in [Status](status.md). Only seven things have been seen working: startup with the classic menu, gear equip, placing an Outposts item, ship spawn with boarding and Flight Ready, character spawn, a saved-spot move and a seat event test. Every other feature below has not been run in game, and "works" on this page means "is designed to".
+This page says what each feature is for and how to use it. What has been run in game is recorded once, in [Status](status.md). Only seven things have been run in game and worked: startup with the classic menu, gear equip, placing an Outposts item, ship spawn with boarding and Flight Ready, character spawn, a saved-spot move and a seat event test. Every other feature below has not been run in game, and "works" on this page means "is designed to".
 
 Press **M** in game to open the menu. Which pages appear depends on the enabled plugins. The window can be resized from its edges and corners. When you finish a resize, the outer size (normalised to 96 dpi) is saved in `data/menu-window.ini` and restored the next time the game starts, for the monitor it is on. The size is clamped between 720 x 520 and 90% of that monitor's work area, and a missing or bad file falls back to 1000 x 800 before clamping. Delete `menu-window.ini` while the game is closed to reset it. Long tab titles keep their width; use the tab bar's arrows when they overflow. The same menu shell runs under the classic menu and the new menu ([Which menu](../README.md#which-menu)); the new one is described in [Plugin UI](plugin-ui.md#the-new-menu-opt-in).
 
@@ -9,7 +9,7 @@ Most lists are plain text files in `data/`, and the counts below come from those
 ## Player
 
 - **Creative controls.** Noclip, god mode, infinite ammo and infinite ship ammo come from the [creative plugin](#the-creative-plugin), shipped on, on its **Creative** tab.
-- **Gear.** The Gear page of the [loadout plugin](../plugins/loadout/README.md) equips items from the `items.txt` list in the `loadout_lists` pack (with `outfits.txt` and `loadout_slots.txt` beside it) (the `exp_loadout_async` switch, on by default). Equipping was seen working in game. Slots the game does not support are refused with a reason, and there is no fallback ([Plugins](#plugins)).
+- **Gear.** The Gear page of the [loadout plugin](../plugins/loadout/README.md) equips items from the `items.txt` list in the `loadout_lists` pack (with `outfits.txt` and `loadout_slots.txt` beside it) (the `exp_loadout_async` switch, on by default). Equipping was run in game and worked. Slots the game does not support are refused with a reason, and there is no fallback ([Plugins](#plugins)).
 - **Wallet.** Your aUEC balance is loaded when you spawn and saved to `data/wallet.txt` when it changes (checked every 5 seconds) and once more when the game closes. That file is the only wallet store. It holds just the number; edit it while the game is closed to change your balance. Without the file you start with the `aUEC amount` in `data/OfflineDB/default_1.xml` (100,000,000). Once `wallet.txt` exists, that amount is no longer used, so delete the file to go back to it ([persistence](data-files.md#what-persists-between-sessions)).
 
 ## Travel
@@ -17,7 +17,7 @@ Most lists are plain text files in `data/`, and the counts below come from those
 - **Teleport** to planets, moons, stations, Lagrange points and jump points, grouped by star system (`locations.txt`). F7/F8 and `quantum.travel` run through `game.relocation`. The Travel page works only within the star system you are in.
 - **Scan** lists everything the game has loaded and writes it to `locations_found.txt`. Interiors and small zones are hidden unless you ask to see them.
 - **Saved spots.** **F7** saves one quick position and **F8** takes you back to it (`data/storage/teleport.db`). F8 works while the saved zone is still loaded; otherwise it refuses with a plain sentence. The Travel page also keeps named spots (`data/storage/quantum.db`). Spots in `bookmarks.txt` and `spawn.txt` from an older version are imported the first time you start this one ([Saves](data-files.md#saves)).
-- Pyro and Nyx can be reached only with the default `boot_map = PU_All`. Some Pyro places drop you in orbit, because `locations.txt` does not have their radius yet.
+- Pyro and Nyx can be reached only with the default `boot_map = PU_All`. A place whose radius is missing from `locations.txt` puts you in orbit instead of on the ground. In 0.9.0-rc1 the Pyro places arrived that way ([changelog](../CHANGELOG.md)); that has not been run in game since.
 - **Quantum drive.** Hold Caps Lock (or B for NAV mode, then hold the left mouse button) to boost. This needs the quantum plugin's controls on and a game that allows them; the page pauses new boosts when the game's rules cannot be read or forbid them.
 - **The Gladius' new quantum drive** is game data, not code: the `quantum_drive` data pack gives the Gladius' quantum drive (the Wetkah Beacon) the game's new drive parameters. sco-core applies it to the game's DataCore database (`Data\Game2.dcb`) as the game loads. See [Logging](#logging) for the `mod.log` lines.
 
@@ -34,7 +34,7 @@ Most lists are plain text files in `data/`, and the counts below come from those
 
 ## Ship terminals, hangars and ATC
 
-With `asop = on` in `sc-offline.ini` (the default) the station's ship terminals (ASOP) are designed to work offline:
+These are the mod's own code, in the game DLL, and `asop = on` in `sc-offline.ini` is the default. They have not been run in game on this build ([Status](status.md)). They are not the Core-owned ASOP host, which is not in 0.8.0 ([why](asop-sdk.md)). With `asop = on` the station's ship terminals (ASOP) are designed to work offline:
 
 - **Open a terminal.** It lists the ships of `ships.txt` instead of staying on "Stand by". The saved-selection editor is not enabled in this build ([details](asop-selection-candidate.md)).
 - **Deliver** stores a ship at the terminal's station. The ship is spawned 1000 m above you for about 3 seconds, then stored. The terminal shows "Awaiting Delivery" for a few seconds, then "Stored" with a Retrieve action.
@@ -44,7 +44,7 @@ With `asop = on` in `sc-offline.ini` (the default) the station's ship terminals 
 
 The terminal offers Deliver only with the game's delivery system switched on. Online the server does that; here sc-offline sets `g_itemRecovery.deliverySystemSetup 1`. **Show local ships** lists only ships at this station, so it stays empty until you have delivered one there.
 
-Limits: one ship out at a time. Stored and retrieved ships last for the session. A retrieved ship is a new ship of the same class, so damage, cargo and loadout changes do not carry over. Only small and medium hangars have been tried. Plugins can move your retrieved ship with `set_entity_transform` (`sc_spawn.h`).
+Limits: one ship out at a time. Stored and retrieved ships last for the session. A retrieved ship is a new ship of the same class, so damage, cargo and loadout changes do not carry over. Plugins can move your retrieved ship with `set_entity_transform` (`sc_spawn.h`).
 
 Each part switches itself off when the game's code for it is not found on your game version. `mod.log` lists every part at startup, for example `[+] ship terminal open (rc1): ready (...)` or `[!] ship terminal Deliver (rc3): needs atc.store_vehicle (MISSING)`. With `asop = off` it reads `[-] ship terminals, hangars and ATC (ASOP): off`. Each Deliver, Retrieve and Store step is logged with `[asop]`, and hangar and ATC steps with `[iim]` and `[atc]`. The parts are also capabilities plugins can ask about: `asop.terminal`, `asop.caller`, `asop.list`, `asop.deliver`, `asop.claim_timeout`, `asop.retrieve`, `hangar.lift`, `atc.store`, `hangar.instance`, `atc.tokens` and `asop.diagnostics`.
 
@@ -52,7 +52,7 @@ Each part switches itself off when the game's code for it is not found on your g
 
 The Crew page shows up to 128 copied seats with occupant and usability fields, in 32-row pages, and says when the list is cut short. **Sit**, **Stand**, **Remove** and **Add** use fresh public providers. Only you and crew-owned NPCs can be moved, and only crew-owned NPCs can be removed. NPCs added here sit but do not fly the ship or operate turrets.
 
-The page and the `crew.*` commands act on the ship you are aboard, or the one `crew.target` pinned. Some entries in a ship's seat list are not crew seats (turret items and remote-operated parts; the game's own seat picker skips them). `crew.fill` seats NPCs only in empty, usable seats and says how many it skipped: `Seating 10 x <npc> (5 seats skipped: not interactable)`. `mod.log` has one `interactable yes|no` line per seat, and `crew.sit` refuses a seat that is not usable.
+The page and the `crew.*` commands act on the ship you are aboard, or the one `crew.target` pinned. Some entries in a ship's seat list are not crew seats (turret items and remote-operated parts; the game's own seat picker skips them). `crew.fill` seats NPCs only in empty, usable seats and says how many it skipped. Its log line has the form `Seating <n> owned NPCs; skipped=<n>; partial seats=<0 or 1>; batch result=<code>`. `mod.log` has one `interactable yes|no` line per seat, and `crew.sit` refuses a seat that is not usable.
 
 ## NPCs
 
@@ -175,18 +175,9 @@ Noclip, god mode and infinite ammo are not part of `dinput8.dll`. They are the `
 
 The **Creative** tab holds all of these controls; the Player and Vehicles pages have none. If you used the built-in versions before: the commands were `ammo.infinite` and `ammo.ship_infinite` (a plugin's commands must start with its id), god mode no longer starts on, and the ship toggle covers the ship you are aboard but not the Crew page's target ship. Each toggle needs its capability: `game.creative.god_mode`, `game.creative.fly`, `game.creative.ammo`, `game.creative.ship_ammo`.
 
-## Multiplayer (LAN or VPN)
+## Multiplayer
 
-Multiplayer lives in [sc-mp](https://github.com/scuba-sc/sc-mp) and is not in the release. This section describes its design; co-presence is planned, not released ([SECURITY](../SECURITY.md)).
-
-Everyone runs their own offline game. One player hosts a private session from the **Multiplayer** tab and the others join by address. Other players appear in your game as **ghosts**: stand-ins your own game spawns and moves to where they are. Nothing connects until you press **Host** or **Join**. The game's own netcode and servers are not used or changed; the session runs on sco-core's `sco.net`, between sc-offline games only.
-
-- **Host.** Open the menu (**M**), then **Multiplayer**. Enter the name the others will see and a passphrase of at least 8 characters. Keep the UDP port (64091) unless something else uses it, and press **Host**. Give the others your LAN address (`ipconfig` lists it as IPv4 Address, like `192.168.1.20`), the port and the passphrase.
-- **Join.** On the same tab, enter your name, the host's passphrase, address and port, then press **Join**. A wrong passphrase, a full session or no answer is shown under the session state. A session holds up to 8 players.
-- **Where it works.** Your local network only: `10.x`, `172.16-31.x`, `192.168.x` and link-local addresses. For friends elsewhere, use a VPN that puts you on one network and add its range to `multiplayer_allow` in `sc-offline.ini` (Tailscale: `multiplayer_allow = 100.64.0.0/10`). Every address in that range can reach a session you host, so allow only your VPN's range. With `block_network` on, the firewall rule for `StarCitizen.exe` leaves those networks open and lets PCs on your subnet reach the game over UDP; the internet stays blocked ([PC changes](launcher.md#pc-changes)). Messages are signed with the passphrase, so nobody without it can join or change them, but they are **not encrypted**. They hold only your chosen name, the NPC and ship classes you show as, and where you are.
-- **What you see.** The tab lists everyone in the session and how each ghost is doing: streaming in (a fresh spawn takes a few seconds), shown, **not shown** while that player is more than 10 km away, or **parked** when they are in a zone you have not loaded (another system, say). A parked ghost is moved out of sight and returns when you are in the same place. A player aboard a ship shows as that ship when its class can be read and spawns in your game (**Show other players' ships** turns this off). Otherwise they show as an NPC: the class they picked under **Others' ghosts** when your `npcs.txt` has it, else your own pick (default: an unarmed civilian). **Go to** teleports you next to a ghost.
-- **Limits.** Ghosts are visual only: no shared physics or collisions you can rely on, no damage, no shared missions, contracts, inventory, wallet or loadouts, and no voice or chat. Each player's world (NPCs, ships, build pieces) stays their own; only the player and the ship they are aboard are shown to others. A ghost's pose follows about 0.1 s behind. Sessions use IPv4.
-- **Settings.** `data/storage/multiplayer.db` keeps them. The passphrase is kept only when you tick **Remember the passphrase** (stored unencrypted) and is never written to `mod.log`. `multiplayer = off` in `sc-offline.ini` removes the tab. `mod.log` lines start with `[multiplayer]` and `[net]`.
+Multiplayer is not in this package. It is a separate project, [sc-mp](https://github.com/scuba-sc/sc-mp), and it has its own steps. `multiplayer = off` in the shipped `sc-offline.ini`, so the launcher adds no firewall rule for it ([PC changes](launcher.md#pc-changes)). If you add the sc-mp plugin, set `multiplayer = on`.
 
 ## Bridges (optional)
 

@@ -22,12 +22,20 @@ same layout as the CI package. The folder `<out>/sc-offline-<tag>/` holds:
                             the configuration run in game; classic menu)
     dinput8-rust-menu.dll   the same sources built with SCO_HOST_MENU_CLIENT=ON and the Rust menu hook (never run in
                             game). The Rust launcher installs it as dinput8.dll only for `menu = rust`
-    sc-offline.ini, sc-offline.sh, README.md, CHANGELOG.md, LICENSE, THIRD_PARTY_NOTICES.md
-    docs/, data/            tracked files (data/buildables.txt moves into the build_catalog pack)
+    sc-offline.ini, sc-offline.sh, README.md, CHANGELOG.md, LICENSE, THIRD_PARTY_NOTICES.md,
+    SECURITY.md, CONTRIBUTING.md
+    docs/, data/            tracked files (data/buildables.txt moves into the build_catalog pack; docs/handoff/
+                            holds maintainer notes and is left out)
     data/plugins/<pack>/    data packs: build_catalog, picker_catalog, locations_catalog and loadout_lists (copies of base lists;
                             loadout_lists holds items, outfits and loadout_slots for the loadout plugin)
     data/plugins/<id>/      the plugin profile selected with --profile (tools/stage-release-plugins.py)
     manifest.json           format 1: every other file with its SHA-256 and size
+
+The package must read on its own. In the packaged copies of the Markdown files (the repository files are not
+touched), every relative link whose target is not in the package becomes an absolute link into the repository
+at the release tag: https://github.com/scuba-sc/sc-offline/blob/<tag>/<path> (`tree` for a folder), with the
+anchor kept. Links into external/sco-core and external/sc-creative go to the main branch of those repositories.
+A link whose target exists in neither the package nor --source fails the build.
 
 Then it zips the folder, unpacks the zip into a scratch folder and checks the manifest again. With
 --check-tree it also runs tools/check_package_tree.py on the folder (needs the plugin sources in
@@ -41,11 +49,13 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import os
+import posixpath
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 import zipfile
 from pathlib import Path
 
@@ -72,6 +82,17 @@ TOP_FILES = (
     ("CHANGELOG.md", "CHANGELOG.md"),
     ("LICENSE", "LICENSE"),
     ("THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"),
+    ("SECURITY.md", "SECURITY.md"),
+    ("CONTRIBUTING.md", "CONTRIBUTING.md"),
+)
+# Folders of tracked files that stay out of the package (maintainer notes).
+NOT_PACKAGED = ("docs/handoff/",)
+# Where a link to a file that is not in the package points: the repository at the release tag, or, for the two
+# submodules, the main branch of their own repository.
+REPO_URL = "https://github.com/scuba-sc/sc-offline"
+EXTERNAL_LINKS = (
+    ("external/sco-core/", "https://github.com/scuba-sc/sco-core", "main"),
+    ("external/sc-creative/", "https://github.com/scuba-sc/sc-creative", "main"),
 )
 # Built binaries: (argument name, name in the package).
 BINARIES = (
@@ -120,7 +141,8 @@ def copy_with_parents(source: Path, rels: list[str], dest: Path) -> None:
 
 def stage_data(source: Path, pkg: Path) -> None:
     """docs/ and data/ as the player gets them, with the two list packs the release adds."""
-    copy_with_parents(source, tracked(source, "docs"), pkg)
+    docs = [f for f in tracked(source, "docs") if not f.startswith(NOT_PACKAGED)]
+    copy_with_parents(source, docs, pkg)
     copy_with_parents(source, tracked(source, "data", exclude=(LEGACY_BUILDABLES,)), pkg)
     # Ordinary public catalog pack; originals remain user-editable sources.
     picker = pkg / "data/plugins/picker_catalog/lists"
@@ -145,6 +167,107 @@ def stage_data(source: Path, pkg: Path) -> None:
     (build / "lists").mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source / "data/plugins/build_catalog/plugin.ini", build / "plugin.ini")
     shutil.copyfile(source / LEGACY_BUILDABLES, build / "lists/buildables.txt")
+
+
+_SCHEME_RE = re.compile(r"^(?:[A-Za-z][A-Za-z0-9+.\-]*:|//)")
+_INLINE_LINK_RE = re.compile(r"(\]\()([^)\s]+)")
+_REF_LINK_RE = re.compile(r"^(\s{0,3}\[[^\]]+\]:\s*)(\S+)")
+_CODE_SPAN_RE = re.compile(r"(`+)(?:(?!\1).)+?\1")
+
+
+def markdown_links(text: str):
+    """Yield (line index, start, end, target) for each link target outside code.
+
+    Fenced blocks and inline code spans are skipped. The target is the text inside the parentheses (or after
+    `[label]:`), up to the first space.
+    """
+    fence = None
+    for index, line in enumerate(text.split("\n")):
+        marker = line.lstrip()[:3]
+        if marker in ("```", "~~~"):
+            if fence is None:
+                fence = marker
+            elif fence == marker:
+                fence = None
+            continue
+        if fence is not None:
+            continue
+        spans = [m.span() for m in _CODE_SPAN_RE.finditer(line)]
+        for m in _INLINE_LINK_RE.finditer(line):
+            if not any(a <= m.start(2) < b for a, b in spans):
+                yield index, m.start(2), m.end(2), m.group(2)
+        m = _REF_LINK_RE.match(line)
+        if m and not any(a <= m.start(2) < b for a, b in spans):
+            yield index, m.start(2), m.end(2), m.group(2)
+
+
+def split_target(target: str):
+    """(path, '#anchor' or '') for a relative file link, or None for an anchor-only, absolute or mail link."""
+    if not target or target.startswith("#") or _SCHEME_RE.match(target):
+        return None
+    path, hash_sign, anchor = target.partition("#")
+    path = path.partition("?")[0]
+    if not path:
+        return None
+    return urllib.parse.unquote(path), hash_sign + anchor
+
+
+def resolve_in_root(md_rel: str, path: str):
+    """Root-relative '/' path of a link from the file md_rel, or None when it leaves the root."""
+    if path.startswith("/"):
+        return None
+    joined = posixpath.normpath(posixpath.join(posixpath.dirname(md_rel), path))
+    if joined == ".." or joined.startswith("../"):
+        return None
+    return joined
+
+
+def absolute_link(resolved: str, anchor: str, tag: str, source: Path) -> str:
+    for prefix, repo, branch in EXTERNAL_LINKS:
+        if resolved.startswith(prefix):
+            kind = "tree" if (source / resolved).is_dir() else "blob"
+            return f"{repo}/{kind}/{branch}/{urllib.parse.quote(resolved[len(prefix):])}{anchor}"
+    if not (source / resolved).exists():
+        raise PackageError(f"broken link: {resolved} is neither in the package nor in {source.name}")
+    kind = "tree" if (source / resolved).is_dir() else "blob"
+    return f"{REPO_URL}/{kind}/{tag}/{urllib.parse.quote(resolved)}{anchor}"
+
+
+def rewrite_markdown(text: str, md_rel: str, pkg: Path, source: Path, tag: str) -> tuple[str, int]:
+    """The text with every relative link to a file outside the package made absolute. Returns (text, count)."""
+    lines = text.split("\n")
+    edits: dict[int, list[tuple[int, int, str]]] = {}
+    count = 0
+    for index, start, end, target in markdown_links(text):
+        parts = split_target(target)
+        if parts is None:
+            continue
+        resolved = resolve_in_root(md_rel, parts[0])
+        if resolved is None or (pkg / resolved).exists():
+            continue
+        edits.setdefault(index, []).append((start, end, absolute_link(resolved, parts[1], tag, source)))
+        count += 1
+    for index, spans in edits.items():
+        line = lines[index]
+        for start, end, new in sorted(spans, reverse=True):
+            line = line[:start] + new + line[end:]
+        lines[index] = line
+    return "\n".join(lines), count
+
+
+def rewrite_links(pkg: Path, source: Path, tag: str) -> int:
+    """Rewrite the packaged Markdown files (never the repository's). Returns the number of links changed."""
+    total = 0
+    for md in sorted(pkg.rglob("*.md")):
+        try:
+            text = md.read_bytes().decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        new, count = rewrite_markdown(text, md.relative_to(pkg).as_posix(), pkg, source, tag)
+        if count:
+            md.write_bytes(new.encode("utf-8"))
+            total += count
+    return total
 
 
 def stage_binaries(args: argparse.Namespace, pkg: Path) -> None:
@@ -190,6 +313,8 @@ def build(args: argparse.Namespace) -> tuple[Path, Path]:
         if not args.no_plugins:
             profile = stage_tool.load_profile(args.profile, Path(args.profile_file))
             stage_tool.stage_profile(profile, Path(args.artifact_root), pkg / "data/plugins")
+        changed = rewrite_links(pkg, source, tag)
+        print(f"links: {changed} relative link(s) to files outside the package now point at the repository at {tag}")
         version_h = args.version_h or str(source / "src/version.h")
         commit = args.commit
         if commit is None:

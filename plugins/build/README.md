@@ -50,7 +50,7 @@ On start, the plugin selects the first usable row of the list so that Place work
 - Capabilities for placing: `game.entities.prefabs`, `game.entities.spawn`, `game.actors.spawn_npc` (NPCs only) and `game.world.raycast`. Aiming also needs `game.world.free_camera` and `game.world.raycast_filtered`.
 - A missing service or capability makes the command refuse with a reason. There is no private fallback.
 
-Seen in game (owner, build 4.10.200.58746): an Outposts item was placed. Not run in game. Undo, clear, NPC placement and aiming. See [docs/status.md](../../docs/status.md).
+Run in game (maintainer, build 4.10.200.58746): an Outposts item was placed. Not run in game. Undo, clear, NPC placement and aiming. See [docs/status.md](../../docs/status.md).
 
 ## Developer notes
 

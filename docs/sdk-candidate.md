@@ -77,4 +77,4 @@ The parent must exist, must not be a redirect, and must be separate from the sou
 
 ## Loadout consumer proofs
 
-The Loadout consumer ran six synthetic CTest cases against a development `legacy` archive, and a content-host check ran 1 of 1 against a clean Core source, using `tools/test_loadout_content_host.ps1`. Both are synthetic. Gear equip has been seen in game; nothing else about Loadout has. Neither check shows full outfit or provider parity.
+The Loadout consumer ran six synthetic CTest cases against a development `legacy` archive, and a content-host check ran 1 of 1 against a clean Core source, using `tools/test_loadout_content_host.ps1`. Both are synthetic. Gear equip has been run in game; nothing else about Loadout has. Neither check shows full outfit or provider parity.

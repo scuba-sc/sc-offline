@@ -197,7 +197,7 @@ Everything in the crate table is built. The release build gives `sc-offline.exe`
 - Play, the helper, the elevated (UAC) path, the shell-token game start when elevated, and the real PC changes (netsh, hosts file, EAC rename). The `Safer` normal-user token self-test ran only from a non-elevated process.
 - The window against a real game. The real update swap on a real install (only the release check ran against GitHub). The window's restart after an update.
 - The Rust menu: see [rust-menu.md](rust-menu.md#not-run-in-game).
-- Capability switches except `exp_loadout_async`, which was seen working in game (gear attached). The other four are on by default by maintainer decision.
+- Capability switches except `exp_loadout_async`, which was run in game and worked (gear attached). The other four are on by default by maintainer decision.
 
 The maintainer's in-game session used the C++ launcher and the classic menu.
 

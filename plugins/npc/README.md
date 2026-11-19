@@ -37,7 +37,7 @@ None.
 - Services: `game.actors` 1.0, `game.entities` 1.0, `teleport.spatial` 1.0, `sco.widgets` 1.0, `sco.content` 1.0.
 - Capabilities: `game.actors.spawn_npc`, `game.actors.despawn`, `game.entities.transform`.
 
-Seen in game (owner, build 4.10.200.58746): spawning a character worked. Not run in game. Removal, observe and the page. See [docs/status.md](../../docs/status.md).
+Run in game (maintainer, build 4.10.200.58746): spawning a character worked. Not run in game. Removal, observe and the page. See [docs/status.md](../../docs/status.md).
 
 ## Developer notes
 

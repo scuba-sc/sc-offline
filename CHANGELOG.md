@@ -24,6 +24,7 @@ Built for sco-core SDK 2.4.1, game pack 0.8.1 and game build 4.10.200.58746. Plu
 
 ### Changed
 
+- **Multiplayer is off in the shipped `sc-offline.ini`.** The multiplayer plugin is not in this package, so the launcher no longer opens the local-network firewall rules for it by default. If you add the co-presence plugin (sc-mp), set `multiplayer = on` ([details](docs/launcher.md#pc-changes)). An `sc-offline.ini` you already have keeps its own value.
 - **`sc-offline.exe mcp`** is now part of the Rust launcher and speaks the same protocol as the C++ one (`get_status`, `list_plugins`, `read_log`, `get_settings`). `Game.log` is served only with `mcp --game-log`. One shared redactor (handles, nicknames, character names, GEIDs, account numbers, e-mail addresses, Windows user name, with bounded learning from login lines) runs before any text filter. The crash report uses the same one ([AI agents](docs/ai-agents.md)).
 - **`status` is read-only.** It writes no file (not `launcher.log`, not `game-path.txt`), migrates nothing, settles no interrupted update, opens no folder picker and makes no network request.
 - **`play` removes an inherited `SCO_*` capability variable** when its key is off.
@@ -59,7 +60,7 @@ These parts of 0.8.0 have not been run in game. This is the short list; [Status]
 - The window, Stop and the PC-change repair on a real PC.
 - `exp_inventory_read`, `exp_actor_stats_write`, `exp_cvars_native`, `exp_audio_native` (this Core refuses native sounds and logs why) and `exp_entities_diag`.
 - The new arrival check, `quantum.travel`, crew actions beyond the seat event test, gear beyond equipping, NPC commands, `build.undo` and `build.clear`, contracts, mining, multiplayer, creative, the inspector, ASOP terminals, hangars and ATC, and the menu pages.
-- The package as built. It was assembled and checked on a development machine with stand-in plugin builds.
+- The package as built. It was assembled and checked on a development machine. Its plugins are real builds against the SDK 2.4.1 development archive.
 
 ## 0.7.8.3 (2026-10-15)
 

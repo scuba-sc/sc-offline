@@ -7,6 +7,7 @@
 No game, no real binaries, no network: the "exes" are small byte strings. This proves the folder
 layout, the manifest and the zip round trip; it does not prove that any binary works.
 """
+import hashlib
 import importlib.util
 import json
 import os
@@ -39,6 +40,22 @@ PROFILE = {
 }
 
 
+LAUNCHER_PAGE = """# Launcher
+In the package: [features](features.md#part-one), [the top page](../README.md), [security](../SECURITY.md#reporting)
+and [contributing](../CONTRIBUTING.md). A page only on the web site is not a file, and `[code](../nothing.md)` is code.
+Not in the package: [plugin page](../plugins/alpha/README.md#usage), [tools folder](../tools/),
+[handoff note](handoff/2026-01-01-note.md), [Core header](../external/sco-core/include/sc_x.h#L10)
+and [creative](../external/sc-creative/README.md). Web: [site](https://example.com/a) and [mail](mailto:a@example.com).
+[inside](#launcher)
+
+```
+[fenced](../plugins/alpha/README.md)
+```
+
+[ref]: ../tools/check.py
+"""
+
+
 def put(path: Path, data=b"x"):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data if isinstance(data, bytes) else data.encode())
@@ -57,7 +74,13 @@ class PackageRelease(unittest.TestCase):
         put(self.src / "launcher/sc-offline.sh", "#!/bin/sh\n")
         for name in ("README.md", "CHANGELOG.md", "LICENSE", "THIRD_PARTY_NOTICES.md"):
             put(self.src / name, name)
-        put(self.src / "docs/launcher.md", "docs")
+        put(self.src / "docs/launcher.md", LAUNCHER_PAGE)
+        put(self.src / "docs/features.md", "# Features\n## Part one\n")
+        put(self.src / "docs/handoff/2026-01-01-note.md", "maintainer note, links to [the page](../launcher.md)\n")
+        put(self.src / "SECURITY.md", "security\n")
+        put(self.src / "CONTRIBUTING.md", "contributing\n")
+        put(self.src / "plugins/alpha/README.md", "# Alpha\n## Usage\n")
+        put(self.src / "tools/check.py", "pass\n")
         put(self.src / "data/items.txt", "items")
         put(self.src / "data/outfits.txt", "outfits")
         put(self.src / "data/loadout_slots.txt", "loadout slots")
@@ -109,7 +132,8 @@ class PackageRelease(unittest.TestCase):
         self.assertEqual((pkg / "dinput8.dll").read_bytes(), b"MZ mod")
         self.assertEqual((pkg / "dinput8-rust-menu.dll").read_bytes(), b"MZ mod with the rust menu hook")
         for name in ("sc-offline.ini", "sc-offline.sh", "README.md", "CHANGELOG.md", "LICENSE",
-                     "THIRD_PARTY_NOTICES.md", "docs/launcher.md", "data/items.txt", "manifest.json"):
+                     "THIRD_PARTY_NOTICES.md", "SECURITY.md", "CONTRIBUTING.md", "docs/launcher.md", "data/items.txt",
+                     "manifest.json"):
             self.assertTrue((pkg / name).is_file(), name)
         # The legacy list is player-owned: only the build_catalog pack carries it in the release.
         self.assertFalse((pkg / "data/buildables.txt").exists())
@@ -142,6 +166,59 @@ class PackageRelease(unittest.TestCase):
             self.assertEqual(names, {f"sc-offline-v0.8.0/{p}" for p in listed | {"manifest.json"}})
             mode = z.getinfo("sc-offline-v0.8.0/sc-offline.sh").external_attr >> 16
             self.assertEqual(mode & 0o111, 0o111)
+
+    def test_links_outside_the_package_become_absolute_at_the_tag(self):
+        self.assertEqual(pr.main(self.argv()), 0)
+        page = (self.pkg() / "docs/launcher.md").read_text(encoding="utf-8")
+        repo = "https://github.com/scuba-sc/sc-offline"
+        # kept: the target is in the package (anchors untouched)
+        for kept in ("(features.md#part-one)", "(../README.md)", "(../SECURITY.md#reporting)",
+                     "(../CONTRIBUTING.md)", "(#launcher)", "(https://example.com/a)", "(mailto:a@example.com)"):
+            self.assertIn(kept, page)
+        # rewritten: not in the package, anchor kept, a folder as tree
+        self.assertIn(f"({repo}/blob/v0.8.0/plugins/alpha/README.md#usage)", page)
+        self.assertIn(f"({repo}/tree/v0.8.0/tools)", page)
+        self.assertIn(f"({repo}/blob/v0.8.0/docs/handoff/2026-01-01-note.md)", page)
+        self.assertIn("(https://github.com/scuba-sc/sco-core/blob/main/include/sc_x.h#L10)", page)
+        self.assertIn("(https://github.com/scuba-sc/sc-creative/blob/main/README.md)", page)
+        self.assertIn(f"[ref]: {repo}/blob/v0.8.0/tools/check.py", page)
+        # untouched: code spans and fenced blocks
+        self.assertIn("`[code](../nothing.md)`", page)
+        self.assertIn("[fenced](../plugins/alpha/README.md)", page)
+        # the repository's own page is not changed
+        self.assertEqual((self.src / "docs/launcher.md").read_text(encoding="utf-8"), LAUNCHER_PAGE)
+        # no page the package keeps has a relative link that does not resolve
+        tree = self.pkg()
+        for md in tree.rglob("*.md"):
+            for _line, _start, _end, target in pr.markdown_links(md.read_text(encoding="utf-8")):
+                parts = pr.split_target(target)
+                if parts is None:
+                    continue
+                resolved = pr.resolve_in_root(md.relative_to(tree).as_posix(), parts[0])
+                self.assertIsNotNone(resolved, (md, target))
+                self.assertTrue((tree / resolved).exists(), (md, target))
+
+    def test_security_and_contributing_ship_and_handoff_pages_do_not(self):
+        self.assertEqual(pr.main(self.argv()), 0)
+        pkg = self.pkg()
+        self.assertEqual((pkg / "SECURITY.md").read_bytes(), b"security\n")
+        self.assertEqual((pkg / "CONTRIBUTING.md").read_bytes(), b"contributing\n")
+        self.assertFalse((pkg / "docs/handoff").exists())
+        manifest = json.loads((pkg / "manifest.json").read_text(encoding="utf-8"))
+        listed = {entry["path"] for entry in manifest["files"]}
+        self.assertIn("SECURITY.md", listed)
+        self.assertIn("CONTRIBUTING.md", listed)
+        self.assertFalse([p for p in listed if p.startswith("docs/handoff/")])
+        with zipfile.ZipFile(self.out / "sc-offline-v0.8.0.zip") as z:
+            self.assertFalse([n for n in z.namelist() if "/docs/handoff/" in n])
+        # the manifest records the rewritten page, so the folder and the zip agree with it
+        entry = next(e for e in manifest["files"] if e["path"] == "docs/launcher.md")
+        self.assertEqual(entry["sha256"], hashlib.sha256((pkg / "docs/launcher.md").read_bytes()).hexdigest())
+
+    def test_a_link_to_a_file_that_exists_nowhere_fails_the_build(self):
+        put(self.src / "docs/launcher.md", "a [broken](../no-such-file.md) link\n")
+        self.assertEqual(pr.main(self.argv()), 1)
+        self.assertFalse(self.pkg().exists())
 
     def test_no_zip_builds_the_folder_only(self):
         self.assertEqual(pr.main(self.argv("--no-zip")), 0)
@@ -225,6 +302,7 @@ class PackageRelease(unittest.TestCase):
         self.assertFalse((out / "data/buildables.txt").exists())
         self.assertTrue((out / "data/plugins/build_catalog/lists/buildables.txt").is_file())
         self.assertTrue((out / "docs/launcher.md").is_file())
+        self.assertFalse((out / "docs/handoff").exists())
         pack = out / "data/plugins/loadout_lists"
         self.assertEqual({p.name for p in (pack / "lists").iterdir()}, {"items.txt", "outfits.txt", "loadout_slots.txt"})
         self.assertEqual((pack / "plugin.ini").read_bytes(), (ROOT / "plugins/loadout/lists-plugin.ini").read_bytes())
