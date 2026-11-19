@@ -1301,6 +1301,80 @@ fn cpp_version(exe: &Path) -> String {
         .to_string()
 }
 
+/// A GitHub release object as the update check reads it.
+fn candidate_release(tag: &str, pre: bool) -> String {
+    format!(
+        r#"{{"tag_name":"{tag}","prerelease":{pre},"draft":false,"assets":[{{"name":"sc-offline-{tag}.zip","size":10,"digest":"sha256:{}","browser_download_url":"https://github.com/scuba-sc/sc-offline/releases/download/{tag}/sc-offline-{tag}.zip"}}]}}"#,
+        "a".repeat(64)
+    )
+}
+
+/// The release-candidate choice, both launchers on the same GitHub replies: 0.7.7 and 0.8.0-rc.1 on the stable
+/// channel are never offered a pre-release, and 0.8.0-rc.1 is offered 0.8.0 once it is published. The C++ side
+/// is the `--pick-release` hook of a launcher built with -DSCO_UPDATE_TEST (the real `PickRelease`).
+#[test]
+fn both_launchers_choose_the_same_release_candidate_offers() {
+    let Some(cpp) = cpp_exe() else {
+        eprintln!("SKIP: set SCOL_CPP_UPDATE_EXE to a launcher built with -DSCO_UPDATE_TEST");
+        return;
+    };
+    let rc1 = candidate_release("v0.8.0-rc.1", true);
+    let rc2 = candidate_release("v0.8.0-rc.2", true);
+    let stable = candidate_release("v0.8.0", false);
+    let old = candidate_release("v0.7.7", false);
+    let list = |r: &[&str]| format!("[{}]", r.join(","));
+    let cases: Vec<(&str, bool, String, Option<&str>)> = vec![
+        ("0.8.0-rc.1", false, stable.clone(), Some("v0.8.0")),
+        (
+            "0.8.0-rc.1",
+            false,
+            list(&[&stable, &rc2, &rc1, &old]),
+            Some("v0.8.0"),
+        ),
+        ("0.8.0-rc.1", false, rc2.clone(), None),
+        ("0.8.0-rc.1", false, list(&[&rc2, &rc1, &old]), None),
+        (
+            "0.8.0-rc.1",
+            true,
+            list(&[&rc2, &rc1, &old]),
+            Some("v0.8.0-rc.2"),
+        ),
+        ("0.8.0-rc.1", true, list(&[&rc1, &old]), None),
+        ("0.7.7", false, rc1.clone(), None),
+        ("0.7.7", false, list(&[&rc2, &rc1, &old]), None),
+        ("0.7.7", false, stable.clone(), Some("v0.8.0")),
+        ("0.7.7", true, list(&[&rc1, &old]), Some("v0.8.0-rc.1")),
+        ("0.7.8", true, rc1.clone(), Some("v0.8.0-rc.1")),
+    ];
+    let dir = std::env::temp_dir().join(format!("scol-pick-release-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    for (n, (current, pre, body, want)) in cases.iter().enumerate() {
+        let file = dir.join(format!("reply{n}.json"));
+        std::fs::write(&file, body).unwrap();
+        let o = std::process::Command::new(&cpp)
+            .args(["--pick-release", current, if *pre { "1" } else { "0" }])
+            .arg(&file)
+            .output()
+            .unwrap();
+        let out = String::from_utf8_lossy(&o.stdout).trim().to_string();
+        let rust = release::pick(body.as_bytes(), current, *pre)
+            .map(|u| u.tag)
+            .ok();
+        assert_eq!(
+            rust.as_deref(),
+            *want,
+            "Rust, case {n}: {current} pre={pre}"
+        );
+        let cpp_says = out.strip_prefix("offer ").map(str::to_string);
+        assert_eq!(
+            cpp_says.as_deref(),
+            *want,
+            "C++, case {n}: {current} pre={pre}: {out}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn an_old_cpp_launcher_updates_to_a_rust_style_exe() {
     let Some(cpp) = cpp_exe() else {

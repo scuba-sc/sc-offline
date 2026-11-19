@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The capability switches as launcher settings.
 //!
-//! Owner decision 2026-11-17: every capability switch is ON by default in every release package, each one
+//! Maintainer decision 2026-11-17: every capability switch is ON by default in every release package, each one
 //! is a visible setting the player can turn OFF, and its text says it has not been run in game.
 //! `SCO_ENTITIES_DIAG` is diagnostic hooks that patch game functions to write log lines; it is not a
 //! feature and is OFF by default. A switch is on for the game only when the environment value is exactly

@@ -219,6 +219,7 @@ Every action is pinned to a commit SHA. The workflow defaults to `contents: read
 ## Release policy
 
 - `v1.x` tags publish as full releases. Every other tag publishes as a pre-release.
+- A tag with `-rc.<number>` (for example `v0.8.0-rc.1`) is a **release candidate**: always a pre-release, never Latest, with its own release text for testers. It may pin the Core commit of a published SDK pre-release `sdk-v<version>-rc.<number>`. A final tag still needs a final SDK tag published as a full release. See the [release candidate steps](release-runbook.md#release-candidate).
 - The launcher's default `update_channel = stable` asks GitHub for `/releases/latest`, which never returns a pre-release, and it also refuses one. A `v0.x` release therefore reaches no player through updates until a maintainer promotes it. The [release runbook](release-runbook.md) says when.
 - A maintainer can promote a pre-release to Latest with `gh release edit <tag> --prerelease=false --latest`. That can happen before anyone has played the build. When it does, the release notes and the CHANGELOG say the build is untested.
 - If a promoted build turns out broken, mark an earlier release as Latest again: `gh release edit <tag> --latest`.

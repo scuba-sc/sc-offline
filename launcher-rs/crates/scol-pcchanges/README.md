@@ -36,7 +36,7 @@ changes as anything else, and do not say the launcher leaves anti-cheat alone.
   environment variable of the elevated process (fallback `C:\Windows`), exactly as in the C++
   code; it is not looked up with `GetSystemWindowsDirectoryW`. The hosts path uses the same
   variable. Changing that is a flagged change, not a silent one.
-- The owner reviews this crate before a release that ships it. The C++ launcher keeps the same
+- The maintainer reviews this crate before a release that ships it. The C++ launcher keeps the same
   code in `sc-offline-classic.exe` and can undo the changes from the same record.
 
 ## Design

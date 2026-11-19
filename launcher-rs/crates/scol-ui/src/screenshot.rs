@@ -226,7 +226,9 @@ fn shot_size() -> [f32; 2] {
 
 /// Open the window on a fixture install and save a PNG per page into `dir`.
 pub fn run(_here: PathBuf, dir: PathBuf) -> i32 {
-    let root = std::env::temp_dir().join(format!("scol-ui-shots-{}", std::process::id()));
+    // A fixed folder name (no process id) so the path shown on the Settings page is the same in every run;
+    // run it with TMP/TEMP set to a neutral folder such as C:\Temp\scol.
+    let root = std::env::temp_dir().join("scol-ui-shots");
     let _ = std::fs::remove_dir_all(&root);
     if let Err(e) = fixture::build(&root)
         .and_then(|()| std::fs::create_dir_all(&dir).map_err(|e| e.to_string()))

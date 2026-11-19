@@ -182,7 +182,7 @@ enum class LogChoice { Ask, Always, Never };
 // Only variables that sco-core's source reads are listed. The game inherits this process's environment, so
 // ApplyExperimentalEnv sets the variable to 1 when its key is on and removes it when the key is off: a value inherited
 // from the shell or from Windows can't turn a switch on without the ini saying so. Each key is "exp_" and the
-// variable's name without "SCO_", in lower case. Every switch is on by default in release packages (owner decision); the player can turn each off.
+// variable's name without "SCO_", in lower case. Every switch is on by default in release packages (maintainer decision); the player can turn each off.
 struct ExperimentalSwitch { const wchar_t* key; const wchar_t* var; bool defaultOn; };
 static const ExperimentalSwitch kExperimental[] = {
     { L"exp_loadout_async",     L"SCO_LOADOUT_ASYNC",     true  },  // game.loadout.async: the menu equips gear
@@ -647,11 +647,11 @@ static bool VersionGreater(const std::string& a, const std::string& b);
 
 // S5: what GitHub offers on the player's channel. stable = the latest full release; prerelease =
 // the newest release of any kind (drafts never). Empty tag when there's nothing newer to offer.
-static UpdateInfo CheckLatest(DWORD timeoutMs, bool prerelease, std::string* why) {
+// The choice itself, on a reply body already in hand: `current` is the running version. Tests call it with
+// canned bodies (tools/launcher_update_version_test.cpp); CheckLatest is this plus the download.
+static UpdateInfo PickRelease(const std::string& body, bool prerelease, const std::string& current, std::string* why) {
     UpdateInfo u;
-    std::string body, w;
-    const wstring url = prerelease ? wstring(kReleasesList) : wstring(kReleasesApi);
-    if (!HttpGet(url, body, timeoutMs, 4u << 20)) { if (why) *why = "couldn't reach GitHub"; return u; }
+    std::string w;
     // One release object (stable) or an array of them (prerelease); take the newest acceptable one.
     std::vector<size_t> tops;
     size_t first = body.find_first_not_of(" \t\r\n");
@@ -671,7 +671,7 @@ static UpdateInfo CheckLatest(DWORD timeoutMs, bool prerelease, std::string* why
         JsonKey(body, top, "prerelease", pre); JsonKey(body, top, "draft", draft);
         if (draft == "true" || (!prerelease && pre == "true")) { if (tops.size() == 1) w = "latest release is a pre-release"; continue; }
         if (newestSeen.empty() || VersionGreater(tag, newestSeen)) newestSeen = tag;
-        if (!VersionGreater(tag, SCO_VERSION)) continue;
+        if (!VersionGreater(tag, current)) continue;
         if (!best.empty() && !VersionGreater(tag, best)) continue;
         UpdateInfo cand; std::string candWhy;
         if (ReleaseAsset(body, top, cand, candWhy)) { u = cand; best = tag; }
@@ -679,6 +679,13 @@ static UpdateInfo CheckLatest(DWORD timeoutMs, bool prerelease, std::string* why
     }
     if (u.tag.empty() && why) *why = !w.empty() ? w : newestSeen.empty() ? std::string("no releases found") : "up to date (latest " + newestSeen + ")";
     return u;
+}
+
+static UpdateInfo CheckLatest(DWORD timeoutMs, bool prerelease, std::string* why) {
+    std::string body;
+    const wstring url = prerelease ? wstring(kReleasesList) : wstring(kReleasesApi);
+    if (!HttpGet(url, body, timeoutMs, 4u << 20)) { if (why) *why = "couldn't reach GitHub"; return UpdateInfo{}; }
+    return PickRelease(body, prerelease, SCO_VERSION, why);
 }
 
 // --- Release manifest (issue #31, S1-S3) ---------------------------------------------------
@@ -1253,6 +1260,18 @@ static int SelfTest(const std::string& tag) {
 }
 
 #ifdef SCO_UPDATE_TEST
+// Test hook, test builds only: --pick-release <current version> <0 stable | 1 pre-release> <reply file> prints
+// what the update check would offer from that GitHub reply: "offer <tag>" or "none: <reason>". Exit 0 either way.
+static int PickReleaseForTest(const std::string& current, bool prerelease, const wstring& replyFile) {
+    std::string body;
+    if (!ReadAll(replyFile, body)) { std::printf("none: cannot read the reply file\n"); return 1; }
+    std::string why;
+    const UpdateInfo u = PickRelease(body, prerelease, current, &why);
+    if (u.tag.empty()) std::printf("none: %s\n", why.c_str());
+    else std::printf("offer %s\n", u.tag.c_str());
+    return 0;
+}
+
 // D6 test hook, test builds only: --apply-zip <zip> <tag> <sha256> runs the real stage, verify,
 // swap and self-test path against a local zip instead of a download. Exit 0 applied, 1 refused or
 // rolled back. SCO_TEST_FAIL_AFTER=N fails the swap after N files.
@@ -5374,6 +5393,7 @@ int wmain(int argc, wchar_t** argv) {
     if (argc == 3 && !_wcsicmp(argv[1], L"--self-test")) return SelfTest(Narrow(argv[2]));
 #ifdef SCO_UPDATE_TEST
     if (argc == 5 && !_wcsicmp(argv[1], L"--apply-zip")) return ApplyZipForTest(argv[2], argv[3], argv[4]);
+    if (argc == 5 && !_wcsicmp(argv[1], L"--pick-release")) return PickReleaseForTest(Narrow(argv[2]), argv[3][0] == L'1', argv[4]);
 #endif
     if ((argc == 7 || argc == 8) && !_wcsicmp(argv[1], L"--helper"))
         return Helper(argv[2], argv[3], wcstoul(argv[4], nullptr, 10), argv[5], argv[6], argc == 8 ? argv[7] : L"");

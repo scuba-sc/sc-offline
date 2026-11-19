@@ -25,13 +25,16 @@ Added with the command side of the launcher:
 
 ## Old-launcher contract
 
-Two tests run only when `SCOL_CPP_UPDATE_EXE` names a C++ `sc-offline.exe` built with `-DSCO_UPDATE_TEST`
+Three tests run only when `SCOL_CPP_UPDATE_EXE` names a C++ `sc-offline.exe` built with `-DSCO_UPDATE_TEST`
 (otherwise they print `SKIP`):
 
 - the C++ exe runs `--apply-zip <zip> <tag> <sha256>` against a zip made here (same manifest format 1, same digests)
   whose new `sc-offline.exe` is `examples/standin.rs`, a stand-in that only answers `--self-test <tag>`. Checked:
   good update, new exe that fails its self-test (rolled back), tampered file (refused), `SCO_TEST_FAIL_AFTER=1`
   (rolled back);
+- `both_launchers_choose_the_same_release_candidate_offers`: the C++ exe runs `--pick-release <current> <0|1> <reply file>` (its real
+  `PickRelease`) and the Rust `release::pick` runs on the same GitHub replies. A 0.7.7 or `0.8.0-rc.1` launcher on the stable
+  channel is not offered a pre-release, `0.8.0-rc.1` is offered `0.8.0`, and the pre-release channel offers the newest;
 - the Rust updater swaps in a zip whose new exe is the C++ exe, using the real `--self-test` launch, and rolls
   back when the exe is not the promised version.
 

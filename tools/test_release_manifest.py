@@ -225,6 +225,22 @@ class ReleaseManifest(unittest.TestCase):
         version, _ = rm.write(self.dir, "v0.7.1-rc1", COMMIT, self.vh)
         self.assertEqual(version, "0.7.1-rc1")
 
+    def test_release_candidate_tag_must_equal_the_candidate_version(self):
+        # v0.8.0-rc.1 is the tag, 0.8.0-rc.1 the SCO_VERSION and 0.8.0-rc.1 the manifest version; the final
+        # release v0.8.0 is a different release and a mismatch in either direction is refused.
+        self.version("0.8.0-rc.1")
+        version, _ = rm.write(self.dir, "v0.8.0-rc.1", COMMIT, self.vh)
+        self.assertEqual(version, "0.8.0-rc.1")
+        man = json.loads(self.manifest())
+        self.assertEqual((man["version"], man["tag"]), ("0.8.0-rc.1", "v0.8.0-rc.1"))
+        self.assertEqual(rm.check(self.dir)[1], [])
+        for tag in ("v0.8.0", "v0.8.0-rc.2"):
+            with self.assertRaisesRegex(ValueError, "SCO_VERSION"):
+                rm.write(self.dir, tag, COMMIT, self.vh)
+        self.version("0.8.0")
+        with self.assertRaisesRegex(ValueError, "SCO_VERSION"):
+            rm.write(self.dir, "v0.8.0-rc.1", COMMIT, self.vh)
+
     def test_four_component_tag(self):
         self.version("0.7.8.1")
         version, _ = rm.write(self.dir, "v0.7.8.1", COMMIT, self.vh)

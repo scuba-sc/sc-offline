@@ -676,7 +676,7 @@ fn shipped_ini_golden() {
             .lines()
             .find(|l| l.starts_with(&comment))
             .unwrap_or_else(|| panic!("no comment for {}", s.ini_key));
-        // The owner saw gear equip work in game (2026-11); every other switch has not run in game.
+        // The maintainer saw gear equip work in game (2026-11); every other switch has not run in game.
         let said = if s.ini_key == "exp_loadout_async" {
             "Seen working in game"
         } else {

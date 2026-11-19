@@ -59,6 +59,7 @@ jobs:
               'sco-sdk-core-source-2.4.0.zip': '{OLD_CORE_SRC}',
               'sco-sdk-host-source-sc-2.4.0.zip': '{OLD_HOST_SRC}',
           }}
+          assert release_view['isPrerelease'] is False
           assert release['tag'] == 'sdk-v2.4.0'
           assert release['source']['sha'] == '{OLD_COMMIT}'
           assert release['builder']['run_id'] == 4242
@@ -242,6 +243,109 @@ class BumpSdkPin(unittest.TestCase):
         code, _, err = self.run_main(*self.target("--sha256", "sco-sdk-2.4.1.zip=nothex"))
         self.assertEqual(code, 2)
         self.assertEqual(self.read(".github/workflows/build.yml"), before)
+
+    def release_json(self, tag, version="2.4.1", sha=None):
+        import json
+        path = Path(self.tmp.name) / ("release-%s.json" % tag)
+        path.write_text(json.dumps({
+            "tag": tag, "source": {"repo": "scuba-sc/sco-core", "sha": sha or NEW_COMMIT}, "builder": {"run_id": 7777},
+            "artifacts": [{"name": "sco-sdk-%s.zip" % version, "sha256": NEW_COMBINED},
+                          {"name": "sco-sdk-core-source-%s.zip" % version, "sha256": NEW_CORE_SRC},
+                          {"name": "sco-sdk-host-source-sc-%s.zip" % version, "sha256": NEW_HOST_SRC},
+                          {"name": "sco-sdk-game-sc-0.8.1.zip", "sha256": "c" * 64}]}), encoding="utf-8")
+        return path
+
+    def test_a_candidate_tag_is_pinned_with_plain_archive_names(self):
+        # sdk-v2.4.1-rc.1 ships sco-sdk-2.4.1.zip (as sdk-v2.4.0-rc.2 shipped sco-sdk-2.4.0.zip): only the tag has the suffix.
+        argv = self.target()
+        argv[argv.index("--tag") + 1] = "sdk-v2.4.1-rc.1"
+        code, out, err = self.run_main(*argv)
+        self.assertEqual(code, 0, out + err)
+        workflow = self.read(".github/workflows/build.yml")
+        for text in ("SDK_VERSION: '2.4.1'", "SDK_TAG: 'sdk-v2.4.1-rc.1'", "gh release download sdk-v2.4.1-rc.1 ",
+                     "'sco-sdk-2.4.1.zip'", f"'sco-sdk-core-source-2.4.1.zip': '{NEW_CORE_SRC}'",
+                     "release['tag'] == 'sdk-v2.4.1-rc.1'",
+                     "release_view['isPrerelease'] is True", "['core_sdk_version'] == '2.4.1'",
+                     "unzip -q sco-sdk-host-source-sc-2.4.1.zip"):
+            self.assertIn(text, workflow)
+        self.assertNotIn("sco-sdk-2.4.1-rc", workflow)
+        self.assertNotIn("sco-sdk-core-source-2.4.1-rc", workflow)
+        self.assertIn("SDK_VERSION = '2.4.1'", self.read("tools/check_inspector_sdk.py"))
+        self.assertIn("sco-sdk-2.4.1.zip", self.read("tools/ci-stable-sdk-preflight.sh"))
+        doc = self.read("docs/sdk-workflows.md")
+        self.assertIn("`sdk-v2.4.1-rc.1`", doc)
+        self.assertIn("archive `sco-sdk-2.4.1.zip`", doc)
+        self.assertIn("pinned sdk-v2.4.1-rc.1", self.read("plugins/loadout/CMakeLists.txt"))
+        self.assertIn("tag sdk-v2.4.1-rc.1", out)
+        self.assertIn("release candidate", out)
+        # idempotent, and the tree reads back as the candidate
+        code, out2, _ = self.run_main(*argv)
+        self.assertEqual((code, "0 pin(s) changed" in out2), (0, True), out2)
+        self.assertEqual(self.run_main("--check", *argv)[0], 0)
+        code, out3, _ = self.run_main("--check")
+        self.assertEqual(code, 0, out3)
+        self.assertIn("tag sdk-v2.4.1-rc.1", out3)
+        code, out4, _ = self.run_main("--print-tag")
+        self.assertEqual((code, out4.strip()), (0, "sdk-v2.4.1-rc.1"))
+        # the same tree is stale against the final release of that version
+        code, out5, _ = self.run_main("--check", *self.target())
+        self.assertEqual(code, 1)
+        self.assertIn("2.4.1-rc.1 -> 2.4.1", out5)
+
+    def test_check_agrees_with_a_candidate_taken_from_release_json(self):
+        release = self.release_json("sdk-v2.4.1-rc.1")
+        code, out, err = self.run_main("--release-json", str(release))
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.run_main("--print-tag")[1].strip(), "sdk-v2.4.1-rc.1")
+        self.assertEqual(self.run_main("--check", "--release-json", str(release))[0], 0)
+        self.assertIn("release['tag'] == 'sdk-v2.4.1-rc.1'", self.read(".github/workflows/build.yml"))
+
+    def test_moving_from_the_candidate_to_the_release_changes_tag_flag_commit_and_hashes(self):
+        argv = self.target()
+        argv[argv.index("--tag") + 1] = "sdk-v2.4.1-rc.1"
+        self.assertEqual(self.run_main(*argv)[0], 0)
+        # the same version, so the final release must bring its own commit, run and hashes
+        code, _, err = self.run_main("--version", "2.4.1", "--tag", "sdk-v2.4.1", "--game-pack", "0.8.1",
+                                     "--sha256sums", str(self.sums))
+        self.assertEqual(code, 2)
+        self.assertIn("--commit is required", err)
+        final_sums = Path(self.tmp.name) / "SHA256SUMS-final"
+        final_sums.write_text(sums_text().replace("a" * 63, "d" * 63), encoding="utf-8")
+        final_commit = "3" * 40
+        code, out, err = self.run_main("--version", "2.4.1", "--tag", "sdk-v2.4.1", "--game-pack", "0.8.1",
+                                       "--commit", final_commit, "--run-id", "12345", "--sha256sums", str(final_sums))
+        self.assertEqual(code, 0, out + err)
+        workflow = self.read(".github/workflows/build.yml")
+        for text in ("SDK_TAG: 'sdk-v2.4.1'", "release['tag'] == 'sdk-v2.4.1'", "release_view['isPrerelease'] is False",
+                     f"['source']['sha'] == '{final_commit}'", "['builder']['run_id'] == 12345", "d" * 63 + "1"):
+            self.assertIn(text, workflow)
+        self.assertNotIn("-rc.1", workflow)
+        self.assertNotIn(NEW_COMMIT, workflow)
+        self.assertEqual(self.run_main("--print-tag")[1].strip(), "sdk-v2.4.1")
+
+    def test_only_release_candidate_suffixes_are_accepted(self):
+        before = self.read(".github/workflows/build.yml")
+        for tag in ("sdk-v2.4.1-beta", "sdk-v2.4.1-rc", "sdk-v2.4.1-rc.x", "sdk-v2.4.1-rc.1-x", "v2.4.1-rc.1", "sdk-v2.4-rc.1"):
+            argv = self.target()
+            argv[argv.index("--tag") + 1] = tag
+            code, _, err = self.run_main(*argv)
+            self.assertEqual(code, 2, tag)
+            self.assertIn("must be sdk-v<version>", err, tag)
+        # the suffix does not excuse a different version
+        argv = self.target()
+        argv[argv.index("--tag") + 1] = "sdk-v2.4.2-rc.1"
+        code, _, err = self.run_main(*argv)
+        self.assertEqual(code, 2)
+        self.assertIn("does not match", err)
+        self.assertEqual(self.read(".github/workflows/build.yml"), before)
+
+    def test_history_that_names_an_old_candidate_is_not_rewritten(self):
+        note = "SDK sdk-v2.4.0-rc.2 was the second candidate of 2.4.0.\n"
+        put(self.root, "docs/handoff/2026-10-29-rc2.md", note)
+        argv = self.target()
+        argv[argv.index("--tag") + 1] = "sdk-v2.4.1-rc.1"
+        self.assertEqual(self.run_main(*argv)[0], 0)
+        self.assertEqual(self.read("docs/handoff/2026-10-29-rc2.md"), note)
 
     def test_sha256sums_parser_takes_both_separators(self):
         parsed = bump.parse_sums(sums_text())

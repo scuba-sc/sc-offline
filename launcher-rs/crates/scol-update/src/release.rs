@@ -189,6 +189,61 @@ mod tests {
         assert_eq!(pick(body.as_bytes(), "0.7.0", false).unwrap().tag, "v0.7.5");
     }
 
+    /// The release-candidate rules, the same cases as `tools/launcher_update_version_test.cpp` in the C++ launcher.
+    #[test]
+    fn release_candidate_channels() {
+        let rc1 = rel("v0.8.0-rc.1", true, true);
+        let rc2 = rel("v0.8.0-rc.2", true, true);
+        let stable = rel("v0.8.0", false, true);
+        let old = rel("v0.7.7", false, true);
+        let list = |r: &[&str]| format!("[{}]", r.join(","));
+        let offer = |body: &str, pre: bool, current: &str| {
+            pick(body.as_bytes(), current, pre).map(|u| u.tag).ok()
+        };
+        // A 0.8.0-rc.1 launcher on the stable channel is offered 0.8.0 once it is published ...
+        assert_eq!(
+            offer(&stable, false, "0.8.0-rc.1").as_deref(),
+            Some("v0.8.0")
+        );
+        assert_eq!(
+            offer(&list(&[&stable, &rc2, &rc1, &old]), false, "0.8.0-rc.1").as_deref(),
+            Some("v0.8.0")
+        );
+        // ... and not another pre-release.
+        assert_eq!(offer(&rc2, false, "0.8.0-rc.1"), None);
+        assert_eq!(offer(&list(&[&rc2, &rc1, &old]), false, "0.8.0-rc.1"), None);
+        // On the pre-release channel the newest is offered.
+        assert_eq!(
+            offer(&list(&[&rc2, &rc1, &old]), true, "0.8.0-rc.1").as_deref(),
+            Some("v0.8.0-rc.2")
+        );
+        assert_eq!(
+            offer(&list(&[&stable, &rc2, &rc1]), true, "0.8.0-rc.1").as_deref(),
+            Some("v0.8.0")
+        );
+        assert_eq!(offer(&list(&[&rc1, &old]), true, "0.8.0-rc.1"), None);
+        assert!(pick(list(&[&rc1, &old]).as_bytes(), "0.8.0-rc.1", true)
+            .unwrap_err()
+            .starts_with("up to date"));
+        // A 0.7.x launcher: no pre-release on the stable channel, whatever else is published.
+        assert_eq!(offer(&rc1, false, "0.7.7"), None);
+        assert_eq!(offer(&list(&[&rc1, &old]), false, "0.7.7"), None);
+        let v078 = rel("v0.7.8", false, true);
+        assert_eq!(
+            offer(&list(&[&rc2, &rc1, &v078, &old]), false, "0.7.7").as_deref(),
+            Some("v0.7.8")
+        );
+        assert_eq!(offer(&stable, false, "0.7.7").as_deref(), Some("v0.8.0"));
+        assert_eq!(
+            offer(&list(&[&rc1, &old]), true, "0.7.7").as_deref(),
+            Some("v0.8.0-rc.1")
+        );
+        assert_eq!(offer(&rc1, true, "0.7.8").as_deref(), Some("v0.8.0-rc.1"));
+        // A release without the zip that carries its own tag is skipped.
+        let bad = rc1.replace("sc-offline-v0.8.0-rc.1.zip\"", "sc-offline-v0.8.0.zip\"");
+        assert_eq!(offer(&bad, true, "0.7.7"), None);
+    }
+
     #[test]
     fn foreign_asset_url_is_ignored() {
         let body = rel("v0.7.1", false, true).replace("scuba-sc/sc-offline", "evil/sc-offline");

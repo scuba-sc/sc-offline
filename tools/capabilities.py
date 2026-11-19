@@ -49,9 +49,9 @@ SWITCH_NOTE = {
     "SCO_AUDIO_NATIVE": "Core currently refuses the native audio adapter even with this on, so both "
                         "audio capabilities stay off. The switch only asks Core to try.",
     "SCO_ACTOR_STATS_WRITE": "The registry says OFF pending in-game confirmation. The release package "
-                             "still sets it on by owner decision; you can turn it off.",
+                             "still sets it on by maintainer decision; you can turn it off.",
 }
-# Capabilities the owner has seen run in game. Everything else says "Not run in game."
+# Capabilities the maintainer has seen run in game. Everything else says "Not run in game."
 SEEN_ONCE = {
     "game.loadout.async": "Seen once in game: gear was attached through the Gear page. See docs/status.md.",
 }

@@ -6,6 +6,11 @@
         --commit <40 hex: the commit the tag points at> --run-id <publication workflow run id> \\
         --sha256sums SHA256SUMS
     python tools/bump_sdk_pin.py --check [same options]       report stale pins, change nothing
+    python tools/bump_sdk_pin.py --print-tag                   the SDK tag the repository pins now
+
+A candidate is pinned the same way, with its own tag and the plain version: --version 2.4.1 --tag sdk-v2.4.1-rc.1.
+The archives of sdk-v2.4.1-rc.1 are named for 2.4.1 (sco-sdk-2.4.1.zip), as for sdk-v2.4.0-rc.2; only the tag carries
+-rc.<n>. The later move to the final sdk-v2.4.1 is the same command with --tag sdk-v2.4.1 and the final hashes.
     python tools/bump_sdk_pin.py --release-json release.json   take tag, commit, run id, game pack and hashes
                                                                from the published release.json instead
 
@@ -58,11 +63,14 @@ CMAKE_FILES = ("CMakeLists.txt", "plugins/**/CMakeLists.txt", "plugins/CMakeList
 REVIEW_FILES = ("docs/*.md", "README.md", "tools/*.json", "plugins/*/README.md", "THIRD_PARTY_NOTICES.md")
 
 VER = r"\d+\.\d+\.\d+"
+RC = r"-rc\.\d+"          # the only tag suffix: a release candidate of the SDK in the tag
 HEX64 = re.compile(r"[0-9a-f]{64}")
 HEX40 = re.compile(r"[0-9a-f]{40}")
 # (name, regex with the version as group "v"); each match has its group replaced by the target.
 VERSION_PATTERNS = (
-    ("tag", re.compile(r"sdk-v(?P<v>%s)(?![\d-])" % VER)),
+    # The tag is the one pin that may carry a suffix: sdk-v2.4.1 (the release) or sdk-v2.4.1-rc.1 (a candidate of it).
+    # The archives keep the plain version in both cases (sco-sdk-2.4.1.zip is the asset of sdk-v2.4.1-rc.1).
+    ("tag", re.compile(r"sdk-v(?P<v>%s)(?P<rc>%s)?(?![\d-])" % (VER, RC))),
     ("archive", re.compile(r"sco-sdk-(?:core-|core-source-|host-source-sc-)?(?P<v>%s)(?![\d-])" % VER)),
     ("SDK_VERSION", re.compile(r"SDK_VERSION(?:\s*[=:]\s*)'(?P<v>%s)'" % VER)),
     ("sdk_version in a test", re.compile(r"args\.sdk_version,\s*'(?P<v>%s)'" % VER)),
@@ -81,6 +89,14 @@ ARCHIVES = ("sco-sdk-{v}.zip", "sco-sdk-core-source-{v}.zip", "sco-sdk-host-sour
 
 class BumpError(Exception):
     pass
+
+
+def split_tag(tag: str) -> tuple[str, str]:
+    """('2.4.1', '-rc.1') for sdk-v2.4.1-rc.1 and ('2.4.1', '') for sdk-v2.4.1; anything else is refused."""
+    match = re.fullmatch(r"sdk-v(%s)(%s)?" % (VER, RC), tag)
+    if not match:
+        raise BumpError("tag %r must be sdk-v<version> or sdk-v<version>-rc.<number>" % tag)
+    return match.group(1), match.group(2) or ""
 
 
 def files(root: Path, patterns) -> list[Path]:
@@ -114,6 +130,9 @@ def current_pins(root: Path) -> dict:
             pins["hashes"][template] = found.group(1)
     commit = re.search(r"\['source'\]\['sha'\]\s*==\s*'(%s)'" % HEX40.pattern, workflow)
     run_id = re.search(r"\['builder'\]\['run_id'\]\s*==\s*(\d+)", workflow)
+    tag = re.search(r"SDK_TAG:\s*'sdk-v(%s)(%s)?'" % (VER, RC), workflow)
+    pins["rc"] = (tag.group(2) or "") if tag and tag.group(1) == pins["version"] else ""
+    pins["tag"] = "sdk-v" + pins["version"] + pins["rc"]
     pins["commit"] = commit.group(1) if commit else None
     pins["run_id"] = run_id.group(1) if run_id else None
     docs, _ = read_text(root / "docs/sdk-workflows.md")
@@ -151,22 +170,27 @@ def target_from_args(args, ref: dict) -> dict:
         name, _, digest = item.partition("=")
         sums[name] = digest.lower()
     tag = args.tag or release.get("tag")
-    version = args.version or (tag[len("sdk-v"):] if tag and tag.startswith("sdk-v") else None)
+    tag_version, tag_rc = split_tag(tag) if tag else (None, None)
+    version = args.version or tag_version
     explicit = bool(version or tag or args.game_pack or args.commit or args.run_id or sums or release)
-    target = {"version": version or ref["version"], "game_pack": args.game_pack or release.get("game_pack") or ref["game_pack"],
+    # No tag given: the same version keeps the pinned tag (a candidate stays a candidate), a new version means its release.
+    rc = tag_rc if tag else (ref["rc"] if (version or ref["version"]) == ref["version"] else "")
+    target = {"version": version or ref["version"], "rc": rc, "game_pack": args.game_pack or release.get("game_pack") or ref["game_pack"],
               "commit": args.commit or release.get("commit") or ref["commit"],
               "run_id": args.run_id or release.get("run_id") or ref["run_id"], "hashes": {}}
     if not re.fullmatch(VER, target["version"]):
         raise BumpError("--version must look like 2.4.1")
-    if tag and tag != "sdk-v" + target["version"]:
-        raise BumpError("--tag %s does not match --version %s (the tag is sdk-v<version>)" % (tag, target["version"]))
+    target["tag"] = "sdk-v" + target["version"] + target["rc"]
+    if tag and tag_version != target["version"]:
+        raise BumpError("--tag %s does not match --version %s (the tag is sdk-v<version> or sdk-v<version>-rc.<number>)" % (tag, target["version"]))
     if target["game_pack"] and not re.fullmatch(VER, target["game_pack"]):
         raise BumpError("--game-pack must look like 0.8.1")
     if target["commit"] and not HEX40.fullmatch(target["commit"]):
         raise BumpError("--commit must be 40 lowercase hex")
     if target["run_id"] and not re.fullmatch(r"\d+", str(target["run_id"])):
         raise BumpError("--run-id must be a number")
-    moving = target["version"] != ref["version"]
+    # A new version, or the same version as a candidate or the release: both change the commit, the run and the hashes.
+    moving = target["version"] != ref["version"] or target["rc"] != ref["rc"]
     for template in ARCHIVES:
         name = template.format(v=target["version"])
         old = ref["hashes"].get(template)
@@ -200,16 +224,23 @@ def rewrite(text: str, ref: dict, target: dict, version_patterns=VERSION_PATTERN
     """
     changes: list[tuple[int, str, str]] = []
 
-    def apply(pattern, wanted):
+    def apply(pattern, wanted, suffix_group=None):
         nonlocal text
-        edits = [(m.start("v"), m.end("v"), m.group("v")) for m in pattern.finditer(text)
-                 if m.group("v") != wanted and (not only_ref or m.group("v") in (ref["version"], ref["game_pack"]))]
+        edits = []
+        for m in pattern.finditer(text):
+            end = m.end(suffix_group) if suffix_group and m.group(suffix_group) else m.end("v")
+            old = text[m.start("v"):end]
+            if old != wanted and (not only_ref or m.group("v") in (ref["version"], ref["game_pack"])):
+                edits.append((m.start("v"), end, old))
         for start, end, old in reversed(edits):
             changes.append((line_of(text, start), old, wanted))
             text = text[:start] + wanted + text[end:]
 
-    for _name, pattern in version_patterns:
-        apply(pattern, target["version"])
+    for name, pattern in version_patterns:
+        if name == "tag":
+            apply(pattern, target["version"] + target["rc"], "rc")
+        else:
+            apply(pattern, target["version"])
     if full:
         if target["game_pack"]:
             for _name, pattern in GAME_PACK_PATTERNS:
@@ -227,12 +258,21 @@ def rewrite(text: str, ref: dict, target: dict, version_patterns=VERSION_PATTERN
             swap(old, target["hashes"].get(template))
         swap(ref["commit"], target["commit"])
         swap(ref["run_id"], target["run_id"])
+        # The stable-host qualification asserts what the release is: a full release, or for a candidate a pre-release.
+        flag = "True" if target["rc"] else "False"
+        for m in reversed(list(re.finditer(r"release_view\['isPrerelease'\] is (True|False)", text))):
+            if m.group(1) != flag:
+                changes.append((line_of(text, m.start(1)), m.group(1), flag))
+                text = text[:m.start(1)] + flag + text[m.end(1):]
     changes.sort()
     return text, changes
 
 
 def run(root: Path, args) -> int:
     ref = current_pins(root)
+    if args.print_tag:
+        print(ref["tag"])
+        return 0
     target = target_from_args(args, ref)
     total = 0
     leftovers: list[str] = []
@@ -252,7 +292,7 @@ def run(root: Path, args) -> int:
             print("%s%s:%d: %s -> %s" % ("stale " if args.check else "", rel, line, old, replacement))
         if not args.check:
             path.write_bytes(new.replace("\n", newline).encode("utf-8"))
-    pins = "%s (game pack %s)" % (target["version"], target["game_pack"])
+    pins = "%s, tag %s (game pack %s)" % (target["version"], target["tag"], target["game_pack"])
     if args.check:
         print("bump_sdk_pin: %d stale pin(s) against SDK %s" % (total, pins) if total else "bump_sdk_pin: every pin is at SDK %s" % pins)
         return 1 if total else 0
@@ -281,7 +321,10 @@ def follow_ups(root: Path, target: dict, leftovers=()) -> None:
         if digest:
             print("  %s  %s" % (template.format(v=target["version"]), digest))
     if target["commit"]:
-        print("  tag sdk-v%s, source commit %s" % (target["version"], target["commit"]))
+        print("  tag %s, source commit %s" % (target["tag"], target["commit"]))
+    if target["rc"]:
+        print("follow-up: %s is a release candidate. Say so in docs/sdk-candidate.md; the final sdk-v%s moves every pin again "
+              "(new hashes, commit and run id)." % (target["tag"], target["version"]))
 
 
 def parser() -> argparse.ArgumentParser:
@@ -295,6 +338,7 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--sha256", action="append", metavar="NAME=HEX", help="the SHA-256 of one archive, for example sco-sdk-2.4.1.zip=<hex>")
     ap.add_argument("--release-json", help="the release's release.json: tag, commit, run id, game pack and hashes")
     ap.add_argument("--check", action="store_true", help="report stale pins and change nothing")
+    ap.add_argument("--print-tag", action="store_true", help="print the SDK tag the repository pins (sdk-v2.4.1 or sdk-v2.4.1-rc.1) and exit")
     ap.add_argument("--root", default=str(ROOT), help="repository root (default: this checkout)")
     return ap
 

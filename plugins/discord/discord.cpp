@@ -15,7 +15,7 @@ const sco_api* g_api = nullptr;
 sco_plugin* g_self = nullptr;
 const sco_plugin_info kInfo = { sizeof(sco_plugin_info), SCO_API_MAJOR, SCO_API_MINOR,
                                "discord", "1.1.0", "sc-offline" };
-constexpr const char* kRefusal = "Discord presence unavailable: transport and fields await owner privacy/security approval; nothing transmitted";
+constexpr const char* kRefusal = "Discord presence unavailable: transport and fields await maintainer privacy/security approval; nothing transmitted";
 
 // Preferences are local diagnostics only, never consent to transmit. Reopen every time;
 // failures leave the safe default false and no borrowed settings table survives a call.

@@ -11,7 +11,7 @@ cd launcher-rs && cargo build --release
 python tests/status/compare_status.py --cpp <build dir>/bin/Release/sc-offline.exe [--machine]
 ```
 
-- Each scenario gets its own folder under `--work` (default `D:/t/status-parity`, emptied first) with a
+- Each scenario gets its own folder under `--work` (default `<scratch>/status-parity`, emptied first; `<scratch>` is `SCOL_SCRATCH`, else `scol-scratch` in the system temp folder) with a
   fake game (a plain file named `StarCitizen.exe`), and redirects `ProgramData`, `ProgramFiles(x86)`,
   `APPDATA` and `SystemRoot` into it. Covered: missing game, game without the mod, install marker, a
   foreign `dinput8.dll`, a leftover `pc-changes.txt` record, plugins with and without a `disabled`

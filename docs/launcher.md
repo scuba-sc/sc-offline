@@ -86,6 +86,15 @@ Closing the game window yourself skips the mod's exit work, so the wallet is not
 
 To go from 0.7.x to 0.8.0 once, do one of two things: extract the 0.8.0 zip into the old folder, or run `update` in the 0.7.x launcher you have now. From then on, update only with `sc-offline.exe update`. Your `sc-offline.ini` and your files in `data\` (wallet, saved places, logs, saves) are kept. The update replaces `sc-offline.exe` with the new launcher, checks that it starts, and runs it. If that check fails, the old files are put back. Settings that are new in this release are added to your ini, commented out, so their defaults apply. Afterwards `sc-offline-classic.exe`, `sc_offline_menu.dll`, `dinput8-rust-menu.dll` and the new plugin folders are in place. No real update from 0.7.x has been run yet ([Status](status.md#ships-in-080-but-not-run-in-game)).
 
+### Release candidates
+
+A release candidate has a tag such as `v0.8.0-rc.1` and is published as a GitHub **pre-release**, never as the latest release. Both launchers order versions the same way: `0.7.8` < `0.8.0-rc.1` < `0.8.0-rc.2` < `0.8.0`. A candidate is below its own final release and above the release before it.
+
+- **Offered or not.** On the default `stable` channel a launcher is offered full releases only, so a 0.7.x launcher is not offered a candidate, and a launcher at `0.8.0-rc.1` is not offered `0.8.0-rc.2`. It is offered `0.8.0` once the maintainer has published 0.8.0 as a full release.
+- **Getting a candidate.** Download `sc-offline-v0.8.0-rc.1.zip` from the [pre-release page](https://github.com/scuba-sc/sc-offline/releases/tag/v0.8.0-rc.1) and extract it into its own folder. To update an install you have, use the pre-release channel. From 0.8.0-rc.1 on, run `sc-offline.exe update --prerelease`, or set `update_channel = prerelease` in `sc-offline.ini`. The 0.7.7 launcher has no `--prerelease` option: set `update_channel = prerelease` in its `sc-offline.ini`, then run `sc-offline.exe update`. Both read the same release list and check the zip against GitHub's digest and `manifest.json`, as for any update. The 0.7.7 path was checked by reading its source and by tests of the shared version rules, not by an update from a real 0.7.7 install.
+- **Test first**, and stop at the first failure: `sc-offline.exe status`; play with the default menu (`menu = imgui`) and press **M**; the classic launcher `sc-offline-classic.exe play`; then the new menu (`menu = rust`). Report problems as an [issue](https://github.com/scuba-sc/sc-offline/issues/new/choose) with the lines from `data\mod.log` and `Game.log`.
+- **Going back.** Run `sc-offline-classic.exe uninstall` (or `sc-offline.exe uninstall`), then `status` must show nothing left over. Extract the 0.7.7 zip from the [releases page](https://github.com/scuba-sc/sc-offline/releases) into a folder. Your `sc-offline.ini` and `data\` can be kept. Set `update_channel = stable` again if you changed it, so a launcher does not offer candidates.
+
 ## Checks it runs every time
 
 1. **Which DLL.** What the `dinput8.dll` next to the exe is: an sc-offline build (with its version), an older ChrisWareOffline build, or unknown. With the original author's prebuilt DLL it warns unless `boot_map = PU`.
@@ -139,7 +148,7 @@ If the mod folder's `data` cannot be written, the mod cannot save your wallet or
 
 ## Updates
 
-On `play` the launcher asks GitHub for the newest release of `scuba-sc/sc-offline` (3-second timeout; no network just skips it). With `update_channel = stable` (the default) only full releases are offered; `prerelease` also offers test builds. If a newer one exists, `play` asks **"Update now?"**. `status` makes no network request. Run `sc-offline.exe update` to check on demand. Nothing updates while the game runs.
+On `play` the launcher asks GitHub for the newest release of `scuba-sc/sc-offline` (3-second timeout; no network just skips it). With `update_channel = stable` (the default) only full releases are offered; `prerelease` also offers test builds, such as a [release candidate](#release-candidates). If a newer one exists, `play` asks **"Update now?"**. `status` makes no network request. Run `sc-offline.exe update` to check on demand. Nothing updates while the game runs.
 
 An update:
 

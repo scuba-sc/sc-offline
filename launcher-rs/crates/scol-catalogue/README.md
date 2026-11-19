@@ -26,7 +26,7 @@ they read files you name and print.
 
 ## Trust root
 
-`trust::PRODUCTION_KEYS` is `scol_contract::product::CATALOGUE_TRUST_KEYS`. It is empty until the owner generates the signing key offline and adds its public half. With no key every index is refused (`no-trust-keys`). The TEST key under
+`trust::PRODUCTION_KEYS` is `scol_contract::product::CATALOGUE_TRUST_KEYS`. It is empty until the maintainer generates the signing key offline and adds its public half. With no key every index is refused (`no-trust-keys`). The TEST key under
 `launcher-rs/tests/catalogue/golden/` is for tests only and must never be added there.
 
 ## Signature format

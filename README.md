@@ -9,6 +9,9 @@
 
 [**Download**](https://github.com/scuba-sc/sc-offline/releases/latest) · [**Discord**](https://discord.gg/NJKeVfYCCC) · [**Features and status**](docs/features.md) · [**Changelog**](CHANGELOG.md) · [**Issues**](https://github.com/scuba-sc/sc-offline/issues)
 
+> [!IMPORTANT]
+> **This is 0.8.0-rc.1, a release candidate for testers. It is not the final 0.8.0.** Nothing in it has been run in game as a package ([Status](docs/status.md)). The update check on the default `stable` channel does not offer it, and the **Download** link above still gives the last full release. Get the candidate from its [pre-release page](https://github.com/scuba-sc/sc-offline/releases/tag/v0.8.0-rc.1), and report what you find as an [issue](https://github.com/scuba-sc/sc-offline/issues/new/choose) with the lines from `mod.log` and `Game.log`. To go back, run `sc-offline-classic.exe uninstall`, then use the 0.7.7 zip ([how](docs/launcher.md#release-candidates)). The final 0.8.0 follows after testers have reported.
+
 sc-offline lets you play Star Citizen offline with a mod. The launcher starts the game with the mod loaded and takes the mod out again when the game closes. In game, press **M** for a menu with ships, characters, gear, saved positions and other single-player tools.
 
 > [!WARNING]

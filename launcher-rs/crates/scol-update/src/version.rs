@@ -70,6 +70,26 @@ mod tests {
         assert!(!greater("junk", "0.7.0"));
     }
 
+    /// The release-candidate chain, the same cases as `tools/launcher_update_version_test.cpp` in the C++ launcher.
+    #[test]
+    fn release_candidates_sort_below_their_release() {
+        let chain = ["0.7.8", "0.8.0-rc.1", "0.8.0-rc.2", "0.8.0", "0.9.0-rc.1"];
+        for (i, lower) in chain.iter().enumerate() {
+            for higher in &chain[i + 1..] {
+                assert!(greater(higher, lower), "{higher} > {lower}");
+                assert!(!greater(lower, higher), "{lower} < {higher}");
+            }
+            assert!(!greater(lower, lower));
+        }
+        assert!(greater("v0.8.0", "0.8.0-rc.1"));
+        assert!(greater("v0.8.0-rc.1", "0.7.7"));
+        assert!(!greater("v0.8.0-rc.1", "0.8.0-rc.1"));
+        assert!(!greater("0.8.0-rc_1", "0.7.7"));
+        assert!(!greater("0.8.0-", "0.7.7"));
+        let v = parse("v0.8.0-rc.1").unwrap();
+        assert_eq!((v.num, v.pre.as_str()), ([0, 8, 0, 0], "rc.1"));
+    }
+
     #[test]
     fn rejects() {
         for bad in [

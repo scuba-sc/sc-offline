@@ -76,7 +76,7 @@ pub mod env {
 /// `launcher/launcher.cpp`); the dump tool writes that table to `tests/golden/constants.txt` and a
 /// test compares it with [`SWITCHES`].
 ///
-/// Owner decision 2026-11-17: each capability switch is ON by default in every release package, each is
+/// Maintainer decision 2026-11-17: each capability switch is ON by default in every release package, each is
 /// a visible setting the player can turn OFF, and each one's text says it has not been run in
 /// game. A switch is on only when the value is exactly `"1"`. An OFF switch is removed from the
 /// game's environment, so a value inherited from the shell cannot turn it on.
@@ -113,7 +113,7 @@ pub mod capability_env {
         pub default_on: bool,
     }
 
-    /// Every switch the launcher shows, in the order of `kExperimental`. Owner decision
+    /// Every switch the launcher shows, in the order of `kExperimental`. Maintainer decision
     /// 2026-11-17: every capability switch is ON by default. The diagnostic switch is OFF by
     /// default (see the module text).
     pub const SWITCHES: [Switch; 6] = [
@@ -508,10 +508,10 @@ pub mod network {
 
 /// Product constants of this launcher build: where the plugin catalogue lives and which keys sign it.
 ///
-/// Owner decision: no production signing key exists yet, so the shipped trust root is EMPTY. A launcher
+/// Maintainer decision: no production signing key exists yet, so the shipped trust root is EMPTY. A launcher
 /// built from this source refuses every catalogue index, and a plain `plugins catalogue ...` says that no
 /// catalogue is published for this build yet without making a request. Adding the public key is a
-/// release-time act of the owner: put its 64 lower-case hex digits into [`CATALOGUE_TRUST_KEYS`] (and
+/// release-time act of the maintainer: put its 64 lower-case hex digits into [`CATALOGUE_TRUST_KEYS`] (and
 /// change the array length). The TEST key under the tests must never be put here.
 pub mod product {
     /// The signed index. A launcher fetches it only on an explicit command or click, never while the game

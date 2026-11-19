@@ -16,7 +16,7 @@ use std::sync::{Mutex, MutexGuard};
 /// Tests set process environment variables that the self checks read, so they run one at a time.
 static LOCK: Mutex<()> = Mutex::new(());
 
-pub const OURS_DLL: &[u8] = b"MZ\x90\x00 padding sc-offline v0.8.0\x00 more bytes";
+pub const OURS_DLL: &[u8] = b"MZ\x90\x00 padding sc-offline v0.8.0-rc.1\x00 more bytes";
 pub const OLD_DLL: &[u8] = b"MZ another mod input hook, nothing to do with this launcher";
 pub const HOSTS: &str = r"C:\Windows\System32\drivers\etc\hosts";
 pub const EAC_HOST: &str = "modules-cdn.eac-prod.on.epicgames.com";

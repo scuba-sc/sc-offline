@@ -59,7 +59,7 @@ SCRATCH_ROOT.mkdir(parents=True, exist_ok=True)
 SCRATCH_ROOT = SCRATCH_ROOT.resolve()
 PING = Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32" / "PING.EXE"
 
-OURS_DLL = b"MZ\x90\x00 padding sc-offline v0.8.0\x00 more bytes"
+OURS_DLL = b"MZ\x90\x00 padding sc-offline v0.8.0-rc.1\x00 more bytes"
 OLD_DLL = b"MZ\x90\x00 ChrisWareOffline 0.9.0-rc1 / sc-offline 0.2.0-rc4 tail"
 OTHER_DLL = b"MZ\x90\x00 some other mod's dinput8"
 OTHER_DLL_2 = b"MZ\x90\x00 a second foreign dinput8"
@@ -67,10 +67,10 @@ STAND_IN_EXE = b"MZ game exe stand-in"
 XML_MOD = b"<OfflineDB>the mod's default_1</OfflineDB>\n"
 XML_PLAYER = b"<Player>the player's own default_1</Player>\n"
 XML_BACKUP_OLD = b"<Player>the backup made by a crashed run</Player>\n"
-MARKER_BACKUP = b"version=0.8.0\nsha256=abc\nmode=install\ntime=2026-11-17 09:05:03\nxml=backup\n"
-MARKER_NONE = b"version=0.8.0\nsha256=abc\nmode=play\ntime=2026-11-17 09:05:03\nxml=none\n"
-MARKER_SKIP = b"version=0.8.0\nsha256=abc\nmode=install\ntime=2026-11-17 09:05:03\nxml=skip\n"
-MARKER_EMPTY_XML = b"version=0.8.0\ntime=2026-11-17 09:05:03\n"
+MARKER_BACKUP = b"version=0.8.0-rc.1\nsha256=abc\nmode=install\ntime=2026-11-17 09:05:03\nxml=backup\n"
+MARKER_NONE = b"version=0.8.0-rc.1\nsha256=abc\nmode=play\ntime=2026-11-17 09:05:03\nxml=none\n"
+MARKER_SKIP = b"version=0.8.0-rc.1\nsha256=abc\nmode=install\ntime=2026-11-17 09:05:03\nxml=skip\n"
+MARKER_EMPTY_XML = b"version=0.8.0-rc.1\ntime=2026-11-17 09:05:03\n"
 HOSTS_PLAIN = b"# a hosts file\n127.0.0.1 localhost\n"
 
 BIN = "lib/StarCitizen/LIVE/Bin64"

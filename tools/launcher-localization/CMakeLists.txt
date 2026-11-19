@@ -73,6 +73,18 @@ if(WIN32)
     add_test(NAME launcher_status_exe COMMAND launcher_status_config_test
       "${CMAKE_CURRENT_BINARY_DIR}/native-fixtures" "${SC_OFFLINE_EXE}")
   endif()
+  # Release-candidate version rules of the update check (pre-release ordering and channels), on the real launcher source.
+  add_executable(launcher_update_version_test ../launcher_update_version_test.cpp
+    ../../src/third_party/imgui/imgui.cpp ../../src/third_party/imgui/imgui_draw.cpp
+    ../../src/third_party/imgui/imgui_tables.cpp ../../src/third_party/imgui/imgui_widgets.cpp
+    ../../src/third_party/imgui/imgui_impl_win32.cpp ../../src/third_party/imgui/imgui_impl_dx11.cpp)
+  target_compile_definitions(launcher_update_version_test PRIVATE UNICODE _UNICODE _CONSOLE _CRT_SECURE_NO_WARNINGS)
+  if(MSVC)
+    target_compile_options(launcher_update_version_test PRIVATE /W3 /WX /utf-8 /EHsc /permissive- /sdl)
+  endif()
+  target_link_libraries(launcher_update_version_test PRIVATE launcher_locale_sqlite
+    d3d11 d3dcompiler dwmapi imm32 bcrypt shell32 shlwapi pathcch advapi32 ole32 winhttp user32 gdi32 comctl32)
+  add_test(NAME launcher_update_version COMMAND launcher_update_version_test)
   add_test(NAME launcher_plugin_settings_gui COMMAND launcher_plugin_settings_gui_test
     "${CMAKE_CURRENT_BINARY_DIR}/native-fixtures")
   add_test(NAME launcher_localization_gui COMMAND launcher_localization_gui_test

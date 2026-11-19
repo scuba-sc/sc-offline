@@ -7,7 +7,7 @@
 //! the main text. They are in the tooltip and in the collapsed Details row (`details`). The unit test
 //! `main_text_has_no_raw_identifiers` walks every string the page shows without Details.
 //!
-//! Evidence put to the player comes from the owner's in-game sessions on build 4.10.200.58746:
+//! Evidence put to the player comes from the maintainer's in-game sessions on build 4.10.200.58746:
 //! gear equip through `game.loadout.async` attached items; prefab placement, ship spawn, boarding and
 //! Flight Ready worked; the seat probe logged Enter and Exit; a saved-spot move moved the player
 //! (arrival was not confirmed). Everything else is "not run in game yet". These lines are text only:
@@ -22,7 +22,7 @@ use crate::i18n::{tr, trf, Lang};
 /// How well a capability is known to work, for the one-line evidence note.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Evidence {
-    /// Seen working in game once (owner sessions, one or two each).
+    /// Seen working in game once (maintainer sessions, one or two each).
     SeenOnce,
     /// Moved the player in game, arrival not confirmed.
     PartlySeen,

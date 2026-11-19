@@ -422,7 +422,9 @@ jobs:
         run: |
           python3 tools/test_release_manifest.py
           python3 tools/test_package_release.py
+          python3 tools/test_version_agreement.py
           python3 tools/test_bump_sdk_pin.py
+          python3 tools/test_release_gate.py
           python3 tools/test_npc_release.py
           python3 tools/test_external_release.py
           python3 tools/test_release_plugin_profile.py
@@ -1046,10 +1048,21 @@ jobs:
           persist-credentials: false
           # tools/check_package_tree.py reads the creative plugin's commands from external/sc-creative.
           submodules: true
+      # The tag is the version: v<SCO_VERSION> (v0.8.0-rc.1 for SCO_VERSION 0.8.0-rc.1), and the Rust
+      # workspace carries the same version. tools/package_release.py refuses a different tag too; this stops
+      # the job before the package is built.
+      - name: The tag, src/version.h and the Rust version agree
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 tools/test_version_agreement.py
       # The plugins in the package are built from the published SDK that tools/check_inspector_sdk.py pins,
       # and the game DLLs from the Core at the external/sco-core gitlink. Those must be the same SDK:
-      # the gitlink commit has to be the commit of that SDK's release tag (sdk-v<version>), the Core there
-      # has to say the same version, and the release has to be published (not a draft, not a pre-release).
+      # the gitlink commit has to be the commit of that SDK's release tag, the Core there has to say the
+      # same version, and the release has to be published (not a draft).
+      # A final product tag (v0.8.0) needs the final SDK tag sdk-v<version>, published as a full release.
+      # A release-candidate product tag (v0.8.0-rc.1) may instead pin a candidate sdk-v<version>-rc.<n>
+      # (the archives of both carry the plain version), published as a pre-release. The pairing and the
+      # release state are decided by tools/check_release_gate.py (tested by tools/test_release_gate.py).
       # Until then there is nothing safe to package, so the job stops here.
       - name: Refuse packaging unless Core is a published SDK release
         env:
@@ -1057,10 +1070,12 @@ jobs:
         run: |
           set -euo pipefail
           sdk_version=$(python3 -c "import sys; sys.path.insert(0, 'tools'); from check_inspector_sdk import SDK_VERSION; print(SDK_VERSION)")
-          sdk_tag="sdk-v$sdk_version"
+          sdk_tag=$(python3 tools/bump_sdk_pin.py --print-tag)
           fail() { echo "Not packaging: $1" >&2; exit 1; }
+          python3 tools/check_release_gate.py --product-tag "$GITHUB_REF_NAME" --sdk-tag "$sdk_tag" --sdk-version "$sdk_version" > "$RUNNER_TEMP/sdk-kind.txt" \
+            || exit 1
           python3 tools/bump_sdk_pin.py --check > "$RUNNER_TEMP/pin-check.txt" \
-            || { cat "$RUNNER_TEMP/pin-check.txt" >&2; fail "the SDK pins in the repository do not all name SDK $sdk_version."; }
+            || { cat "$RUNNER_TEMP/pin-check.txt" >&2; fail "the SDK pins in the repository do not all name SDK $sdk_version ($sdk_tag)."; }
           gitlink=$(git rev-parse HEAD:external/sco-core)
           git -C external/sco-core fetch --no-tags origin "refs/tags/$sdk_tag:refs/tags/$sdk_tag" \
             || fail "the tag $sdk_tag does not exist in scuba-sc/sco-core. Publish SDK $sdk_version first."
@@ -1071,9 +1086,9 @@ jobs:
             || fail "the Core at external/sco-core says SDK $(tr -d '[:space:]' < external/sco-core/sdk/VERSION), but the plugins are pinned to SDK $sdk_version."
           state=$(gh release view "$sdk_tag" --repo scuba-sc/sco-core --json isDraft,isPrerelease --jq '"draft=\(.isDraft) prerelease=\(.isPrerelease)"') \
             || fail "$sdk_tag has no published release in scuba-sc/sco-core."
-          [ "$state" = "draft=false prerelease=false" ] \
-            || fail "the $sdk_tag release is not published as a full release ($state)."
-          echo "external/sco-core is $gitlink, the published $sdk_tag (SDK $sdk_version)."
+          python3 tools/check_release_gate.py --product-tag "$GITHUB_REF_NAME" --sdk-tag "$sdk_tag" --sdk-version "$sdk_version" --state "$state" > /dev/null \
+            || exit 1
+          echo "external/sco-core is $gitlink, the published $sdk_tag ($(cat "$RUNNER_TEMP/sdk-kind.txt"), SDK $sdk_version) for $GITHUB_REF_NAME."
 
       - name: Download DLL + classic launcher artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -1139,7 +1154,54 @@ jobs:
             --artifact-root . --profile player-offline --check-tree
           echo "ZIP=stage/sc-offline-$TAG.zip" >> "$GITHUB_ENV"
 
+      # A release candidate (tag with -rc.<n>, for example v0.8.0-rc.1) is always a pre-release and never
+      # Latest, so the stable update channel does not offer it. Testers download the zip from its page; the
+      # pre-release channel offers it to launchers that opted in.
+      - name: Create Release (release candidate)
+        if: contains(github.ref_name, '-rc.')
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          files: |
+            ${{ env.ZIP }}
+            built/dinput8.dll
+          generate_release_notes: true
+          prerelease: true
+          make_latest: false
+          body: |
+            **Release candidate for testers. This is not the final release.** Built from this
+            repository's source: commit `${{ github.sha }}` on `${{ github.ref_name }}`.
+
+            The stable update channel does not offer it, so nobody is moved to it by accident. It is
+            here so that people can try it before the final release is made. Fixes go into another
+            candidate or into the final release.
+
+            **Get it:** download `sc-offline-${{ github.ref_name }}.zip` on this page, extract it into
+            its own folder and run `sc-offline.exe`. Do the README's one-time Setup first;
+            `sc-offline.exe status` checks it. `sc-offline.exe` is the Rust launcher; the C++ launcher
+            is in the zip as `sc-offline-classic.exe`, the fallback. The Rust in-game menu is opt-in
+            (`menu = rust` in `sc-offline.ini`). From a 0.7.x launcher, set
+            `update_channel = prerelease` in `sc-offline.ini` and run `sc-offline.exe update`.
+
+            **Test first:** in this order, and stop at the first thing that fails.
+            1. `sc-offline.exe status`: it should find the game and show no leftover PC change.
+            2. Play with the default menu (`menu = imgui`): the game starts, the menu opens on M,
+               and equipping gear from the Gear page attaches the items. Then close the game and run
+               `sc-offline.exe status` again.
+            3. The classic launcher, `sc-offline-classic.exe play`.
+            4. The new menu (`menu = rust`).
+
+            **Report:** open an issue on this repository. Say which candidate (`${{ github.ref_name }}`),
+            what you did, what you expected and what happened. Add the matching lines from `mod.log`
+            and `Game.log` and the output of `sc-offline.exe status`. Leave out anything personal.
+
+            **Go back:** run `sc-offline-classic.exe uninstall` (or `sc-offline.exe uninstall`). It
+            takes the mod out of the game folder and undoes the PC changes. Then download the 0.7.7
+            zip from the releases page and extract it into a folder. `sc-offline.ini` and `data\`
+            (wallet, saved places) can be kept.
+
+            Not run in game. Every runtime path in this candidate is unproven until someone has run it.
       - name: Create Release
+        if: ${{ !contains(github.ref_name, '-rc.') }}
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: |
@@ -1150,7 +1212,7 @@ jobs:
           # pre-releases. A maintainer may promote one to Latest
           # (`gh release edit <tag> --prerelease=false --latest`) before anyone
           # has played it; the release notes then say it is untested.
-          prerelease: ${{ !startsWith(github.ref_name, 'v1.') }}
+          prerelease: ${{ contains(github.ref_name, '-rc.') || !startsWith(github.ref_name, 'v1.') }}
           body: |
             **Built from this repository's source** — commit `${{ github.sha }}` on
             `${{ github.ref_name }}`.

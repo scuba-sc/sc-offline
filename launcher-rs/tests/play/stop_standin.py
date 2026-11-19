@@ -31,7 +31,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = Path(os.environ.get("SCOL_SCRATCH") or Path(tempfile.gettempdir()) / "scol-scratch")
 RUST = Path(os.environ.get("SCOL_RUST_EXE") or HERE.parents[1] / "target" / "release" / "sc-offline.exe")
 STANDIN = Path(os.environ.get("SCOL_STANDIN_EXE") or HERE.parents[1] / "target" / "release" / "scol-play-standin.exe")
-OURS_DLL = b"MZ\x90\x00 padding sc-offline v0.8.0\x00 more bytes"
+OURS_DLL = b"MZ\x90\x00 padding sc-offline v0.8.0-rc.1\x00 more bytes"
 
 
 def win(p):
@@ -51,7 +51,7 @@ class World:
         shutil.copy2(standin, self.bin / "StarCitizen.exe")
         (self.here / "dinput8.dll").write_bytes(OURS_DLL)
         # the mod's marker in Bin64: the launcher then expects the mod to answer the stop event
-        (self.bin / "sc-offline.installed").write_text("version=0.8.0\nmode=play\n")
+        (self.bin / "sc-offline.installed").write_text("version=0.8.0-rc.1\nmode=play\n")
         (self.here / "sc-offline.ini").write_text(f"game = {win(self.lib)}\ncheck_updates = off\n")
         (self.here / "data" / "launcher.log").write_text("")
         self.procs = []

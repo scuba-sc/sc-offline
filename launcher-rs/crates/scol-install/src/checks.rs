@@ -452,11 +452,11 @@ mod tests {
         assert!(!identify(&p("none.dll")).present);
         std::fs::write(p("empty.dll"), b"").unwrap();
         assert!(!identify(&p("empty.dll")).present);
-        std::fs::write(p("a.dll"), b"MZ..sc-offline v0.8.0\0tail").unwrap();
+        std::fs::write(p("a.dll"), b"MZ..sc-offline v0.8.0-rc.1\0tail").unwrap();
         let a = identify(&p("a.dll"));
         assert!(a.present && a.ours);
-        assert_eq!(a.version, "0.8.0");
-        assert_eq!(a.what, "sc-offline 0.8.0");
+        assert_eq!(a.version, "0.8.0-rc.1");
+        assert_eq!(a.what, "sc-offline 0.8.0-rc.1");
         std::fs::write(
             p("b.dll"),
             b"ChrisWareOffline 0.9.0 / sc-offline 0.2.0-rc4 end",

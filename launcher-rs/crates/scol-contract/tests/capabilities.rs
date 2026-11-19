@@ -98,7 +98,7 @@ fn json_agrees_with_the_switch_table() {
             "{}",
             s.env
         );
-        // Every note states the evidence: "Not run in game", or "Seen once in game" for the one switch the owner ran.
+        // Every note states the evidence: "Not run in game", or "Seen once in game" for the one switch the maintainer ran.
         let note = text(row, "note");
         assert!(
             note.contains("Not run in game") || note.contains("Seen once in game"),

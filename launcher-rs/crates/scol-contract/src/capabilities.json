@@ -17,7 +17,7 @@
       "source": [
         "src/game/services/actor_stats.cpp"
       ],
-      "note": "On by default in every release package; a visible setting the player can turn off. The registry says OFF pending in-game confirmation. The release package still sets it on by owner decision; you can turn it off. Not run in game."
+      "note": "On by default in every release package; a visible setting the player can turn off. The registry says OFF pending in-game confirmation. The release package still sets it on by maintainer decision; you can turn it off. Not run in game."
     },
     {
       "name": "SCO_AUDIO_NATIVE",

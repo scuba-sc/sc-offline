@@ -50,7 +50,7 @@ phases 2
 objectives 1
 ```
 
-Counts run from 1 to 64. No XML, Lua, includes, network or extra bytes are allowed. The provider validates too. Registrations last for the session, and a changed script pack needs a host restart. The legacy XML script library is kept but not supported here. It is not converted or bundled. The owner has not yet approved this narrower format.
+Counts run from 1 to 64. No XML, Lua, includes, network or extra bytes are allowed. The provider validates too. Registrations last for the session, and a changed script pack needs a host restart. The legacy XML script library is kept but not supported here. It is not converted or bundled. The maintainer has not yet approved this narrower format.
 
 ### Economy
 

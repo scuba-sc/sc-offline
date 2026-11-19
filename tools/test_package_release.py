@@ -229,6 +229,25 @@ class PackageRelease(unittest.TestCase):
         self.assertEqual(pr.main(self.argv(tag="v0.8.1")), 1)
         self.assertFalse((self.out / "sc-offline-v0.8.1").exists())
 
+    def test_release_candidate_tag_builds_a_folder_and_zip_named_for_it(self):
+        put(self.src / "src/version.h", '#pragma once\n#define SCO_VERSION  "0.8.0-rc.1"\n')
+        self.assertEqual(pr.main(self.argv(tag="v0.8.0-rc.1")), 0)
+        pkg = self.out / "sc-offline-v0.8.0-rc.1"
+        self.assertTrue(pkg.is_dir())
+        # the update check looks for exactly sc-offline-<tag>.zip on the release
+        self.assertTrue((self.out / "sc-offline-v0.8.0-rc.1.zip").is_file())
+        manifest = json.loads((pkg / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual((manifest["version"], manifest["tag"]), ("0.8.0-rc.1", "v0.8.0-rc.1"))
+        self.assertFalse((self.out / "sc-offline-v0.8.0").exists())
+
+    def test_release_candidate_and_final_tags_are_not_interchangeable(self):
+        put(self.src / "src/version.h", '#pragma once\n#define SCO_VERSION  "0.8.0-rc.1"\n')
+        self.assertEqual(pr.main(self.argv(tag="v0.8.0")), 1)
+        self.assertFalse((self.out / "sc-offline-v0.8.0").exists())
+        put(self.src / "src/version.h", '#pragma once\n#define SCO_VERSION  "0.8.0"\n')
+        self.assertEqual(pr.main(self.argv(tag="v0.8.0-rc.1")), 1)
+        self.assertFalse((self.out / "sc-offline-v0.8.0-rc.1").exists())
+
     def test_bad_tag_missing_binary_and_existing_folder(self):
         self.assertEqual(pr.main(self.argv(tag="0.8.0")), 1)
         (self.bin / "classic.exe").unlink()

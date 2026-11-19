@@ -21,7 +21,7 @@ pub const SIG_MAGIC: &str = "sc-plugins-index-sig-v1";
 
 /// The release signing keys the launcher trusts, as 64 lower-case hex digits each.
 ///
-/// Empty on purpose: the owner generates the signing key offline (`tools/sign_index.py keygen` in
+/// Empty on purpose: the maintainer generates the signing key offline (`tools/sign_index.py keygen` in
 /// sc-plugins) and adds its public half here in the release change. With no key, every index is
 /// refused with [`Error::NoTrustKeys`]. The TEST key under `tests/` of sc-plugins must never be
 /// added here.

@@ -68,7 +68,9 @@ fn help_is_banner_then_usage() {
         assert_eq!(code, 0, "{form:?}");
         assert_eq!(
             text,
-            format!("sc-offline launcher 0.8.0 (based on ChrisWareOffline 0.9.0-rc1)\n\n{USAGE}")
+            format!(
+                "sc-offline launcher 0.8.0-rc.1 (based on ChrisWareOffline 0.9.0-rc1)\n\n{USAGE}"
+            )
         );
     }
 }
@@ -296,7 +298,7 @@ fn mcp_errors_go_to_stderr_and_help_to_stdout() {
     let (code, out, _) = run_streams(&["mcp", "--help"], ".", &mut be, b"");
     assert_eq!(code, 0);
     assert!(
-        out.starts_with("sc-offline launcher 0.8.0 (based on"),
+        out.starts_with("sc-offline launcher 0.8.0-rc.1 (based on"),
         "{out}"
     );
     // end of input ends the server with exit 0 and nothing but protocol lines on stdout
@@ -388,19 +390,19 @@ fn self_test_checks_version_sha_and_the_dll() {
     let here = scratch("selftest");
     let h = here.to_string_lossy().into_owned();
     let mut be = FakeBackend::new(FakeHost::new(&h, SharedSystem::default()));
-    let (code, out, _) = run_streams(&["--self-test", "v0.8.0"], &h, &mut be, b"");
+    let (code, out, _) = run_streams(&["--self-test", "v0.8.0-rc.1"], &h, &mut be, b"");
     assert_eq!(code, 4, "{out}");
     assert_eq!(out, "self-test: no dinput8.dll beside sc-offline.exe\n");
     std::fs::write(here.join("dinput8.dll"), b"x").unwrap();
-    let (code, out, _) = run_streams(&["--self-test", "v0.8.0"], &h, &mut be, b"");
+    let (code, out, _) = run_streams(&["--self-test", "v0.8.0-rc.1"], &h, &mut be, b"");
     assert_eq!(
         (code, out.as_str()),
-        (0, "self-test: sc-offline 0.8.0 ok\n")
+        (0, "self-test: sc-offline 0.8.0-rc.1 ok\n")
     );
     let (code, out, _) = run_streams(&["--self-test", "v9.9.9"], &h, &mut be, b"");
     assert_eq!(
         (code, out.as_str()),
-        (2, "self-test: this is 0.8.0, expected v9.9.9\n")
+        (2, "self-test: this is 0.8.0-rc.1, expected v9.9.9\n")
     );
     // a wrong argument count is not the hidden mode: unknown argument, as in C++
     let (code, out, _) = run_streams(&["--self-test"], &h, &mut be, b"");
@@ -480,7 +482,11 @@ fn world(tag: &str) -> (PathBuf, String, String) {
     ] {
         std::fs::create_dir_all(d).unwrap();
     }
-    std::fs::write(here.join("dinput8.dll"), b"MZ sc-offline v0.8.0 stand-in").unwrap();
+    std::fs::write(
+        here.join("dinput8.dll"),
+        b"MZ sc-offline v0.8.0-rc.1 stand-in",
+    )
+    .unwrap();
     std::fs::write(bin.join("StarCitizen.exe"), b"stand-in").unwrap();
     std::fs::write(
         here.join("sc-offline.ini"),
@@ -557,7 +563,7 @@ fn play_dry_run_through_the_command_line_changes_nothing() {
     let (code, out, _) = run_streams(&["--dry-run", "--game", &game], &here, &mut be, b"");
     assert_eq!(code, 0, "{out}");
     assert!(
-        out.starts_with("sc-offline launcher 0.8.0 - dry run, nothing is changed\n\n"),
+        out.starts_with("sc-offline launcher 0.8.0-rc.1 - dry run, nothing is changed\n\n"),
         "{out}"
     );
     assert!(out.contains("[dry-run] would start "), "{out}");
@@ -607,7 +613,7 @@ fn status_reports_a_synthetic_game_and_writes_nothing() {
     std::fs::create_dir_all(&here).unwrap();
     std::fs::create_dir_all(&bin).unwrap();
     std::fs::write(bin.join("StarCitizen.exe"), b"stand-in").unwrap();
-    std::fs::write(bin.join("dinput8.dll"), b"MZ sc-offline v0.8.0").unwrap();
+    std::fs::write(bin.join("dinput8.dll"), b"MZ sc-offline v0.8.0-rc.1").unwrap();
     std::fs::write(
         bin.join("sc-offline.installed"),
         b"time=2026-11-17 09:05:03\n",
@@ -622,13 +628,13 @@ fn status_reports_a_synthetic_game_and_writes_nothing() {
         .into_owned();
     let (code, text) = run_text(&["status", "--game", &game], &here.to_string_lossy());
     assert_eq!(code, 0, "{text}");
-    assert!(text.starts_with("sc-offline launcher 0.8.0\n\n"));
+    assert!(text.starts_with("sc-offline launcher 0.8.0-rc.1\n\n"));
     assert!(
         text.contains(&format!("Folder:   {}\n", bin.to_string_lossy())),
         "{text}"
     );
     assert!(text.contains("Mod DLL:  missing (dinput8.dll next to sc-offline.exe)\n"));
-    assert!(text.contains("Installed: yes, sc-offline 0.8.0, since 2026-11-17 09:05:03\n"));
+    assert!(text.contains("Installed: yes, sc-offline 0.8.0-rc.1, since 2026-11-17 09:05:03\n"));
     assert!(text.ends_with("\n\n"));
     assert_eq!(tree(&root), before, "status changed the folder tree");
     let _ = std::fs::remove_dir_all(&root);

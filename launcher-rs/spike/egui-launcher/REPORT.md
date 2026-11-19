@@ -67,7 +67,7 @@ Open before deciding:
 2. Pick the font.
 3. Both variants lose the C++ launcher's custom drawing (icons, spinners); egui widgets would need restyling to match.
 4. Not run in game; the spike has no launch logic.
-5. Theme: the task asked for dark green; the spike copies the neutral grey C++ constants (green is a status accent only). Owner to say if a green theme is wanted.
+5. Theme: the task asked for dark green; the spike copies the neutral grey C++ constants (green is a status accent only). Maintainer to say if a green theme is wanted.
 6. Vendoring: not run by me. A review ran `cargo vendor --locked` on the spike: it worked, 276 crates, 446 MB, because it pulls crates for every target (Linux, macOS, others). A real vendor step needs target filtering, or a cargo-deny-gated lock, before it can be checked in or used for offline builds.
 7. Advisory gate: `cargo deny check advisories` used the local database snapshot. CI should run `cargo deny fetch` first and record the database date.
 

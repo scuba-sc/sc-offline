@@ -28,7 +28,7 @@
 //! licences pass `deny.toml`. The crate's signing code is linked in as well (its
 //! `disable-signatures` feature would break the test signer); the linker drops what is unused.
 //!
-//! The production trust root is empty until the owner generates the signing key offline and adds
+//! The production trust root is empty until the maintainer generates the signing key offline and adds
 //! its public half to [`trust::PRODUCTION_KEYS`]. Until then every index is refused (fail closed).
 
 pub mod cli;

@@ -104,16 +104,22 @@ jobs:
                 on { print }' CHANGELOG.md 2>/dev/null || true)
               [ -n "$notes" ] || notes="See the release page."
               kind=$([ "$REL_PRE" = "true" ] && echo "Pre-release" || echo "Release")
+              # A pre-release (a release candidate for testers) is not offered by the default update channel.
+              if [ "$REL_PRE" = "true" ]; then
+                upd='Pre-release for testers: the default (stable) update channel does not offer it. Download the zip, or set `update_channel = prerelease` in `sc-offline.ini` and run `sc-offline.exe update`.'
+              else
+                upd='Run `sc-offline.exe update`, or press **Update** in the window.'
+              fi
               zip="https://github.com/$REPO/releases/download/$REL_TAG/sc-offline-$REL_TAG.zip"
               jq -n --arg t "sc-offline $REL_TAG" --arg u "$REL_URL" --arg d "$notes" --arg z "$zip" \
-                    --arg k "$kind" --arg at "$REL_AT" --arg a "$REL_USER" --arg av "$REL_AVATAR" '{
+                    --arg k "$kind" --arg upd "$upd" --arg at "$REL_AT" --arg a "$REL_USER" --arg av "$REL_AVATAR" '{
                 title: ($t | .[0:256]), url: $u, color: 3066993, timestamp: $at,
                 author: {name: ($k + " published by " + $a), icon_url: $av},
                 description: ($d | if length > 3500 then .[0:3500] + "\n…" else . end),
                 fields: [
                   {name: "Download", value: ("[sc-offline-" + ($t | sub("^sc-offline "; "")) + ".zip](" + $z + ")"), inline: true},
                   {name: "Channel", value: $k, inline: true},
-                  {name: "Update", value: "Run `sc-offline.exe update`, or press **Update** in the window.", inline: false}],
+                  {name: "Update", value: $upd, inline: false}],
                 footer: {text: "sc-offline · Star Citizen offline mod"}}' > embed.json
               ;;
             pull_request)

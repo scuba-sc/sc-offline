@@ -11,7 +11,7 @@ None of this has been run in game; see [docs/status.md](../../../docs/status.md)
 ```text
 cargo build -p scol-plugin-manager --features test-trust
 python tests/plugins/creative-proof.py --creative-dir <folder with creative.dll and plugin.ini> \
-  --index-tools <sc-plugins checkout> --scratch D:/t/pm-proof-1 \
+  --index-tools <sc-plugins checkout> --scratch <scratch>/pm-proof-1 \
   --scol-pm <target dir>/debug/scol-pm.exe --transcript out.txt
 ```
 
@@ -19,7 +19,7 @@ python tests/plugins/creative-proof.py --creative-dir <folder with creative.dll 
 (Python's `sqlite3`, not the copy inside the exe): the values land in `data\storage\<id>.db`, table
 `sco_kv(key TEXT PRIMARY KEY, value BLOB) WITHOUT ROWID`, keys `sco.settings.<name>`, values the blobs
 `<type>:<canonical text>`; a row written by Python in that shape is read back by the exe; a refused value leaves the
-file byte for byte the same; `--reset` deletes the kept rows. Synthetic plugin under `D:\t`, no game.
+file byte for byte the same; `--reset` deletes the kept rows. Synthetic plugin under the scratch folder (`SCOL_SCRATCH`, else the system temp folder), no game.
 
 ```text
 python tests/plugins/settings_proof.py [--rust <sc-offline.exe>]

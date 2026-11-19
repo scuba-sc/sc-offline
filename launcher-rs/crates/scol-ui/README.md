@@ -27,7 +27,7 @@ Each of the six switches shows a short name, one sentence, an On/Off toggle and 
 (`exp_*`), the capability name and the evidence level are only in the tooltip and in the collapsed
 Details row. The test `caps::tests::main_text_has_no_raw_identifiers` walks every string shown without
 Details, in both languages, and fails on `exp_`, `synthetic_only`, dotted names and similar.
-Evidence lines come from the owner's in-game sessions on build 4.10.200.58746: gear equip through
+Evidence lines come from the maintainer's in-game sessions on build 4.10.200.58746: gear equip through
 `game.loadout.async` is "Seen working in game once"; everything else is "Not run in game yet".
 Capabilities of `capabilities.json` that have no switch are read-only: "Works by itself, no switch"
 (registry default ON) and "Not available yet" (registry default OFF, with the reason in plain words).
@@ -78,10 +78,12 @@ redistributed (eframe default features are off; `cargo deny check` of the worksp
   download refused, empty trust root, unreviewed entries, bad signature, registry rows, Stop beside
   Play). No test starts a process or the game.
 * `scol-ui --ui-self-test` (add `--features fixtures` to include the catalogue): builds every page for
-  three frames in both languages on a fixture install under `D:\t`, no window and no GPU, then runs the
+  three frames in both languages on a fixture install in the system temp folder, no window and no GPU, then runs the
   page actions and checks the files they write. Exit 0 or 1.
 * `scol-ui --ui-screenshots tests/ui/screens`: opens the real window (needs a display and OpenGL) and
-  saves PNGs of the pages, scrolled parts and Russian text. `SCOL_UI_SHOT_SIZE=640x440` takes the shots at
+  saves PNGs of the pages, scrolled parts and Russian text. The fixture is `scol-ui-shots` in the temp
+  folder and the Settings page shows its path, so set `TMP`/`TEMP` to a neutral folder (for example
+  `C:\Temp\scol`) before taking the committed shots. `SCOL_UI_SHOT_SIZE=640x440` takes the shots at
   the smallest size to look for clipped text. The Home shot shows the status of the PC it was taken on.
 
 ## Not done

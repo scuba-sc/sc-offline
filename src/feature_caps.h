@@ -44,7 +44,7 @@ inline size_t States(const Readiness& r, State (&out)[kMaxStates]) {
     out[n++] = { "offline", r.offline, "offline start-up did not complete (see [app] lines in mod.log)" };
     // "teleport" is held off whatever the rows say: the product's own save and go routes refuse
     // (src/teleport.cpp) and moves go through game.relocation. Core's registry lists it default ON, so
-    // turning it on is an owner decision, not a wiring fix. The reason says it is a product decision.
+    // turning it on is a maintainer decision, not a wiring fix. The reason says it is a product decision.
     (void)r.teleportRows;
     out[n++] = { "teleport", false, kTeleportHeldReason };
     out[n++] = { "npc", r.spawner, kShipSpawnUnavailable };

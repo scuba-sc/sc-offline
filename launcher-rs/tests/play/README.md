@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # play, install and uninstall parity
 
-Two scripts, both under `D:\t` only, neither starts the real game.
+Two scripts, both under the scratch folder only (`SCOL_SCRATCH`, else `scol-scratch` in the system temp folder), neither starts the real game.
 
 `compare_dryrun.py` runs the built C++ `sc-offline.exe` and the Rust `sc-offline.exe` with `--dry-run` on
 the same synthetic worlds and requires the same exit code, text, file tree and `data\launcher.log`.

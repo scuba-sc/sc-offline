@@ -153,7 +153,7 @@ cargo deny check
 cargo build --release --workspace --locked
 ```
 
-Parity and proof scripts. All use scratch folders under `D:\t` or a path you give, and none starts the real game. Each folder under `launcher-rs/tests/` has a README with the details.
+Parity and proof scripts. All use scratch folders under `SCOL_SCRATCH` (else the system temp folder) or a `--work`/`--scratch` path you give, and none starts the real game. Each folder under `launcher-rs/tests/` has a README with the details.
 
 | Command | Shows |
 |---|---|

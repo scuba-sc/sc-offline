@@ -47,10 +47,10 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 RUST_DEFAULT = HERE.parent.parent / "target" / "release" / "scol.exe"
 
-OURS_DLL = b"MZ\x90\x00 padding sc-offline v0.8.0\x00 more bytes"
+OURS_DLL = b"MZ\x90\x00 padding sc-offline v0.8.0-rc.1\x00 more bytes"
 OLD_DLL = b"MZ\x90\x00 ChrisWareOffline 0.9.0-rc1 / sc-offline 0.2.0-rc4 tail"
 OTHER_DLL = b"MZ\x90\x00 some other mod's dinput8"
-MARKER = b"version=0.8.0\nsha256=abc\nmode=install\ntime=2026-11-17 09:05:03\nxml=none\n"
+MARKER = b"version=0.8.0-rc.1\nsha256=abc\nmode=install\ntime=2026-11-17 09:05:03\nxml=none\n"
 PC_ALL = (b"time=2026-11-17 09:05\nfirewall=added\nfw_launcher=added\nfw_crash=added\n"
           b"fw_mp=added\nhosts=added\neac=renamed\n")
 PC_PART = b"time=2026-11-16 22:10\r\nfirewall=added\r\nhosts=added\r\n"
@@ -299,7 +299,7 @@ def status_game_same_as_last_play(c):
 def status_mod_dll_here_current(c):
     c.game(MANIFEST)
     c.here("dinput8.dll", OURS_DLL)
-    return ["status", "--game", win(c.sc)], ["Mod DLL:  sc-offline 0.8.0", "          sha256 "], 0
+    return ["status", "--game", win(c.sc)], ["Mod DLL:  sc-offline 0.8.0-rc.1", "          sha256 "], 0
 
 
 @scenario
@@ -336,7 +336,7 @@ def status_mod_installed_marker_and_dll(c):
     c.put(c.bin / "dinput8.dll", OURS_DLL)
     c.put(c.bin / "sc-offline.installed", MARKER)
     return ["status", "--game", win(c.sc)], [
-        "Installed: yes, sc-offline 0.8.0, since 2026-11-17 09:05:03",
+        "Installed: yes, sc-offline 0.8.0-rc.1, since 2026-11-17 09:05:03",
         "the mod is still in the game folder"], 0
 
 
@@ -374,7 +374,7 @@ def status_empty_marker_and_dll(c):
     c.game(MANIFEST)
     c.put(c.bin / "dinput8.dll", OURS_DLL)
     c.put(c.bin / "sc-offline.installed", b"")
-    return ["status", "--game", win(c.sc)], ["Installed: yes, sc-offline 0.8.0, since "], 0
+    return ["status", "--game", win(c.sc)], ["Installed: yes, sc-offline 0.8.0-rc.1, since "], 0
 
 
 @scenario

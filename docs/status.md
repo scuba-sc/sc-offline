@@ -4,6 +4,12 @@ This page says what has been run in the real game and what has not. Read it befo
 
 A build, a mock, a signature match or a test without the game does not count as a game result. Only the list under "Seen in game" does.
 
+## This build is a release candidate
+
+You are reading the pages of **0.8.0-rc.1**, a development pre-release of 0.8.0 for testers. It is built from the same sources as the planned 0.8.0 and differs from it only in its version (`0.8.0-rc.1`), these notes and the pins to a release candidate of the SDK. The final 0.8.0 is built after testers have reported, so its binaries will differ from this candidate's, and a run of this candidate does not carry over to it byte for byte.
+
+Not run in game. Nothing in this candidate has been run in the real game as a package. The list under "Seen in game" is unchanged by it. A tester's report of a run belongs in an issue; the maintainer moves a result onto this page only after checking it. The order to test in is in [Release candidates](launcher.md#release-candidates).
+
 ## Seen in game
 
 The maintainer ran seven things on game build **4.10.200.58746**, in one or two sessions each. The runs used development packages with the classic launcher (`sc-offline-classic.exe`) and the classic menu. They did not use the 0.8.0 zip. Every binary in the 0.8.0 package (the game DLLs, both launchers and all plugins) was built after those runs, from later sources. The default game DLL is built the same way as the one that ran (classic menu), but it is a new build.

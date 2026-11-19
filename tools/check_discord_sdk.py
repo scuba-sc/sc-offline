@@ -83,7 +83,7 @@ def main(args):
     checker = checker_build / ('Release/sco-plugin-check.exe' if os.name == 'nt' else 'sco-plugin-check')
     checked = run([checker, folder, '--invoke', 'discord.status'], work).stdout
     print(checked)
-    for token in ('discord.status -> unavailable', 'transport and fields await owner privacy/security approval',
+    for token in ('discord.status -> unavailable', 'transport and fields await maintainer privacy/security approval',
                   'nothing transmitted', 'OK: 0 failure(s)'):
         if token not in checked:
             raise AssertionError('Checker refusal missing: ' + token)

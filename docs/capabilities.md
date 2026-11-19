@@ -10,7 +10,7 @@ Each switch is a key in `sc-offline.ini`. The launcher sets the matching variabl
 
 | Key in `sc-offline.ini` | Variable | Asks Core to turn on | Release default | Evidence |
 |---|---|---|---|---|
-| `exp_actor_stats_write` | `SCO_ACTOR_STATS_WRITE` | `game.actor_stats.write` | on, you can turn it off | `game.actor_stats.write`: rows resolve; an in-game probe must settle an open question first. The registry says OFF pending in-game confirmation. The release package still sets it on by owner decision; you can turn it off. Not run in game. |
+| `exp_actor_stats_write` | `SCO_ACTOR_STATS_WRITE` | `game.actor_stats.write` | on, you can turn it off | `game.actor_stats.write`: rows resolve; an in-game probe must settle an open question first. The registry says OFF pending in-game confirmation. The release package still sets it on by maintainer decision; you can turn it off. Not run in game. |
 | `exp_audio_native` | `SCO_AUDIO_NATIVE` | `game.audio.triggers`, `game.audio.play_once` | on, you can turn it off | `game.audio.triggers`: synthetic tests only; `game.audio.play_once`: synthetic tests only. Core currently refuses the native audio adapter even with this on, so both audio capabilities stay off. The switch only asks Core to try. Not run in game. |
 | `exp_cvars_native` | `SCO_CVARS_NATIVE` | `game.cvars.read` | on, you can turn it off | `game.cvars.read`: synthetic tests only. Not run in game. |
 | `exp_inventory_read` | `SCO_INVENTORY_READ` | `game.inventory.read` | on, you can turn it off | `game.inventory.read`: synthetic tests only. Not run in game. |

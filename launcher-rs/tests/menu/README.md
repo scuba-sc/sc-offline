@@ -23,4 +23,4 @@ Screenshots go to `$OUT/shots/rust` (`*.png` from the Rust stand-in) and `$OUT/s
 
 ## Not covered here
 
-The M key polling, the cursor clip, the focus hand-back to the game and the DPI behaviour need a real foreground game window and monitors. They follow the rules of `src/menu.cpp`. The list of what the owner must run is in [docs/rust-menu.md](../../../docs/rust-menu.md#not-run-in-game).
+The M key polling, the cursor clip, the focus hand-back to the game and the DPI behaviour need a real foreground game window and monitors. They follow the rules of `src/menu.cpp`. The list of what the maintainer must run is in [docs/rust-menu.md](../../../docs/rust-menu.md#not-run-in-game).

@@ -20,7 +20,7 @@ python tests/install/compare.py --cpp <build dir>/bin/Release/sc-offline.exe [--
   `dinput8.dll`, `--game` spellings, `game =` in the ini, ini warnings, the old Discord switch, the
   remembered game path (dry run only), a rotated `launcher.log`, a failed DLL copy (see the known limit below). `--slow` adds a read-only DLL that
   cannot be deleted: 30 tries, then exit 3.
-- Everything lives under `--work` (default `D:/t/install-parity`, emptied first). No real game folder
+- Everything lives under `--work` (default `<scratch>/install-parity`, emptied first; `<scratch>` is `SCOL_SCRATCH`, else `scol-scratch` in the system temp folder). No real game folder
   is used and every game path is checked to be under the scratch folder. The game is a plain file
   named `StarCitizen.exe`. `ProgramData`, `ProgramFiles(x86)`, `APPDATA` and `SystemRoot` point into
   the world. The two discovery scenarios use `--dry-run` because discovery also reads this PC's

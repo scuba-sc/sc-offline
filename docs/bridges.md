@@ -15,7 +15,7 @@ TitanLink and voxel_bridge are independent, optional native plugins: [`plugins/t
    cmake --build voxel-build --target sc-offline-voxel_bridge
    cmake --install voxel-build --prefix bridge-stage --component voxel_bridge
    ```
-3. Copy only the folder you want from `bridge-stage/data/plugins/` into the host's plugin folder. Remove its `disabled` marker to enable it. `plugins = on` must be set. Keep it disabled until the owner has accepted it on Windows, offline.
+3. Copy only the folder you want from `bridge-stage/data/plugins/` into the host's plugin folder. Remove its `disabled` marker to enable it. `plugins = on` must be set. Keep it disabled until the maintainer has accepted it on Windows, offline.
 
 TitanLink has the commands `titanlink.pilot`, `titanlink.titan`, `titanlink.embark`, `titanlink.unlink` and `titanlink.status`, the key F9 (opens the link), a panel, and an owned Windows overlay and local launcher. The voxel bridge has `voxel_bridge.toggle`, `voxel_bridge.anchor` and `voxel_bridge.status`, the key Ctrl+F9, a panel, owned crate placement and bounded `game.world` ground scans. Each plugin's README covers settings, transport and cleanup, and what is unavailable.
 

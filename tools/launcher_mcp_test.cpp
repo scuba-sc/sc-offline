@@ -1190,7 +1190,7 @@ static void SecondReviewChecks() {
     }
 }
 
-// Third review round: the owner's decisions and what the differential test (tools/launcher_redact_diff_test.cpp) found.
+// Third review round: the maintainer's decisions and what the differential test (tools/launcher_redact_diff_test.cpp) found.
 // A noisy log cannot evict the real handle, the whole log file is scanned in chunks for login lines, common-word
 // handles from login lines are replaced as whole tokens, short account names stop at - and _, %5C %2F %40 are
 // decoded, weak keys and machine words are not learned, Game.log is opt-in, and hostile input stays fast.
@@ -1387,7 +1387,7 @@ static void ThirdReviewChecks() {
     }
 }
 
-// The owner's decision: Game.log is opt-in (sc-offline.exe mcp --game-log).
+// The maintainer's decision: Game.log is opt-in (sc-offline.exe mcp --game-log).
 static void FourthReviewChecks() {
     using namespace sco::launcher::redact;
     const std::string status =
