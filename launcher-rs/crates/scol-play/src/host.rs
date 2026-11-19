@@ -99,13 +99,32 @@ pub trait Host {
     }
     /// Shows a file selected in the file manager.
     fn reveal_file(&mut self, _path: &str) {}
-    /// Asks Windows for a folder the player picks. Not part of this port: None.
+    /// The game folders found by discovery (the registry, the RSI Launcher's files, the usual folders, a
+    /// bounded drive search); read-only. A test host scripts the answer.
+    fn discover_game(
+        &mut self,
+        here: &str,
+        channel: &str,
+        out: &mut dyn Write,
+    ) -> Vec<scol_install::identity::Found> {
+        scol_install::discovery::detect_bin64(here, channel, out)
+    }
+    /// True when the player can be shown a folder dialog: a console to sit at, or the window's child. The
+    /// default is no, so nothing opens a dialog unless the host says so.
+    fn can_pick_folder(&mut self) -> bool {
+        false
+    }
+    /// Asks Windows for a folder the player picks (the last resort when no game was found). None when
+    /// cancelled or unavailable.
     fn pick_folder(&mut self) -> Option<String> {
         None
     }
-    /// The update check of `play` (`check_updates`). The Rust launcher has no network code in this
-    /// crate: the default does nothing, the caller that owns the updater overrides it.
-    fn check_update(&mut self, _cfg: &scol_config::Config, _out: &mut dyn Write) {}
+    /// The update check of `play` (`check_updates`). The default does nothing: the caller that owns the
+    /// updater overrides it. `Some(code)` ends `play` with that code (an update was installed and the new
+    /// exe took over).
+    fn check_update(&mut self, _cfg: &scol_config::Config, _out: &mut dyn Write) -> Option<i32> {
+        None
+    }
 
     /// `AskYes`: prints the question and reads one line; only a first letter y or Y says yes.
     fn ask_yes(&mut self, out: &mut dyn Write, question: &str) -> bool {

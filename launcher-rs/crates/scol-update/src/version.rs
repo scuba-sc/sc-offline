@@ -64,7 +64,7 @@ mod tests {
         assert!(greater("0.7.0", "0.7.0-rc1"));
         assert!(!greater("0.7.0-rc1", "0.7.0"));
         assert!(greater("0.7.0-rc2", "0.7.0-rc1"));
-        assert!(greater("0.7.8.3-dev241.2", "0.7.8.3-dev241.1"));
+        assert!(greater("0.8.0-dev241.2", "0.8.0-dev241.1"));
         assert!(!greater("0.6.9", "0.7.0"));
         assert!(!greater("0.7.0", "0.7.0"));
         assert!(!greater("junk", "0.7.0"));

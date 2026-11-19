@@ -50,7 +50,7 @@ fn on_off(b: bool) -> &'static str {
     }
 }
 
-/// The 14 variables of `play`, in the order the C++ launcher sets them.
+/// The 15 variables of `play`, in the order the C++ launcher sets them.
 pub fn play_env(c: &Config, paths: PlayPaths<'_>) -> Vec<EnvVar> {
     let data = paths.data;
     vec![
@@ -68,6 +68,7 @@ pub fn play_env(c: &Config, paths: PlayPaths<'_>) -> Vec<EnvVar> {
         EnvVar::new(names::ASOP_FLEET_LIST, c.asop_fleet_list.as_str()),
         EnvVar::new(names::SC_USER, paths.user_dir),
         EnvVar::new(names::REGISTRY_PROBE, c.registry_probe.as_str()),
+        EnvVar::new(names::MENU, c.menu.word()),
     ]
 }
 

@@ -41,6 +41,34 @@ impl LogChoice {
     }
 }
 
+/// Which in-game menu the mod shows (`menu`). `imgui` is the default; `rust` is opt-in because the Rust menu
+/// has never run in a game.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MenuChoice {
+    Imgui,
+    Rust,
+}
+
+impl MenuChoice {
+    pub fn word(self) -> &'static str {
+        match self {
+            MenuChoice::Imgui => "imgui",
+            MenuChoice::Rust => "rust",
+        }
+    }
+
+    /// `imgui` or `rust`, without regard to case.
+    pub fn parse(v: &str) -> Option<MenuChoice> {
+        if v.eq_ignore_ascii_case("imgui") {
+            Some(MenuChoice::Imgui)
+        } else if v.eq_ignore_ascii_case("rust") {
+            Some(MenuChoice::Rust)
+        } else {
+            None
+        }
+    }
+}
+
 /// The settings of `sc-offline.ini`. Defaults are the C++ launcher's (`struct Config`),
 /// including the capability switches: five on, `exp_entities_diag` off.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,6 +98,8 @@ pub struct Config {
     pub multiplayer_allow: String,
     pub asop: bool,
     pub asop_fleet_list: String,
+    /// `menu`: exported as `SC_OFFLINE_MENU`.
+    pub menu: MenuChoice,
     /// The `exp_*` keys (`Config::experimental` in the C++ launcher).
     pub capabilities: Capabilities,
 }
@@ -98,6 +128,7 @@ impl Default for Config {
             multiplayer_allow: String::new(),
             asop: true,
             asop_fleet_list: "ships".into(),
+            menu: MenuChoice::Imgui,
             capabilities: Capabilities::default(),
         }
     }
@@ -312,6 +343,13 @@ impl Config {
                     messages.push(format!(
                         "[!] sc-offline.ini line {line_no}: asop_fleet_list must be game or ships"
                     ));
+                }
+            } else if is("menu") {
+                match MenuChoice::parse(v) {
+                    Some(m) => c.menu = m,
+                    None => messages.push(format!(
+                        "[!] sc-offline.ini line {line_no}: menu must be imgui or rust"
+                    )),
                 }
             } else if is("mining") || is("mining_debug") {
                 messages.push(format!(

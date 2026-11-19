@@ -249,6 +249,13 @@ struct FakeMachine {
     elevated_calls: usize,
     free: Option<u64>,
     sleeps: Vec<u64>,
+    /// Called with the number of waits so far, each time the swap waits.
+    on_sleep: Option<Box<dyn FnMut(usize)>>,
+    /// `can_ask` of the platform.
+    can_ask: bool,
+    /// What `after_update` answers, and the arguments it was given.
+    restart: Option<i32>,
+    restarts: Vec<Vec<String>>,
 }
 
 impl Default for FakeMachine {
@@ -261,6 +268,10 @@ impl Default for FakeMachine {
             elevated_calls: 0,
             free: None,
             sleeps: vec![],
+            on_sleep: None,
+            can_ask: true,
+            restart: None,
+            restarts: vec![],
         }
     }
 }
@@ -287,6 +298,17 @@ impl Platform for FakeMachine {
     }
     fn sleep_ms(&mut self, ms: u64) {
         self.sleeps.push(ms);
+        let n = self.sleeps.len();
+        if let Some(f) = self.on_sleep.as_mut() {
+            f(n);
+        }
+    }
+    fn can_ask(&mut self) -> bool {
+        self.can_ask
+    }
+    fn after_update(&mut self, _: &Path, args: &[String], _: &mut dyn Write) -> Option<i32> {
+        self.restarts.push(args.to_vec());
+        self.restart
     }
 }
 
@@ -818,14 +840,113 @@ fn a_running_game_blocks_the_swap() {
 
 #[test]
 fn locked_files_are_retried_with_back_off() {
-    // The retry helper is private; observe it through a swap that cannot move a directory-named
-    // target: not portable. Instead check the documented waits through the Platform seam.
-    let here = install("locked");
+    use std::cell::RefCell;
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::rc::Rc;
+
+    // The waits are the documented ones, in this order.
+    assert_eq!(swap::LOCK_WAITS, [100, 250, 500, 1000, 2000, 4000]);
+
+    // Nothing locked: no waiting.
+    let here = install("locked-none");
     let zip = good_zip("v0.7.1");
     let mut m = FakeMachine::default();
     let (r, _) = apply(&here, &zip, &info_for(&zip), &mut m);
     assert!(r.is_ok());
     assert!(m.sleeps.is_empty(), "no lock, no waiting");
+
+    // The old exe is held open without sharing (an antivirus scan, an indexer): moving it aside fails with
+    // a sharing violation. Every wait is used, then the swap gives up and puts everything back.
+    let here = install("locked-forever");
+    let before = snapshot(&here);
+    let hold = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .open(here.join("sc-offline.exe"))
+        .unwrap();
+    let mut m = FakeMachine::default();
+    let (r, text) = apply(&here, &zip, &info_for(&zip), &mut m);
+    assert!(r.is_err());
+    assert_eq!(m.sleeps, swap::LOCK_WAITS, "all six waits, growing");
+    assert!(
+        text.contains("couldn't move sc-offline.exe aside"),
+        "{text}"
+    );
+    drop(hold);
+    assert_eq!(
+        snapshot(&here),
+        before,
+        "rolled back; the old files are untouched"
+    );
+
+    // The lock goes away during the third wait: the swap then goes through.
+    let here = install("locked-briefly");
+    let hold = Rc::new(RefCell::new(Some(
+        std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(here.join("sc-offline.exe"))
+            .unwrap(),
+    )));
+    let mut m = FakeMachine::default();
+    let h2 = Rc::clone(&hold);
+    m.on_sleep = Some(Box::new(move |n| {
+        if n == 3 {
+            h2.borrow_mut().take();
+        }
+    }));
+    let (r, _) = apply(&here, &zip, &info_for(&zip), &mut m);
+    assert!(r.is_ok(), "{r:?}");
+    assert_eq!(m.sleeps, [100, 250, 500]);
+    assert_eq!(read(&here.join("sc-offline.exe")), b"NEW-EXE");
+    assert_eq!(read(&here.join("data/wallet.txt")), b"my wallet");
+}
+
+#[test]
+fn the_retry_helper_waits_only_for_lock_errors() {
+    use std::io::{Error, ErrorKind};
+    let mut m = FakeMachine::default();
+    // sharing violation (32), lock violation (33) and access denied (5) are waited for
+    for code in [32, 33, 5] {
+        m.sleeps.clear();
+        let mut left = 2;
+        let r = swap::retrying(&mut m, || {
+            if left > 0 {
+                left -= 1;
+                Err(Error::from_raw_os_error(code))
+            } else {
+                Ok(7)
+            }
+        });
+        assert_eq!(r.unwrap(), 7);
+        assert_eq!(m.sleeps, [100, 250], "code {code}");
+    }
+    // anything else fails at once
+    m.sleeps.clear();
+    let r: std::io::Result<()> = swap::retrying(&mut m, || Err(Error::from(ErrorKind::NotFound)));
+    assert!(r.is_err());
+    assert!(m.sleeps.is_empty());
+    // a lock that never goes: six waits, then the last error
+    m.sleeps.clear();
+    let mut tries = 0;
+    let r: std::io::Result<()> = swap::retrying(&mut m, || {
+        tries += 1;
+        Err(Error::from_raw_os_error(32))
+    });
+    assert_eq!(r.unwrap_err().raw_os_error(), Some(32));
+    assert_eq!(tries, 7);
+    assert_eq!(m.sleeps.iter().sum::<u64>(), 7850);
+}
+
+#[test]
+fn moves_replace_the_target_and_go_through_to_disk() {
+    let dir = tmp("move-through");
+    write(&dir.join("a"), b"new");
+    write(&dir.join("b"), b"old");
+    swap::move_through(&dir.join("a"), &dir.join("b")).unwrap();
+    assert_eq!(read(&dir.join("b")), b"new");
+    assert!(!dir.join("a").exists());
+    assert!(swap::move_through(&dir.join("a"), &dir.join("c")).is_err());
 }
 
 #[test]
@@ -1167,7 +1288,7 @@ fn cpp_version(exe: &Path) -> String {
     s.split_whitespace()
         .nth(3)
         .unwrap_or("")
-        .to_string() // "self-test: this is 0.7.8.3, expected v0"
+        .to_string() // "self-test: this is 0.8.0, expected v0"
         .trim_end_matches(',')
         .to_string()
 }
@@ -1307,4 +1428,261 @@ fn the_rust_updater_accepts_a_cpp_exe_as_the_new_launcher() {
     );
     assert!(r.is_err());
     assert_eq!(read(&here.join("sc-offline.exe")), b"OLD-EXE");
+}
+
+// ---------------------------------------------------------------- the offer, the restart, the token
+
+fn offered_net(zip: &[u8]) -> FakeNet {
+    let mut net = FakeNet::default();
+    net.serve(
+        release::RELEASES_LATEST,
+        &release_json("v0.7.1", zip, ZIP_URL),
+    );
+    net.serve(ZIP_URL, zip);
+    net
+}
+
+fn offer(
+    here: &Path,
+    net: &mut FakeNet,
+    m: &mut FakeMachine,
+    opts: flow::OfferOptions,
+    answer: bool,
+) -> (flow::Offer, String, Vec<String>) {
+    let mut out = Vec::new();
+    let mut asked = Vec::new();
+    let r = flow::offer_update("0.7.0", false, opts, here, net, m, &mut out, &mut |q| {
+        asked.push(q.to_string());
+        answer
+    });
+    (r, String::from_utf8_lossy(&out).into_owned(), asked)
+}
+
+#[test]
+fn the_offer_asks_like_the_cpp_launcher_and_applies_only_on_yes() {
+    let here = install("offer");
+    let zip = good_zip("v0.7.1");
+    let mut net = offered_net(&zip);
+    let opts = flow::OfferOptions::default();
+
+    // no: nothing changes
+    let mut m = FakeMachine::default();
+    let (r, text, asked) = offer(&here, &mut net, &mut m, opts, false);
+    assert!(matches!(r, flow::Offer::Declined(_)));
+    assert_eq!(
+        text,
+        "Update:   sc-offline v0.7.1 is available (you have 0.7.0)\n[i] not updating\n"
+    );
+    assert_eq!(
+        asked,
+        ["Update now? Your saves and sc-offline.ini are kept."]
+    );
+    assert_eq!(read(&here.join("sc-offline.exe")), b"OLD-EXE");
+
+    // nobody to ask: the offer is said, nothing is asked, nothing changes
+    let mut m = FakeMachine::default();
+    m.can_ask = false;
+    let (r, text, asked) = offer(&here, &mut net, &mut m, opts, true);
+    assert!(matches!(r, flow::Offer::Available(_)));
+    assert!(
+        text.ends_with("          (not asking: no console to answer in)\n"),
+        "{text}"
+    );
+    assert!(asked.is_empty());
+
+    // the game runs: refused before any question
+    let mut m = FakeMachine::default();
+    m.game = true;
+    let (r, text, asked) = offer(&here, &mut net, &mut m, opts, true);
+    assert!(matches!(r, flow::Offer::Blocked(_)));
+    assert!(text.contains("[!] close the game before updating"));
+    assert!(asked.is_empty());
+
+    // --check never asks
+    let mut m = FakeMachine::default();
+    let o = flow::OfferOptions {
+        check_only: true,
+        ..opts
+    };
+    let (r, _, asked) = offer(&here, &mut net, &mut m, o, true);
+    assert!(matches!(r, flow::Offer::Available(_)));
+    assert!(asked.is_empty());
+
+    // yes: applied, and the files are the new ones
+    let mut m = FakeMachine::default();
+    let (r, text, _) = offer(&here, &mut net, &mut m, opts, true);
+    assert!(matches!(r, flow::Offer::Applied(_)), "{text}");
+    assert_eq!(read(&here.join("sc-offline.exe")), b"NEW-EXE");
+    assert_eq!(read(&here.join("data/wallet.txt")), b"my wallet");
+
+    // --yes (the window's button) does not ask
+    let here = install("offer-yes");
+    let mut m = FakeMachine::default();
+    let o = flow::OfferOptions { yes: true, ..opts };
+    let (r, _, asked) = offer(&here, &mut net, &mut m, o, false);
+    assert!(matches!(r, flow::Offer::Applied(_)));
+    assert!(asked.is_empty());
+
+    // a failed swap says so and leaves the old version
+    let here = install("offer-fail");
+    let mut m = FakeMachine::default();
+    m.self_test = Box::new(|_, _| Err("the new sc-offline.exe --self-test exited 2".into()));
+    let (r, text, _) = offer(&here, &mut net, &mut m, o, true);
+    assert!(matches!(r, flow::Offer::Failed(_)));
+    assert!(
+        text.ends_with("[!] update failed; your current version is unchanged\n"),
+        "{text}"
+    );
+    assert_eq!(read(&here.join("sc-offline.exe")), b"OLD-EXE");
+}
+
+#[test]
+fn a_quiet_check_says_nothing_when_there_is_nothing_to_install() {
+    let here = install("quiet");
+    let zip = good_zip("v0.7.1");
+    let mut net = offered_net(&zip);
+    let mut out = Vec::new();
+    let mut m = FakeMachine::default();
+    let opts = flow::OfferOptions {
+        quiet: true,
+        ..Default::default()
+    };
+    // current is already the offered version
+    let r = flow::offer_update(
+        "0.7.1",
+        false,
+        opts,
+        &here,
+        &mut net,
+        &mut m,
+        &mut out,
+        &mut |_| true,
+    );
+    assert!(matches!(r, flow::Offer::Nothing { .. }));
+    assert!(out.is_empty(), "{}", String::from_utf8_lossy(&out));
+    // a network that fails is as quiet
+    let mut dead = FakeNet::default();
+    let r = flow::offer_update(
+        "0.7.0",
+        false,
+        opts,
+        &here,
+        &mut dead,
+        &mut m,
+        &mut out,
+        &mut |_| true,
+    );
+    assert!(matches!(r, flow::Offer::Nothing { .. }));
+    assert!(out.is_empty());
+}
+
+#[test]
+fn play_ends_after_an_applied_update_and_the_new_exe_takes_over() {
+    let here = install("play-restart");
+    let zip = good_zip("v0.7.1");
+    let mut net = offered_net(&zip);
+    let args: Vec<String> = ["play", "--dry-run"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let run = |here: &Path, net: &mut FakeNet, m: &mut FakeMachine, yes: bool| {
+        let mut out = Vec::new();
+        let r = flow::check_and_offer_for_play(
+            "0.7.0",
+            false,
+            here,
+            &args,
+            net,
+            m,
+            &mut out,
+            &mut |_| yes,
+        );
+        (r, String::from_utf8_lossy(&out).into_owned())
+    };
+
+    // declined: play goes on
+    let mut m = FakeMachine::default();
+    let (r, _) = run(&here, &mut net, &mut m, false);
+    assert_eq!(r, None);
+    assert!(m.restarts.is_empty());
+
+    // applied: the restart gets the play command line, its code ends play
+    let mut m = FakeMachine::default();
+    m.restart = Some(10); // a window child answers with the restart code
+    let (r, _) = run(&here, &mut net, &mut m, true);
+    assert_eq!(r, Some(10));
+    assert_eq!(m.restarts, std::slice::from_ref(&args));
+    assert_eq!(read(&here.join("sc-offline.exe")), b"NEW-EXE");
+
+    // applied, and the platform has no restart: play still ends, with a note
+    let here = install("play-no-restart");
+    let mut m = FakeMachine::default();
+    let (r, text) = run(&here, &mut net, &mut m, true);
+    assert_eq!(r, Some(0));
+    assert!(
+        text.ends_with("[i] updated; start sc-offline.exe again to use the new version\n"),
+        "{text}"
+    );
+}
+
+#[test]
+fn the_update_command_restarts_into_the_new_exe_after_a_swap() {
+    use scol_update::cli::{run_with, Context};
+    let here = install("command-restart");
+    let zip = good_zip("v0.7.1");
+    let mut net = offered_net(&zip);
+    let ctx = Context {
+        here: here.clone(),
+        version: "0.7.0".into(),
+        prerelease: false,
+        check_updates: true,
+    };
+    let mut m = FakeMachine::default();
+    m.restart = Some(42);
+    let args = vec!["update".to_string(), "--yes".to_string()];
+    let mut out = Vec::new();
+    let code = run_with(&args, &ctx, &mut net, &mut m, &mut out, &mut |_| true);
+    assert_eq!(code, 42, "the code of the new exe is the command's code");
+    assert_eq!(m.restarts, [args]);
+    // not applied (declined): no restart
+    let here = install("command-no-restart");
+    let ctx = Context { here, ..ctx };
+    let mut m = FakeMachine::default();
+    m.restart = Some(42);
+    let code = run_with(
+        &["update".to_string()],
+        &ctx,
+        &mut net,
+        &mut m,
+        &mut Vec::new(),
+        &mut |_| false,
+    );
+    assert_eq!(code, 0);
+    assert!(m.restarts.is_empty());
+}
+
+#[test]
+fn the_self_test_can_start_with_a_normal_user_token() {
+    use scol_update::platform::{is_elevated, run_self_test_as};
+    let here = tmp("selftest-rights");
+    std::fs::copy(standin_exe(), here.join("sc-offline.exe")).unwrap();
+    write(&here.join("dinput8.dll"), b"DLL");
+    // with this process's own rights
+    let plain = run_self_test_as(&here, "v0", false).unwrap();
+    assert!(!plain.restricted_token);
+    // with a normal-user token: it either starts that way or falls back to our rights, as the C++ launcher
+    // does; either way the stand-in's exit 0 is a pass
+    let normal = run_self_test_as(&here, "v0", true).unwrap();
+    eprintln!(
+        "normal-user token used: {} (this process is elevated: {})",
+        normal.restricted_token,
+        is_elevated()
+    );
+    // the platform's own check picks the token by elevation
+    assert!(System.run_self_test(&here, "v0").is_ok());
+    // an exe that cannot run fails the self-test on both paths
+    let bad = tmp("selftest-rights-bad");
+    write(&bad.join("sc-offline.exe"), b"not an exe");
+    assert!(run_self_test_as(&bad, "v0", false).is_err());
+    assert!(run_self_test_as(&bad, "v0", true).is_err());
 }

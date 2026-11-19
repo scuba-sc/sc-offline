@@ -1,23 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The window's state and its worker. Library calls that can take time (status discovery, plugin
-//! verify, catalogue read and install, the backend commands) run on a worker thread and report back
-//! over a channel; the UI thread only reads the channel and draws. Cheap file work (the plugin
-//! list, ini edits) runs inline.
+//! add and remove, catalogue read and install, the backend commands) run on a worker thread and
+//! report back over a channel; the UI thread only reads the channel and draws. Cheap file work (the
+//! plugin list, ini edits, the on/off marker of a plugin) runs inline.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::Arc;
 
 use eframe::egui;
 use scol_config::ini_edit::set_ini_value;
-use scol_config::{read_config, Config, Language};
+use scol_config::{read_config, Config, Language, MenuChoice};
 use scol_contract::capability_env::Switch;
 use scol_install::StatusReport;
 
-use crate::backend::{Backend, Command};
-use crate::catalogue::{self, Installed, Loaded};
+use crate::backend::{Backend, Command, NOT_CONNECTED};
+use crate::catalogue::{self, State};
 use crate::i18n::{self, tr, trf, Lang};
-use crate::plugins::{self, Added, PluginRow};
+use crate::plugins::{self, PluginRow};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
@@ -49,6 +50,9 @@ pub enum Job {
     CatalogueLoad,
     CatalogueInstall(String),
     AddPath(String),
+    Remove(String),
+    /// Save the edited settings of one plugin: (plugin, [(name, value)]).
+    SaveSettings(String, Vec<(String, String)>),
 }
 
 /// What the worker answers.
@@ -56,9 +60,18 @@ pub enum Msg {
     Status(Box<StatusReport>),
     Line(String),
     CommandDone(Command, Result<i32, String>),
-    Catalogue(Result<Loaded, String>),
-    Installed(Result<Installed, String>),
-    Added(Result<Added, String>),
+    Catalogue(State),
+    /// A plugin was added, installed or removed, or the reason it was not.
+    PluginChanged(Result<Changed, String>),
+    SettingsSaved(Result<usize, String>),
+}
+
+/// A plugin change that went through.
+pub struct Changed {
+    pub name: String,
+    /// `native`, `lua` or `data` (empty after a remove).
+    pub kind: String,
+    pub removed: bool,
 }
 
 /// A line under the page: text and whether it is an error.
@@ -79,14 +92,24 @@ pub struct App {
     pub plugins: Vec<PluginRow>,
     pub plugin_tab: PluginTab,
     pub open_plugin: Option<String>,
+    /// The plugin the player pressed Remove on and has not confirmed yet.
+    pub confirm_remove: Option<String>,
     pub add_path: String,
-    pub catalogue: Option<Result<Loaded, String>>,
+    /// Edited values of the open plugin's settings: name to text. Cleared when the page closes.
+    pub drafts: HashMap<String, String>,
+    pub catalogue: Option<State>,
+    pub caps_more: bool,
+    pub caps_auto: bool,
+    /// Force the scroll position of the page (the screenshots use it). None: the player scrolls.
+    pub scroll_to: Option<f32>,
     pub cap_filter: String,
     pub note: Option<Note>,
     /// Number of worker jobs in flight.
     pub busy: usize,
-    /// The command whose output the Output page is streaming.
-    pub running: Option<Command>,
+    /// The commands the worker runs now. Stop runs beside Play.
+    pub running: Vec<Command>,
+    /// The game process of this install runs (read once per frame).
+    pub game_up: bool,
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
     ctx: Option<egui::Context>,
@@ -106,12 +129,18 @@ impl App {
             plugins: Vec::new(),
             plugin_tab: PluginTab::Installed,
             open_plugin: None,
+            confirm_remove: None,
             add_path: String::new(),
+            drafts: HashMap::new(),
             catalogue: None,
+            caps_more: false,
+            caps_auto: false,
+            scroll_to: None,
             cap_filter: String::new(),
             note: None,
             busy: 0,
-            running: None,
+            running: Vec::new(),
+            game_up: false,
             tx,
             rx,
             ctx: None,
@@ -145,8 +174,13 @@ impl App {
         self.lang = i18n::resolve(self.cfg.language);
     }
 
+    /// The plugin manager's context for this install.
+    pub fn pm(&self) -> scol_plugin_manager::Ctx {
+        plugins::pm_ctx(&self.here, self.backend.as_ref())
+    }
+
     pub fn rescan_plugins(&mut self) {
-        self.plugins = plugins::scan(&self.here);
+        self.plugins = plugins::scan(&self.pm());
     }
 
     pub fn note(&mut self, text: impl Into<String>) {
@@ -163,9 +197,15 @@ impl App {
         });
     }
 
-    /// True while a backend command runs (Play and Update are off then, as in the C++ window).
+    /// True while a backend command other than Stop runs (Play and Update are off then, as in the
+    /// C++ window).
     pub fn command_running(&self) -> bool {
-        self.running.is_some()
+        self.running.iter().any(|c| *c != Command::Stop)
+    }
+
+    /// Settings can be changed: the game is closed and no command runs.
+    pub fn editable(&self) -> bool {
+        !self.game_up && !self.command_running()
     }
 
     // ---- jobs -----------------------------------------------------------------------------
@@ -173,7 +213,7 @@ impl App {
     pub fn submit(&mut self, job: Job) {
         self.busy += 1;
         if let Job::Command(c) = &job {
-            self.running = Some(*c);
+            self.running.push(*c);
             self.output.push(format!("> sc-offline.exe {}", c.word()));
             self.page = Page::Output;
         }
@@ -192,6 +232,33 @@ impl App {
         });
     }
 
+    fn done_one(&mut self) {
+        self.busy = self.busy.saturating_sub(1);
+    }
+
+    /// Words for a failed backend call: the "not connected" default gets the player's wording.
+    fn backend_error(&self, e: &str, key: &str) -> String {
+        if e.contains(NOT_CONNECTED) {
+            self.t(key)
+        } else {
+            self.tf("launcher.ui.error", &[("error", e)])
+        }
+    }
+
+    fn plugin_added_note(&self, name: &str, kind: &str) -> String {
+        let mut text = self.tf("launcher.ui.plugins.added", &[("plugin", name)]);
+        let warn = match kind {
+            "native" => Some("launcher.ui.plugins.native_warning"),
+            "lua" => Some("launcher.ui.plugins.lua_warning"),
+            _ => None,
+        };
+        if let Some(k) = warn {
+            text.push(' ');
+            text.push_str(&self.t(k));
+        }
+        text
+    }
+
     /// Take what the worker has sent so far. Returns true when something changed.
     pub fn pump(&mut self) -> bool {
         let mut changed = false;
@@ -200,12 +267,14 @@ impl App {
             match m {
                 Msg::Status(s) => {
                     self.status = Some(*s);
-                    self.busy = self.busy.saturating_sub(1);
+                    self.done_one();
                 }
                 Msg::Line(l) => self.output.push(l),
                 Msg::CommandDone(c, r) => {
-                    self.busy = self.busy.saturating_sub(1);
-                    self.running = None;
+                    self.done_one();
+                    if let Some(i) = self.running.iter().position(|x| *x == c) {
+                        self.running.remove(i);
+                    }
                     match r {
                         Ok(code) => {
                             let done = if code == 0 {
@@ -220,7 +289,7 @@ impl App {
                             self.submit(Job::Status);
                         }
                         Err(e) => {
-                            let msg = if e.contains("not connected") {
+                            let msg = if e.contains(NOT_CONNECTED) {
                                 let action = match c {
                                     Command::Play => self.t("launcher.action.play"),
                                     Command::Stop => self.t("launcher.action.stop"),
@@ -239,38 +308,44 @@ impl App {
                         }
                     }
                 }
-                Msg::Catalogue(r) => {
-                    self.busy = self.busy.saturating_sub(1);
-                    self.catalogue = Some(r);
+                Msg::Catalogue(s) => {
+                    self.done_one();
+                    self.catalogue = Some(s);
                 }
-                Msg::Installed(r) => {
-                    self.busy = self.busy.saturating_sub(1);
+                Msg::PluginChanged(r) => {
+                    self.done_one();
                     match r {
-                        Ok(i) => {
-                            let mut text = self.tf(
-                                "launcher.ui.plugins.added",
-                                &[("plugin", &format!("{} {}", i.id, i.version))],
-                            );
-                            for w in &i.warnings {
-                                text.push(' ');
-                                text.push_str(w);
-                            }
+                        Ok(c) => {
+                            let text = if c.removed {
+                                self.tf("launcher.ui.plugins.removed", &[("plugin", &c.name)])
+                            } else {
+                                self.plugin_added_note(&c.name, &c.kind)
+                            };
                             self.note(text);
-                            self.rescan_plugins();
-                            self.submit(Job::CatalogueLoad);
-                        }
-                        Err(e) => self.note_error(self.tf("launcher.ui.error", &[("error", &e)])),
-                    }
-                }
-                Msg::Added(r) => {
-                    self.busy = self.busy.saturating_sub(1);
-                    match r {
-                        Ok(a) => {
-                            self.note(self.tf("launcher.ui.plugins.added", &[("plugin", &a.name)]));
                             self.add_path.clear();
                             self.rescan_plugins();
+                            if self.catalogue.is_some() {
+                                self.submit(Job::CatalogueLoad);
+                            }
                         }
-                        Err(e) => self.note_error(self.tf("launcher.ui.error", &[("error", &e)])),
+                        Err(e) => {
+                            self.rescan_plugins();
+                            self.note_error(self.tf("launcher.ui.error", &[("error", &e)]));
+                        }
+                    }
+                }
+                Msg::SettingsSaved(r) => {
+                    self.done_one();
+                    match r {
+                        Ok(_) => {
+                            self.drafts.clear();
+                            self.note(self.t("launcher.plugins.saved"));
+                            self.rescan_plugins();
+                        }
+                        Err(e) => {
+                            let t = self.backend_error(&e, "launcher.ui.plugins.save_temp");
+                            self.note_error(t);
+                        }
                     }
                 }
             }
@@ -281,23 +356,49 @@ impl App {
     // ---- actions the pages call ---------------------------------------------------------
 
     pub fn toggle_plugin(&mut self, id: &str, enable: bool) {
-        match plugins::set_enabled(&self.here, id, enable) {
+        match plugins::set_enabled(&self.pm(), id, enable) {
             Ok(()) => {
                 let state = self.t(if enable {
                     "launcher.plugins.state_on"
                 } else {
                     "launcher.plugins.state_off"
                 });
-                self.note(self.tf(
+                let mut text = self.tf(
                     "launcher.plugins.state_note",
                     &[("state", &state), ("plugin", id)],
-                ));
+                );
+                if enable {
+                    let kind = plugins::describe(&self.pm(), id).kind;
+                    if kind == "native" {
+                        text.push(' ');
+                        text.push_str(&self.t("launcher.ui.plugins.native_warning_on"));
+                    }
+                }
+                self.note(text);
             }
-            Err(_) => {
-                self.note_error(self.tf("launcher.plugins.disabled_error", &[("plugin", id)]))
+            Err(e) => {
+                let text = if e.contains("game is running") {
+                    self.t("launcher.plugins.close_to_edit")
+                } else {
+                    self.tf("launcher.ui.error", &[("error", &e)])
+                };
+                self.note_error(text);
             }
         }
         self.rescan_plugins();
+    }
+
+    /// Ask the folder picker; a chosen folder goes into the path box.
+    pub fn browse(&mut self) {
+        let title = self.t("launcher.ui.plugins.browse_title");
+        match self.backend.pick_folder(&title) {
+            Ok(Some(p)) => self.add_path = p.display().to_string(),
+            Ok(None) => {}
+            Err(e) => {
+                let t = self.backend_error(&e, "launcher.ui.plugins.browse_temp");
+                self.note_error(t);
+            }
+        }
     }
 
     /// Write one key of `sc-offline.ini` in place and read the result back.
@@ -309,7 +410,7 @@ impl App {
 
     pub fn set_capability(&mut self, switch: &Switch, on: bool) {
         if self.write_ini(switch.ini_key, if on { "on" } else { "off" }) {
-            self.note(self.tf("launcher.ui.caps.saved", &[("key", switch.ini_key)]));
+            self.note(self.t("launcher.ui.caps.saved"));
         } else {
             self.note_error(self.t("launcher.ui.caps.write_error"));
         }
@@ -338,9 +439,26 @@ impl App {
             self.note_error(self.t("launcher.plugins.enable_error"));
         }
     }
+
+    pub fn set_menu(&mut self, m: MenuChoice) {
+        if self.write_ini("menu", m.word()) {
+            self.note(self.t("launcher.ui.settings.menu_saved"));
+        } else {
+            self.note_error(self.t("launcher.ui.settings.write_error"));
+        }
+    }
+
+    pub fn set_check_updates(&mut self, on: bool) {
+        if self.write_ini("check_updates", if on { "on" } else { "off" }) {
+            self.note(self.t("launcher.ui.settings.saved"));
+        } else {
+            self.note_error(self.t("launcher.ui.settings.write_error"));
+        }
+    }
 }
 
 fn run_job(job: Job, here: &Path, backend: &dyn Backend, send: &dyn Fn(Msg)) {
+    let ctx = plugins::pm_ctx(here, backend);
     match job {
         Job::Status => send(Msg::Status(Box::new(scol_install::collect_status(
             &here.to_string_lossy(),
@@ -349,26 +467,42 @@ fn run_job(job: Job, here: &Path, backend: &dyn Backend, send: &dyn Fn(Msg)) {
             let r = backend.run(c, here, &mut |line| send(Msg::Line(line.to_string())));
             send(Msg::CommandDone(c, r));
         }
-        Job::CatalogueLoad => send(Msg::Catalogue(catalogue::load(here, &backend.trust()))),
+        Job::CatalogueLoad => send(Msg::Catalogue(catalogue::load(&ctx))),
         Job::CatalogueInstall(id) => {
-            let r = (|| {
-                let loaded = catalogue::load(here, &backend.trust()).map_err(|e| {
-                    if e.is_empty() {
-                        "no catalogue index".to_string()
-                    } else {
-                        e
-                    }
-                })?;
-                let mut fetcher = backend.fetcher().ok_or_else(|| {
-                    "download is not connected yet (catalogue install)".to_string()
-                })?;
-                let (allowed, redirects) = backend.allowed_hosts();
-                let a: Vec<&str> = allowed.iter().map(String::as_str).collect();
-                let r: Vec<&str> = redirects.iter().map(String::as_str).collect();
-                catalogue::install(here, &loaded, &id, fetcher.as_mut(), (&a, &r))
-            })();
-            send(Msg::Installed(r));
+            let r = catalogue::install(&ctx, &id).map(|i| Changed {
+                name: i.name,
+                kind: i.kind,
+                removed: false,
+            });
+            send(Msg::PluginChanged(r));
         }
-        Job::AddPath(p) => send(Msg::Added(plugins::add_path(here, Path::new(&p)))),
+        Job::AddPath(p) => {
+            let r = plugins::add_path(&ctx, Path::new(&p)).map(|a| Changed {
+                name: a.name,
+                kind: a.kind,
+                removed: false,
+            });
+            send(Msg::PluginChanged(r));
+        }
+        Job::Remove(id) => {
+            let name = plugins::describe(&ctx, &id).name;
+            let r = plugins::remove(&ctx, &id).map(|()| Changed {
+                name,
+                kind: String::new(),
+                removed: true,
+            });
+            send(Msg::PluginChanged(r));
+        }
+        Job::SaveSettings(plugin, values) => {
+            let mut done = 0usize;
+            for (name, value) in &values {
+                if let Err(e) = backend.save_plugin_setting(here, &plugin, name, value) {
+                    send(Msg::SettingsSaved(Err(e)));
+                    return;
+                }
+                done += 1;
+            }
+            send(Msg::SettingsSaved(Ok(done)));
+        }
     }
 }

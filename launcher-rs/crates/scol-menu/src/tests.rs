@@ -224,15 +224,9 @@ fn stopped_core_answers_unavailable() {
 }
 
 fn app(v: View) -> App {
-    let cfg = Config {
-        view: v,
-        log: Arc::new(|_| {}),
-        nudge: None,
-        shot_dir: None,
-        start_visible: true,
-        test_mode: true,
-        hotkey: 0,
-    };
+    let mut cfg = Config::new(v, Arc::new(|_| {}));
+    cfg.start_visible = true;
+    cfg.test_mode = true;
     App::new(cfg, Arc::new(Shared::new(true, true, 0)))
 }
 
@@ -364,4 +358,196 @@ fn app_survives_a_stopped_core() {
     a.test_poll();
     assert!(a.test_dead().is_some());
     v.leave();
+}
+
+fn label_node(id: u32, text: &str) -> NodeSpec {
+    node(WIDGET_LABEL, id, text, "")
+}
+
+#[test]
+fn sidebar_sections_titles_and_hidden_pages() {
+    let (_g, v) = setup();
+    for (id, owner) in [
+        ("crew.crew", "crew"),
+        ("loadout.player", "loadout"),
+        ("inspector.main", "inspector"),
+        ("acme.tool", "acme"),
+        ("teleport.travel", "teleport"),
+    ] {
+        fake::set_panel(id, "Plugin's own title", owner, vec![label_node(1, "x")]);
+    }
+    fake::set_host_panel("menu.main", "Menu", vec![label_node(1, "main")]);
+    fake::set_host_panel("menu.status", "Status", vec![label_node(1, "ready")]);
+    assert_eq!(v.enter(), SCO_OK);
+    let mut a = app(v);
+    a.test_poll();
+    let pages = a.test_pages();
+    let ids: Vec<&str> = pages.iter().map(|(_, id)| id.as_str()).collect();
+    assert_eq!(
+        ids,
+        [
+            "loadout.player",
+            "teleport.travel",
+            "crew.crew",
+            "acme.tool",
+            "sc_offline.settings"
+        ],
+        "host panels and developer pages are not pages"
+    );
+    assert_eq!(pages[0].0, "Character");
+    assert_eq!(pages[3].0, "More plugins");
+    assert_eq!(
+        a.test_selected(),
+        "loadout.player",
+        "first page when nothing was saved"
+    );
+    assert_eq!(a.test_status().map(|p| p.id.as_str()), Some("menu.status"));
+    a.test_set_developer(true);
+    assert!(a
+        .test_pages()
+        .iter()
+        .any(|(s, id)| s == "Developer" && id == "inspector.main"));
+    a.test_set_developer(false);
+    a.test_select("sc_offline.settings");
+    a.test_poll();
+    assert_eq!(
+        a.test_page().map(|p| p.id.as_str()),
+        Some("menu.main"),
+        "Settings shows menu.main"
+    );
+    v.leave();
+}
+
+#[test]
+fn asop_panel_is_grouped_under_vehicles_or_left_out() {
+    let (_g, v) = setup();
+    fake::set_panel(
+        "spawn.vehicles",
+        "Vehicles",
+        "spawn",
+        vec![label_node(1, "ships")],
+    );
+    fake::set_panel("spawn.asop", "Fleet", "spawn", vec![label_node(1, "fleet")]);
+    fake::set_panel("evil.asop", "Fleet", "evil", vec![label_node(1, "x")]);
+    assert_eq!(v.enter(), SCO_OK);
+    let mut a = app(v);
+    a.test_poll();
+    let ids: Vec<String> = a.test_pages().into_iter().map(|(_, id)| id).collect();
+    assert!(!ids.contains(&"spawn.asop".to_string()));
+    assert!(
+        ids.contains(&"evil.asop".to_string()),
+        "only the exact owner and id are grouped"
+    );
+    a.test_select("spawn.vehicles");
+    a.test_poll();
+    assert_eq!(a.test_extra().map(|p| p.id.as_str()), Some("spawn.asop"));
+    v.leave();
+}
+
+#[test]
+fn view_and_size_files_are_read_and_written_in_the_cpp_format() {
+    let (_g, v) = setup();
+    fake::set_panel("crew.crew", "Crew", "crew", vec![label_node(1, "a")]);
+    fake::set_panel("npc.npcs", "NPC", "npc", vec![label_node(1, "b")]);
+    let dir = std::env::temp_dir().join(format!("scol-menu-ini-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let view_path = dir.join("menu-view.ini");
+    std::fs::write(&view_path, "[view]\npage=npc.npcs\ndeveloper=1\n").unwrap();
+    assert_eq!(v.enter(), SCO_OK);
+    let mut cfg = Config::new(v, Arc::new(|_| {}));
+    cfg.test_mode = true;
+    cfg.view_path = Some(view_path.clone());
+    let mut a = App::new(cfg, Arc::new(Shared::new(true, true, 0)));
+    a.test_poll();
+    assert_eq!(a.test_selected(), "npc.npcs", "the saved page opens");
+    a.test_select("crew.crew");
+    a.test_save_view();
+    assert_eq!(
+        std::fs::read_to_string(&view_path).unwrap(),
+        "[view]\npage=crew.crew\ndeveloper=1\n"
+    );
+    // A saved page that is gone falls back to the first page, and the file keeps its content.
+    std::fs::write(&view_path, "[view]\npage=gone.page\ndeveloper=0\n").unwrap();
+    let mut cfg = Config::new(v, Arc::new(|_| {}));
+    cfg.view_path = Some(view_path.clone());
+    let mut b = App::new(cfg, Arc::new(Shared::new(true, true, 0)));
+    b.test_poll();
+    assert_eq!(b.test_selected(), "crew.crew");
+    v.leave();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn events_from_the_status_panel_and_the_open_page_name_their_own_panel() {
+    let (_g, v) = setup();
+    fake::set_panel(
+        "crew.crew",
+        "Crew",
+        "crew",
+        vec![node(WIDGET_BUTTON, 1, "Go", "b.go")],
+    );
+    fake::set_host_panel(
+        "menu.status",
+        "Status",
+        vec![node(WIDGET_BUTTON, 1, "Refresh", "st.refresh")],
+    );
+    assert_eq!(v.enter(), SCO_OK);
+    let mut a = app(v);
+    a.test_poll();
+    // The status panel is a host panel: a click on it goes to menu.status, not to the open page.
+    let k = key_of(&v, "menu.status", "st.refresh");
+    a.test_send_to("menu.status", ev(WIDGET_BUTTON, k));
+    a.test_flush();
+    fake::dispatch();
+    let d = fake::delivered();
+    assert_eq!(d.len(), 1);
+    assert_eq!(d[0].panel, "menu.status");
+    v.leave();
+}
+
+#[test]
+fn exports_refuse_bad_input_and_never_panic() {
+    use crate::{
+        scol_menu_abi, scol_menu_drain, scol_menu_is_broken, scol_menu_is_typing,
+        scol_menu_is_visible, scol_menu_request_stop, scol_menu_show, scol_menu_start,
+        scol_menu_test_step, scol_menu_version, StartV1,
+    };
+    // Safe to call before start and with NULL.
+    assert_eq!(scol_menu_abi(), 2);
+    let v = unsafe { std::ffi::CStr::from_ptr(scol_menu_version()) };
+    assert!(!v.to_bytes().is_empty());
+    // SAFETY: NULL is the documented refusal; the other calls take no pointers.
+    unsafe {
+        assert_eq!(scol_menu_start(std::ptr::null()), -1);
+        let mut out = [0 as std::ffi::c_char; 8];
+        assert_eq!(
+            scol_menu_test_step(std::ptr::null(), out.as_mut_ptr(), 8),
+            -1
+        );
+        let line = std::ffi::CString::new("page").unwrap();
+        assert_eq!(
+            scol_menu_test_step(line.as_ptr(), out.as_mut_ptr(), 8),
+            1,
+            "not started"
+        );
+        // A start block of the wrong ABI or size is refused, not trusted.
+        let mut bad: StartV1 = std::mem::zeroed();
+        bad.size = std::mem::size_of::<StartV1>() as u32;
+        bad.abi = 1;
+        assert_eq!(scol_menu_start(&bad), -1);
+        bad.abi = 2;
+        bad.size = 8;
+        assert_eq!(scol_menu_start(&bad), -1);
+        // Right size and ABI, but no view table: refused with -3.
+        bad.size = std::mem::size_of::<StartV1>() as u32;
+        assert_eq!(scol_menu_start(&bad), -3);
+    }
+    scol_menu_request_stop();
+    scol_menu_show(1);
+    assert_eq!(scol_menu_drain(10), 0);
+    assert_eq!(scol_menu_is_typing(), 0);
+    assert_eq!(scol_menu_is_visible(), 0);
+    // Nothing is running, so "broken" reads as 0 only when a handle exists; with none it says 0 for
+    // the hook's purposes (Active() is false then anyway).
+    let _ = scol_menu_is_broken();
 }

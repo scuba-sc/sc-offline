@@ -1,37 +1,50 @@
 # sc-offline Rust launcher and SDK reference launcher
 
-Status: first working build, a preview next to the C++ launcher. The C++ `sc-offline.exe` is still the launcher that starts the game; nothing is cut over. Nothing here is claimed to work in game. Every acceptance check below is source, build, synthetic or CI evidence. Docs keep the words "not run in game" until the owner records a session. The section "Build status" says what is built and what is not.
+Status (2026-11-18): cut over for 0.8.0. The release ships the Rust launcher as `sc-offline.exe` and the C++ launcher beside it as `sc-offline-classic.exe`, the fallback ([decisions](decisions.md#2026-11-18-sc-offline-080-release-decisions)). Player docs: [launcher.md](launcher.md). Nothing here is claimed to work in game. Every acceptance check below is source, build, synthetic or CI evidence. Docs keep the words "not run in game" until the owner records a session. The section "Build status" says what is built and what is not.
 
 
 ## Build status (2026-11-18)
 
-Built in `launcher-rs/` (one workspace, `crates/*`): `scol-contract`, `scol-config`, `scol-plugins`, `scol-install`, `scol-pcchanges`, `scol-redact`, `scol-mcp`, `scol-catalogue`, `scol-play`, `scol-update`, `scol-plugin-manager`, `scol-ui`, `scol-menu` and `scol-cli`. Release build: `sc-offline.exe` (about 6 MB), `sc_offline_menu.dll`, `scol-pm.exe`, and `scol.exe` (an alias of `sc-offline.exe`, kept for the parity scripts). `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` and `cargo deny check` pass.
+Built in `launcher-rs/` (one workspace, `crates/*`): `scol-contract`, `scol-config`, `scol-plugins`, `scol-install`, `scol-pcchanges`, `scol-redact`, `scol-mcp`, `scol-catalogue`, `scol-play`, `scol-update`, `scol-plugin-manager`, `scol-ui`, `scol-menu` and `scol-cli`. The release build gives `sc-offline.exe` (7.4 MB, no VC runtime DLL import), `sc_offline_menu.dll`, `scol-pm.exe` and `scol.exe` (an alias of `sc-offline.exe`, kept for the parity scripts). On the final tree `cargo fmt --check`, `cargo build --release`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (56 test targets, 414 tests passed, 0 failed, 2 ignored by design: they open the real Windows folder dialog and are run by hand) and `cargo deny check` pass.
 
-What the `sc-offline.exe` of the Rust workspace does:
+### Built
 
-| Command | State |
+| Part | State |
 |---|---|
-| `status`, `help`, `mcp [--game-log]` | Built. Text and exit codes match the C++ launcher in 60 status scenarios. Read-only, no network. |
-| `play`, `install`, `uninstall` (with `--dry-run`, `--game`, `--skip-eac-check`) | Built, the whole flow of the C++ `wmain`: log rotation, update settle, discovery, EAC and running-game stops, environment and capability switches, helper, game start, wait, clean-up. Dry-run output matches the C++ launcher in 25 scenarios. A real helper process and named events work against a stand-in game process. |
-| `update [--check] [--yes] [--prerelease]`, `--elevated-update`, `--self-test` | Built: release check, download, manifest and digest checks, journaled swap with rollback, recovery after an interrupted swap. Old and new launchers accept each other's `--self-test` (tested against a C++ build with the test hook). |
-| `plugins list`, `enable`, `disable`, `install <folder or zip>`, `remove`, `catalogue ...`, `update` | Built, with journaled changes and refusal while the game runs. The catalogue commands read a local folder (`--source`); there is no network catalogue source yet. |
-| no arguments (double-clicked), `--window` | Opens the egui window: Home, Output, Plugins with a Catalogue tab, Capabilities (the six `exp_*` switches), Settings, in English and Russian. Play, Stop, Update and Repair are connected: Play, Update and Repair run this exe as a child with `SC_OFFLINE_GUI` set (as the C++ window does); Stop uses the stop channel in the window's process. |
-| `--helper`, `--delete-logs` | Built (hidden modes, dispatched by argument count as in C++). |
+| `status`, `help`, `mcp [--game-log]` | Text and exit codes match the C++ launcher in 60 status scenarios. Read-only, no network. The MCP stdio session passes `tools/check_launcher_mcp.py --exe` against the Rust exe. |
+| `play`, `install`, `uninstall` (`--dry-run`, `--game`, `--skip-eac-check`) | The whole flow of the C++ `wmain`. Dry-run output matches the C++ launcher in 25 scenarios; the install and uninstall file trees match in 42. A real helper process and named events work against a stand-in game process. |
+| Game folder picker | A real Windows folder dialog (`scol_play::pick`). `play` uses it when no game is found and a person can answer; the window's Browse button uses it too. A pick is remembered; `--game` and `game =` win. Checked by driving the real dialog by hand (cancel, and a typed folder). |
+| `stop [--game <folder>] [--end]` | Stop channel, then WM_CLOSE, wait 60 s, then ask (or `--end`). Tested with a stand-in game: nothing running, mod answers, mod silent, game ignores close, a stand-in in another folder left alone. |
+| `update [--check] [--yes] [--prerelease]`, `--self-test` | Release check, download, manifest and digest checks, journaled swap with rollback, recovery of an interrupted swap. `play` with `check_updates = on` offers the update and installs after a yes. After a swap the new exe takes over (console: relaunch; window: it starts the new window). Old C++ launcher and new exe accept each other's `--self-test` (tested against a C++ build with the test hook, both directions). Lock back-off tested with a really held file. |
+| `plugins list/enable/disable/install/remove/settings`, `plugins catalogue ...`, `plugins update` | Journaled changes, refused while the game runs. `plugins settings <id> [name=value ...] [--reset]` writes the host's store (`data/storage/<id>.db`, key `sco.settings.<name>`); a second SQLite implementation (Python) reads and writes the same file in `tests/plugins/settings_proof.py`. The catalogue works from a local folder (`--source`). Without `--source` it prints "no catalogue is published for this build yet", because the shipped trust root is empty (see below). The whole chain with the real creative plugin passes (`creative-proof.py`). |
+| Window (no arguments, `--window`) | Home, Output, Plugins (with Catalogue tab, per-plugin settings editor, add from folder or zip, remove), Capabilities (six switches in plain words, with an evidence line; the rest read-only in two collapsed groups), Settings (Repair, `clean_logs`, `language`, `menu`, `plugins`, `check_updates`, open ini and folder). English and Russian. Ctrl+1 to Ctrl+5 and F5. Play, Update and Repair run this exe as a child with `SC_OFFLINE_GUI` set; Stop uses the stop channel in the window process; the folder picker and the plugin-settings save call the same library code as the command line. `--ui-self-test` passes; 14 screenshots were regenerated. |
+| `menu = imgui` or `rust` | Default `imgui`. Both launchers parse it (case-insensitive; a bad value keeps the old one and warns) and export `SC_OFFLINE_MENU` last in the game environment. |
+| In-game menu (`sc_offline_menu.dll`, ABI 2) | egui renderer of the `sco.widgets` view. Against Core's real view (core-241): 247 checks, 0 failed. Against the Rust stand-in view: 106 checks. 38 unit tests. Same ini files as the C++ menu (`menu-view.ini`, `menu-window.ini`). The hook in `dinput8.dll` (`src/menu_rust.cpp`) falls back to the ImGui menu with one `[menu]` line in `mod.log` if the DLL is missing, has the wrong ABI, fails to start, or reports itself broken. It is compiled in only with `-DSCO_HOST_MENU_CLIENT=ON`; the release candidate is built that way. |
+| Release package | `tools/package_release.py` builds the folder and zip: Rust `sc-offline.exe`, C++ `sc-offline-classic.exe`, `sc_offline_menu.dll`, `dinput8.dll`, ini, docs, data packs, plugins, `manifest.json`. The 0.8.0 release candidate was built (see status.md). |
 
-In-game menu (`scol-menu`, `sc_offline_menu.dll`): built on egui. It renders `sco.widgets` panels through the widgets view C interface and sends the events back. Tested against a Rust stand-in view and against sco-core's real view (core-241): 46 checks pass. The C++ host hook is `src/menu_rust.cpp`; it is opt-in (`SC_OFFLINE_MENU=rust`), the ImGui menu stays the default, and it is compiled only with `-DSCO_HOST_MENU_CLIENT=ON` against a Core that has `sco/widgets_view.h`.
+Evidence level of every row above: source, build, synthetic stand-ins, or the scripts named. Nothing was run in game.
 
-Not built, or not proved:
+### Not built
 
-- Not run in game: play, the helper, the window, the menu, any capability switch.
-- Not exercised on a real PC: the elevated (UAC) helper, the shell-token game start when elevated, the real PC changes (netsh, hosts file, EAC rename), the live download and swap of an update (only the release check was run against GitHub).
-- The window does not restart itself after an update. The folder picker is not ported: with no game found, `play` prints the `game =` message. A game that fails to start makes the Rust launcher clean up at once; the C++ launcher waits for its own exit.
-- No `stop` command on the command line; Stop exists only in the window.
-- The automatic update check before `play` (`check_updates = on`) prints a one-line notice only (3 s limit); it does not offer to install. Use `update` or the window's Update button.
-- The catalogue has no production signing key (`TrustRoot::embedded()` is empty), so every real index is refused. There is no production index URL, so `plugins catalogue` takes a local folder. The window's catalogue download uses WinHTTP but is refused for the same reason.
-- Menu: no Settings page, no `scom_host_v1` callbacks, no `menu-window.ini` or `menu-view.ini` persistence, no cursor clip or software cursor, no background image or golden-image comparison. The window opens on F8 (`SC_OFFLINE_MENU_KEY`), not on M. The `menu = imgui|rust` ini key is not written by the launcher. The menu DLL has no Drop and never unloads.
-- The `release` profile uses `panic = unwind` (the default), because the menu DLL catches panics at its exported functions inside the game. The `abort` setting of the first skeleton was removed.
-- The menu draws with fonts read from the Windows font folder at run time (Bahnschrift, Segoe UI, Arial, Tahoma, Calibri); egui's bundled fonts are off. With none of them present the menu does not start.
-- Cutover (P8) is not done. `sc-offline-rs.exe` is shipped only as a preview in the test package.
+- Travel to other planets (zone lookup beyond the player's chain). Not in 0.8.0.
+- A production catalogue signing key and index URL. `scol_contract::product::CATALOGUE_TRUST_KEYS` is empty on purpose. Adding the key is a release-time owner act; the test key must never go there. The WinHTTP index fetch was only run through the fetcher trait with the test key, never over the real network.
+- Capability names of rows without a switch stay English in the Russian window.
+- No plugin catalogue index is published.
+- CI does not run the C++ update contract test (`-DSCO_UPDATE_TEST`), the creative proof, or the menu host; they are run by hand.
+
+### Not run in game
+
+- Play, the helper, the elevated (UAC) path, the shell-token game start when elevated, the real PC changes (netsh, hosts file, EAC rename): not run on a real PC with the real game. The `Safer` normal-user token self-test ran only from a non-elevated process.
+- The window against a real game; the real Update swap on a real install (only the release check was run against GitHub); the window's restart after an update (it would open a window).
+- The Rust menu: the M-key handoff, cursor clip, giving the foreground back, borderless resize by edge drag, DPI and two-monitor placement, the classic-pages handoff, and loading into the game at all. It ships opt-in (`menu = rust`) for that reason.
+- Capability switches: `exp_loadout_async` was seen working in game (gear attached). `exp_inventory_read`, `exp_actor_stats_write`, `exp_cvars_native` and `exp_audio_native` have not been run in game; they are on by default by owner decision. `exp_entities_diag` is off.
+
+### Facts that matter when reading the code
+
+- The `release` profile uses `panic = unwind`, because the menu DLL catches panics at its exported functions inside the game.
+- The menu draws with fonts read from the Windows font folder at run time (Bahnschrift, Segoe UI, Arial, Tahoma, Calibri). With none of them present the menu does not start.
+- The Rust menu opens on M, like the ImGui menu, and replaces it while selected (`SC_OFFLINE_MENU_KEY` changes the key). The ImGui menu stays for `sco.ui` tabs through the Classic pages entry.
+- The launcher is cut over by owner decision: the Rust exe is `sc-offline.exe`, the C++ exe is `sc-offline-classic.exe` and can undo PC changes from the same `pc-changes.txt`. The `dev241.*` test packages' `sc-offline-rs.exe` name is retired.
 
 How to re-run the checks (Windows, own `CARGO_TARGET_DIR`):
 
@@ -51,7 +64,7 @@ python tests/plugins/creative-proof.py ...    # see tests/plugins/README.md
 CORE=<Core checkout> OUT=<scratch> bash tests/menu/run.sh
 ```
 
-CI job `rust-launcher` runs the build, tests, deny, the status and dry-run parity, the stand-in run and the window self test; the update contract, the creative proof and the menu host are run by hand.
+CI job `rust-launcher` builds and tests every crate, runs clippy and `cargo deny`, the status, dry-run and install parity, the stand-in run, the window self test, the MCP stdio session and the version check, and uploads the launcher and menu for the release job; the update contract, the creative proof and the menu host are run by hand.
 
 ## Owner decisions (2026-11-17)
 

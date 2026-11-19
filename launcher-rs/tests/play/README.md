@@ -28,7 +28,21 @@ is kept as `launcher.log.1`).
 python tests/play/real_standin.py [--rust <sc-offline.exe>] [--standin <scol-play-standin.exe>]
 ```
 
-The in-process tests with the fake host are `crates/scol-play/tests/flow.rs` and
-`crates/scol-cli/tests/cli.rs`.
+`stop_standin.py` runs the real Rust `sc-offline.exe stop` against a stand-in game that behaves like the game with
+the mod loaded (`SCOL_STANDIN_STOPPABLE=1`: the two named events of the stop channel, one small window, an exit-work
+marker file). Scenarios: nothing running; the mod answers and the window is closed after it; the mod does not
+answer for ten seconds and the window is closed anyway; the game ignores WM_CLOSE and `stop --end` ends exactly
+that process after the minute (about 70 s, `--skip-end` leaves it out); a stand-in under another folder is left
+alone. The script checks the `[stop hh:mm:ss.mmm]` lines in `data\launcher.log`. It closes and ends only stand-ins
+it started itself.
+
+```
+python tests/play/stop_standin.py [--rust <sc-offline.exe>] [--standin <scol-play-standin.exe>] [--skip-end]
+```
+
+The in-process tests with the fake host are `crates/scol-play/tests/flow.rs` (the whole flow),
+`crates/scol-play/tests/picker_and_update.rs` (the game folder picker and the update check before `play`) and
+`crates/scol-cli/tests/{cli,stop_and_plugins}.rs`. The folder dialog itself (`IFileOpenDialog`) is never opened by a
+test: the host trait scripts the answer, and the real dialog is only checked for its v-table layout.
 
 Source, build and synthetic evidence only. Not run in game.

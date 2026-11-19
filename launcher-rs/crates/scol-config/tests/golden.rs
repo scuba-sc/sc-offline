@@ -134,6 +134,7 @@ fn dump_config(c: &Config, messages: &[String], returned: bool) -> String {
     line("multiplayer_allow", &c.multiplayer_allow);
     line("asop", on_off(c.asop));
     line("asop_fleet_list", &c.asop_fleet_list);
+    line("menu", c.menu.word());
     for s in &SWITCHES {
         line(s.ini_key, on_off(c.capabilities.is_on(s)));
     }
@@ -675,7 +676,13 @@ fn shipped_ini_golden() {
             .lines()
             .find(|l| l.starts_with(&comment))
             .unwrap_or_else(|| panic!("no comment for {}", s.ini_key));
-        assert!(line.contains("Not run in game"), "{line}");
+        // The owner saw gear equip work in game (2026-11); every other switch has not run in game.
+        let said = if s.ini_key == "exp_loadout_async" {
+            "Seen working in game"
+        } else {
+            "Not run in game"
+        };
+        assert!(line.contains(said), "{line}");
     }
 
     // Same results as the C++ launcher wrote for the file.

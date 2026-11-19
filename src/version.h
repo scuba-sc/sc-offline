@@ -4,8 +4,8 @@
 // sc-offline is based on ChrisWareOffline 0.9.0-rc1 (GPL-3.0); see CHANGELOG.md.
 // Keep SCO_VERSION and the three numbers below in step (the .rc version block reads the numbers).
 #define SCO_VERSION_MAJOR 0
-#define SCO_VERSION_MINOR 7
-#define SCO_VERSION_PATCH 8
-#define SCO_VERSION  "0.7.8.3"
+#define SCO_VERSION_MINOR 8
+#define SCO_VERSION_PATCH 0
+#define SCO_VERSION  "0.8.0"
 #define SCO_TITLE    "sc-offline v" SCO_VERSION
 #define SCO_BASED_ON "based on ChrisWareOffline 0.9.0-rc1"

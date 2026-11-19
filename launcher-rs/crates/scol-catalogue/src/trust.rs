@@ -25,7 +25,7 @@ pub const SIG_MAGIC: &str = "sc-plugins-index-sig-v1";
 /// sc-plugins) and adds its public half here in the release change. With no key, every index is
 /// refused with [`Error::NoTrustKeys`]. The TEST key under `tests/` of sc-plugins must never be
 /// added here.
-pub const PRODUCTION_KEYS: &[&str] = &[];
+pub const PRODUCTION_KEYS: &[&str] = &scol_contract::product::CATALOGUE_TRUST_KEYS;
 
 #[derive(Debug, Clone)]
 pub struct TrustKey {

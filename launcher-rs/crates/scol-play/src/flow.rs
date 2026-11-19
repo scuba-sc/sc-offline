@@ -18,7 +18,7 @@ use scol_config::{read_config, Config, LogChoice};
 use scol_contract::{exit_code, files};
 use scol_install::fsops::{can_write_to, create_dir};
 use scol_install::install::put_mod;
-use scol_install::paths::{parent_dir, GamePaths, GAME_EXE};
+use scol_install::paths::{parent_dir, to_bin64, GamePaths, GAME_EXE};
 use scol_install::status::{fail, fail_code, find_game, pause_if_own_console, self_checks};
 use scol_install::version::SCO_VERSION;
 use scol_pcchanges::changes::game_exe_in;
@@ -84,6 +84,64 @@ fn pc_wanted(cfg: &Config) -> PcWanted {
         lan: cfg.firewall && cfg.multiplayer,
         allow: cfg.multiplayer_allow.clone(),
     }
+}
+
+/// Step 1 of `wmain`: [`find_game`], and when `--game` and `game =` say nothing and nothing is found by
+/// itself, the folder picker (`PickFolder`) if the host can show one: the folder dialog, for the player to
+/// name the StarCitizen folder. The pick is remembered like a discovered game (`discovered` true), unless
+/// this is a dry run. A cancelled or wrong pick fails with the "set game =" message.
+fn find_game_or_pick(
+    here: &str,
+    game_arg: &str,
+    cfg: &Config,
+    host: &mut dyn Host,
+    out: &mut dyn Write,
+) -> Result<(String, bool), i32> {
+    if !game_arg.is_empty() || !cfg.game.is_empty() {
+        return find_game(here, game_arg, cfg, out);
+    }
+    let found = host.discover_game(here, &cfg.channel, out);
+    if let Some(first) = found.first() {
+        let _ = writeln!(out, "[i] found the game {}", first.how);
+        for f in &found[1..] {
+            let _ = writeln!(
+                out,
+                "[i] also found {} (set game = in sc-offline.ini to use it)",
+                f.bin
+            );
+        }
+        return Ok((first.bin.clone(), true));
+    }
+    if !host.can_pick_folder() {
+        return Err(fail(
+            out,
+            &format!(
+                "couldn't find Star Citizen ({}). Open sc-offline.ini and set\n    game = <your StarCitizen folder>\nor pass --game <folder>",
+                cfg.channel
+            ),
+        ));
+    }
+    let _ = writeln!(
+        out,
+        "[i] couldn't find Star Citizen ({}) by itself. Pick your StarCitizen folder in the window that opens.",
+        cfg.channel
+    );
+    let picked = host.pick_folder();
+    let bin = picked
+        .as_deref()
+        .map(|p| to_bin64(p, &cfg.channel))
+        .unwrap_or_default();
+    if bin.is_empty() {
+        return Err(fail(
+            out,
+            &format!(
+                "no {GAME_EXE} under {} (channel {}). Open sc-offline.ini and set\n    game = <your StarCitizen folder>",
+                picked.as_deref().unwrap_or("(nothing picked)"),
+                cfg.channel
+            ),
+        ));
+    }
+    Ok((bin, true))
 }
 
 fn on_off(b: bool) -> &'static str {
@@ -159,11 +217,13 @@ pub fn run_play(args: &PlayArgs, host: &mut dyn Host, here: &str, out: &mut dyn 
 
     // 0. Updates. Never blocks play: the host's hook skips whatever goes wrong.
     if cfg.check_updates && !dry && mode == Mode::Play {
-        host.check_update(&cfg, out);
+        if let Some(code) = host.check_update(&cfg, out) {
+            return code;
+        }
     }
 
     // 1. Find the game.
-    let (bin, discovered) = match find_game(here, &args.game_arg, &cfg, out) {
+    let (bin, discovered) = match find_game_or_pick(here, &args.game_arg, &cfg, host, out) {
         Ok(found) => found,
         Err(code) => return code,
     };

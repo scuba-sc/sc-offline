@@ -18,7 +18,7 @@ const GOLDEN_SIG: &[u8] = include_bytes!("../../../tests/catalogue/golden/index.
 #[cfg(feature = "fixtures")]
 const TEST_PUBLIC_HEX: &str = include_str!("../../../tests/catalogue/golden/TEST-ONLY-public.hex");
 
-const PLUGIN_A: &str = "id = alpha\nname = Alpha Pack\nversion = 1.2\nauthor = Example Author\ndescription = Synthetic data plugin for the window test.\napi = 1.0\nkind = data\nentry = none\n";
+const PLUGIN_A: &str = "id = alpha\nname = Alpha Pack\nversion = 1.2\nauthor = Example Author\ndescription = Synthetic data plugin for the window test.\napi = 1.0\nkind = data\n";
 const PLUGIN_B: &str = "id = beta\nname = Beta Script\nversion = 0.3\nauthor = Example Author\napi = 1.0\nkind = lua\nentry = main.lua\n[settings]\nenabled = bool default true label \"Enabled\" help \"Turn it on\"\ncount = int min 1 max 10 default 5\nmode = enum(fast,slow) default slow\n";
 const PLUGIN_C: &str = "id = gamma\nname = Gamma Native\nversion = 2.0\nauthor = Example Author\napi = 1.0\nkind = native\nentry = gamma.dll\n";
 

@@ -88,6 +88,45 @@ mod tests {
         }
     }
 
+    /// Every text key the code names exists in English and in Russian, so a page never shows a key.
+    #[test]
+    fn no_missing_keys_in_code() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut seen = 0;
+        for e in std::fs::read_dir(dir).unwrap().flatten() {
+            let path = e.path();
+            if path.extension().is_none_or(|x| x != "rs")
+                || path.file_name().is_some_and(|n| n == "locale_table.rs")
+            {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap();
+            let mut rest = text.as_str();
+            while let Some(i) = rest.find("\"launcher.") {
+                let tail = &rest[i + 1..];
+                let end = tail.find('"').unwrap();
+                let key = &tail[..end];
+                rest = &tail[end + 1..];
+                // Keys with a hole (`launcher.ui.cap.{}.name`) are built at run time; caps.rs tests them.
+                if key.contains('{') || key.ends_with('.') || key.contains(' ') {
+                    continue;
+                }
+                seen += 1;
+                assert!(
+                    find(EN, key).is_some(),
+                    "{}: no English text for {key}",
+                    path.display()
+                );
+                assert!(
+                    find(RU, key).is_some(),
+                    "{}: no Russian text for {key}",
+                    path.display()
+                );
+            }
+        }
+        assert!(seen > 80, "the scan found only {seen} keys");
+    }
+
     #[test]
     fn lookup_and_format() {
         assert_eq!(tr(Lang::En, "launcher.action.play"), "Play");

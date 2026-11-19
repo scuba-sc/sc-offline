@@ -36,6 +36,9 @@ from typing import NoReturn
 ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else Path(__file__).resolve().parent.parent).resolve()
 BUILTINS = ROOT / "src" / "builtins"
 PLUGINS = ROOT / "plugins"   # plugins built from this repo; clean, no allow-list entries
+# Test helpers a plugin's own *_test.cpp may include. They hold test code only and include SDK headers only;
+# a test never ships in a plugin DLL.
+TEST_HELPERS = {(ROOT / "tools" / n).resolve() for n in ("panel_dump.h", "workflow_module.h")}
 SCO = ROOT / "external" / "sco-core"
 PACKAGE = SCO / "sdk" / "package.py"
 MANIFEST = SCO / "sdk" / "components.json"
@@ -209,6 +212,8 @@ def main():
                     continue  # the standard library or the Windows SDK
                 verdict = "does not resolve"
             elif under(hit, own):
+                continue
+            elif f in plugin_files and f.stem.endswith("_test") and hit in TEST_HELPERS:
                 continue
             elif under(hit, SCO / "include") and (name in top or name.split("/")[0] in dirs):
                 continue

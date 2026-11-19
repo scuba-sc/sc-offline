@@ -9,6 +9,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+scol-contract = { path = "../scol-contract" }
 scol-plugins = { path = "../scol-plugins" }
 # Ed25519 verification. ed25519-compact: MIT, no dependencies (default features off), one small
 # audited-by-use implementation with strict verification (rejects non-canonical signatures and

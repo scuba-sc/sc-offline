@@ -1,5 +1,36 @@
 # What is not verified in game
 
+## 0.8.0: what was and was not run in game
+
+Game build **4.10.200.58746**, sco-core SDK **2.4.1**, game pack **0.8.1**. The owner ran one or two sessions of each item below. Nothing else was run in game. Builds, mocks, signatures, static catalogues and synthetic tests are not game results.
+
+**Seen in game by the owner:**
+
+| What | What was seen |
+| --- | --- |
+| Gear equip through `game.loadout.async` | The items attached (`AttachmentReceived` in `Game.log`). |
+| Prefab placement through `game.prefabs` | An Outposts item was placed. |
+| Ship spawn, boarding and Flight Ready | They worked. |
+| Character spawn | It worked. |
+| A saved-spot move (F7 then F8) | The player really moved to the spot. **Core did not confirm the arrival** (its own 0.05 m and 1 degree check stayed unmet). The teleport plugin now also reads the player's own position and reports "arrived" within 2 m; that new check has not been run in game. |
+| The seat probe | It logged Enter and Exit. |
+
+**Not run in game:**
+
+- **The Rust launcher's play path and its elevated helper.** `sc-offline.exe play` (the Rust launcher) has run only against a stand-in game process, with status text (60 scenarios), dry-run text (25) and install file trees (42) compared with the C++ launcher in synthetic scenarios. The UAC helper, the real firewall rules, the hosts-file line, the Easy Anti-Cheat rename and the shell-token game start have not been run on a real PC with the real game.
+- **The Rust in-game menu** (`sc_offline_menu.dll`, `menu = rust`). It has been checked against a stand-in widgets view (106 checks) and Core's own view (247 checks, 77 controls on 9 page shapes). The M-key handoff, cursor clip, resize and the classic-pages handoff are written but have not run. It has never been loaded into the game. It ships opt-in for that reason.
+- **The update swap.** The release check was run against GitHub and the swap against local zips with rollback; no real 0.7.x to 0.8.0 update has been run.
+- **The catalogue network path.** No production signing key exists, so the shipped trust root is empty and no index is accepted from the network; the local-folder path was run against a synthetic signed index and the real creative plugin, not in game.
+- **The other capability switches.** `exp_inventory_read`, `exp_actor_stats_write`, `exp_cvars_native` and `exp_audio_native` are on by default and have not been run in game; `exp_audio_native` is refused by this Core and logs why. `exp_entities_diag` is off.
+- **Travel to other planets.** Not in 0.8.0 (a documented gap; see [features.md](features.md#travel-between-places)). `quantum.travel` as a whole has not been run in game.
+- **Every other feature** in [features.md](features.md): crew actions beyond the seat probe, NPC commands, build undo and clear, contracts, mining, multiplayer, creative, inspector, ASOP terminals and hangars, the plugin pages and the menu pages.
+- **Release packaging.** Release candidate `sc-offline-0.8.0-rc1` was assembled on a development machine from plugin builds made against the development SDK 2.4.1 archive, and its file list and manifest were checked. Nothing in it has run in a game. The release job still refuses to package an unpublished development Core by design; the owner moves the `external/sco-core` pin and publishes the SDK.
+- **The window against a real game.** Browse (folder picker), plugin-settings save and the restart after an update are built and tested without a game; the restart was not run.
+
+**Checked on a development machine (synthetic, not game results):** the consumer proofs `tools/check_{inspector,crew,npc,spawn,build,loadout,mining,discord,teleport,quantum}_sdk.py` and `tools/contracts_sdk_check.py --slice read` pass against the development SDK 2.4.1 archive (SHA-256 `634ec29627646c37200d4cc570fed1fb5d487bfb3b161fc1271581e491bc4aa7`, source `5858fdb65bf8`, `--candidate`, MSVC 2022); `check_titanlink_sdk.py` and `check_voxel_bridge_sdk.py` pass against the stable SDK 2.4.0 archive. On the final tree the Rust workspace passes `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo deny check` and `cargo test --workspace` (414 tests, 0 failed, 2 hand-run dialog tests ignored). The C++ launcher passes the launcher contract check (735 golden files), the status/config test (489 checks), the MCP stdio proof and the update contract in both directions with the old C++ launcher. These prove contracts, builds and refusal paths with stand-in services only.
+
+The sections below are older records; their "not run" lists still apply to everything not named in the table above.
+
 ## Host wiring fixes (menu-organization branch) — NOT RUN IN GAME
 
 Synthetic and source-text checks only; nothing here was run in game.
@@ -40,7 +71,7 @@ coordinate `2.4.1-dev.6`. [SDK coordinates](sdk-candidate.md) records only the
 earlier `2.4.1-dev.3` digests; none are recorded for this pairing yet, and earlier
 stable and development receipts do not recertify it. The paired-source runner requires
 a new clean committed Offline identity before qualification. ASOP composition remains
-refused. **Not run in game.**
+refused. **Not run in game.** The 0.8.0 release moves the pin to the published SDK 2.4.1 source; until the owner does that and publishes the SDK, the release job stays blocked.
 
 ## Historical stable SDK 2.4.0 consumer integration
 

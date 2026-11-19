@@ -26,11 +26,74 @@ The host is pinned to the exact `external/sco-core` gitlink, an unpublished Core
 
    On Visual Studio 2022, configure with `-G "Visual Studio 17 2022" -A x64 -T v143` instead.
 
-3. The build produces `dinput8.dll` (the mod, from `src/`) and `sc-offline.exe` (the launcher, from `launcher/`) in `build\bin\Release\` (`build\bin\Debug\` for Debug; directly in `bin\` of the build folder with a single-configuration generator such as Ninja, which Visual Studio's Open Folder uses by default). To play, put both in a folder together with `data/` and `launcher/sc-offline.ini`. Feature plugins build separately against the verified published SDK, using the [SDK workflow proofs](sdk-workflows.md). The host build does not produce their DLLs; a host-only local build needs matching external plugin folders staged separately.
+3. The build produces `dinput8.dll` (the mod, from `src/`) and `sc-offline.exe` (the C++ launcher, from `launcher/`; the release ships it as `sc-offline-classic.exe`) in `build\bin\Release\` (`build\bin\Debug\` for Debug; directly in `bin\` of the build folder with a single-configuration generator such as Ninja, which Visual Studio's Open Folder uses by default). To play, put both in a folder together with `data/` and `launcher/sc-offline.ini`. Feature plugins build separately against the verified published SDK, using the [SDK workflow proofs](sdk-workflows.md). The host build does not produce their DLLs; a host-only local build needs matching external plugin folders staged separately.
 
 The root targets are `dinput8`, `sc-offline`, `imgui`, the three test plugins (`spawn_probe`, `builtins_probe`, `ui_probe`) and the linked sco-core libraries. All use the static CRT; Release enables whole-program optimization. The host registers no built-in feature plugins. The player release stages the `player-offline` profile in [`tools/release-plugin-profiles.json`](../tools/release-plugin-profiles.json): 11 native modules, whose manifests and DLLs staging verifies; Discord keeps its disabled marker. `gear_presets` and `loadout` are development consumers; TitanLink and voxel_bridge are separately built optional bridges; `sc-mp` is a separate co-presence consumer. The [scuba-engine hostd profiles](https://github.com/scuba-sc/scuba-engine/blob/main/docs/engine/profiles.md) pick trusted plugins for synthetic, headless checks; they are not player packages and not evidence of game readiness. Staging a plugin does not turn on a missing or default-off provider.
 
 No Visual Studio? CI builds both on every push to `main`. Download the `dinput8-release` artifact from [Actions](https://github.com/scuba-sc/sc-offline/actions).
+
+## Build the Rust launcher and menu
+
+From 0.8.0 the launcher the player runs is the Rust workspace in `launcher-rs/` (14 crates under `crates/`: `scol-contract`, `scol-config`, `scol-plugins`, `scol-install`, `scol-pcchanges`, `scol-redact`, `scol-mcp`, `scol-catalogue`, `scol-play`, `scol-update`, `scol-ui`, `scol-plugin-manager`, `scol-menu` and `scol-cli`). It builds the release `sc-offline.exe`, `sc_offline_menu.dll` (the opt-in Rust in-game menu) and a few helper programs. You need `rustup`; the toolchain is pinned in `launcher-rs/rust-toolchain.toml` (Rust 1.99.0, `x86_64-pc-windows-msvc`) and the MSVC linker from the Visual Studio workload above.
+
+```powershell
+cd launcher-rs
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo build --release --workspace
+cargo test --workspace
+cargo deny check
+```
+
+Use your own `CARGO_TARGET_DIR` when several builds share a PC. Add `--locked` in CI so `Cargo.lock` must already be current. Outputs are in `target\release\`: `sc-offline.exe` (about 6 MB, no dynamic C runtime), `sc_offline_menu.dll`, `scol-pm.exe` and `scol.exe` (an alias of `sc-offline.exe` for the comparison scripts).
+
+Checks that need no game (the `rust-launcher` CI job runs them; `docs/rust-launcher.md` has the full list and what each one shows):
+
+```powershell
+python tests/status/compare_status.py --cpp <C++ sc-offline.exe> --rust target/release/sc-offline.exe
+python tests/play/compare_dryrun.py   --cpp <C++ sc-offline.exe> --rust target/release/sc-offline.exe
+python tests/play/real_standin.py     --rust target/release/sc-offline.exe --standin target/release/scol-play-standin.exe
+python tests/install/compare.py       --cpp <C++ sc-offline.exe> --rust target/release/examples/install_probe.exe   # after: cargo build --release -p scol-install --example install_probe
+python tests/zip-corpus/generate.py --check
+cargo run -p scol-ui --features fixtures -- --ui-self-test
+python ../tools/check_launcher_mcp.py --exe target/release/sc-offline.exe
+```
+
+By hand only: the update contract against a C++ build with `-DSCO_UPDATE_TEST` (`SCOL_CPP_UPDATE_EXE=... cargo test -p scol-update --features test-hooks`), the creative plugin proof (`tests/plugins/creative-proof.py`) and the in-game menu host (`CORE=<Core checkout> bash tests/menu/run.sh`, needs a Core with `sco/widgets_view.h`). All of this is source, build and synthetic evidence. None of it ran in game.
+
+### CMake options that change the menu
+
+`SCO_HOST_MENU_CLIENT` (default `OFF`) builds the host menu client (`src/menu_widgets.cpp`) and the opt-in Rust menu hook (`src/menu_rust.cpp`). It needs a Core with `sco/host_menu.h`, a widgets 1.3 renderer and, for the Rust hook, `sco/widgets_view.h`. With it `OFF`, `dinput8.dll` has no Rust hook and the ini key `menu = rust` does nothing. Turning it `ON` also changes how the ImGui menu gets its panels, and that path has not been run in game, so the project's default build and CI leave it `OFF` until the owner has run it. A release that is meant to carry the opt-in Rust menu must configure with `-DSCO_HOST_MENU_CLIENT=ON`; say so in its release notes.
+
+## Build a release package without CI
+
+`tools/package_release.py` assembles the same folder and zip the `release` job publishes, from build outputs you give it. It needs Python 3 only.
+
+```powershell
+python tools/package_release.py --tag v0.8.0 --out dist `
+  --rust-exe  launcher-rs\target\release\sc-offline.exe `
+  --classic-exe build\bin\Release\sc-offline.exe `
+  --menu-dll  launcher-rs\target\release\sc_offline_menu.dll `
+  --dinput8   build\bin\Release\dinput8.dll `
+  --artifact-root <folder with built-external\, built-inspector\, built-npc\, built-contracts\> `
+  --check-tree
+```
+
+It writes `dist\sc-offline-v0.8.0\` and `dist\sc-offline-v0.8.0.zip`:
+
+| In the package | From |
+| --- | --- |
+| `sc-offline.exe` | the Rust launcher (`--rust-exe`) |
+| `sc-offline-classic.exe` | the C++ launcher (`--classic-exe`), the fallback |
+| `sc_offline_menu.dll` | the Rust menu (`--menu-dll`), used only with `menu = rust` |
+| `dinput8.dll` | the mod (`--dinput8`) |
+| `sc-offline.ini`, `sc-offline.sh`, `README.md`, `CHANGELOG.md`, `LICENSE`, `THIRD_PARTY_NOTICES.md` | the repository |
+| `docs\`, `data\` | the tracked files (`git ls-files`; `data\buildables.txt` moves into the `build_catalog` pack) |
+| `data\plugins\picker_catalog`, `build_catalog`, `locations_catalog` | the list packs copied from `data\ships.txt`, `npcs.txt`, `buildables.txt` and `locations.txt` |
+| `data\plugins\<id>\` | the `player-offline` profile of `tools/release-plugin-profiles.json`, staged by `tools/stage-release-plugins.py` from `--artifact-root` |
+| `manifest.json` | format 1: every other file with its SHA-256 and size |
+
+The tag must equal `SCO_VERSION` in `src/version.h` (a launcher refuses an update whose manifest version differs from its tag). The script unpacks the zip into a scratch folder and checks it against the manifest again; `--check-tree` also runs `tools/check_package_tree.py` on the folder (it needs the plugin sources in the checkout, including the `external/sc-creative` submodule). Nothing is uploaded, tagged or pushed. `python tools/test_package_release.py` tests it on a synthetic tree with stand-in binaries.
 
 ## How the code is organized
 
@@ -83,10 +146,11 @@ Builds the launcher with `-DSCO_UPDATE_TEST` and runs 14 update scenarios (good 
 4. `build` (needs `check`) configures and builds Release x64 with CMake and MSVC on Windows, then checks the binaries with `dumpbin` and `mt`: `dinput8.dll` exports `DirectInput8Create` forwarded to System32's `dinput8.dll`, both files are x64, neither imports the dynamic C runtime, `sc-offline.exe`'s manifest asks for `asInvoker` (the launcher asks for administrator rights itself when it needs them), and the DLL contains neither bridge. It uploads `dinput8-release` (the DLL and launcher) and `test-plugins` (never part of a release).
 5. The optional bridges are not built in CI and are excluded from the host and release; the retired host bridge options (`SCO_BRIDGE_TITANLINK`, `SCO_BRIDGE_VOXEL`) fail configuration on purpose.
 6. `npc-sdk-posix` / `npc-sdk` and `inspector-sdk-posix` / `inspector-sdk` download and verify the published stable `sco-sdk-2.4.0.zip` (`sdk-v2.4.0`), compile outside the host checkout, check exact compiler dependencies and run each named module workflow and published checker. POSIX also exercises private-header/symbol and transitive-header negative controls; Windows uploads enabled `npc-plugin` and `inspector-plugin` folders. These isolated jobs do not initialize the host submodule. See the [worked tutorial](sdk-workflows.md).
+6a. `rust-launcher` builds and tests every crate of `launcher-rs/` with clippy `-D warnings`, runs the window self test, builds the C++ launcher from the same source, and runs the comparison scripts that need no game (status, dry-run play, install and uninstall, the stand-in game with the real helper, the plugin zip corpus, the launcher contract files, the MCP stdio session against the Rust exe), checks that the Rust exe reports the version of `src/version.h`, checks the release exes for dynamic CRT imports, runs `cargo deny check`, and uploads `rust-launcher-release` (`sc-offline.exe` and `sc_offline_menu.dll`) for the release job.
 7. `external-sdk` builds/checks/stages discord, crew, spawn, build, mining, teleport and quantum independently on Windows using the same published stable archive; `creative-sdk` does the same for creative from the `external/sc-creative` submodule, running that repository's own `tools/check_creative_sdk.py` before the folder is staged. `contracts-sdk` supplies the command-first contracts folder; its providers remain deferred.
 8. `launcher-mcp` runs `tools/check_launcher_mcp.py`: the portable protocol, schema, log-limit and redaction tests on Windows. The `build` job then runs it again with `--exe` against the built launcher, in a scratch install, and checks that the server wrote nothing.
 9. `development-sdk-proofs` runs the isolated consumer proofs against the Core the gitlink selects.
-10. `release` runs on tags only and needs the jobs above. Its first step currently fails on purpose ("Refuse packaging an unpublished development Core with stable plugin artifacts"), so no tag builds a release until matching release SDK and plugin artifacts have been reviewed. After that step it assembles the launcher, host DLL, configuration, tracked data and docs, the 11 external feature folders, notices and `manifest.json`. Discord keeps its disabled marker; the other ten folders ship enabled. Loadout, multiplayer, bridges and test plugins are not staged.
+10. `release` runs on tags only and needs the jobs above (`rust-launcher` included). It downloads the C++ launcher and `dinput8.dll` from `build`, the Rust files from `rust-launcher`, and the plugin folders, then runs `tools/package_release.py` as in the section above, with `--check-tree`. Its first step currently fails on purpose ("Refuse packaging an unpublished development Core with stable plugin artifacts"), so no tag builds a release until matching release SDK and plugin artifacts have been reviewed. After that step it assembles the launcher, host DLL, configuration, tracked data and docs, the 11 external feature folders, notices and `manifest.json`. Discord keeps its disabled marker; the other ten folders ship enabled. Loadout, multiplayer, bridges and test plugins are not staged.
 
 ### Stable-ID test fixture provenance and packaging
 
@@ -98,7 +162,7 @@ local `src/hooks.cpp` and compiles them with synthetic registry/engine reads and
 platform stand-ins. Its temporary ships file is generated by the test. It is not a
 game execution, production registry evidence, or gameplay acceptance.
 
-The tag release stages tracked `docs/` and `data/`, selected root files and built
+The tag release (`tools/package_release.py`) stages tracked `docs/` and `data/`, selected root files and built
 artifacts; it does not stage this `tools/` fixture or its generated files. The
 release manifest describes the staged payload, not all source/test inputs. The
 manifest regression test checks the tracked docs/data staging and a local ZIP

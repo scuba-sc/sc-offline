@@ -225,6 +225,9 @@ struct Config {
     // Which ship list the terminals show with asop on: ships (ships.txt) or game (the game's own,
     // empty offline). ships when the ini doesn't say, so an older ini gets a usable terminal too.
     wstring asopFleetList = L"ships";
+    // Which in-game menu the mod shows: imgui (the default) or rust (the opt-in Rust menu, never run in game).
+    // Exported as SC_OFFLINE_MENU on play.
+    wstring menu = L"imgui";
     // The capability switches, indexed like kExperimental; the constructor sets each to its default.
     bool experimental[ARRAYSIZE(kExperimental)];
     Config() { for (size_t i = 0; i < ARRAYSIZE(kExperimental); ++i) experimental[i] = kExperimental[i].defaultOn; }};
@@ -387,6 +390,11 @@ static bool ReadConfig(const wstring& path, Config& c) {
         else if (!_wcsicmp(k.c_str(), L"asop_fleet_list")) {
             if (!_wcsicmp(v.c_str(), L"game") || !_wcsicmp(v.c_str(), L"ships")) c.asopFleetList = v;
             else Out("[!] sc-offline.ini line %d: asop_fleet_list must be game or ships\n", lineNo);
+        }
+        else if (!_wcsicmp(k.c_str(), L"menu")) {
+            if (!_wcsicmp(v.c_str(), L"imgui")) c.menu = L"imgui";
+            else if (!_wcsicmp(v.c_str(), L"rust")) c.menu = L"rust";
+            else Out("[!] sc-offline.ini line %d: menu must be imgui or rust\n", lineNo);
         }
         else if (!_wcsicmp(k.c_str(), L"mining") || !_wcsicmp(k.c_str(), L"mining_debug")) {
             Out("[!] sc-offline.ini line %d: mining moved to plugin settings; use data/plugins/mining/import_settings.py deliberately while launcher/game are closed\n", lineNo);
@@ -5529,7 +5537,7 @@ int wmain(int argc, wchar_t** argv) {
     if (play) {
         sco::launcher::contract::PlayEnvInput envIn;
         envIn.bootMap = cfg.bootMap; envIn.start = cfg.start; envIn.startShip = cfg.startShip;
-        envIn.multiplayerAllow = cfg.multiplayerAllow; envIn.asopFleetList = cfg.asopFleetList;
+        envIn.multiplayerAllow = cfg.multiplayerAllow; envIn.asopFleetList = cfg.asopFleetList; envIn.menu = cfg.menu;
         envIn.registryProbe = cfg.registryProbe; envIn.data = data; envIn.userDir = g.userDir;
         envIn.plugins = cfg.plugins; envIn.relocation = cfg.relocation; envIn.multiplayer = cfg.multiplayer; envIn.asop = cfg.asop;
         for (const auto& kv : sco::launcher::contract::PlayEnv(envIn)) SetVar(kv.first.c_str(), kv.second);

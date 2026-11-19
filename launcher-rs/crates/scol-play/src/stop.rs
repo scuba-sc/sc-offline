@@ -217,6 +217,121 @@ pub fn end_game(
     (ended, failed)
 }
 
+/// What `stop` does when the game is still running after the wait.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EndPolicy {
+    /// Say how to end it and leave it running.
+    Never,
+    /// Ask once (a console); no answer counts as no.
+    Ask,
+    /// End the recorded processes without asking (`stop --end`).
+    Yes,
+}
+
+/// The settings of one [`run_stop_command`].
+#[derive(Clone, Copy, Debug)]
+pub struct StopCommand<'a> {
+    /// The game's Bin64 folder; empty when unknown.
+    pub bin: &'a str,
+    /// How long the mod may take to answer its stop event (`STOP_ACK_WAIT_MS`).
+    pub ack_wait_ms: u32,
+    /// How long to wait for the game to be gone after Stop (`STOP_WAIT_SECONDS`). 0: do not wait; the
+    /// window uses 0 because it shows the state by itself.
+    pub wait_seconds: u32,
+    pub end: EndPolicy,
+}
+
+/// True when one of the recorded processes still runs (same pid and creation time).
+fn still_running(port: &mut dyn StopPort, bin: &str, targets: &[GameProc]) -> bool {
+    let now = port.find_game_procs(bin);
+    targets.iter().any(|t| now.contains(t))
+}
+
+/// The `stop` command and the window's Stop action: the stop channel, then WM_CLOSE (`stop_game`), then,
+/// when `wait_seconds` is not 0, a wait for the game to be gone and the End step the C++ window offers
+/// after `kStopWaitSeconds`. Output lines are the window's texts. Returns the exit code: 0 when the game
+/// was asked to close and is gone (or nothing was running, or `wait_seconds` is 0), 1 when the folder is
+/// unknown or the game is still running at the end.
+pub fn run_stop_command(
+    port: &mut dyn StopPort,
+    cmd: &StopCommand<'_>,
+    ask: &mut dyn FnMut(&str) -> bool,
+    out: &mut dyn std::io::Write,
+    log: &mut dyn FnMut(&str),
+) -> i32 {
+    let r = stop_game(port, cmd.bin, cmd.ack_wait_ms, log);
+    if r.no_folder {
+        let _ = writeln!(
+            out,
+            "[!] Can't tell which game to stop: the game folder isn't known yet."
+        );
+        return 1;
+    }
+    if r.targets.is_empty() {
+        let _ = writeln!(
+            out,
+            "No Star Citizen process of this install was found to stop."
+        );
+        return 0;
+    }
+    let _ = writeln!(
+        out,
+        "Asked {} game process(es) to close; {} window(s) told to close.",
+        r.targets.len(),
+        r.posted
+    );
+    if r.no_answer {
+        let _ = writeln!(out, "The mod didn't answer; closing without its save.");
+    }
+    if r.posted == 0 {
+        let _ = writeln!(
+            out,
+            "No Star Citizen window found to close. If it is still running in a minute, you can end it."
+        );
+    }
+    if cmd.wait_seconds == 0 {
+        return 0;
+    }
+    let begun = port.now_ms();
+    let limit = u64::from(cmd.wait_seconds) * 1000;
+    while port.now_ms().saturating_sub(begun) < limit {
+        if !still_running(port, cmd.bin, &r.targets) {
+            let _ = writeln!(out, "The game closed.");
+            return 0;
+        }
+        port.sleep(500);
+    }
+    if !still_running(port, cmd.bin, &r.targets) {
+        let _ = writeln!(out, "The game closed.");
+        return 0;
+    }
+    log(&format!(
+        "game still running {} s after Stop",
+        cmd.wait_seconds
+    ));
+    let yes = match cmd.end {
+        EndPolicy::Yes => true,
+        EndPolicy::Ask => ask("The game is still running. End the game process?"),
+        EndPolicy::Never => false,
+    };
+    if !yes {
+        let _ = writeln!(
+            out,
+            "The game is still running after {} s. Run `sc-offline.exe stop --end` to end it.",
+            cmd.wait_seconds
+        );
+        return 1;
+    }
+    let (ended, failed) = end_game(port, &r.targets, cmd.bin, log);
+    if failed == 0 && ended > 0 {
+        let _ = writeln!(out, "Ended the game process.");
+        0
+    } else {
+        let _ = writeln!(out, "[!] Couldn't end the game process.");
+        1
+    }
+}
+
 /// The names of the two events of a game process: (stop, stopped).
 pub fn event_names(pid: u32) -> (String, String) {
     (stop_event_name(pid), stopped_event_name(pid))
@@ -238,13 +353,20 @@ pub struct FakeStopPort {
     pub terminate: BTreeMap<u32, Result<bool, String>>,
     pub clock: u64,
     pub calls: Vec<String>,
+    /// After this many `find_game_procs` calls the processes are gone (missing: they stay).
+    pub gone_after_finds: Option<u32>,
+    finds: u32,
     polls: BTreeMap<u32, u32>,
 }
 
 impl StopPort for FakeStopPort {
     fn find_game_procs(&mut self, bin: &str) -> Vec<GameProc> {
         self.calls.push(format!("find {bin}"));
-        self.procs.clone()
+        self.finds += 1;
+        match self.gone_after_finds {
+            Some(n) if self.finds > n => Vec::new(),
+            _ => self.procs.clone(),
+        }
     }
     fn begin(&mut self, t: &GameProc) -> Begin {
         self.calls.push(format!("begin {}", t.pid));
@@ -375,6 +497,126 @@ mod tests {
             (0, 1),
             "no recorded target is a failure, not a fresh scan"
         );
+    }
+
+    fn cmd(end: EndPolicy, wait_seconds: u32) -> StopCommand<'static> {
+        StopCommand {
+            bin: r"D:\x\Bin64",
+            ack_wait_ms: 100,
+            wait_seconds,
+            end,
+        }
+    }
+
+    fn run_cmd(port: &mut FakeStopPort, c: &StopCommand<'_>, answer: bool) -> (i32, String, usize) {
+        let mut out = Vec::new();
+        let mut asked = 0usize;
+        let code = run_stop_command(
+            port,
+            c,
+            &mut |_| {
+                asked += 1;
+                answer
+            },
+            &mut out,
+            &mut |_| {},
+        );
+        (code, String::from_utf8(out).unwrap(), asked)
+    }
+
+    #[test]
+    fn stop_command_waits_until_the_game_is_gone() {
+        let mut port = FakeStopPort {
+            procs: vec![p(20)],
+            windows: 1,
+            gone_after_finds: Some(3),
+            ..Default::default()
+        };
+        let (code, text, asked) = run_cmd(&mut port, &cmd(EndPolicy::Ask, 60), true);
+        assert_eq!(code, 0);
+        assert!(text.contains("Asked 1 game process(es) to close; 1 window(s) told to close."));
+        assert!(text.ends_with(
+            "The game closed.
+"
+        ));
+        assert_eq!(asked, 0, "nothing to end, nothing asked");
+        assert!(!port.calls.iter().any(|c| c.starts_with("terminate")));
+    }
+
+    #[test]
+    fn stop_command_without_wait_returns_at_once() {
+        let mut port = FakeStopPort {
+            procs: vec![p(21)],
+            windows: 0,
+            ..Default::default()
+        };
+        let (code, text, _) = run_cmd(&mut port, &cmd(EndPolicy::Never, 0), false);
+        assert_eq!(code, 0);
+        assert!(text.contains("No Star Citizen window found to close."));
+        assert_eq!(port.finds, 1, "the window action does not look again");
+    }
+
+    #[test]
+    fn stop_command_never_ends_without_a_yes() {
+        let mut port = FakeStopPort {
+            procs: vec![p(22)],
+            windows: 1,
+            ..Default::default()
+        };
+        let (code, text, asked) = run_cmd(&mut port, &cmd(EndPolicy::Never, 2), true);
+        assert_eq!(code, 1);
+        assert_eq!(asked, 0);
+        assert!(text.contains("Run `sc-offline.exe stop --end` to end it."));
+        assert!(!port.calls.iter().any(|c| c.starts_with("terminate")));
+    }
+
+    #[test]
+    fn stop_command_ask_ends_only_on_yes() {
+        let mut port = FakeStopPort {
+            procs: vec![p(23)],
+            windows: 1,
+            ..Default::default()
+        };
+        let (code, _, asked) = run_cmd(&mut port, &cmd(EndPolicy::Ask, 1), false);
+        assert_eq!((code, asked), (1, 1));
+        assert!(!port.calls.iter().any(|c| c.starts_with("terminate")));
+        let (code, text, asked) = run_cmd(&mut port, &cmd(EndPolicy::Ask, 1), true);
+        assert_eq!((code, asked), (0, 1));
+        assert!(text.ends_with(
+            "Ended the game process.
+"
+        ));
+        assert!(port.calls.iter().any(|c| c == "terminate 23"));
+    }
+
+    #[test]
+    fn stop_command_yes_ends_without_asking_and_reports_a_refusal() {
+        let mut port = FakeStopPort {
+            procs: vec![p(24)],
+            windows: 1,
+            ..Default::default()
+        };
+        port.terminate.insert(24, Err("denied".into()));
+        let (code, text, asked) = run_cmd(&mut port, &cmd(EndPolicy::Yes, 1), false);
+        assert_eq!((code, asked), (1, 0));
+        assert!(text.contains("Couldn't end the game process."));
+    }
+
+    #[test]
+    fn stop_command_edge_cases() {
+        let mut port = FakeStopPort::default();
+        let c = StopCommand {
+            bin: "",
+            ack_wait_ms: 1,
+            wait_seconds: 1,
+            end: EndPolicy::Never,
+        };
+        let (code, text, _) = run_cmd(&mut port, &c, false);
+        assert_eq!(code, 1);
+        assert!(text.contains("game folder isn't known"));
+        let (code, text, _) = run_cmd(&mut port, &cmd(EndPolicy::Never, 1), false);
+        assert_eq!(code, 0);
+        assert!(text.contains("No Star Citizen process of this install was found to stop."));
     }
 
     #[test]

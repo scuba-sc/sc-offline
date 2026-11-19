@@ -12,7 +12,7 @@ use eframe::egui::{self, ColorImage, ViewportCommand};
 
 use crate::app::{App, Job, Page, PluginTab, PAGES};
 use crate::fixture::{self, FixtureBackend};
-use crate::{fonts, pages, theme};
+use crate::{fonts, pages, theme, WINDOW};
 
 fn crc32(data: &[u8]) -> u32 {
     let mut c = 0xFFFF_FFFFu32;
@@ -71,13 +71,101 @@ struct Shots {
     done: Arc<AtomicBool>,
 }
 
-const SHOTS: [(&str, Page, PluginTab); 6] = [
-    ("home", Page::Home, PluginTab::Installed),
-    ("output", Page::Output, PluginTab::Installed),
-    ("plugins", Page::Plugins, PluginTab::Installed),
-    ("catalogue", Page::Plugins, PluginTab::Catalogue),
-    ("capabilities", Page::Capabilities, PluginTab::Installed),
-    ("settings", Page::Settings, PluginTab::Installed),
+/// (file name, page, plugin tab, plugin whose settings are open, capability groups open (1 auto, 2 not yet), scroll)
+type Shot = (&'static str, Page, PluginTab, Option<&'static str>, u8, f32);
+
+const SHOTS: [Shot; 14] = [
+    ("home", Page::Home, PluginTab::Installed, None, 0, 0.0),
+    ("output", Page::Output, PluginTab::Installed, None, 0, 0.0),
+    ("plugins", Page::Plugins, PluginTab::Installed, None, 0, 0.0),
+    (
+        "plugin-settings",
+        Page::Plugins,
+        PluginTab::Installed,
+        Some("beta"),
+        0,
+        0.0,
+    ),
+    (
+        "catalogue",
+        Page::Plugins,
+        PluginTab::Catalogue,
+        None,
+        0,
+        0.0,
+    ),
+    (
+        "capabilities",
+        Page::Capabilities,
+        PluginTab::Installed,
+        None,
+        0,
+        0.0,
+    ),
+    (
+        "capabilities-end",
+        Page::Capabilities,
+        PluginTab::Installed,
+        None,
+        0,
+        420.0,
+    ),
+    (
+        "capabilities-auto",
+        Page::Capabilities,
+        PluginTab::Installed,
+        None,
+        1,
+        760.0,
+    ),
+    (
+        "capabilities-not-yet",
+        Page::Capabilities,
+        PluginTab::Installed,
+        None,
+        2,
+        760.0,
+    ),
+    (
+        "capabilities-not-yet-end",
+        Page::Capabilities,
+        PluginTab::Installed,
+        None,
+        2,
+        1900.0,
+    ),
+    (
+        "settings",
+        Page::Settings,
+        PluginTab::Installed,
+        None,
+        0,
+        0.0,
+    ),
+    (
+        "settings-end",
+        Page::Settings,
+        PluginTab::Installed,
+        None,
+        0,
+        520.0,
+    ),
+    (
+        "capabilities-ru",
+        Page::Capabilities,
+        PluginTab::Installed,
+        None,
+        0,
+        0.0,
+    ),
+    (
+        "plugins-ru",
+        Page::Plugins,
+        PluginTab::Installed,
+        None,
+        0,
+        0.0,
+    ),
 ];
 
 impl eframe::App for Shots {
@@ -87,9 +175,17 @@ impl eframe::App for Shots {
             ctx.send_viewport_cmd(ViewportCommand::Close);
             return;
         }
-        let (name, page, tab) = SHOTS[self.step];
+        let (name, page, tab, open, more, scroll) = SHOTS[self.step];
+        self.app.scroll_to = Some(scroll);
         self.app.page = page;
         self.app.plugin_tab = tab;
+        self.app.open_plugin = open.map(str::to_string);
+        self.app.caps_auto = more & 1 != 0;
+        self.app.caps_more = more & 2 != 0;
+        if name.ends_with("-ru") && self.app.lang != crate::i18n::Lang::Ru {
+            self.app.set_language(scol_config::Language::Russian);
+            self.app.note = None;
+        }
         pages::draw(&mut self.app, ui);
         self.frames += 1;
         if self.done.swap(false, Ordering::SeqCst) {
@@ -117,6 +213,17 @@ impl eframe::App for Shots {
     }
 }
 
+/// The window size of the shots: `WINDOW`, or `SCOL_UI_SHOT_SIZE=640x420` to check the smallest size.
+fn shot_size() -> [f32; 2] {
+    std::env::var("SCOL_UI_SHOT_SIZE")
+        .ok()
+        .and_then(|v| {
+            let (w, h) = v.split_once('x')?;
+            Some([w.parse().ok()?, h.parse().ok()?])
+        })
+        .unwrap_or(WINDOW)
+}
+
 /// Open the window on a fixture install and save a PNG per page into `dir`.
 pub fn run(_here: PathBuf, dir: PathBuf) -> i32 {
     let root = if Path::new("D:/t").is_dir() {
@@ -136,7 +243,7 @@ pub fn run(_here: PathBuf, dir: PathBuf) -> i32 {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("sc-offline screenshots")
-            .with_inner_size([820.0, 520.0]),
+            .with_inner_size(shot_size()),
         ..Default::default()
     };
     let mut holder = Some(app);
@@ -146,6 +253,8 @@ pub fn run(_here: PathBuf, dir: PathBuf) -> i32 {
         Box::new(move |cc| {
             fonts::install(&cc.egui_ctx)?;
             theme::apply(&cc.egui_ctx);
+            // No fade between shots: every PNG shows the settled state.
+            cc.egui_ctx.global_style_mut(|s| s.animation_time = 0.0);
             let mut app = holder.take().expect("once");
             app.attach(&cc.egui_ctx);
             app.submit(Job::Status);

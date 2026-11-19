@@ -5,7 +5,10 @@ repository or in a fork.
 
 ## North Star & Architectural Context
 - **`sc-offline`** is the reference consumer, launcher, and modular plugin platform (`plugins/*`,
-  `src/`, `launcher/`) built on top of `sco-core`.
+  `src/`, `launcher/`, `launcher-rs/`) built on top of `sco-core`. The launcher players run is the
+  Rust one in `launcher-rs/` (`sc-offline.exe`); `launcher/` is the C++ launcher kept as the
+  fallback (`sc-offline-classic.exe`). The in-game host stays C++ in `src/`; the Rust in-game menu
+  (`launcher-rs/crates/scol-menu`) is opt-in. `tools/package_release.py` builds the release folder.
 - **Offline only:** never connect to CIG's servers or accounts, bypass anti-cheat or add
   telemetry. Full policy in `CONTRIBUTING.md` and `SECURITY.md`.
 - **Clean-room hygiene:** no game binaries, player DNA blobs, encryption keys or raw GUID

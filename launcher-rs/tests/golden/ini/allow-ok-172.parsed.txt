@@ -20,6 +20,7 @@ multiplayer=on
 multiplayer_allow=172.16.0.0/12
 asop=on
 asop_fleet_list=ships
+menu=imgui
 exp_loadout_async=on
 exp_inventory_read=on
 exp_actor_stats_write=on

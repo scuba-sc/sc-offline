@@ -20,6 +20,7 @@ multiplayer=off
 multiplayer_allow=100.64.0.0/10,192.168.0.0/16
 asop=off
 asop_fleet_list=game
+menu=imgui
 exp_loadout_async=on
 exp_inventory_read=on
 exp_actor_stats_write=on

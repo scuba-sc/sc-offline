@@ -3,7 +3,7 @@
 > [!WARNING]
 > **Experimental.** A historical Linux run with sc-offline 0.7.0 was reported in October 2026. The current published stable SDK 2.4.0 host and plugins have not been run under Wine in this review. The older report does not establish current Wine support.
 
-`sc-offline.sh` starts `sc-offline.exe` inside your Star Citizen Wine prefix. The Windows launcher handles mod installation and removal in that prefix; its Wine path differs from Windows PC setup ([launcher.md](launcher.md)).
+`sc-offline.sh` starts `sc-offline.exe` inside your Star Citizen Wine prefix. From 0.8.0 that exe is the Rust launcher, which has **not been run under Wine**; the historical report below used the C++ launcher. The C++ launcher ships as `sc-offline-classic.exe`: if the Rust one fails under Wine, run `wine sc-offline-classic.exe <command>` instead (`sc-offline.sh` always starts `sc-offline.exe`). The Windows launcher handles mod installation and removal in that prefix; its Wine path differs from Windows PC setup ([launcher.md](launcher.md)).
 
 ## Historical observation
 

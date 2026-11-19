@@ -180,6 +180,16 @@ pub struct FakeHost {
     pub urls: Vec<String>,
     pub revealed: Vec<String>,
     pub update_checks: usize,
+    /// What `check_update` answers (`Some(code)` ends `play`).
+    pub update_ends_play: Option<i32>,
+    /// What discovery finds, when scripted (`Some(vec![])`: nothing). `None`: the real, read-only discovery.
+    pub discovered: Option<Vec<scol_install::identity::Found>>,
+    /// `can_pick_folder` of the fake.
+    pub can_pick: bool,
+    /// The answers of the folder dialog, in order (`None`: the player cancelled). Empty: cancelled.
+    pub picks: VecDeque<Option<String>>,
+    /// How many times the dialog was opened.
+    pub pick_calls: usize,
     pub elevated_log_deletes: Vec<(String, u64)>,
     /// What `delete_logs_elevated` returns.
     pub elevated_delete_result: i32,
@@ -211,6 +221,11 @@ impl FakeHost {
             urls: Vec::new(),
             revealed: Vec::new(),
             update_checks: 0,
+            update_ends_play: None,
+            discovered: None,
+            can_pick: false,
+            picks: VecDeque::new(),
+            pick_calls: 0,
             elevated_log_deletes: Vec::new(),
             elevated_delete_result: 1,
             game_started_at: None,
@@ -366,7 +381,26 @@ impl Host for FakeHost {
             .push((channel_dir.to_string(), since));
         self.elevated_delete_result
     }
-    fn check_update(&mut self, _cfg: &scol_config::Config, _out: &mut dyn Write) {
+    fn check_update(&mut self, _cfg: &scol_config::Config, _out: &mut dyn Write) -> Option<i32> {
         self.update_checks += 1;
+        self.update_ends_play
+    }
+    fn discover_game(
+        &mut self,
+        here: &str,
+        channel: &str,
+        out: &mut dyn Write,
+    ) -> Vec<scol_install::identity::Found> {
+        match &self.discovered {
+            Some(v) => v.clone(),
+            None => scol_install::discovery::detect_bin64(here, channel, out),
+        }
+    }
+    fn can_pick_folder(&mut self) -> bool {
+        self.can_pick
+    }
+    fn pick_folder(&mut self) -> Option<String> {
+        self.pick_calls += 1;
+        self.picks.pop_front().flatten()
     }
 }

@@ -7,14 +7,21 @@
 // game thread: it drains dispatch_events like Menu_GameThreadFrame. Every click must arrive in the
 // plugin callback with the right kind, value and canonical tag. Screenshots go to the folder given.
 //
-//   rust_menu_host <path to sc_offline_menu.dll> [screenshot folder]
+//   rust_menu_host <path to sc_offline_menu.dll> [screenshot folder] [panel dump file]
+//
+// With a panel dump (the file SCO_PANEL_DUMP makes the plugin workflow tests write, see
+// tools/panel_dump.h; the repository keeps one in launcher-rs/tests/menu/panels.txt) every panel of
+// the dump becomes a page and every control on it is clicked: toggle, slider, combo, list row, table
+// and list paging, text and button, each checked for the kind, value and tag the plugin callback sees.
 //
 // Synthetic only: no game, no Star Citizen process. Not run in game.
 #include "sco/widgets.h"
 #include "sco/host.h"
 #include "src/widgets/view_internal.h"
 #include <windows.h>
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -39,6 +46,13 @@ struct StartV1 {
     void (*nudge_game)();
     const char* shot_dir;
     uint32_t flags, hotkey;
+    const char* title;
+    const char* view_path;
+    const char* size_path;
+    void (*open_classic)();
+    void* (*game_window_fn)();
+    int32_t (*asop_available)();
+    int32_t (*classic_visible)();
 };
 static const uint32_t kFlagVisible = 1, kFlagTest = 2;
 
@@ -49,6 +63,8 @@ struct MenuApi {
     int32_t (*test_step)(const char*, char*, uint32_t) = nullptr;
     int32_t (*is_typing)() = nullptr;
     uint32_t (*abi)() = nullptr;
+    int32_t (*is_broken)() = nullptr;
+    const char* (*version)() = nullptr;
 };
 
 static std::atomic<int> passed{0}, failed{0};
@@ -182,6 +198,9 @@ static void RunGameTask() {
     gamePending = false;
 }
 
+static std::atomic<int> classicCalls{0};
+static void OpenClassic() { ++classicCalls; }
+static int32_t AsopYes() { return 1; }
 static void LogLine(const char* line) { std::printf("%s\n", line); std::fflush(stdout); }
 static std::atomic<int> nudges{0};
 static void Nudge() { ++nudges; }
@@ -211,6 +230,157 @@ static bool LiveValue(const char* panel, const char* tag, double& out) {
         for (const auto& n : p.nodes) if (n.tag == tag) { out = n.value; return true; }
     return false;
 }
+
+// ---- panel dump reader (the format of tools/panel_dump.h; the dump has no tags, so node N is "nN") ----
+static std::string Unescape(const std::string& in) {
+    std::string out;
+    for (size_t i = 0; i < in.size(); ++i) {
+        if (in[i] != '\\' || i + 1 >= in.size()) { out += in[i]; continue; }
+        const char c = in[++i];
+        out += c == 't' ? '\t' : c == 'n' ? '\n' : c == 'r' ? '\r' : c;
+    }
+    return out;
+}
+static std::vector<std::string> SplitOn(const std::string& s, char sep) {
+    std::vector<std::string> out;
+    size_t at = 0;
+    for (;;) {
+        const size_t next = s.find(sep, at);
+        out.push_back(s.substr(at, next == std::string::npos ? std::string::npos : next - at));
+        if (next == std::string::npos) break;
+        at = next + 1;
+    }
+    return out;
+}
+struct DumpPanel { std::string id, title; std::vector<Spec> nodes; };
+static std::vector<DumpPanel> ReadDump(const char* path) {
+    std::vector<DumpPanel> all;
+    FILE* file = std::fopen(path, "rb");
+    if (!file) { std::printf("cannot read dump %s\n", path); return all; }
+    std::string line;
+    int c;
+    auto handle = [&](const std::string& l) {
+        const auto f = SplitOn(l, '\t');
+        if (f.empty()) return;
+        if (f[0] == "panel" && f.size() == 5) { all.push_back({Unescape(f[2]), Unescape(f[3]), {}}); return; }
+        if (f[0] != "node" || f.size() != 18 || all.empty()) return;
+        Spec s;
+        s.kind = std::stoul(f[1]); s.id = std::stoul(f[2]); s.parent = std::stoul(f[3]); s.flags = std::stoul(f[4]);
+        s.index = std::stoi(f[5]); s.value = std::stod(f[6]); s.minimum = std::stod(f[7]); s.maximum = std::stod(f[8]);
+        s.columns = std::stoul(f[9]); s.severity = std::stoul(f[10]); s.firstRow = std::stoul(f[11]);
+        s.visibleRows = std::stoul(f[12]); s.presentation = std::stoul(f[13]);
+        s.label = Unescape(f[14]); s.text = Unescape(f[15]); s.tooltip = Unescape(f[16]);
+        if (!f[17].empty()) for (const auto& item : SplitOn(f[17], '\x1f')) s.items.push_back(Unescape(item));
+        s.tag = "n" + std::to_string(s.id);
+        all.back().nodes.push_back(std::move(s));
+    };
+    while ((c = std::fgetc(file)) != EOF) {
+        if (c == '\n') { handle(line); line.clear(); } else if (c != '\r') line += static_cast<char>(c);
+    }
+    if (!line.empty()) handle(line);
+    std::fclose(file);
+    return all;
+}
+// The most complete state of each panel (the file keeps one record per publish).
+static std::vector<DumpPanel> BestStates(const std::vector<DumpPanel>& all) {
+    std::vector<DumpPanel> out;
+    for (const auto& p : all) {
+        auto it = std::find_if(out.begin(), out.end(), [&](const DumpPanel& q) { return q.id == p.id; });
+        if (it == out.end()) out.push_back(p);
+        else if (p.nodes.size() >= it->nodes.size()) *it = p;
+    }
+    return out;
+}
+static const W::Node* LiveNode(const std::vector<W::Panel>& panels, const std::string& panel, const std::string& tag) {
+    for (const auto& p : panels) if (p.id == panel)
+        for (const auto& n : p.nodes) if (n.tag == tag) return &n;
+    return nullptr;
+}
+static bool DisabledChain(const std::vector<Spec>& nodes, size_t i) {
+    const Spec* cur = &nodes[i];
+    for (;;) {
+        if (cur->flags & SCO_WIDGET_DISABLED) return true;
+        if (!cur->parent) return false;
+        const auto it = std::find_if(nodes.begin(), nodes.end(), [&](const Spec& n) { return n.id == cur->parent; });
+        if (it == nodes.end()) return false;
+        cur = &*it;
+    }
+}
+static bool ExpectFor(const std::string& what, const std::string& panel, const std::string& tag, uint32_t kind,
+                      const std::function<bool(const Got&)>& pred) {
+    return Expect(what.c_str(), [&](const std::vector<Got>& g) {
+        for (const auto& e : g) if (e.panel == panel && e.tag == tag && e.kind == kind && pred(e)) return true;
+        return false;
+    });
+}
+// Clicks every control of one panel. Returns how many.
+static int Exercise(const MenuApi& api, const std::string& panel, const std::vector<Spec>& nodes) {
+    int done = 0;
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        const Spec& n = nodes[i];
+        if (n.tag.empty() || DisabledChain(nodes, i)) continue;
+        std::vector<W::Panel> live;
+        OnGame([&] { live = W::Panels(); });
+        const W::Node* node = LiveNode(live, panel, n.tag);
+        if (!node) continue;
+        { std::lock_guard<std::mutex> hold(gotLock); got.clear(); }
+        const std::string label = panel + " " + n.tag + ": ";
+        switch (n.kind) {
+        case SCO_WIDGET_TOGGLE:
+            if (Step(api, "click " + n.tag)) { const double want = node->value != 0 ? 0.0 : 1.0; ExpectFor(label + "toggle", panel, n.tag, n.kind, [&](const Got& e) { return e.value == want; }); ++done; }
+            break;
+        case SCO_WIDGET_SLIDER: {
+            double lo = node->minimum, hi = node->maximum;
+            if (hi <= lo) hi = lo + 1;
+            const double frac = (node->value - lo) / (hi - lo) > 0.5 ? 0.15 : 0.85;
+            const bool integer = node->presentation != SCO_WIDGET_NUMERIC_NUMBER;
+            char step[128];
+            std::snprintf(step, sizeof(step), "slider %s %.2f", n.tag.c_str(), frac);
+            if (Step(api, step)) {
+                ExpectFor(label + "slider", panel, n.tag, n.kind, [&](const Got& e) {
+                    return e.value >= lo - 1e-9 && e.value <= hi + 1e-9 && (!integer || e.value == std::floor(e.value));
+                });
+                ++done;
+            }
+            break;
+        }
+        case SCO_WIDGET_COMBO:
+            if (node->items.size() > 1) {
+                const int k = static_cast<int>(((std::max)(node->index, 0) + 1) % static_cast<int>(node->items.size()));
+                if (Step(api, "combo " + n.tag + " " + std::to_string(k))) { ExpectFor(label + "combo item " + std::to_string(k), panel, n.tag, n.kind, [&](const Got& e) { return e.index == k; }); ++done; }
+            }
+            break;
+        case SCO_WIDGET_LIST:
+        case SCO_WIDGET_TABLE: {
+            const size_t vis = node->visible_rows;
+            const size_t rows = n.kind == SCO_WIDGET_TABLE ? (node->columns ? node->items.size() / node->columns : 0) : node->items.size();
+            const size_t first = (std::min<size_t>)(node->first_row, rows);
+            const size_t last = vis == 0 ? rows : (std::min)(rows, first + vis);
+            if (n.kind == SCO_WIDGET_LIST && last > first) {
+                for (size_t k = first; k < last; ++k) {
+                    if (static_cast<int>(k) == node->index) continue;
+                    if (Step(api, "list " + n.tag + " " + std::to_string(k))) { ExpectFor(label + "list row " + std::to_string(k), panel, n.tag, n.kind, [&](const Got& e) { return e.index == static_cast<int>(k); }); ++done; }
+                    break;
+                }
+            }
+            if (vis > 0 && rows > vis && last < rows) {
+                if (Step(api, "click " + n.tag + ".next")) { ExpectFor(label + "page to row " + std::to_string(last), panel, n.tag, SCO_WIDGET_EVENT_PAGE, [&](const Got& e) { return e.row == static_cast<int>(last); }); ++done; }
+                if (Step(api, "click " + n.tag + ".prev")) ExpectFor(label + "page back", panel, n.tag, SCO_WIDGET_EVENT_PAGE, [&](const Got& e) { return e.row == static_cast<int>(first); });
+            }
+            break;
+        }
+        case SCO_WIDGET_TEXT_INPUT:
+            if (Step(api, "text " + n.tag + " Zed")) { ExpectFor(label + "text", panel, n.tag, n.kind, [](const Got& e) { return e.text == "Zed"; }); ++done; }
+            break;
+        case SCO_WIDGET_BUTTON:
+            if (Step(api, "click " + n.tag)) { ExpectFor(label + "button", panel, n.tag, n.kind, [](const Got&) { return true; }); ++done; }
+            break;
+        default: break;
+        }
+    }
+    return done;
+}
+static std::vector<DumpPanel> g_dump;
 
 static void Script(const MenuApi& api, std::atomic<bool>& done) {
     const auto yes = [](const Got&) { return true; };
@@ -256,12 +426,25 @@ static void Script(const MenuApi& api, std::atomic<bool>& done) {
             Expect("toggle in a column", [&](auto& g) { return Has(g, "cols.details", SCO_WIDGET_TOGGLE, [](const Got& e) { return e.value == 1.0; }); });
         Step(api, "shot core-lists");
     }
+    int controls = 0;
+    for (const auto& p : g_dump) {
+        const std::string page = p.id == "spawn.asop" ? "spawn.vehicles" : p.id;
+        if (!Step(api, "select " + page)) continue;
+        Step(api, "wait 150");
+        std::string shot = p.id;
+        for (auto& ch : shot) if (!(std::isalnum(static_cast<unsigned char>(ch)) || ch == '.' || ch == '-' || ch == '_')) ch = '_';
+        Step(api, "shot core-" + shot);
+        controls += Exercise(api, p.id, p.nodes);
+        Step(api, "scroll 0");
+    }
+    std::printf("info %d controls clicked on %zu dump panels\n", controls, g_dump.size());
     done = true;
 }
 
 int main(int argc, char** argv) {
     if (argc < 2) { std::printf("usage: rust_menu_host <sc_offline_menu.dll> [screenshot folder]\n"); return 2; }
-    const std::string shots = argc > 2 ? argv[2] : "D:/sc241/menu-previews/rust";
+    const std::string shots = argc > 2 ? argv[2] : "D:/sc241/menu-previews/rust2";
+    if (argc > 3) g_dump = BestStates(ReadDump(argv[3]));
     sco::SetGameThread();
     sco::host::BuildApi({"rust-menu-host 1.0"});
     owner = sco::host::NewPlugin("demo");
@@ -272,6 +455,17 @@ int main(int argc, char** argv) {
     CHECK(view && client && view->size >= sizeof(sco_widgets_view_v1));
     CHECK(SetPanel("demo.controls", "Flight", Controls(0)) == SCO_OK);
     CHECK(SetPanel("demo.lists", "Ships and tables", Lists()) == SCO_OK);
+    for (const auto& p : g_dump) {
+        // One plugin identity per id prefix: a plugin registers only ids under its own name.
+        static std::vector<std::pair<std::string, sco_plugin*>> owners;
+        const std::string prefix = p.id.substr(0, p.id.find('.'));
+        auto owned = std::find_if(owners.begin(), owners.end(), [&](const auto& o) { return o.first == prefix; });
+        if (owned == owners.end()) { owners.emplace_back(prefix, sco::host::NewPlugin(prefix.c_str())); owned = owners.end() - 1; }
+        sco_plugin* const mine = owned->second;
+        const Built b = Build(p.nodes);
+        CHECK(table->set_panel(mine, p.id.c_str(), p.title.c_str(), &b.nodes[0].base.base.base, static_cast<uint32_t>(b.nodes.size()),
+                               sizeof(sco_widget_node_1_3), OnEvent, nullptr) == SCO_OK);
+    }
 
     HMODULE dll = LoadLibraryA(argv[1]);
     if (!dll) { std::printf("cannot load %s (%lu)\n", argv[1], GetLastError()); return 2; }
@@ -283,11 +477,18 @@ int main(int argc, char** argv) {
     api.is_typing = reinterpret_cast<decltype(api.is_typing)>(GetProcAddress(dll, "scol_menu_is_typing"));
     api.abi = reinterpret_cast<decltype(api.abi)>(GetProcAddress(dll, "scol_menu_abi"));
     if (!api.start || !api.request_stop || !api.drain || !api.test_step || !api.is_typing || !api.abi) { std::printf("exports missing\n"); return 2; }
-    CHECK(api.abi() == 1);
+    CHECK(api.abi() == 2);
+    // The exports src/menu_rust.cpp checks before it starts the module.
+    api.is_broken = reinterpret_cast<decltype(api.is_broken)>(GetProcAddress(dll, "scol_menu_is_broken"));
+    api.version = reinterpret_cast<decltype(api.version)>(GetProcAddress(dll, "scol_menu_version"));
+    CHECK(api.is_broken && api.version && api.version()[0] != '\0');
+    if (api.version) std::printf("module version %s\n", api.version());
 
     StartV1 s{};
-    s.size = sizeof(s); s.abi = 1; s.view = view; s.client = client; s.log = LogLine; s.nudge_game = Nudge;
+    s.size = sizeof(s); s.abi = 2; s.view = view; s.client = client; s.log = LogLine; s.nudge_game = Nudge;
     s.shot_dir = shots.c_str(); s.flags = kFlagVisible | kFlagTest;
+    s.title = "sc-offline v0.8.0";
+    s.open_classic = OpenClassic; s.asop_available = AsopYes;
     CHECK(api.start(&s) == 0);
     CHECK(api.start(&s) == -2); // already started
 
@@ -312,6 +513,7 @@ int main(int argc, char** argv) {
     CHECK(doneSeq > 0);
     CHECK(nudges.load() > 0);
     CHECK(api.is_typing() == 0);
+    CHECK(api.is_broken() == 0); // no panic and no window error during the click-through
 
     // Stop the way the host does: request, then drain (the thread leaves the view by itself).
     api.request_stop();

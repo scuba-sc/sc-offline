@@ -58,6 +58,7 @@ inline std::string MarkerText(const std::string& version, const std::string& sha
 // What the launcher sets for the game process on `play`, in this order.
 struct PlayEnvInput {
     std::wstring bootMap, start, startShip, multiplayerAllow, asopFleetList, registryProbe;
+    std::wstring menu = L"imgui";   // imgui or rust: which in-game menu the mod shows
     std::wstring data;      // <launcher folder>\data
     std::wstring userDir;   // <channel>\user\client\0
     bool plugins = true, relocation = true, multiplayer = true, asop = true;
@@ -79,6 +80,7 @@ inline std::vector<std::pair<std::wstring, std::wstring>> PlayEnv(const PlayEnvI
         { L"SC_OFFLINE_ASOP_FLEET_LIST", c.asopFleetList },
         { L"SC_USER", c.userDir },
         { L"SC_OFFLINE_REGISTRY_PROBE", c.registryProbe },
+        { L"SC_OFFLINE_MENU", c.menu },
     };
 }
 

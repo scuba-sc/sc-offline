@@ -223,7 +223,7 @@ class ReleasePluginProfile(unittest.TestCase):
             dirs = {p.name for p in destination.iterdir() if p.is_dir()}
             self.assertEqual(dirs, {
                 "build", "contracts", "creative", "crew", "discord", "inspector",
-                "build_catalog", "mining", "npc", "picker_catalog", "quantum", "quantum_drive",
+                "build_catalog", "locations_catalog", "mining", "npc", "picker_catalog", "quantum", "quantum_drive",
                 "spawn", "teleport",
             })
 
@@ -298,8 +298,12 @@ class ReleasePluginProfile(unittest.TestCase):
 
     def test_workflow_uses_this_profile_and_not_a_second_feature_list(self):
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text()
-        self.assertIn("python3 tools/stage-release-plugins.py --profile player-offline", workflow)
+        packager = (TOOLS / "package_release.py").read_text()
+        # The release job packages through tools/package_release.py, which stages the profile.
         package_step = workflow.split("name: Package sc-offline-<tag>.zip", 1)[1].split("name: Create Release", 1)[0]
+        self.assertIn("python3 tools/package_release.py", package_step)
+        self.assertIn("stage_tool.stage_profile", packager)
+        self.assertIn('default="player-offline"', packager)
         self.assertNotIn("for feature in creative discord crew spawn build mining teleport quantum", package_step)
         self.assertNotIn("cp built-inspector/inspector", package_step)
         self.assertNotIn("test-plugins", package_step)

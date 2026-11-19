@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(os.environ.get("SCOL_SCRATCH", "D:/t"))
 RUST = Path("D:/t/cargo-play/debug/sc-offline.exe")
 STANDIN = Path("D:/t/cargo-play/debug/scol-play-standin.exe")
-OURS_DLL = b"MZ\x90\x00 padding sc-offline v0.7.8.3\x00 more bytes"
+OURS_DLL = b"MZ\x90\x00 padding sc-offline v0.8.0\x00 more bytes"
 
 
 def win(p):

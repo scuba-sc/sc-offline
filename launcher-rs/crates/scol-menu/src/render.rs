@@ -35,6 +35,8 @@ pub struct NodeRect {
     pub rect: egui::Rect,
     /// Width of the slider rail, for the test driver.
     pub rail: f32,
+    /// Drawn inside the page's scroll area (the test driver scrolls to it before it clicks).
+    pub page: bool,
 }
 
 pub struct ItemRect {
@@ -52,6 +54,9 @@ pub struct Scene<'a> {
     pub items: Vec<ItemRect>,
     children: HashMap<u32, Vec<usize>>,
     widest: HashMap<u32, f32>,
+    /// While a ROW with form controls draws its children: the width each such control (label column
+    /// and control together) may take, so the buttons next to it stay on screen.
+    row_cap: Option<f32>,
 }
 
 const LABEL_MIN: f32 = 100.0;
@@ -85,6 +90,62 @@ pub fn round3(v: f64) -> f64 {
     } else {
         r
     }
+}
+
+fn round_decimals(v: f64, decimals: i32) -> f64 {
+    let f = 10f64.powi(decimals);
+    (v * f).round() / f
+}
+
+/// Text of a NUMBER slider: a whole value without decimals, any other with up to three, trailing zeros
+/// dropped ("30", "0.5", "0.125", "1.235" for 1.23456), never "-0". The rule of `NumberText` in
+/// sco-core `src/widgets/imgui_layout.h`.
+pub fn number_text(v: f64) -> String {
+    if !v.is_finite() {
+        return format!("{v}");
+    }
+    let mut shown = round_decimals(v, 3);
+    if shown == 0.0 {
+        shown = 0.0;
+    }
+    let mut d = 0;
+    while d < 3 && round_decimals(shown, d) != shown {
+        d += 1;
+    }
+    format!("{:.*}", d as usize, shown)
+}
+
+/// Text of an integer slider (`NUMERIC_INTEGER`), with a percent sign for `NUMERIC_INTEGER_PERCENT`.
+pub fn integer_text(v: f64, percent: bool) -> String {
+    let r = v.round();
+    let r = if r == 0.0 { 0.0 } else { r };
+    if percent {
+        format!("{r:.0}%")
+    } else {
+        format!("{r:.0}")
+    }
+}
+
+/// A section heading: the text at heading size over a rule (`SectionHeading` in menu_shell.cpp).
+pub fn heading(ui: &mut Ui, text: &str) {
+    ui.add_space(4.0);
+    ui.label(
+        RichText::new(text)
+            .color(theme::LEAF)
+            .size(theme::HEADING - 2.0),
+    );
+    ui.separator();
+}
+
+/// True when `text` does not fit in `width` (less the button padding) and is cut with an ellipsis.
+pub fn is_elided(ui: &Ui, text: &str, width: f32) -> bool {
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let w = ui
+        .painter()
+        .layout_no_wrap(text.to_string(), font, Color32::WHITE)
+        .size()
+        .x;
+    w > width - 2.0 * ui.spacing().button_padding.x
 }
 
 pub fn label_column(widest: f32, available: f32) -> f32 {
@@ -124,6 +185,7 @@ impl<'a> Scene<'a> {
             items: Vec::new(),
             children,
             widest: HashMap::new(),
+            row_cap: None,
         }
     }
 
@@ -205,7 +267,34 @@ impl<'a> Scene<'a> {
             kind: n.kind,
             rect,
             rail,
+            page: true,
         });
+    }
+
+    /// Natural width of a child that is not a width-hungry form control.
+    fn fixed_width(&self, ui: &Ui, n: &Node) -> f32 {
+        let font = egui::TextStyle::Body.resolve(ui.style());
+        let text = |t: &str| {
+            ui.painter()
+                .layout_no_wrap(t.to_string(), font.clone(), Color32::WHITE)
+                .size()
+                .x
+        };
+        match n.kind {
+            WIDGET_BUTTON => {
+                let caption = if n.label.is_empty() {
+                    "Activate"
+                } else {
+                    n.label.as_str()
+                };
+                text(caption) + 2.0 * ui.spacing().button_padding.x
+            }
+            WIDGET_TOGGLE => {
+                text(&n.label) + ui.spacing().icon_width + 2.0 * ui.spacing().item_spacing.x
+            }
+            WIDGET_LABEL => text(&n.label),
+            _ => CONTROL_MIN,
+        }
     }
 
     fn label_cell(&self, ui: &mut Ui, n: &Node, column: f32) {
@@ -249,6 +338,10 @@ impl<'a> Scene<'a> {
         let mut column = 0.0;
         match n.kind {
             WIDGET_LABEL => {
+                // An empty label draws no blank line.
+                if n.label.is_empty() {
+                    return None;
+                }
                 let text = match severity(n.severity) {
                     Some((name, color)) => {
                         let mut job = egui::text::LayoutJob::default();
@@ -286,13 +379,7 @@ impl<'a> Scene<'a> {
             WIDGET_ROW | WIDGET_COLUMN => {
                 let kids = self.children.get(&n.id).cloned().unwrap_or_default();
                 if !n.label.is_empty() && n.severity == 0 {
-                    ui.add_space(4.0);
-                    ui.label(
-                        RichText::new(n.label.as_str())
-                            .color(theme::LEAF)
-                            .size(theme::HEADING - 2.0),
-                    );
-                    ui.separator();
+                    heading(ui, n.label.as_str());
                 } else if let Some((name, color)) = severity(n.severity) {
                     ui.label(RichText::new(format!("{name} {}", n.label)).color(color));
                 }
@@ -309,11 +396,44 @@ impl<'a> Scene<'a> {
                         }
                     });
                 } else if n.kind == WIDGET_ROW {
-                    ui.horizontal_wrapped(|ui| {
-                        for &k in &kids {
-                            self.node(ui, k, disabled);
-                        }
-                    });
+                    let forms = kids
+                        .iter()
+                        .filter(|&&k| {
+                            matches!(
+                                panel.nodes[k].kind,
+                                WIDGET_SLIDER | WIDGET_COMBO | WIDGET_TEXT_INPUT
+                            )
+                        })
+                        .count();
+                    if forms == 0 {
+                        ui.horizontal_wrapped(|ui| {
+                            for &k in &kids {
+                                self.node(ui, k, disabled);
+                            }
+                        });
+                    } else {
+                        // One line, like the ImGui adapter (SameLine), but the form controls share
+                        // what the other children leave, so a button after a text box is reachable.
+                        let fixed: f32 = kids
+                            .iter()
+                            .filter(|&&k| {
+                                !matches!(
+                                    panel.nodes[k].kind,
+                                    WIDGET_SLIDER | WIDGET_COMBO | WIDGET_TEXT_INPUT
+                                )
+                            })
+                            .map(|&k| self.fixed_width(ui, &panel.nodes[k]))
+                            .sum();
+                        let gaps = spacing * (kids.len().saturating_sub(1)) as f32;
+                        let cap = ((available - fixed - gaps) / forms as f32).max(CONTROL_MIN);
+                        let saved = self.row_cap.replace(cap);
+                        ui.horizontal(|ui| {
+                            for &k in &kids {
+                                self.node(ui, k, disabled);
+                            }
+                        });
+                        self.row_cap = saved;
+                    }
                 } else {
                     ui.vertical(|ui| {
                         for &k in &kids {
@@ -345,7 +465,10 @@ impl<'a> Scene<'a> {
             job.append(&n.label, 0.0, egui::TextFormat::simple(f, theme::TEXT));
             ui.add(egui::Label::new(job).wrap());
         }
-        let ctrl = control_width(available, column, spacing, 0.0);
+        let mut ctrl = control_width(available, column, spacing, 0.0);
+        if let (Some(cap), true) = (self.row_cap, is_form(n.kind)) {
+            ctrl = ctrl.min((cap - column - spacing).max(CONTROL_MIN));
+        }
         match n.kind {
             WIDGET_TOGGLE | WIDGET_SLIDER | WIDGET_COMBO | WIDGET_TEXT_INPUT => {
                 let mut out = None;
@@ -392,16 +515,18 @@ impl<'a> Scene<'a> {
         let mut v = self.num(n).clamp(lo, hi);
         let before = v;
         let rail = (ctrl - 72.0).max(60.0);
-        let mut slider = egui::Slider::new(&mut v, lo..=hi).clamping(egui::SliderClamping::Always);
+        let mut slider = egui::Slider::new(&mut v, lo..=hi)
+            .clamping(egui::SliderClamping::Always)
+            .custom_formatter(move |x, _| {
+                if integer {
+                    integer_text(x, percent)
+                } else {
+                    number_text(x)
+                }
+            })
+            .custom_parser(|s| s.trim().trim_end_matches('%').trim().parse::<f64>().ok());
         if integer {
             slider = slider.integer();
-        } else {
-            slider = slider.max_decimals(3);
-        }
-        if percent {
-            slider = slider
-                .custom_formatter(|x, _| format!("{:.0}%", x))
-                .custom_parser(|s| s.trim().trim_end_matches('%').trim().parse::<f64>().ok());
         }
         let r = ui
             .scope(|ui| {
@@ -514,8 +639,11 @@ impl<'a> Scene<'a> {
                     ui.with_layout(Layout::top_down_justified(Align::LEFT), |ui| {
                         for k in first..last {
                             let text = &n.items[k];
-                            let r = ui
+                            let mut r = ui
                                 .add(Button::selectable(cur == k as i32, text.as_str()).truncate());
+                            if is_elided(ui, text, r.rect.width()) {
+                                r = r.on_hover_text(text.as_str());
+                            }
                             item_rects.push(ItemRect {
                                 key: n.key,
                                 index: k,
@@ -605,6 +733,7 @@ impl<'a> Scene<'a> {
                 kind: WIDGET_EVENT_PAGE,
                 rect,
                 rail: 0.0,
+                page: true,
             });
         }
         if let Some(row) = want {
@@ -646,5 +775,19 @@ mod tests {
     fn number_rounding() {
         assert_eq!(round3(1.23456), 1.235);
         assert_eq!(round3(-0.0001), 0.0);
+    }
+
+    #[test]
+    fn number_text_follows_imgui_layout() {
+        assert_eq!(number_text(30.0), "30");
+        assert_eq!(number_text(0.5), "0.5");
+        assert_eq!(number_text(0.125), "0.125");
+        assert_eq!(number_text(1.23456), "1.235");
+        assert_eq!(number_text(-0.0001), "0");
+        assert_eq!(number_text(4.0), "4");
+        assert_eq!(number_text(2.50), "2.5");
+        assert_eq!(number_text(-3.0), "-3");
+        assert_eq!(integer_text(60.0, true), "60%");
+        assert_eq!(integer_text(-0.2, false), "0");
     }
 }

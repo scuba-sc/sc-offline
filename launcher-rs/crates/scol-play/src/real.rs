@@ -95,8 +95,8 @@ pub struct RealHost {
     pub update_hook: Option<UpdateHook>,
 }
 
-/// What `play` runs for its automatic update check.
-pub type UpdateHook = Box<dyn FnMut(&scol_config::Config, &mut dyn Write)>;
+/// What `play` runs for its automatic update check. `Some(code)` ends `play` with that code.
+pub type UpdateHook = Box<dyn FnMut(&scol_config::Config, &mut dyn Write) -> Option<i32>>;
 
 impl Default for RealHost {
     fn default() -> Self {
@@ -429,10 +429,22 @@ impl Host for RealHost {
         // SAFETY: on_ctrl has the signature the call wants and lives for the whole process.
         unsafe { SetConsoleCtrlHandler(Some(on_ctrl), TRUE) };
     }
-    fn check_update(&mut self, cfg: &scol_config::Config, out: &mut dyn Write) {
-        if let Some(hook) = self.update_hook.as_mut() {
-            hook(cfg, out);
-        }
+    fn check_update(&mut self, cfg: &scol_config::Config, out: &mut dyn Write) -> Option<i32> {
+        self.update_hook.as_mut().and_then(|hook| hook(cfg, out))
+    }
+    fn can_pick_folder(&mut self) -> bool {
+        // The window's child (it has no console of its own to ask in) or a console to sit at.
+        self.owns_console_input()
+    }
+    fn pick_folder(&mut self) -> Option<String> {
+        // The console window of a double-clicked exe is the owner; the window's hidden child has none.
+        let owner = if std::env::var_os(scol_contract::env::GUI).is_some() {
+            0
+        } else {
+            // SAFETY: plain call without arguments; a null handle means no console window.
+            unsafe { windows_sys::Win32::System::Console::GetConsoleWindow() as isize }
+        };
+        crate::pick::pick_folder(owner)
     }
     fn open_url(&mut self, url: &str) {
         let (verb, file) = (wide("open"), wide(url));

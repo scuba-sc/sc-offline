@@ -251,7 +251,7 @@ pub fn fixed_str(field: &[u8]) -> String {
 pub mod build {
     use super::*;
 
-    #[derive(Default, Clone)]
+    #[derive(Default, Clone, Debug)]
     pub struct NodeSpec {
         pub kind: u32,
         pub id: u32,

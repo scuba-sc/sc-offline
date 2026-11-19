@@ -47,8 +47,10 @@ You need your own installed copy of Star Citizen and **64-bit Windows**. Linux t
 
 1. Download **`sc-offline-<version>.zip`** from [Releases](https://github.com/scuba-sc/sc-offline/releases/latest), not GitHub's source-code zip.
 2. Extract it into its own folder and keep the files together. Do not copy the DLL into the game folder yourself.
-3. Close the game, open **`sc-offline.exe`** normally and click **Play**. Approve the setup helper's administrator prompt.
+3. Close the game, open **`sc-offline.exe`** normally and click **Play**. Approve the setup helper's administrator prompt. `sc-offline.exe` is the Rust launcher. The C++ launcher is in the same folder as `sc-offline-classic.exe`, the fallback if the Rust launcher fails on your PC ([how](docs/launcher.md#the-classic-launcher)).
 4. Let initialization finish. The launcher holds the game at its first instruction while the mod starts (up to 3 minutes by design), so a pause of roughly 15 seconds before the game window appears is expected. Then **M** is meant to open the menu in game; opening the menu has **not been confirmed in game** on a current release ([Status](docs/status.md)).
+
+Coming from 0.7.x? Extract 0.8.0 into the old folder or let `sc-offline.exe update` do it: your `sc-offline.ini` and data files are kept and the updater swaps the exe. See [Updating from 0.7.x](docs/launcher.md#updating-from-07x).
 
 Use the launcher's **Plugins** page to manage extensions. What works depends on the release, the game build and the enabled services (see [Features](docs/features.md) and [Status](docs/status.md)); `main` and a downloaded release can differ.
 
@@ -56,10 +58,11 @@ Use the launcher's **Plugins** page to manage extensions. What works depends on 
 
 Read this before relying on any feature description. Only the owner runs the game; a green build, a synthetic check or a resolved signature is never a game result.
 
-- **Observed in game (once or twice, startup only):** v0.7.8.1 offline startup on two Windows PCs: offline evidence line clear, every offline patch applied, signatures resolved, plugins loaded, the game loading into the universe. Play beyond loading in, the menu and every feature below are **not verified in game**.
+- **Observed in game by the owner (game build 4.10.200.58746, one or two sessions each):** equipping gear through `game.loadout.async` attaches the items (`AttachmentReceived` in `Game.log`); placing a prefab through `game.prefabs` places an Outposts item; ship spawn, boarding and Flight Ready work; character spawn works; a saved-spot move really moves the player, but Core did not confirm the arrival (the product now also checks the player's own position); the seat probe logged Enter and Exit. Earlier: v0.7.8.1 offline startup on two Windows PCs.
+- **Not run in game:** the Rust launcher's play path and its elevated helper, the Rust in-game menu, the update swap, the catalogue network path, and every other feature. [Status](docs/status.md) has the full list.
 - **Checked on a development machine only:** the external plugins build against published SDK archives and pass the SDK's plugin checker with no game services. That is a build and contract check, not gameplay.
 - **Historical Linux report:** sc-offline 0.7.0 was reported played offline with game 4.10.193 on one Bazzite/LUG Helper Wine setup. [The exact tuple and limits](docs/linux.md#historical-observation) are recorded separately; the current stable SDK 2.4.0 host and plugins have no Wine game run.
-- **Development source:** the host builds from the exact `external/sco-core` gitlink, currently Core `4ba313d` (development SDK coordinate `2.4.1-dev.6`, unpublished). That Core provides the process-retained composition, so native startup is on; it has not been run in game ([host composition](docs/host-composition.md)). The published SDK 2.4.0 archive is what CI uses for the external plugin proofs. See [SDK coordinates](docs/sdk-candidate.md).
+- **This release's SDK:** 0.8.0 is built for sco-core SDK 2.4.1, game pack 0.8.1, game build 4.10.200.58746. The Core with the process-retained composition starts the host natively ([host composition](docs/host-composition.md)). CI's external plugin proofs use the published SDK 2.4.0 archive until 2.4.1 is published; the 2.4.1 proofs were run on a development machine, with synthetic services. See [SDK coordinates](docs/sdk-candidate.md).
 
 Details and the list of owed in-game checks: [Status](docs/status.md).
 
@@ -72,6 +75,8 @@ The launcher records its session changes and arranges cleanup when the game exit
 .\sc-offline.exe uninstall
 .\sc-offline.exe status
 ```
+
+If the Rust launcher cannot do it, `.\sc-offline-classic.exe uninstall` reads the same `pc-changes.txt` record and undoes the same changes.
 
 **Green** means the mod is out of the game folder and the launcher's recorded PC changes are undone. It describes tracked local state, not account safety or unrelated manual changes. Keep the default protections enabled; [the launcher guide](docs/launcher.md#pc-changes) explains firewall/EAC handling and restoration.
 

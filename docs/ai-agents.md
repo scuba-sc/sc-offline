@@ -13,7 +13,11 @@ servers cover three jobs:
 ## What the sc-offline server does
 
 `sc-offline.exe mcp` runs a read-only MCP server on stdin/stdout. Your agent client starts it
-when it needs it; nothing listens on a port and nothing goes over the network.
+when it needs it; nothing listens on a port and nothing goes over the network. From 0.8.0 the
+server is part of the Rust launcher (crate `scol-mcp`); `sc-offline-classic.exe mcp`, the C++
+launcher that ships beside it, answers the same protocol with the same four tools. Both write
+nothing and make no network request. The plugin commands (`sc-offline.exe plugins ...`) are not
+exposed: the server cannot change a plugin, a setting or a file.
 
 | Tool | Returns |
 | --- | --- |
@@ -236,7 +240,7 @@ The server reads one JSON-RPC message per line. This sends an `initialize` and l
 
 Two JSON lines come back: the server's name and version, then the four tools. A one-line note on
 stderr says the server started. If you see the launcher's usage text instead, the
-`sc-offline.exe` is older than this feature.
+`sc-offline.exe` is older than this feature (the `mcp` command came with 0.7.8.x).
 
 ## Live in-game data
 
@@ -249,12 +253,14 @@ sc-offline does not enable it: it is waiting for its Windows security acceptance
 
 ## For developers
 
-The protocol and the tools are in `launcher/mcp_server.h` (no Windows code, so it is tested on
-any platform); `launcher/launcher.cpp` (`RunMcp`) supplies the files and the status checks.
-`launcher/redact.h` (also no Windows code) is the redactor shared with the crash report.
+The Rust server is `launcher-rs/crates/scol-mcp` (protocol and tools) over `scol-redact` (the
+redactor shared with the crash report); `scol-cli` supplies the files and the status checks.
+`launcher-rs/tests/mcp-vectors` holds the request and answer vectors both servers must match.
+The C++ twin, kept for `sc-offline-classic.exe`, is `launcher/mcp_server.h` (no Windows code, so it is
+tested on any platform) with `RunMcp` in `launcher/launcher.cpp`, and `launcher/redact.h`.
 `python tools/check_launcher_mcp.py` builds and runs the portable tests (the protocol and redaction checks in
 `tools/launcher_mcp_test.cpp`, and the comparison with the earlier crash redactor in
 `tools/launcher_redact_diff_test.cpp`);
-`python tools/check_launcher_mcp.py --exe <built sc-offline.exe>` also runs real stdio sessions
+`python tools/check_launcher_mcp.py --exe <built sc-offline.exe>` (the Rust exe or the C++ one) also runs real stdio sessions
 against a scratch install, with and without `--game-log`, checks that no file or folder changed, and times a log
 larger than 64 MiB with hostile lines. None of this ran in game.

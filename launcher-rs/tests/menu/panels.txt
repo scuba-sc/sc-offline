@@ -1,0 +1,265 @@
+panel	33	spawn.vehicles	Vehicles	24
+node	10	30	0	0	0	0	0	0	0	0	0	0	0	Choose a ship			
+node	7	1	30	0	0	0	0	0	0	0	0	0	0	Search ships			
+node	6	2	30	0	-1	0	0	0	0	0	0	0	0	Ships			
+node	9	31	30	0	0	0	0	0	0	0	0	0	0				
+node	2	8	31	1	0	0	0	0	0	0	0	0	0	Previous			
+node	2	9	31	1	0	0	0	0	0	0	0	0	0	Next			
+node	2	10	31	0	0	0	0	0	0	0	0	0	0	Reload ship list			
+node	1	19	30	0	0	0	0	0	0	0	0	0	0	No ship list is available. Type a ship name below.			
+node	7	3	30	0	0	0	0	0	0	0	0	0	0	Ship name			
+node	10	33	0	0	0	0	0	0	0	0	0	0	0	Spawn it			
+node	4	4	33	0	0	30	0	10000	0	0	0	0	0	Height above you (m)			
+node	5	5	33	0	0	0	0	0	0	0	0	0	0	After spawning			Get in as pilotStay outside
+node	3	6	33	0	0	1	0	0	0	0	0	0	0	Start ready to fly			
+node	2	7	33	1	0	0	0	0	0	0	0	0	0	Spawn ship			
+node	1	34	33	0	0	0	0	0	0	0	0	0	0	Choose a ship first.			
+node	10	35	0	0	0	0	0	0	0	0	0	0	0	Ships you spawned			
+node	1	37	35	0	0	0	0	0	0	0	0	0	0	You haven't spawned any ships yet.			
+node	9	36	35	0	0	0	0	0	0	0	0	0	0				
+node	2	12	36	1	0	0	0	0	0	0	0	0	0	Get in			
+node	2	13	36	1	0	0	0	0	0	0	0	0	0	Remove ship			
+node	2	14	36	1	0	0	0	0	0	0	0	0	0	Remove all my ships			
+node	2	15	36	0	0	0	0	0	0	0	0	0	0	Check status			
+node	10	38	0	0	0	0	0	0	0	0	0	0	0	Last result			
+node	1	20	38	0	0	0	0	0	0	0	0	0	0	Nothing yet.			
+panel	35	spawn.asop	Your own ships	32
+node	10	1993	0	0	0	0	0	0	0	0	0	0	0	Ships to use			
+node	1	1994	1993	0	0	0	0	0	0	0	0	0	0	Choose which ships from your in-game fleet to use.			
+node	9	1995	1993	0	0	0	0	0	0	0	0	0	0				
+node	2	1986	1995	0	0	0	0	0	0	0	0	0	0	Select all			
+node	2	1987	1995	0	0	0	0	0	0	0	0	0	0	Select none			
+node	3	2000	1993	0	0	0	0	0	0	0	0	0	0	Class0			
+node	3	2001	1993	0	0	0	0	0	0	0	0	0	0	Class1			
+node	3	2002	1993	0	0	0	0	0	0	0	0	0	0	Class2			
+node	3	2003	1993	0	0	0	0	0	0	0	0	0	0	Class3			
+node	3	2004	1993	0	0	0	0	0	0	0	0	0	0	Class4			
+node	3	2005	1993	0	0	0	0	0	0	0	0	0	0	Class5			
+node	3	2006	1993	0	0	0	0	0	0	0	0	0	0	Class6			
+node	3	2007	1993	0	0	0	0	0	0	0	0	0	0	Class7			
+node	3	2008	1993	0	0	0	0	0	0	0	0	0	0	Class8			
+node	3	2009	1993	0	0	0	0	0	0	0	0	0	0	Class9			
+node	3	2010	1993	0	0	0	0	0	0	0	0	0	0	Class10			
+node	3	2011	1993	0	0	0	0	0	0	0	0	0	0	Class11			
+node	3	2012	1993	0	0	0	0	0	0	0	0	0	0	Class12			
+node	3	2013	1993	0	0	0	0	0	0	0	0	0	0	Class13			
+node	3	2014	1993	0	0	0	0	0	0	0	0	0	0	Class14			
+node	3	2015	1993	0	0	0	0	0	0	0	0	0	0	Class15			
+node	9	1996	1993	0	0	0	0	0	0	0	0	0	0				
+node	2	1988	1996	1	0	0	0	0	0	0	0	0	0	Previous			
+node	2	1989	1996	0	0	0	0	0	0	0	0	0	0	Next			
+node	1	1992	1993	0	0	0	0	0	0	0	0	0	0	Page 1 of 128. 1 selected.			
+node	10	1997	0	0	0	0	0	0	0	0	0	0	0	Keep your choice			
+node	9	1998	1997	0	0	0	0	0	0	0	0	0	0				
+node	2	1990	1998	1	0	0	0	0	0	0	0	0	0	Save choice			
+node	2	1985	1998	0	0	0	0	0	0	0	0	0	0	Reload saved choice			
+node	1	1999	1997	0	0	0	0	0	0	0	0	0	0	Your choice is saved to a file. This version can't confirm the game uses it yet.			
+node	10	2016	0	0	0	0	0	0	0	0	0	0	0	Last result			
+node	1	1991	2016	0	0	0	0	0	0	0	0	0	0	Can't select them all: that is more ships than you can choose.			
+panel	33	crew.crew	Crew	37
+node	10	30	0	0	0	0	0	0	0	0	0	0	0	Your ship			
+node	1	31	30	0	0	0	0	0	0	0	0	0	0	Your ship has 128 seats.			
+node	9	32	30	0	0	0	0	0	0	0	0	0	0				
+node	2	6	32	0	0	0	0	0	0	0	0	0	0	Use my current ship			
+node	2	11	32	0	0	0	0	0	0	0	0	0	0	Get ship ready to fly			
+node	2	17	32	0	0	0	0	0	0	0	0	0	0	Update seat list			
+node	5	4	30	0	-1	0	0	0	0	0	0	0	0	Seat			synthetic seat 32synthetic seat 33synthetic seat 34synthetic seat 35synthetic seat 36synthetic seat 37synthetic seat 38synthetic seat 39synthetic seat 40synthetic seat 41synthetic seat 42synthetic seat 43synthetic seat 44synthetic seat 45synthetic seat 46synthetic seat 47synthetic seat 48synthetic seat 49synthetic seat 50synthetic seat 51synthetic seat 52synthetic seat 53synthetic seat 54synthetic seat 55synthetic seat 56synthetic seat 57synthetic seat 58synthetic seat 59synthetic seat 60synthetic seat 61synthetic seat 62synthetic seat 63
+node	8	21	30	0	0	0	0	0	3	0	0	0	0	Seats			synthetic seat 32EmptyCan be usedsynthetic seat 33EmptyCan be usedsynthetic seat 34EmptyCan be usedsynthetic seat 35EmptyCan be usedsynthetic seat 36EmptyCan be usedsynthetic seat 37EmptyCan be usedsynthetic seat 38EmptyCan be usedsynthetic seat 39EmptyCan be usedsynthetic seat 40EmptyCan be usedsynthetic seat 41EmptyCan be usedsynthetic seat 42EmptyCan be usedsynthetic seat 43EmptyCan be usedsynthetic seat 44EmptyCan be usedsynthetic seat 45EmptyCan be usedsynthetic seat 46EmptyCan be usedsynthetic seat 47EmptyCan be usedsynthetic seat 48EmptyCan be usedsynthetic seat 49EmptyCan be usedsynthetic seat 50EmptyCan be usedsynthetic seat 51EmptyCan be usedsynthetic seat 52EmptyCan be usedsynthetic seat 53EmptyCan be usedsynthetic seat 54EmptyCan be usedsynthetic seat 55EmptyCan be usedsynthetic seat 56EmptyCan be usedsynthetic seat 57EmptyCan be usedsynthetic seat 58EmptyCan be usedsynthetic seat 59EmptyCan be usedsynthetic seat 60EmptyCan be usedsynthetic seat 61EmptyCan be usedsynthetic seat 62EmptyCan be usedsynthetic seat 63EmptyCan be used
+node	9	33	30	0	0	0	0	0	0	0	0	0	0				
+node	2	15	33	0	0	0	0	0	0	0	0	0	0	Previous			
+node	2	16	33	0	0	0	0	0	0	0	0	0	0	Next			
+node	1	22	30	0	0	0	0	0	0	0	0	0	0	Seats 33-64 of 128			
+node	10	34	0	0	0	0	0	0	0	0	0	0	0	Choose a character to add			
+node	7	1	34	0	0	0	0	0	0	0	0	0	0	Search characters	synthetic pilot		
+node	6	2	34	0	-1	0	0	0	0	0	0	0	0	Characters			Synthetic Pilot (synthetic_catalog)Synthetic Pilot (second_pack)
+node	9	35	34	0	0	0	0	0	0	0	0	0	0				
+node	2	12	35	1	0	0	0	0	0	0	0	0	0	Previous			
+node	2	13	35	1	0	0	0	0	0	0	0	0	0	Next			
+node	2	14	35	0	0	0	0	0	0	0	0	0	0	Reload character list			
+node	1	24	34	0	0	0	0	0	0	0	0	0	0	Page 1 of 1 (2 characters)			
+node	7	3	34	0	0	0	0	0	0	0	0	0	0	Character name			
+node	10	36	0	0	0	0	0	0	0	0	0	0	0	Add crew			
+node	9	37	36	0	0	0	0	0	0	0	0	0	0				
+node	2	9	37	1	0	0	0	0	0	0	0	0	0	Fill all empty seats			
+node	2	18	37	1	0	0	0	0	0	0	0	0	0	Add to selected seat			
+node	1	38	36	0	0	0	0	0	0	0	0	0	0	Choose a character first.			
+node	10	39	0	0	0	0	0	0	0	0	0	0	0	You and your crew			
+node	9	40	39	0	0	0	0	0	0	0	0	0	0				
+node	2	7	40	1	0	0	0	0	0	0	0	0	0	Sit in selected seat			
+node	2	19	40	1	0	0	0	0	0	0	0	0	0	Stand up person in seat			
+node	2	20	40	1	0	0	0	0	0	0	0	0	0	Remove crew in seat			
+node	1	42	39	0	0	0	0	0	0	0	0	0	0	Choose a seat above to use these buttons.			
+node	9	41	39	0	0	0	0	0	0	0	0	0	0				
+node	2	8	41	0	0	0	0	0	0	0	0	0	0	Stand everyone up			
+node	2	10	41	0	0	0	0	0	0	0	0	0	0	Remove all my crew			
+node	10	43	0	0	0	0	0	0	0	0	0	0	0	Last result			
+node	1	25	43	0	0	0	0	0	0	0	0	0	0	Nothing yet.			
+panel	50	npc.npcs	NPCs	22
+node	10	20	0	0	0	0	0	0	0	0	0	0	0	Choose a character			
+node	7	1	20	0	0	0	0	0	0	0	0	0	0	Search characters			
+node	6	2	20	0	-1	0	0	0	0	0	0	0	0	Characters			
+node	9	21	20	0	0	0	0	0	0	0	0	0	0				
+node	2	6	21	1	0	0	0	0	0	0	0	0	0	Previous			
+node	2	7	21	1	0	0	0	0	0	0	0	0	0	Next			
+node	2	8	21	0	0	0	0	0	0	0	0	0	0	Reload character list			
+node	1	16	20	0	0	0	0	0	0	0	0	0	0	No character list is available. Type a character name below.			
+node	7	3	20	0	0	0	0	0	0	0	0	0	0	Character name	manual_actor		
+node	10	22	0	0	0	0	0	0	0	0	0	0	0	Spawn them			
+node	4	4	22	0	0	1	1	10	0	0	0	0	0	How many			
+node	2	5	22	0	0	0	0	0	0	0	0	0	0	Spawn characters			
+node	1	27	22	0	0	0	0	0	0	0	0	0	0	They appear a few metres in front of you.			
+node	10	23	0	0	0	0	0	0	0	0	0	0	0	Characters you spawned			
+node	5	9	23	0	-1	0	0	0	0	0	0	0	0	Character			Character 1 - spawned
+node	1	30	23	0	0	0	0	0	0	0	0	0	0	Choose one of your characters to remove it.			
+node	9	24	23	0	0	0	0	0	0	0	0	0	0				
+node	2	10	24	1	0	0	0	0	0	0	0	0	0	Remove character			
+node	2	11	24	0	0	0	0	0	0	0	0	0	0	Remove all my characters			
+node	2	12	24	0	0	0	0	0	0	0	0	0	0	Check on them			
+node	10	26	0	0	0	0	0	0	0	0	0	0	0	Last result			
+node	1	17	26	0	0	0	0	0	0	0	0	0	0	Spawned 1 character in front of you. They can take a moment to appear.			
+panel	158	quantum.travel	Travel	26
+node	10	20	0	0	-1	0	0	0	0	0	0	0	0	Choose a destination			
+node	7	17	20	0	-1	0	0	0	0	0	0	0	0	Search destinations			
+node	6	2	20	0	-1	0	0	0	0	0	0	0	0	Destinations			Stanton / Port
+node	2	7	20	0	-1	0	0	0	0	0	0	0	0	Find nearby places			
+node	10	21	0	0	-1	0	0	0	0	0	0	0	0	Set the height and go			
+node	4	5	21	0	-1	1000	100	20000	0	0	0	0	0	Arrival height (m)			
+node	1	42	21	0	-1	0	0	0	0	0	0	0	0	Choose a destination first.			
+node	2	6	21	1	-1	0	0	0	0	0	0	0	0	Travel to selected destination			
+node	10	22	0	0	-1	0	0	0	0	0	0	0	0	Your saved spots			
+node	6	3	22	0	-1	0	0	0	0	0	0	0	0	Saved spots			A / same
+node	9	23	22	0	-1	0	0	0	0	0	0	0	0				
+node	2	13	23	0	-1	0	0	0	0	0	0	0	0	Previous page			
+node	2	14	23	0	-1	0	0	0	0	0	0	0	0	Next page			
+node	1	43	22	0	-1	0	0	0	0	0	0	0	0	Choose a saved spot to go there or delete it.			
+node	9	24	22	0	-1	0	0	0	0	0	0	0	0				
+node	2	15	24	1	-1	0	0	0	0	0	0	0	0	Go to selected spot			
+node	2	9	24	1	-1	0	0	0	0	0	0	0	0	Delete selected spot			
+node	9	25	22	0	-1	0	0	0	0	0	0	0	0				
+node	7	4	25	0	-1	0	0	0	0	0	0	0	0	Name for the new spot (optional)			
+node	2	8	25	0	-1	0	0	0	0	0	0	0	0	Save this spot			
+node	10	110	0	0	-1	0	0	0	0	0	0	0	0	Quantum drive			
+node	3	102	110	0	-1	0	0	0	0	0	0	0	0	Use quantum drive controls			
+node	1	101	110	0	-1	0	0	0	0	0	0	0	0	Turn the controls on to boost.			
+node	2	103	110	1	-1	0	0	0	0	0	0	0	0	Boost			
+node	10	30	0	0	-1	0	0	0	0	0	0	0	0	Status			
+node	1	1	30	0	-1	0	0	0	0	0	0	0	0	Choose a saved spot first.			
+panel	235	loadout.player	Player	47
+node	10	300	0	0	0	0	0	0	0	0	0	0	0	Choose gear			
+node	7	1	300	0	0	0	0	0	0	0	0	0	0	Search gear			
+node	5	2	300	0	-1	0	0	0	0	0	0	0	0	Gear			
+node	9	301	300	0	0	0	0	0	0	0	0	0	0	Gear list			
+node	2	3	301	1	0	0	0	0	0	0	0	0	0	Previous page			
+node	2	4	301	1	0	0	0	0	0	0	0	0	0	Next page			
+node	2	8	301	0	0	0	0	0	0	0	0	0	0	Refresh gear list			
+node	1	5	300	0	0	0	0	0	0	0	0	0	0	Selected: nothing yet			
+node	9	302	300	0	0	0	0	0	0	0	0	0	0	Gear actions			
+node	2	27	302	1	0	0	0	0	0	0	0	0	0	Equip selected gear			
+node	2	7	302	1	0	0	0	0	0	0	0	0	0	Clear selection			
+node	10	310	0	0	0	0	0	0	0	0	0	0	0	Weapons and tools			
+node	9	260	310	0	0	0	0	0	0	0	0	0	0	Weapon groups			
+node	10	261	260	0	0	0	0	0	0	0	0	0	0	Primary weapon or tool			
+node	5	244	261	0	0	0	0	0	0	0	0	0	0	Type			All types
+node	7	240	261	0	0	0	0	0	0	0	0	0	0	Search weapons and tools			
+node	5	200	261	1	0	0	0	0	0	0	0	0	0	Weapon			Keep current
+node	7	242	261	0	0	0	0	0	0	0	0	0	0	Search attachments			
+node	5	202	261	1	0	0	0	0	0	0	0	0	0	Optic			Keep current
+node	5	203	261	1	0	0	0	0	0	0	0	0	0	Barrel			Keep current
+node	5	204	261	1	0	0	0	0	0	0	0	0	0	Underbarrel			Keep current
+node	5	208	261	1	0	0	0	0	0	0	0	0	0	Tool attachment			Keep current
+node	5	209	261	1	0	0	0	0	0	0	0	0	0	Tool canister			Keep current
+node	5	210	261	1	0	0	0	0	0	0	0	0	0	Tool battery			Keep current
+node	10	262	260	0	0	0	0	0	0	0	0	0	0	Sidearm or secondary tool			
+node	5	245	262	0	0	0	0	0	0	0	0	0	0	Type			All types
+node	7	241	262	0	0	0	0	0	0	0	0	0	0	Search weapons and tools			
+node	5	201	262	1	0	0	0	0	0	0	0	0	0	Weapon			Keep current
+node	7	243	262	0	0	0	0	0	0	0	0	0	0	Search attachments			
+node	5	205	262	1	0	0	0	0	0	0	0	0	0	Optic			Keep current
+node	5	206	262	1	0	0	0	0	0	0	0	0	0	Barrel			Keep current
+node	5	207	262	1	0	0	0	0	0	0	0	0	0	Underbarrel			Keep current
+node	5	211	262	1	0	0	0	0	0	0	0	0	0	Tool attachment			Keep current
+node	5	212	262	1	0	0	0	0	0	0	0	0	0	Tool canister			Keep current
+node	5	213	262	1	0	0	0	0	0	0	0	0	0	Tool battery			Keep current
+node	9	311	310	0	0	0	0	0	0	0	0	0	0	Weapon actions			
+node	2	221	311	1	0	0	0	0	0	0	0	0	0	Equip chosen weapons			
+node	2	222	311	1	0	0	0	0	0	0	0	0	0	Clear choices			
+node	2	223	311	0	0	0	0	0	0	0	0	0	0	Refresh weapon list			
+node	1	224	310	0	0	0	0	0	0	0	0	0	0	Anything left on Keep current stays as it is.			
+node	1	225	310	0	0	0	0	0	0	0	0	0	0	No weapon list is available, so there is nothing to choose.			
+node	10	320	0	0	0	0	0	0	0	0	0	0	0	Progress			
+node	1	26	320	0	0	0	0	0	0	0	0	0	0	Nothing is being equipped.			
+node	9	321	320	0	0	0	0	0	0	0	0	0	0	Progress actions			
+node	2	23	321	1	0	0	0	0	0	0	0	0	0	Check progress			
+node	2	24	321	1	0	0	0	0	0	0	0	0	0	Cancel equipping			
+node	1	14	0	0	0	0	0	0	0	0	0	0	0	The lists couldn't be loaded.			
+panel	236	loadout.sq42	Squadron 42	27
+node	10	400	0	0	0	0	0	0	0	0	0	0	0	Outfit			
+node	7	135	400	0	0	0	0	0	0	0	0	0	0	Search outfits	flight		
+node	5	101	400	0	-1	0	0	0	0	0	0	0	0	Outfit			
+node	9	401	400	0	0	0	0	0	0	0	0	0	0	Outfit list			
+node	2	137	401	1	0	0	0	0	0	0	0	0	0	Previous page			
+node	2	138	401	1	0	0	0	0	0	0	0	0	0	Next page			
+node	2	106	400	1	0	0	0	0	0	0	0	0	0	Wear selected outfit			
+node	1	109	400	0	0	0	0	0	0	0	0	0	0	Nothing is being equipped.			
+node	9	402	400	0	0	0	0	0	0	0	0	0	0	Outfit progress			
+node	2	107	402	1	0	0	0	0	0	0	0	0	0	Check progress			
+node	2	108	402	1	0	0	0	0	0	0	0	0	0	Cancel equipping			
+node	10	410	0	0	0	0	0	0	0	0	0	0	0	Game settings			
+node	1	114	410	0	0	0	0	0	0	0	0	0	0	These settings can't be read or changed yet.			
+node	10	420	0	0	0	0	0	0	0	0	0	0	0	Ships			
+node	7	136	420	0	0	0	0	0	0	0	0	0	0	Search ships	bengal		
+node	5	120	420	0	0	0	0	0	0	0	0	0	0	Ship			Bengal (UEE)
+node	4	121	420	0	0	77	0	500	0	0	0	0	0	Height above me (m)			
+node	3	122	420	0	0	0	0	0	0	0	0	0	0	Start in the pilot seat, ready to fly			
+node	2	123	420	0	0	0	0	0	0	0	0	0	0	Spawn ship			
+node	10	430	0	0	0	0	0	0	0	0	0	0	0	Objects			
+node	5	130	430	0	-1	0	0	0	0	0	0	0	0	Object			
+node	9	431	430	0	0	0	0	0	0	0	0	0	0	Object list			
+node	2	139	431	1	0	0	0	0	0	0	0	0	0	Previous page			
+node	2	140	431	1	0	0	0	0	0	0	0	0	0	Next page			
+node	4	131	430	0	0	8	0	100	0	0	0	0	0	Distance ahead (m, 0 = at my feet)			
+node	2	132	430	1	0	0	0	0	0	0	0	0	0	Place object			
+node	1	134	0	0	0	0	0	0	0	0	0	0	0	The lists couldn't be loaded.			
+panel	117	build.picker	Build	26
+node	10	30	0	0	-1	0	0	0	0	0	0	0	0	Choose an item			
+node	5	1	30	1	-1	0	0	0	0	0	0	0	0	Category			
+node	7	2	30	0	-1	0	0	0	0	0	0	0	0	Search all categories			
+node	6	3	30	1	-1	0	0	0	0	0	0	0	0	Items			
+node	9	31	30	0	-1	0	0	0	0	0	0	0	0				
+node	2	4	31	1	-1	0	0	0	0	0	0	0	0	Previous page			
+node	2	5	31	1	-1	0	0	0	0	0	0	0	0	Next page			
+node	1	6	30	0	-1	0	0	0	0	0	0	0	0	Page 1 of 1 (0 items)			
+node	1	7	30	0	-1	0	0	0	0	0	0	0	0	Nothing selected yet.			
+node	10	33	0	0	-1	0	0	0	0	0	0	0	0	Adjust placement			
+node	4	8	33	0	-1	50	5	300	0	0	0	0	0	Distance (metres)			
+node	10	34	0	0	-1	0	0	0	0	0	0	0	0	Place			
+node	9	35	34	0	-1	0	0	0	0	0	0	0	0				
+node	2	11	35	1	-1	0	0	0	0	0	0	0	0	Place in front of me			
+node	2	9	35	1	-1	0	0	0	0	0	0	0	0	Aim with this item			
+node	2	10	35	0	-1	0	0	0	0	0	0	0	0	Start aiming			
+node	1	22	34	0	-1	0	0	0	0	0	0	0	0	Aiming with: nothing yet			
+node	1	36	34	0	-1	0	0	0	0	0	0	0	0	Choose an item first.			
+node	10	38	0	0	-1	0	0	0	0	0	0	0	0	Things you placed			
+node	1	20	38	0	-1	0	0	0	0	0	0	0	0	You haven't placed anything yet.			
+node	9	39	38	0	-1	0	0	0	0	0	0	0	0				
+node	2	12	39	1	-1	0	0	0	0	0	0	0	0	Undo last			
+node	2	13	39	1	-1	0	0	0	0	0	0	0	0	Remove all			
+node	10	40	0	0	-1	0	0	0	0	0	0	0	0	Status			
+node	1	19	40	0	-1	0	0	0	0	0	0	0	0	Choose an item from the list, then press Place.			
+node	1	18	40	0	-1	0	0	0	0	0	0	0	0	The item list could not be loaded, so there is nothing to choose from.			
+panel	8	gear_presets.main	Gear presets	15
+node	10	20	0	0	0	0	0	0	0	0	0	0	0	Save what you're wearing			
+node	7	1	20	0	0	0	0	0	0	0	0	0	0	Outfit name	Helmet kit		
+node	9	23	20	0	0	0	0	0	0	0	0	0	0	Save actions			
+node	2	2	23	0	0	0	0	0	0	0	0	0	0	Check what I'm wearing			
+node	2	3	23	1	0	0	0	0	0	0	0	0	0	Save outfit			
+node	10	21	0	0	0	0	0	0	0	0	0	0	0	Saved outfits			
+node	5	5	21	0	0	0	0	0	0	0	0	0	0	Saved outfit			Helmet kit
+node	9	24	21	0	0	0	0	0	0	0	0	0	0	Saved outfit actions			
+node	2	6	24	0	0	0	0	0	0	0	0	0	0	Compare with what I'm wearing			
+node	2	9	24	0	0	0	0	0	0	0	0	0	0	Delete outfit			
+node	2	4	24	0	0	0	0	0	0	0	0	0	0	Refresh list			
+node	1	8	21	0	0	0	0	0	0	0	0	0	0	Comparing only tells you what differs. It never changes your gear.			
+node	1	7	0	0	0	0	0	0	0	0	0	0	0	Compared with what you're wearing. The differences are below. Nothing was changed, so swap items yourself.			
+node	10	22	0	0	0	0	0	0	0	0	0	0	0	What is different			
+node	1	100	22	0	0	0	0	0	0	0	0	0	0	Helmet: a different kind of item than when you saved. Swap it yourself.			

@@ -43,13 +43,16 @@ pub mod env {
     pub const SC_USER: &str = "SC_USER";
     /// `launcher/launcher.cpp:5315`
     pub const REGISTRY_PROBE: &str = "SC_OFFLINE_REGISTRY_PROBE";
+    /// `launcher/contract_text.h`, last entry of `PlayEnv`. Value `imgui` or `rust`: which in-game menu the mod
+    /// shows. Always set, so a value from the player's shell cannot choose the menu.
+    pub const MENU: &str = "SC_OFFLINE_MENU";
 
     /// Set by the launcher window on the hidden child it runs, so the child pipes its output
     /// and reads `[y/N]` answers from stdin. `launcher/launcher.cpp:146`.
     pub const GUI: &str = "SC_OFFLINE_GUI";
 
     /// Every variable the launcher sets on `play`, in the order the C++ launcher sets them.
-    pub const PLAY_BLOCK: [&str; 14] = [
+    pub const PLAY_BLOCK: [&str; 15] = [
         BOOT_MAP,
         MOD_LOG,
         SPAWN_FILE,
@@ -64,6 +67,7 @@ pub mod env {
         ASOP_FLEET_LIST,
         SC_USER,
         REGISTRY_PROBE,
+        MENU,
     ];
 }
 
@@ -268,6 +272,8 @@ pub mod ini {
     pub const ASOP: &str = "asop";
     /// `launcher/launcher.cpp:336`
     pub const ASOP_FLEET_LIST: &str = "asop_fleet_list";
+    /// `launcher/launcher.cpp`, the `menu` branch of `ReadConfig`. `imgui` (default) or `rust`.
+    pub const MENU: &str = "menu";
     /// `launcher/launcher.cpp:343`
     pub const CHECK_UPDATES: &str = "check_updates";
     /// `launcher/launcher.cpp:346`
@@ -298,7 +304,7 @@ pub mod ini {
     pub const LEGACY: [&str; 3] = [DISCORD_PRESENCE, MINING, MINING_DEBUG];
 
     /// Active keys the C++ parser applies as settings, in source order.
-    pub const ALL: [&str; 26] = [
+    pub const ALL: [&str; 27] = [
         GAME,
         LANGUAGE,
         CHANNEL,
@@ -315,6 +321,7 @@ pub mod ini {
         MULTIPLAYER_ALLOW,
         ASOP,
         ASOP_FLEET_LIST,
+        MENU,
         CHECK_UPDATES,
         UPDATE_CHANNEL,
         CLEAN_LOGS,
@@ -494,6 +501,34 @@ pub mod network {
     }
 }
 
+/// Product constants of this launcher build: where the plugin catalogue lives and which keys sign it.
+///
+/// Owner decision: no production signing key exists yet, so the shipped trust root is EMPTY. A launcher
+/// built from this source refuses every catalogue index, and a plain `plugins catalogue ...` says that no
+/// catalogue is published for this build yet without making a request. Adding the public key is a
+/// release-time act of the owner: put its 64 lower-case hex digits into [`CATALOGUE_TRUST_KEYS`] (and
+/// change the array length). The TEST key under the tests must never be put here.
+pub mod product {
+    /// The signed index. A launcher fetches it only on an explicit command or click, never while the game
+    /// runs, and never when `check_updates = off`.
+    pub const CATALOGUE_INDEX_URL: &str =
+        "https://github.com/scuba-sc/sc-plugins/releases/latest/download/index.json";
+    /// Its signature file.
+    pub const CATALOGUE_SIG_URL: &str =
+        "https://github.com/scuba-sc/sc-plugins/releases/latest/download/index.json.sig";
+    /// Hosts the index, the signature and the zips may be requested from.
+    pub const CATALOGUE_HOSTS: [&str; 1] = ["github.com"];
+    /// Hosts the last hop of a GitHub release download may redirect to.
+    pub const CATALOGUE_REDIRECT_HOSTS: [&str; 2] = [
+        "objects.githubusercontent.com",
+        "release-assets.githubusercontent.com",
+    ];
+    /// The release signing keys, 64 lower-case hex digits each. Empty by decision.
+    pub const CATALOGUE_TRUST_KEYS: [&str; 0] = [];
+    /// What the launcher says while [`CATALOGUE_TRUST_KEYS`] is empty.
+    pub const NO_CATALOGUE_YET: &str = "no catalogue is published for this build yet";
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -643,5 +678,30 @@ mod tests {
         assert!(ini::is_legacy_key("discord_presence"));
         assert!(ini::is_legacy_key("mining_debug"));
         assert!(!ini::is_recognised_key("no_such_key"));
+    }
+    #[test]
+    fn product_catalogue_constants() {
+        assert!(
+            product::CATALOGUE_TRUST_KEYS.is_empty(),
+            "no production key exists yet"
+        );
+        assert!(product::CATALOGUE_INDEX_URL.starts_with("https://github.com/"));
+        assert!(product::CATALOGUE_INDEX_URL.ends_with("/index.json"));
+        assert_eq!(
+            product::CATALOGUE_SIG_URL,
+            format!("{}.sig", product::CATALOGUE_INDEX_URL)
+        );
+        for url in [product::CATALOGUE_INDEX_URL, product::CATALOGUE_SIG_URL] {
+            let host = url
+                .trim_start_matches("https://")
+                .split('/')
+                .next()
+                .unwrap();
+            assert!(product::CATALOGUE_HOSTS.contains(&host), "{url}");
+        }
+        assert_eq!(
+            product::NO_CATALOGUE_YET,
+            "no catalogue is published for this build yet"
+        );
     }
 }

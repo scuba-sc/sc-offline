@@ -51,8 +51,8 @@ def main(args):
     test = ['ctest', '--test-dir', build, '-C', 'Release', '-R', '^crew-module-workflow$', '--output-on-failure', '-V']
     tested = run(test, work).stdout
     print(tested)
-    if len(re.findall(r'^1: PASS ', tested, re.M)) != 8:
-        raise AssertionError('Expected eight named crew workflow groups')
+    if len(re.findall(r'^1: PASS ', tested, re.M)) != 12:
+        raise AssertionError('Expected twelve named crew workflow groups')
     trace = trace_windows if os.name == 'nt' else trace_posix
     trace(build, source, sdk, public, feature='crew')
     stage = work / 'stage'

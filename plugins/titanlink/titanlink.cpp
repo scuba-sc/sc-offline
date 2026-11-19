@@ -14,8 +14,10 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#ifndef _MSC_VER  // MSVC has the real strncpy_s and _TRUNCATE; redefining them fails /WX (C4005)
 #define strncpy_s(dest,src,ignored) std::snprintf(dest,sizeof(dest),"%s",src)
 #define _TRUNCATE 0
+#endif
 namespace {
 
 const sco_api*       g_api = nullptr;

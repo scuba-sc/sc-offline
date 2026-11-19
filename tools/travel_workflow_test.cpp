@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Synthetic public-provider fixtures only; no game data or private frames.
-#include "../plugins/spatial/travel_model.h"
+#define TRAVEL_TELEPORT
+#include "../plugins/spatial/travel_plugin.h"
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -8,6 +9,11 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
+#include <filesystem>
+#include <map>
+#include <string>
+#include <vector>
 using namespace sco::features::travel;
 static uint64_t epoch = 7;
 static bool expire = false;
@@ -35,11 +41,11 @@ static int Convert(uint64_t from,uint64_t to,const double* p,const double* q,dou
 static bool cap=false; static int requests=0; static uint32_t state=SC_RELOCATION_PENDING, reason=0;
 static sc_relocation_request last{};
 static int HasCap(const char* name) { return cap && !std::strcmp(name,SC_RELOCATION_NAME); }
-static sco_result Request(sco_plugin*,const sc_relocation_request* q,uint64_t* t) {
+static sco_result RelRequestOld(sco_plugin*,const sc_relocation_request* q,uint64_t* t) {
     ++requests; assert(q && q->size==sizeof(*q) && q->timeout_ms>=1 && q->timeout_ms<=60000); last=*q; *t=42; return SCO_OK;
 }
-static sco_result Cancel(sco_plugin*,uint64_t) { return SCO_OK; }
-static sco_result Status(sco_plugin*,uint64_t t,sc_relocation_status* s) {
+static sco_result RelCancelOld(sco_plugin*,uint64_t) { return SCO_OK; }
+static sco_result RelStatusOld(sco_plugin*,uint64_t t,sc_relocation_status* s) {
     if (t!=42) return SCO_NOT_FOUND;
     assert(s->size==sizeof(*s)); s->state=state; s->reason=reason; s->applied=state==SC_RELOCATION_COMPLETE; s->ticket=t; return SCO_OK;
 }
@@ -89,7 +95,7 @@ int main() {
     sp.size=sizeof(sp); sp.find_zone=nullptr; assert(Resolve(&sp,again,r)==SCO_UNAVAILABLE);
     // game.relocation: fresh capability, full member extents, valid pose, then one request and status polling.
     sco_api api{}; api.size=sizeof(api); api.has=HasCap;
-    sc_relocation_v1 rel{sizeof(rel),Request,Cancel,Status};
+    sc_relocation_v1 rel{sizeof(rel),RelRequestOld,RelCancelOld,RelStatusOld};
     uint64_t ticket=0;
     assert(Relocate(&api,&rel,nullptr,s.z[0],ticket)==SCO_UNAVAILABLE && !requests && !ticket); // capability off
     cap=true; rel.size=offsetof(sc_relocation_v1,status)+sizeof(rel.status)-1;
@@ -107,13 +113,13 @@ int main() {
     assert(Poll(&rel,nullptr,7,st)==SCO_NOT_FOUND && Poll(&rel,nullptr,0,st)==SCO_UNAVAILABLE);
     cap=false; assert(Relocate(&api,&rel,nullptr,s.z[1],ticket)==SCO_UNAVAILABLE && requests==1); // re-checked per request
     // Already there: the player (1,0,2 in zone1) is within 2 m of the saved spot, so no move is requested.
-    sp.size=sizeof(sp); sp.find_zone=Find; sp.zone_record=Record; sp.pose_to_zone=Convert; Restoration near;
-    near.pose.zone=1; near.pose.pos[0]=1.5; near.pose.pos[1]=0; near.pose.pos[2]=2; assert(AlreadyThere(&old,&sp,near));
-    near.pose.pos[0]=2.9; assert(AlreadyThere(&old,&sp,near)); near.pose.pos[0]=3.1; assert(!AlreadyThere(&old,&sp,near));
-    near.pose.zone=2; near.pose.pos[0]=0; near.pose.pos[1]=2; near.pose.pos[2]=2; assert(AlreadyThere(&old,&sp,near)); // other zone frame
-    near.pose.pos[1]=5; assert(!AlreadyThere(&old,&sp,near));
-    near.pose.zone=0; assert(!AlreadyThere(&old,&sp,near)); near.pose.zone=1;
-    assert(!AlreadyThere(nullptr,&sp,near) && !AlreadyThere(&old,nullptr,near)); // missing service: move proceeds as before
+    sp.size=sizeof(sp); sp.find_zone=Find; sp.zone_record=Record; sp.pose_to_zone=Convert; Restoration nearby;
+    nearby.pose.zone=1; nearby.pose.pos[0]=1.5; nearby.pose.pos[1]=0; nearby.pose.pos[2]=2; assert(AlreadyThere(&old,&sp,nearby));
+    nearby.pose.pos[0]=2.9; assert(AlreadyThere(&old,&sp,nearby)); nearby.pose.pos[0]=3.1; assert(!AlreadyThere(&old,&sp,nearby));
+    nearby.pose.zone=2; nearby.pose.pos[0]=0; nearby.pose.pos[1]=2; nearby.pose.pos[2]=2; assert(AlreadyThere(&old,&sp,nearby)); // other zone frame
+    nearby.pose.pos[1]=5; assert(!AlreadyThere(&old,&sp,nearby));
+    nearby.pose.zone=0; assert(!AlreadyThere(&old,&sp,nearby)); nearby.pose.zone=1;
+    assert(!AlreadyThere(nullptr,&sp,nearby) && !AlreadyThere(&old,nullptr,nearby)); // missing service: move proceeds as before
     // Core can report a timeout after the move really happened. Applied plus a pose within 2 m of the target is arrival.
     {
         Pose t; t.zone=1; t.pos[0]=2.5; t.pos[1]=0; t.pos[2]=2; // player is at 1,0,2 in zone1: 1.5 m away
@@ -131,24 +137,118 @@ int main() {
     // Zone ids are saved with the spot. game.spatial finds a zone by name only inside the player's own ancestry,
     // so a spot saved elsewhere resolves through zone_record(id): accepted only while the record keeps the saved name.
     {
-        sc_game_spatial_v1 far{sizeof(far),Convert,Record,[](const char*,sc_game_zone*)->int{return 0;},List}; // find_zone answers nothing: player is elsewhere
+        sc_game_spatial_v1 farSp{sizeof(farSp),Convert,Record,[](const char*,sc_game_zone*)->int{return 0;},List}; // find_zone answers nothing: player is elsewhere
         Spot saved; assert(Capture(&old,&sp,saved)==SCO_OK);
         const auto kept=SpotText(saved); assert(kept.find("zoneid 1\n")!=std::string::npos && kept.find("zoneid 3\n")!=std::string::npos);
         Spot reread; assert(ParseSpot(kept,reread) && reread.z.size()==3 && reread.z[0].zone==1 && reread.z[1].zone==2 && reread.z[2].zone==3 && SpotText(reread)==kept);
-        Restoration far_r; assert(Resolve(&far,reread,far_r)==SCO_OK && far_r.level==0 && !far_r.partial && far_r.pose.zone==1); // exact, by id
+        Restoration far_r; assert(Resolve(&farSp,reread,far_r)==SCO_OK && far_r.level==0 && !far_r.partial && far_r.pose.zone==1); // exact, by id
         Spot old_file; assert(ParseSpot("spot 1 2 3 zone1\npose 0 0 0 1\n",old_file) && old_file.z[0].zone==0); // old files carry no id
-        assert(Resolve(&far,old_file,far_r)==SCO_UNAVAILABLE); // and cannot be found by name from outside the zone: honest refusal
+        assert(Resolve(&farSp,old_file,far_r)==SCO_UNAVAILABLE); // and cannot be found by name from outside the zone: honest refusal
         assert(Resolve(&sp,old_file,far_r)==SCO_OK && far_r.pose.zone==1); // still found by name inside it
         Spot renamed=reread; renamed.z[0].name="somewhere_else"; // the id now belongs to another place: never trusted
-        assert(Resolve(&far,renamed,far_r)==SCO_OK && far_r.level==1 && far_r.partial && far_r.pose.zone==2);
+        assert(Resolve(&farSp,renamed,far_r)==SCO_OK && far_r.level==1 && far_r.partial && far_r.pose.zone==2);
         Spot reused=reread; reused.z[1].zone=1; reused.z[0].zone=0; reused.z[0].name="gone"; // zone1 exists under another name, so level 1 must not match;
-        assert(Resolve(&far,reused,far_r)==SCO_UNAVAILABLE); // level 2 is the root, and a root-only match refuses as before
+        assert(Resolve(&farSp,reused,far_r)==SCO_UNAVAILABLE); // level 2 is the root, and a root-only match refuses as before
         Spot junk; assert(ParseSpot("spot 1 2 3 zone1\nzoneid nope\nzoneid 0\n",junk) && junk.z[0].zone==0); // a bad hint is ignored, the spot is kept
-        far.zone_record=nullptr; assert(Resolve(&far,reread,far_r)==SCO_UNAVAILABLE); // a service without zone_record is refused outright
+        farSp.zone_record=nullptr; assert(Resolve(&farSp,reread,far_r)==SCO_UNAVAILABLE); // a service without zone_record is refused outright
+    }
+    // The teleport plugin itself, against fake spatial and relocation services: the player's own pose decides arrival.
+    // Synthetic only; not run in game.
+    {
+        namespace tp=sco::features::travel::implementation;
+        struct FTicket { uint32_t state,reason,applied; };
+        static std::vector<FTicket> tickets; static int fRequests=0,fCancels=0;
+        static double px=1,py=0,pz=2; static bool relocationOn=true;
+        static std::vector<std::pair<int,std::string>> logs; static std::string hostStatus;
+        static std::map<std::string,sco_command> commands; static std::vector<sco_event_fn> subs;
+        static int dummy=0; static sc_game_spatial_v1 fsp{sizeof(fsp),Convert,Record,Find,List};
+        static sc_spatial_v1 fold{}; fold.size=sizeof(fold);
+        fold.player_pose=[](double* p,double* q,uint64_t* id)->int{ p[0]=px;p[1]=py;p[2]=pz;q[0]=0;q[1]=0;q[2]=0;q[3]=1;*id=1;return 1; };
+        static sc_relocation_v1 frel{sizeof(frel),
+            [](sco_plugin*,const sc_relocation_request*,uint64_t* t)->sco_result{ // Core allows one active request globally
+                for (const auto& k:tickets) if (k.state==SC_RELOCATION_PENDING) return SCO_TOO_MANY;
+                tickets.push_back({SC_RELOCATION_PENDING,0,1}); ++fRequests; *t=1000+tickets.size(); return SCO_OK; },
+            [](sco_plugin*,uint64_t t)->sco_result{ ++fCancels; auto& k=tickets.at(t-1001);
+                if (k.state!=SC_RELOCATION_PENDING) return SCO_NOT_FOUND; k.state=SC_RELOCATION_CANCELLED; return SCO_OK; },
+            [](sco_plugin*,uint64_t t,sc_relocation_status* o)->sco_result{ if (t<1001||t>1000+tickets.size()) return SCO_NOT_FOUND;
+                const auto& k=tickets[t-1001]; o->state=k.state; o->reason=k.reason; o->applied=k.applied; o->ticket=t; return SCO_OK; }};
+        static sco_api fapi{}; fapi.size=sizeof(fapi); fapi.major=SCO_API_MAJOR; fapi.minor=SCO_API_MINOR;
+        fapi.has=[](const char* n)->int{ return relocationOn && !std::strcmp(n,SC_RELOCATION_NAME); };
+        fapi.query_service=[](const char* n,uint32_t,const void** out)->sco_result{
+            if (!std::strcmp(n,SC_RELOCATION_NAME) && relocationOn) { *out=&frel; return SCO_OK; }
+            if (!std::strcmp(n,SC_SPATIAL_SERVICE_NAME)) { *out=&fold; return SCO_OK; }
+            if (!std::strcmp(n,SC_GAME_SPATIAL_NAME)) { *out=&fsp; return SCO_OK; }
+            return SCO_NOT_FOUND; };
+        fapi.subscribe=[](sco_plugin*,const char*,sco_event_fn fn,void*)->sco_result{ for (auto f:subs) assert(f!=fn); subs.push_back(fn); return SCO_OK; };
+        fapi.unsubscribe=[](sco_plugin*,const char*,sco_event_fn fn)->sco_result{
+            for (auto i=subs.begin();i!=subs.end();++i) if (*i==fn) { subs.erase(i); return SCO_OK; } return SCO_NOT_FOUND; };
+        fapi.status=[](sco_plugin*,const char* m){ hostStatus=m; };
+        fapi.log=[](sco_plugin*,sco_log_level l,const char* m){ logs.emplace_back(static_cast<int>(l),m); };
+        fapi.register_command=[](sco_plugin*,const sco_command* c)->sco_result{ commands[c->name]=*c; return SCO_OK; };
+        auto* self=reinterpret_cast<sco_plugin*>(&dummy);
+        const auto dir=std::filesystem::temp_directory_path()/"travel_workflow_test_spawn"; std::filesystem::remove_all(dir); std::filesystem::create_directories(dir);
+        const auto spawn=(dir/"spawn.txt").string();
+#ifdef _WIN32
+        _putenv_s("SC_OFFLINE_SPAWN_FILE",spawn.c_str());
+#else
+        setenv("SC_OFFLINE_SPAWN_FILE",spawn.c_str(),1);
+#endif
+        auto call=[&](const char* name)->sco_result{ char reply[512]{}; const auto& c=commands.at(name); return c.fn(nullptr,0,c.ctx,reply,sizeof(reply)); };
+        auto tick=[&]{ const auto copy=subs; for (auto f:copy) f("tick",nullptr,nullptr); };
+        auto at=[&]{ px=1;py=0;pz=2; }; auto away=[&]{ px=100;py=0;pz=2; };
+        auto logged=[&](const char* needle,int level){ for (const auto& l:logs) if (l.first==level && l.second.find(needle)!=std::string::npos) return true; return false; };
+        const std::string arrivedSaved="You are at your saved spot.";
+        assert(Load(&fapi,self)==SCO_OK && commands.size()==4 && subs.empty());
+        at(); assert(call("teleport.save")==SCO_OK);
+
+        // 1. The player arrives before Core confirms: success once, the page is free again, the slot is released.
+        away(); assert(call("teleport.go")==SCO_OK && fRequests==1 && subs.size()==1 && tp::Moving());
+        tick(); assert(tp::Moving() && tp::g.last_status.find("Moving to")==0); // still away: nothing reported
+        assert(call("teleport.go")==SCO_TOO_MANY && fRequests==1); // a move is genuinely pending
+        at(); tick(); // the player is at the spot; Core's own check has not passed
+        assert(tp::g.last_status==arrivedSaved && hostStatus==arrivedSaved && !tp::Moving() && tp::g.moving.empty());
+        assert(fCancels==1 && tickets[0].state==SC_RELOCATION_CANCELLED && tickets[0].applied==1); // cancel frees the slot; it does not undo the move
+        assert(!logged("confirmation not received",SCO_LOG_INFO)); // not yet: Core has said nothing
+        // 4. A second F8 after arrival, while Core's first request is still being watched, is accepted.
+        away(); assert(call("teleport.go")==SCO_OK && fRequests==2 && tp::Moving() && subs.size()==1);
+        tick(); assert(tp::Moving() && tp::g.last_status.find("Moving to")==0 && !logged("confirmation not received",SCO_LOG_INFO));
+        tickets[1].state=SC_RELOCATION_COMPLETE; tick(); // Core confirms the second move
+        assert(tp::g.last_status=="Arrived at your saved spot." && subs.empty() && !tp::Moving());
+
+        // 1b. Arrival, then the released request reads as ended: logged at info, the player's message stands.
+        away(); logs.clear(); assert(call("teleport.go")==SCO_OK && fRequests==3);
+        at(); tick(); assert(tp::g.last_status==arrivedSaved && subs.size()==1);
+        tick();
+        assert(logged("confirmation not received; you had arrived",SCO_LOG_INFO) && !logged("confirmation not received",SCO_LOG_WARN));
+        assert(tp::g.last_status==arrivedSaved && subs.empty() && !tp::g.ticket);
+
+        // 2. Core confirms first: unchanged behaviour, no cancel, no late message.
+        const int cancelsBefore=fCancels; away(); logs.clear(); assert(call("teleport.go")==SCO_OK);
+        tickets.back().state=SC_RELOCATION_COMPLETE; at(); tick();
+        assert(tp::g.last_status=="Arrived at your saved spot." && subs.empty() && fCancels==cancelsBefore && !logged("confirmation not received",SCO_LOG_INFO));
+
+        // 3. The player never comes within 2 m and Core times out: the failure message stays.
+        away(); assert(call("teleport.go")==SCO_OK); tick(); tick();
+        tickets.back().state=SC_RELOCATION_FAILED; tickets.back().reason=SC_RELOCATION_REASON_TIMEOUT; tick();
+        assert(tp::g.last_status.find("failed")!=std::string::npos && tp::g.last_status.find("didn't confirm")!=std::string::npos);
+        assert(subs.empty() && !tp::Moving() && fCancels==cancelsBefore);
+        // ...and close but outside 2 m is still not arrival.
+        px=3.5; assert(call("teleport.go")==SCO_OK); tick(); assert(tp::Moving() && tp::g.last_status.find("Moving to")==0);
+        tickets.back().state=SC_RELOCATION_FAILED; tickets.back().reason=SC_RELOCATION_REASON_TIMEOUT; tick();
+        assert(tp::g.last_status.find("failed")!=std::string::npos); at();
+
+        // 5. The service offers no cancel: arrival is still reported; Core's late timeout is ignored and logged.
+        const auto realCancel=frel.cancel; frel.cancel=nullptr; away(); logs.clear(); assert(call("teleport.go")==SCO_OK);
+        at(); tick(); assert(tp::g.last_status==arrivedSaved && !tp::Moving() && subs.size()==1);
+        tickets.back().state=SC_RELOCATION_FAILED; tickets.back().reason=SC_RELOCATION_REASON_TIMEOUT; tick();
+        assert(tp::g.last_status==arrivedSaved && subs.empty() && logged("confirmation not received; you had arrived",SCO_LOG_INFO));
+        frel.cancel=realCancel;
+
+        Unload(); std::filesystem::remove_all(dir);
     }
     const std::string timeout=PlainReason(SC_RELOCATION_REASON_TIMEOUT);
     assert(timeout.find("too long")==std::string::npos && timeout.find("time")!=std::string::npos);
     assert(std::string(already_there_plain)=="You are already at that spot.");
     assert(!ParseSpot("spot nan 0 0 bad\n",again));
-    std::puts("travel model: nested rotated poses, legacy format, partial/root refusal, expiry, 256/64 bounded scan, partial/null tails, game.relocation request/status gating: PASS");
+    std::puts("travel plugin: pose-confirmed arrival before/after Core, never-arrives, second move after arrival; travel model: nested rotated poses, legacy format, partial/root refusal, expiry, 256/64 bounded scan, partial/null tails, game.relocation request/status gating: PASS");
 }

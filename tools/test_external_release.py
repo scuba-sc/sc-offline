@@ -39,12 +39,13 @@ class ExternalRelease(unittest.TestCase):
         self.assertNotIn('kBuiltins', registry)
         self.assertIn('src/contracts.cpp', host)  # retained legacy engine, callers unchanged
         self.assertIn('contracts_sdk_check.py', workflow)
-        self.assertIn('needs: [build, development-sdk-proofs, inspector-sdk, npc-sdk, contracts-sdk, external-sdk, creative-sdk]', workflow)
+        self.assertIn('needs: [build, rust-launcher, development-sdk-proofs, inspector-sdk, npc-sdk, contracts-sdk, external-sdk, creative-sdk]', workflow)
         profiles = json.loads((ROOT / 'tools/release-plugin-profiles.json').read_text())
         contracts = next(p for p in profiles['profiles']['player-offline']['plugins'] if p['id'] == 'contracts')
         self.assertEqual((contracts['artifact_dir'], contracts['module'], contracts['disabled']),
                          ('built-contracts/contracts', 'contracts.dll', False))
-        self.assertIn('python3 tools/stage-release-plugins.py --profile player-offline', workflow)
+        self.assertIn('python3 tools/package_release.py', workflow)
+        self.assertIn('player-offline', (ROOT / 'tools/package_release.py').read_text())
 
     def test_four_published_components_and_defaults(self):
         host = (ROOT / 'CMakeLists.txt').read_text()

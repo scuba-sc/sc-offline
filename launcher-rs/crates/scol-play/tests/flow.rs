@@ -34,10 +34,7 @@ fn play_end_to_end_with_the_stand_in_game() {
     }));
     let (code, text) = run(&w, &mut host, &args(Mode::Play, false, &["play"]));
     assert_eq!(code, 0, "{text}");
-    assert!(
-        text.starts_with("sc-offline launcher 0.7.8.3\n\n"),
-        "{text}"
-    );
+    assert!(text.starts_with("sc-offline launcher 0.8.0\n\n"), "{text}");
     has(&text, &format!("Folder:   {}", w.bin));
     has(&text, "Mod:      copied into Bin64");
     has(
@@ -238,7 +235,7 @@ fn dry_run_prints_every_step_and_changes_nothing() {
     let before = tree(&w.root);
     let (code, text) = run(&w, &mut host, &args(Mode::Play, true, &["--dry-run"]));
     assert_eq!(code, 0, "{text}");
-    assert!(text.starts_with("sc-offline launcher 0.7.8.3 - dry run, nothing is changed\n\n"));
+    assert!(text.starts_with("sc-offline launcher 0.8.0 - dry run, nothing is changed\n\n"));
     for needle in [
         "[dry-run] would add a firewall rule blocking ",
         "[dry-run] would add `127.0.0.1 modules-cdn.eac-prod.on.epicgames.com` to the hosts file",
@@ -736,4 +733,41 @@ fn game_build_is_recorded_after_a_started_game() {
     assert!(build.starts_with("StarCitizen.exe "), "{line}");
     let saved = std::fs::read_to_string(format!("{}\\data\\game-build.txt", w.here)).unwrap();
     assert_eq!(saved, format!("{build}\n"));
+}
+
+#[test]
+fn the_menu_key_is_exported_as_sc_offline_menu() {
+    for (ini, want) in [
+        ("", "imgui"),
+        ("menu = rust\n", "rust"),
+        ("menu = RUST\n", "rust"),
+        ("menu = nope\n", "imgui"),
+    ] {
+        let w = World::new("menu", &format!("{NO_PC}{ini}"));
+        let mut host = w.host(w.system());
+        host.game = GameBehaviour::Scripted;
+        // a value from the player's shell must not choose the menu
+        host.env.insert("SC_OFFLINE_MENU".into(), "rust".into());
+        let (code, text) = run(&w, &mut host, &args(Mode::Play, false, &["play"]));
+        assert_eq!(code, 0, "{text}");
+        let last = host
+            .env_log
+            .iter()
+            .rev()
+            .find(|(k, _)| k == "SC_OFFLINE_MENU")
+            .map(|(_, v)| v.clone());
+        assert_eq!(last.as_deref(), Some(want), "ini {ini:?}");
+        if ini == "menu = nope\n" {
+            assert!(
+                text.contains("sc-offline.ini line 8: menu must be imgui or rust"),
+                "{text}"
+            );
+        }
+    }
+    // install and uninstall do not export it: the game is not started
+    let w = World::new("menu-install", &format!("{NO_PC}menu = rust\n"));
+    let mut host = w.host(w.system());
+    let (code, _) = run(&w, &mut host, &args(Mode::Install, false, &["install"]));
+    assert_eq!(code, 0);
+    assert!(!host.env_log.iter().any(|(k, _)| k == "SC_OFFLINE_MENU"));
 }

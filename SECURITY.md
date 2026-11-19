@@ -8,13 +8,14 @@ Include what you found, the version (`sc-offline.exe status`), steps to reproduc
 
 ## Supported versions
 
-Only the [latest release](https://github.com/scuba-sc/sc-offline/releases/latest) gets security fixes. The launcher updates itself; run `sc-offline.exe update` to get the newest one.
+Only the [latest release](https://github.com/scuba-sc/sc-offline/releases/latest) gets security fixes. The launcher updates itself; run `sc-offline.exe update` to get the newest one. From 0.8.0 `sc-offline.exe` is the Rust launcher; the C++ launcher ships as `sc-offline-classic.exe`, and both are in scope.
 
 ## In scope
 
 - The self-update: installing files that don't match the release's `manifest.json`, writing outside the install folder, downgrades, or getting around the checks described in [Updates](docs/launcher.md#updates).
 - The administrator helper: anything that lets it do more than its listed steps, or lets another program use it.
 - PC changes that aren't undone, or that touch settings the user made themselves (hosts file, firewall rules, renamed files; see [PC changes](docs/launcher.md#pc-changes)).
+- The plugin catalogue (`sc-offline.exe plugins catalogue`, the window's Catalogue tab): accepting an index that is not signed by a trusted key, installing a plugin whose files do not match the index, enabling a plugin without the user's action, or writing outside `data\plugins`. No production signing key ships with 0.8.0: the built-in trust root is empty, so only a local folder with a test-signed or locally trusted index can be used. A native plugin runs its own code in the game process; the catalogue lands every plugin disabled with a warning.
 - Crash reports or logs leaking personal data the redaction should remove.
 - Release integrity: a published zip or `dinput8.dll` that doesn't match its SHA-256.
 - Co-presence over a LAN or VPN (planned, not in a release yet): anything a hostile peer can do by sending packets. That includes crashes, out-of-bounds reads or writes, messages accepted without authentication or validation, one peer posing as another, running commands on another player's PC, or reaching addresses outside the LAN or VPN ranges the player allowed.

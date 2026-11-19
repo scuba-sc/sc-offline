@@ -10,6 +10,10 @@ pub const SOIL: Color32 = Color32::from_rgb(0x0E, 0x18, 0x11);
 pub const PANEL: Color32 = Color32::from_rgb(0x17, 0x2A, 0x1B);
 pub const PANEL_UP: Color32 = Color32::from_rgb(0x1F, 0x35, 0x23);
 pub const POPUP: Color32 = Color32::from_rgb(0x1C, 0x33, 0x21);
+/// Title bar and status strip (0B140D at 0.95 and 0.92 over the soil), the sidebar (0B140D at 0.55).
+pub const TITLE: Color32 = Color32::from_rgb(0x0B, 0x14, 0x0D);
+pub const STATUS: Color32 = Color32::from_rgb(0x0B, 0x14, 0x0D);
+pub const SIDEBAR: Color32 = Color32::from_rgb(0x0C, 0x16, 0x0F);
 pub const LINE: Color32 = Color32::from_rgb(0x2F, 0x4B, 0x32);
 pub const BORDER: Color32 = Color32::from_rgb(0x4F, 0x7F, 0x51);
 pub const TEXT: Color32 = Color32::from_rgb(0xE6, 0xEF, 0xDD);
@@ -50,9 +54,14 @@ pub fn apply(ctx: &egui::Context) {
     style.spacing.item_spacing = egui::vec2(8.0, 7.0);
     style.spacing.button_padding = egui::vec2(9.0, 5.0);
     style.spacing.window_margin = egui::Margin::symmetric(16, 12);
+    // A solid 11 px scroll bar that takes its own room, as ImGui's does, so it never covers a control.
+    style.spacing.scroll = egui::style::ScrollStyle::solid();
     style.spacing.scroll.bar_width = 11.0;
     style.spacing.slider_width = 200.0;
     style.spacing.interact_size.y = 28.0;
+    // A checkbox the size of the ImGui one (frame height 28 with a 17 px font).
+    style.spacing.icon_width = 22.0;
+    style.spacing.icon_width_inner = 11.0;
     let r = CornerRadius::same(4);
     let v = &mut style.visuals;
     v.dark_mode = true;

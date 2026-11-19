@@ -19,6 +19,7 @@ pub mod flow;
 pub mod helper;
 pub mod host;
 pub mod log;
+pub mod pick;
 pub mod post;
 #[cfg(feature = "real")]
 pub mod real;

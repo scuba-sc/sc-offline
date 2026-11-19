@@ -14,7 +14,7 @@ Each switch is a key in `sc-offline.ini`. The launcher sets the matching variabl
 | `exp_audio_native` | `SCO_AUDIO_NATIVE` | `game.audio.triggers`, `game.audio.play_once` | on, you can turn it off | `game.audio.triggers`: synthetic tests only; `game.audio.play_once`: synthetic tests only. Core currently refuses the native audio adapter even with this on, so both audio capabilities stay off. The switch only asks Core to try. Not run in game. |
 | `exp_cvars_native` | `SCO_CVARS_NATIVE` | `game.cvars.read` | on, you can turn it off | `game.cvars.read`: synthetic tests only. Not run in game. |
 | `exp_inventory_read` | `SCO_INVENTORY_READ` | `game.inventory.read` | on, you can turn it off | `game.inventory.read`: synthetic tests only. Not run in game. |
-| `exp_loadout_async` | `SCO_LOADOUT_ASYNC` | `game.loadout.async` | on, you can turn it off | `game.loadout.async`: synthetic tests only. Not run in game. |
+| `exp_loadout_async` | `SCO_LOADOUT_ASYNC` | `game.loadout.async` | on, you can turn it off | `game.loadout.async`: synthetic tests, and one or two owner sessions on game build 4.10.200.58746: gear equipped through it was attached (Game.log AttachmentReceived). |
 
 Diagnostic (not a capability and not a feature; off by default):
 
@@ -77,7 +77,7 @@ Core default is what the SDK registry ships. Release default is what the launche
 | `game.entities.prefabs` | `game.prefabs` | none | ON | set by Core | synthetic tests only. Not run in game. |
 | `game.loadout.apply` | `game.loadout` | none | OFF | off (no switch) | synthetic tests only. Not run in game. |
 | `game.loadout.weapons` | `game.loadout` | none | OFF | off (no switch) | synthetic tests only. Not run in game. |
-| `game.loadout.async` | `game.loadout` | `exp_loadout_async` | OFF | on, you can turn it off | synthetic tests only. Not run in game. |
+| `game.loadout.async` | `game.loadout` | `exp_loadout_async` | OFF | on, you can turn it off | synthetic tests, and one or two owner sessions on build 4.10.200.58746: gear equip attached items. The Core default stays OFF. |
 | `game.quantum.control` | `game.quantum` | none | OFF | off (no switch) | synthetic tests only. Not run in game. |
 | `game.build.info` | `game.build` | none | ON | set by Core | synthetic tests only. Not run in game. |
 | `game.gamerules.read` | `game.gamerules` | none | OFF | off (no switch) | synthetic tests only. Not run in game. |

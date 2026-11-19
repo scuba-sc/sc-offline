@@ -76,7 +76,7 @@ def main(args):
     checker = checker_build / ('Release/sco-plugin-check.exe' if os.name == 'nt' else 'sco-plugin-check')
     checked = run([checker, folder, '--invoke', 'contracts.status'], work).stdout
     print(checked)
-    for token in ('contracts.status -> unavailable', 'no private fallback', 'OK: 0 failure(s)'):
+    for token in ('contracts.status -> unavailable', 'mobiGlas still work', 'OK: 0 failure(s)'):
         if token not in checked:
             raise AssertionError('Missing-service checker did not refuse: ' + token)
     cpp = source / 'plugins/contracts/contracts.cpp'

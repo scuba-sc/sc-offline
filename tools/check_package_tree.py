@@ -5,8 +5,9 @@
     python tools/check_package_tree.py --tree <staged package root> [--source <repo root>]
                                        [--allow-command NAME ...]
 
-The tree is the layout the release job assembles: dinput8.dll, sc-offline.exe and
-data/plugins/<folder>/plugin.ini, where a plugin is DISABLED by a file named `disabled` in its
+The tree is the layout the release job assembles: dinput8.dll, sc-offline.exe (the Rust launcher),
+sc-offline-classic.exe (the C++ launcher, the fallback), sc_offline_menu.dll (the Rust in-game menu)
+and data/plugins/<folder>/plugin.ini, where a plugin is DISABLED by a file named `disabled` in its
 folder, and a data pack (kind = data) carries lists/*.txt. The first in-game run shipped menu
 controls whose commands no enabled plugin registered, and plugins whose required list files were
 in no pack; this check turns both into a failure before release. Exit 0 = pass, 1 = problems
@@ -28,7 +29,7 @@ c. Capabilities. A `requires =` name in an enabled plugin's plugin.ini must be a
 d. A summary is printed: enabled and disabled plugins, data packs, every cross-plugin command
    with its provider, every list with its pack, warnings.
 
-Also reported: a missing dinput8.dll / sc-offline.exe, an enabled native plugin without its entry
+Also reported: a missing dinput8.dll / sc-offline.exe / sc-offline-classic.exe / sc_offline_menu.dll, an enabled native plugin without its entry
 file, an unreadable plugin.ini.
 
 How commands are found (patterns; comments are stripped first, string contents kept)
@@ -258,7 +259,7 @@ def parse_manifest(path):
 def load_tree(tree, problems):
     plugins, packs = [], []
     root = tree / 'data' / 'plugins'
-    for name in ('dinput8.dll', 'sc-offline.exe'):
+    for name in ('dinput8.dll', 'sc-offline.exe', 'sc-offline-classic.exe', 'sc_offline_menu.dll'):
         if not (tree / name).is_file():
             problems.error(f'package: {name} is missing from {tree.name}')
     if not root.is_dir():

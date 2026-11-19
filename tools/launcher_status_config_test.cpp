@@ -139,6 +139,50 @@ static void TestExperimental(const fs::path& root) {
     for (const ExperimentalSwitch& s : kExperimental) CHECK(EnvIs(s.var, nullptr));
 }
 
+// The in-game menu key: imgui by default and in the shipped ini, rust only when asked, any spelling of case, a
+// typo keeps what was there, and the play environment carries it as SC_OFFLINE_MENU (always set, last).
+static void TestMenuKey(const fs::path& root) {
+    const fs::path ini = root / "menu.ini";
+    { Config defaults; CHECK(defaults.menu == L"imgui"); }
+    Config shipped;
+    const fs::path shippedIni = fs::weakly_canonical(fs::path(__FILE__)).parent_path().parent_path() / "launcher" / "sc-offline.ini";
+    CHECK(ReadConfig(shippedIni.wstring(), shipped) && shipped.menu == L"imgui");
+    CHECK(Get(shippedIni).find("\nmenu = imgui") != std::string::npos);
+    const auto read = [&](const char* text, const wstring& before) {
+        Put(ini, text);
+        Config c;
+        c.menu = before;
+        CHECK(ReadConfig(ini.wstring(), c));
+        return c.menu;
+    };
+    CHECK(read("menu = rust\r\n", L"imgui") == L"rust");
+    CHECK(read("menu = RUST\r\n", L"imgui") == L"rust");     // stored lower case, whatever the spelling
+    CHECK(read("MENU = Imgui\r\n", L"rust") == L"imgui");
+    CHECK(read("menu = egui\r\n", L"rust") == L"rust");      // invalid: kept, warned
+    CHECK(read("menu =\r\n", L"rust") == L"rust");
+    CHECK(read("menu = rust\r\nmenu = imgui\r\n", L"imgui") == L"imgui");   // the last valid line wins
+    // the warning names the key and the choices
+    {
+        const fs::path log = root / "menu.log";
+        FILE* saved = g_log;
+        g_log = _wfsopen(log.c_str(), L"w+b", _SH_DENYNO);
+        Config c;
+        Put(ini, "menu = egui\r\n");
+        CHECK(ReadConfig(ini.wstring(), c));
+        std::fflush(g_log); std::fclose(g_log); g_log = saved;
+        CHECK(Get(log) == "[!] sc-offline.ini line 1: menu must be imgui or rust\n");
+    }
+    // the play environment: SC_OFFLINE_MENU is the last variable, imgui unless the ini says rust
+    for (const wchar_t* choice : { L"imgui", L"rust" }) {
+        sco::launcher::contract::PlayEnvInput in;
+        in.menu = choice;
+        const auto env = sco::launcher::contract::PlayEnv(in);
+        CHECK(env.back().first == L"SC_OFFLINE_MENU" && env.back().second == choice);
+        CHECK(env.size() == 15);
+    }
+    { sco::launcher::contract::PlayEnvInput in; CHECK(sco::launcher::contract::PlayEnv(in).back().second == L"imgui"); }
+}
+
 // An update adds missing keys to an old ini commented out, with the line above each key, so the
 // "not run in game" sentence is not lost for upgraded players.
 static void TestMergeIniKeepsNotes(const fs::path& root) {
@@ -872,6 +916,7 @@ int wmain(int argc, wchar_t** argv) {
     CHECK(fs::create_directories(owned));
     TestConfig(owned);
     TestExperimental(owned);
+    TestMenuKey(owned);
     TestMergeIniKeepsNotes(owned);
     TestAnswers();
     TestIniWriter(owned);

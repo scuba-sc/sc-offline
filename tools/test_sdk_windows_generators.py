@@ -561,8 +561,8 @@ class WindowsGeneratorProofs(unittest.TestCase):
                             if feature == 'mining':
                                 for name in ('import_settings.py', 'README.md'):
                                     shutil.copy2(ROOT / 'plugins/mining' / name, folder / name)
-                        # Crew verifies eight named workflow groups; quantum checks its extra name.
-                        return SimpleNamespace(stdout=('1: PASS fixture\n' * 8) + 'quantum-concurrency\n', returncode=0)
+                        # Crew verifies twelve named workflow groups; quantum checks its extra name.
+                        return SimpleNamespace(stdout=('1: PASS fixture\n' * 12) + 'quantum-concurrency\n', returncode=0)
 
                     public = {(sdk / 'include/sc_mining.h').resolve()}
                     with patch.object(module, 'os', SimpleNamespace(name='nt')), \

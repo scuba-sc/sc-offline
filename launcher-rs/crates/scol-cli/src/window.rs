@@ -7,7 +7,7 @@
 use scol_catalogue::fetch::Fetcher;
 use scol_install::status::collect_status;
 use scol_play::real::RealStop;
-use scol_play::stop::{stop_game, STOP_ACK_WAIT_MS};
+use scol_play::stop::{run_stop_command, EndPolicy, StopCommand, STOP_ACK_WAIT_MS};
 use scol_ui::{Backend, Command};
 use std::io::{BufRead, BufReader};
 use std::os::windows::process::CommandExt;
@@ -83,21 +83,35 @@ fn pump(mut child: std::process::Child, out: &mut dyn FnMut(&str)) -> Result<i32
 impl Backend for WindowBackend {
     fn run(&self, command: Command, here: &Path, out: &mut dyn FnMut(&str)) -> Result<i32, String> {
         if command == Command::Stop {
+            // The same code as `sc-offline.exe stop`, without the wait: the window shows the game's state
+            // itself, and offers End when the game is still open a minute later.
             let bin = self.bin(here);
             let mut port = RealStop::default();
-            let r = stop_game(&mut port, &bin, STOP_ACK_WAIT_MS, &mut |l| out(l));
-            if r.no_folder {
-                out("The game folder is not known; nothing was stopped.");
-            } else if r.targets.is_empty() {
-                out("No game process of this install was found.");
-            } else {
-                out(&format!(
-                    "Asked {} game process(es) to close; {} window(s) told to close.",
-                    r.targets.len(),
-                    r.posted
-                ));
+            let mut lines: Vec<u8> = Vec::new();
+            let mut logged: Vec<String> = Vec::new();
+            let code = run_stop_command(
+                &mut port,
+                &StopCommand {
+                    bin: &bin,
+                    ack_wait_ms: STOP_ACK_WAIT_MS,
+                    wait_seconds: 0,
+                    end: EndPolicy::Never,
+                },
+                &mut |_| false,
+                &mut lines,
+                &mut |l| {
+                    scol_play::real::stop_log(&here.to_string_lossy(), l);
+                    logged.push(l.to_string());
+                },
+            );
+            for l in logged
+                .iter()
+                .map(String::as_str)
+                .chain(String::from_utf8_lossy(&lines).lines())
+            {
+                out(l);
             }
-            return Ok(0);
+            return Ok(code);
         }
         let mut args: Vec<&str> = Vec::new();
         match command {
@@ -115,7 +129,17 @@ impl Backend for WindowBackend {
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map_err(|e| format!("could not start {}: {e}", self.exe.display()))?;
-        pump(child, out)
+        let code = pump(child, out)?;
+        if code == scol_contract::exit_code::RESTART {
+            // An update was swapped in (the `update --yes` child says so, like the C++ child does): start the
+            // new window and close this one, which still runs the old exe.
+            out("[i] restarting sc-offline with the new version");
+            if restart_window(&self.exe) {
+                std::process::exit(0);
+            }
+            out("[!] couldn't start the new version; start sc-offline.exe again");
+        }
+        Ok(code)
     }
 
     fn game_running(&self) -> bool {
@@ -148,12 +172,45 @@ impl Backend for WindowBackend {
         )))
     }
 
+    fn game_probe(&self) -> fn() -> bool {
+        scol_plugin_manager::store::game_running
+    }
+
+    fn pick_folder(&self, _title: &str) -> Result<Option<std::path::PathBuf>, String> {
+        Ok(scol_play::pick::pick_folder(0).map(std::path::PathBuf::from))
+    }
+
+    fn save_plugin_setting(
+        &self,
+        here: &Path,
+        plugin: &str,
+        name: &str,
+        value: &str,
+    ) -> Result<(), String> {
+        scol_ui::backend::save_one_setting(here, plugin, name, value, self.game_running())
+    }
+
     fn open(&self, path: &Path) {
         let _ = std::process::Command::new("explorer.exe")
             .arg(path)
             .creation_flags(CREATE_NO_WINDOW)
             .spawn();
     }
+}
+
+/// Starts the (new) exe with `--window`, detached, and returns whether it started. The window of the old exe then
+/// closes: after an update the old file is `sc-offline.exe.update-old`, which a running process keeps locked.
+pub fn restart_window(exe: &Path) -> bool {
+    const DETACHED_PROCESS: u32 = 0x0000_0008;
+    std::process::Command::new(exe)
+        .arg("--window")
+        .current_dir(exe.parent().unwrap_or_else(|| Path::new(".")))
+        .creation_flags(DETACHED_PROCESS)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .is_ok()
 }
 
 /// Opens the window. Frees the console first when this exe owns it (double-clicked).

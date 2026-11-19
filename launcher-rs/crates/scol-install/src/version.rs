@@ -3,7 +3,7 @@
 //! drift apart.
 
 /// `SCO_VERSION` of `src/version.h`: one version for the DLL and the launcher.
-pub const SCO_VERSION: &str = "0.7.8.3";
+pub const SCO_VERSION: &str = "0.8.0";
 /// `SCO_BASED_ON` of `src/version.h`.
 pub const SCO_BASED_ON: &str = "based on ChrisWareOffline 0.9.0-rc1";
 

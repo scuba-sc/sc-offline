@@ -1,6 +1,6 @@
 # Features
 
-> **Evidence note.** This page describes what each feature is meant to do. Apart from offline startup (see [Status](status.md)), none of it is verified in game on the current release: items inherited from ChrisWareOffline 0.9.0-rc1 were last tried upstream, and the external plugins are checked only on a development machine. "Works" below means "designed to" unless Status says otherwise.
+> **Evidence note.** This page describes what each feature is meant to do. Apart from offline startup and the owner's short sessions on game build 4.10.200.58746 (see [Status](status.md#080-what-was-and-was-not-run-in-game): equipping gear, placing a prefab, spawning and boarding a ship, spawning a character, a saved-spot move, the seat probe), none of it is verified in game on the current release: items inherited from ChrisWareOffline 0.9.0-rc1 were last tried upstream, and the external plugins are checked only on a development machine. "Works" below means "designed to" unless Status says otherwise.
 
 **Current G8 migration boundary:** [external Quantum/Travel](../plugins/quantum/README.md) retains travel IDs, bookmark storage and the Travel panel, adds explicit bounded quantum controls, and removes private boost/keeper activation. Core requires an admitted owned-state backend; its default production adapter is absent, so real boost/effects and NAV input parity are still unavailable. G2 relocation and G7 cvar writes remain refused. Historical feature descriptions below are not current gameplay acceptance.
 
@@ -29,20 +29,25 @@ Most of the lists below are plain text files in `data/`, and the counts are take
 ## Player
 
 - Noclip, god mode, infinite ammo, infinite ship ammo: from the [creative plugin](#the-creative-plugin) (shipped on; its controls are on the Creative tab).
-- Gear selection is now the external [loadout development module](../plugins/loadout/README.md): copied `items.txt` lists, typed G6 equip, explicit unsupported slots/refusals, no private/XML fallback. The pinned SDK lacks this route; equip and complete legacy-slot parity remain pending.
+- Gear selection is the external [loadout module](../plugins/loadout/README.md): copied `items.txt` lists, typed equip through `game.loadout.async` (`exp_loadout_async`, on by default), explicit unsupported slots/refusals, no private/XML fallback. **Seen in game by the owner** (build 4.10.200.58746): equipping attached the items (`AttachmentReceived` in `Game.log`). Complete legacy-slot parity is not claimed.
 - Wallet: your aUEC balance is loaded when you spawn and saved to `data/wallet.txt` when it changes (checked every 5 seconds) and once more when the game closes. That file is the only wallet store today; nothing is kept in `storage/contracts.db`. The file holds just the number; edit it while the game is closed to change your balance (see [What persists between sessions](data-files.md#what-persists-between-sessions)). Without the file, you start with the `aUEC amount` in `data/OfflineDB/default_1.xml` (100,000,000). Once `wallet.txt` exists, that amount is no longer used, so delete `wallet.txt` to go back to it.
 
 ## Travel
 
-- Teleport to planets, moons, stations, Lagrange points and jump points, grouped by star system (`locations.txt`). In this release F7/F8 and `quantum.travel` run through `game.relocation` and have **not been run in game**.
+- Teleport to planets, moons, stations, Lagrange points and jump points, grouped by star system (`locations.txt`). In this release F7/F8 and `quantum.travel` run through `game.relocation`. **Seen in game by the owner:** a saved-spot move really moved the player, but Core did not confirm the arrival; the teleport plugin now also checks the player's own position and says "arrived" when it is within 2 m of the spot. `quantum.travel` has **not been run in game**.
 - **Scan** lists everything the game has loaded and writes it to `locations_found.txt`. Interiors and small zones are hidden unless you ask to see them.
 - Save named spots of your own (`data/storage/quantum.db`). **F7** saves one quick position and **F8** takes you back to it (`data/storage/teleport.db`). F7 and F8 run the external teleport plugin's commands; see [Plugins](#plugins). Spots saved in `bookmarks.txt` and `spawn.txt` by an older version are imported the first time you start this one ([Saves](data-files.md#saves)).
 - A teleport won't take you into another star system. Pyro and Nyx can only be reached with the default `boot_map = PU_All`.
 - Some Pyro places drop you in orbit, because `locations.txt` doesn't have their radius yet.
 
+### Travel between places
+
+**Not in 0.8.0: travel to another planet.** Moving to a place needs the zone that place belongs to, and the zone lookup works only along the player's own chain (the star system, planet and zone the player is already in). A destination outside that chain cannot be resolved, so `quantum.travel` refuses it and the Travel page says so; the saved-spot commands (F7/F8) are unaffected. This is a documented gap, not a bug to retry. The places list itself ships as the `locations_catalog` data pack (`data/plugins/locations_catalog/lists/locations.txt`, a copy of `data/locations.txt`); the quantum plugin requires one such list.
+
 ## Vehicles
 
 - Filter/page copied ship catalogs from enabled `lists/ships.txt` packs, select a class or type one manually. Catalog presence is not class availability; current behavior is in [pickers.md](pickers.md).
+- **Seen in game by the owner:** ship spawn, boarding and Flight Ready work (build 4.10.200.58746).
 - Pick where you board: the pilot seat, a seat by name, choose after spawning, or don't board. The spawn module never evicts a foreign NPC; crew-owned seat removal belongs to the Crew panel.
 - **Power on** sends the game's Flight Ready event. Depending on the ship, some systems may still start switched off. It is only offered with the pilot seat: with any other seat the toggle is greyed out ("Flight Ready needs the pilot seat") and is not sent.
 - Infinite ship ammo refills the magazines of the ship you're aboard (the [creative plugin](#the-creative-plugin)).
@@ -67,13 +72,13 @@ Your retrieved ship is registered with the game pack's spawn.entities mover, so 
 
 ## Crew
 
-Shows up to 128 copied seats with occupant/usability fields and explicit truncation status, in 32-row pages. Sit, Stand, Remove and Add use fresh public providers. Only the local player and crew-owned NPCs may be moved; only crew-owned NPCs may be removed. NPCs added here sit but do not fly the ship or operate turrets.
+The seat probe logged Enter and Exit in game (one or two owner sessions); the Crew panel and `crew.*` commands as a whole have not been run in game. Shows up to 128 copied seats with occupant/usability fields and explicit truncation status, in 32-row pages. Sit, Stand, Remove and Add use fresh public providers. Only the local player and crew-owned NPCs may be moved; only crew-owned NPCs may be removed. NPCs added here sit but do not fly the ship or operate turrets.
 
 The Crew panel and `crew.*` commands share SDK-only handlers/jobs on sco-core's `game.vehicles` and `game.actors` services, never the private spawner seat code. They act on the ship you're aboard, or the one `crew.target` pinned. Some entries in a ship's seat list are not crew seats (turret items and remote-operated parts: the game's own seat picker skips them). `crew.fill` seats NPCs only in seats that are empty and usable, and says how many it skipped: `Seating 10 x <npc> (5 seats skipped: not interactable)`. `mod.log` has one `interactable yes|no` line per seat, written by the game pack, and `crew.sit` refuses a seat that isn't usable.
 
 ## NPCs
 
-`npc` ships enabled as `data/plugins/npc/{plugin.ini,npc.dll}` and requires `plugins = on`; disable its folder in the launcher for the next game start. No built-in fallback remains. Its public NPCs panel uses the same command handlers. Invoke these commands through the host command registry on the game thread:
+**Seen in game by the owner:** character spawn works (build 4.10.200.58746). `npc` ships enabled as `data/plugins/npc/{plugin.ini,npc.dll}` and requires `plugins = on`; disable its folder in the launcher for the next game start. No built-in fallback remains. Its public NPCs panel uses the same command handlers. Invoke these commands through the host command registry on the game thread:
 
 | Command | Does |
 | --- | --- |
@@ -86,7 +91,7 @@ Spawn/removal use `game.actors`, pose uses `teleport.spatial` and observation us
 
 ## Build (F6)
 
-- Interactive build mode (F6, free camera, aiming, preview) is **not available** in the current release: the external build plugin ships `build.place`, `build.undo` and `build.clear` only, and none has been run in game.
+- Interactive build mode (F6, free camera, aiming, preview) is **not available** in the current release: the external build plugin ships `build.place`, `build.undo` and `build.clear` only. **Seen in game by the owner:** placing a prefab through `game.prefabs` placed an Outposts item (build 4.10.200.58746). `build.undo` and `build.clear` have not been run in game.
 - The historical mode used 3728 buildable objects in 18 groups (`buildables.txt`); prefabs showed as a flag while the camera moved, then as the real building.
 - **Undo** and **Clear base** are meant to remove what you placed (not run in game).
 
@@ -122,6 +127,8 @@ The old tab was removed from host build inputs and retained under `legacy/loadou
 - **Console**: type a command and press Enter or **Run** to run it in the game's own console. The output goes to `Game.log`, not the menu.
 
 ## Menu
+
+The menu described here is the ImGui menu, the default. From 0.8.0 `menu = rust` in `sc-offline.ini` shows the new Rust menu instead: same panels, opens on M, never run in a game ([Plugin UI](plugin-ui.md#the-rust-menu-opt-in)).
 
 Background image settings. Save a picture as `data/menu_background.png` (or `.jpg`), then restart the game. This tab sets how dark the background is and where the image sits.
 
@@ -252,6 +259,6 @@ These need RSI's servers, and the mod doesn't replace them:
 
 ## Not verified in game
 
-The SDK conversion (every feature on a `game.*` service or a sco-core row, the `creative` plugin, the launcher's Plugins page) has CI and gate checks but **no in-game run yet**. [status.md](status.md) lists what each converted feature still has to show, and links sco-core's table for the services.
+Seen in game by the owner (build 4.10.200.58746, one or two sessions each): gear equip, prefab placement, ship spawn with boarding and Flight Ready, character spawn, a saved-spot move (arrival not confirmed by Core), the seat probe. Everything else has CI and gate checks but **no in-game run yet**: the rest of the SDK conversion (every other feature on a `game.*` service or a sco-core row, the `creative` plugin), the Rust launcher's play path and helper, the Rust menu, the update swap and the catalogue network path. [status.md](status.md) lists what each converted feature still has to show, and links sco-core's table for the services.
 
 ChrisWareOffline 0.9.0-rc1 also flagged these as built after its last in-game test: the energy-weapon top-up, NPC deletion through the entity handle, Stand up, the real-building prefab preview, and Pyro and Nyx names after a fresh scan.

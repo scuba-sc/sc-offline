@@ -1,211 +1,80 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 (2026-11-18)
 
-- **Rust launcher preview (`launcher-rs/`), not the launcher that starts the game.**
-  - A Rust build of the launcher now has the whole command line: `play`, `install`, `uninstall`, `status`, `update`, `mcp`, `help`, the new `plugins` commands (list, enable, disable, install from a folder or zip, remove, catalogue), the hidden modes, and the window (`--window`, or no arguments when double-clicked). Status and dry-run output match the C++ launcher in synthetic scenarios.
-  - The window (egui) has Home, Output, Plugins with a Catalogue tab, Capabilities (the six `exp_*` switches) and Settings, in English and Russian. The Rust in-game menu (`sc_offline_menu.dll`, opt-in with `SC_OFFLINE_MENU=rust`, ImGui stays the default) has a first version that draws `sco.widgets` panels.
-  - The `dev241.15` test package carries `sc-offline-rs.exe` and `sc_offline_menu.dll` as an optional preview; `sc-offline.exe` is still the C++ launcher. `docs/rust-launcher.md` lists what is built and what is not.
-  - Not run in game. The elevated helper, the real PC changes and the live update download were not run on a real PC. The plugin catalogue has no production signing key yet, so it refuses every real index.
-- **Launcher: game capability switches in `sc-offline.ini`.**
-  - sco-core starts the loadout, inventory and actor-stats capabilities (and three smaller ones) only when a variable is set inside the game. They were reachable only by setting environment variables by hand. They are now ini keys: `exp_loadout_async`, `exp_inventory_read`, `exp_actor_stats_write`, `exp_cvars_native`, `exp_audio_native` and `exp_entities_diag`.
-  - The five capability switches are `on` in the release packages; `exp_entities_diag` (log-only diagnostics, not a feature) is `off`. Change any with `on` or `off`. Each key's text says the capability has not been run in game.
-  - The launcher sets the matching variable to `1` when a key is on and removes it when the key is off, so a variable left in your shell cannot turn one on. It prints one line listing the switches that are on.
-  - Behaviour change: `play` now removes an inherited `SCO_*` capability variable when its key is off, so set the key in the ini instead of the shell.
-  - The window's Settings page has no toggles for them yet. Synthetic tests only (`tools/launcher_status_config_test.cpp`); not run in game.
-- **In-game menu: a sidebar of pages, and every page rewritten for players.**
-  - The menu (**M**) now opens on a sidebar grouped by purpose, which replaces the row of a dozen tabs in plugin load order. The groups are Character, Travel, Ships & vehicles, Build, People, Squadron 42, Multiplayer, More plugins and Settings.
-  - Each page opens under a header that says what it is for. The open page is remembered in `menu-view.ini`.
-  - The Inspector moved to a Developer group that appears only with **Menu settings > Show developer pages**.
-  - Every shipped page was rewritten in plain words and grouped into sections: Gear, Saved outfits, Travel, Saved spots, Ships & vehicles with Your own ships, Build, Crew, Characters and Squadron 42.
-  - Controls that could only refuse on this build are gone. These include Startup destination, Start building, the synchronous equip buttons, the manual slot fields, the inspect buttons and the four Squadron 42 setting toggles. Each of their commands stays.
-  - Where nothing works yet, the page says so in one line, such as "Changing gear from this menu isn't available yet."
-  - The spawn seat is now a choice between "Get in as pilot" and "Stay outside", and **Get in** uses the pilot seat. Spawn status counts ships being cancelled as "being removed".
-  - Pages show plain sentences. Command replies keep their technical text, except spawn, crew and npc, which now reply in plain words; `mod.log` keeps the detail. Some reply and log wording changed.
-  - New checks:
-    - `tools/check_menu_wording.py` checks the page wording.
-    - `tools/menu_navigation_test.cpp` checks the sidebar.
-    - Every test fixture that receives panels now applies the host's tree rules.
-    - CI now runs the Vehicles/Crew/NPC picker fixture.
-  - `tools/menu_preview` draws the pages from the tests' panel data, without the game.
-  - Synthetic tests only; not yet checked in game.
+Built for sco-core SDK 2.4.1, game pack 0.8.1, game build 4.10.200.58746. Plugin ABI 1.1 is unchanged. Nothing in this release was run in game except the items under "Seen in game". The "Not run in game" list at the end says what that leaves out.
 
-- **Connect an AI agent: `sc-offline.exe mcp`.** A read-only MCP server on stdin/stdout for Claude Code, Claude Desktop, Codex, Cursor, VS Code and other MCP clients. Four tools: `get_status` (the checks behind `sc-offline.exe status`, plus whether this install's game is running), `list_plugins` (each `data\plugins` folder with its `plugin.ini` fields, enabled state and warnings), `read_log` (the last lines of `mod.log`, `launcher.log` or `launcher.log.1`, and the game's `Game.log` only when the server is started as `sc-offline.exe mcp --game-log`; with a text filter; at most 500 lines and 64 KiB) and `get_settings` (`sc-offline.ini`). **`Game.log` is opt-in**: without `--game-log`, `read_log` with log `game` returns a normal error that says how to enable it and that `Game.log` can contain account names, and the file is never opened or scanned; any other extra argument still fails on stderr only. Paths under the Windows profile are returned as `%USERPROFILE%`. Log lines are redacted before the text filter runs, by the same redactor the crash report uses (`launcher/redact.h`). It first learns every handle, nickname and character name from the returned part of the log and from a bounded streaming scan of every served log, from its first byte up to 64 MiB (only lines with `User Login Success` or `AccountLoginCharacterStatus` are parsed; at most 4096 such lines and 4 MiB of them are parsed per log; the result carries `identity_scan_complete` and a `notice` when a log is longer, has more login lines than that or has a login line over 16 KiB), then hides them on every line. Values from real login lines sit on a bounded list that is never evicted (a noisy `mod.log` cannot push the real handle out; 384 in all); each log adds at most 64 of them, so a flood of fake login lines in one log cannot fill it ahead of the others, the login-line list is rebuilt on every call, and a full list is reported in `notice` with `identity_scan_complete` false; the first tool of a session runs the scan once, so a handle in the game folder name is hidden in `get_status` too; every other line adds at most 8 entries and 128 in all, and a `name=X` is hidden but never taught; a handle that is an ordinary word is learned from a login line and replaced as a whole word only. `user=`, `owner=`, `player=` and `login=` hide their value but teach nothing, and `SYSTEM`, `local`, `none`, `null` and `default` are never learned, so `filesystem` and `SystemTime` stay readable (the crash report's strict mode does hide a machine word that a `Handle[..]` or login line names, as before, and never damages a redaction marker). A Windows account name of 3 to 5 characters is also hidden next to `-` and `_` (`ALEX-PC`, `DESKTOP-ALEX`), and `%5C`, `%2F`, `%40`, `@`, `\x40`, `&#64;`, `&#x40;` and `&commat;` are decoded before paths and addresses are redacted; Windows account SIDs (`S-1-5-21-...`) are hidden. The `path` of the result and every other text the server returns are redacted with what was learned too. It also hides e-mail addresses, `geid`/`accountId`/`playerId` in `=`, `:`, bracket and space-separated forms and the old crash redactor's digit rule (three or more digits after `geid`, `accountid`, `account_id` or `playerid` with up to three separators), 9 to 12 digits after any key that ends in `id` (`ownerId:`, `citizen_id=`, `geid(`), `Handle[..]`/`Nickname[..]`/`Account[..]`, the character name on the login status line and `Player_` batch names. The crash report runs the same code in a strict mode that also hides short and common-word handles inside other words and every `Handle[..]`/`Nickname[..]`/`nickname=".."`/`handle=".."` value of the bundled files (own list of up to 16384, also a handle starting with `0x`), as before; `tools/launcher_redact_diff_test.cpp` compares it with a verbatim copy of the previous crash redactor over a generated grid and realistic lines. Free text can still contain names, so read logs before you share them; the docs list what is not caught. It writes no file, opens no socket, makes no network request and runs no command; it cannot start or stop the game or change settings or plugins. Setup for each client: [AI agents](docs/ai-agents.md), which also points to the sco-core SDK and scuba-engine sandbox MCP servers. Tests: `tools/launcher_mcp_test.cpp` (protocol, JSON, limits, redaction, learned identities, the `--game-log` switch and timing: five hostile 1 MiB lines and a 64 MiB log under 5 s) and `tools/launcher_redact_diff_test.cpp` via `tools/check_launcher_mcp.py`, whose `--exe` mode runs real sessions against a scratch install with and without `--game-log`, checks that nothing changed and times a log over 64 MiB; CI job `launcher-mcp`. **Not run in game.**
+### Seen in game
 
-- **Launcher Stop now lets the mod run its exit work before the game closes.** In game, **Stop** (WM_CLOSE alone) ended the game about a minute later without the quit path the mod hooks, so `mod.log` had no shutdown lines and the wallet was not saved. The mod now creates `Local\sc-offline-stop-<pid>` and `Local\sc-offline-stopped-<pid>` (session-local, default security descriptor) once the game window exists; the launcher signals the first, waits up to 10 s for the second, and then posts WM_CLOSE as before. On the game thread the mod runs Core's closure (the one a normal quit runs: wallet saved at exit, private session closed, `game.exit`, admission closed, nothing unloaded) and logs `[app] stop requested by the launcher: exit work done`; every part is latched, so a later real quit does not repeat it. If the event does not exist (mod not loaded) or nothing answers, Stop goes on to WM_CLOSE. It cannot make the game quit by itself: Core keeps the game's quit function private. Stop's wait never freezes the window (the button shows Saving… and the wait is polled each frame); it also ends when the game process exits or when the mod has already closed itself. If the mod is installed but does not answer, the window says so. Stop and End write each step to `data\launcher.log`, which each new run now keeps as `launcher.log.1` and then appends to (no earlier session is wiped, and the window's lines are not overwritten). After Stop the mod stays closed until the game exits. The Status panel is now re-checked when the game starts or stops, a command starts or ends and every 5 s during a play session, and reads "Installed (this session)" / "Applied for this session; undone when the game closes" while you play (it still said "Not installed" and "None left" mid-game). The window's "game is running" now means this install's own `StarCitizen.exe` (as Stop finds it), not any process of that name (the file is compared by identity, so a junction, `subst` or 8.3 spelling of the folder still matches; the guards for double launch, uninstall/Repair and the handoff waits count any `StarCitizen.exe` they can't open or identify as running), so another folder's or a test stand-in's process no longer keeps Stop and the not-safe-to-go-online state up; the update's file-swap guard stays cautious about any. Tests: `tools/offline-host/stop_channel_test.cpp` (fake exit sequence) and the stand-in process test in `tools/launcher_status_config_test.cpp` (a test thread plays the mod); **not run in game**.
+The owner ran one or two sessions of each on build 4.10.200.58746:
 
-- **Vehicles tab: Flight Ready follows the seat, and the Squadron 42 ship list starts empty.** Flight Ready was ticked by default and stayed ticked when the seat was changed to `none` or a seat name, so **Spawn** was refused with `Power requires pilot boarding`. The toggle is now greyed out with "Flight Ready needs the pilot seat" unless the seat is `pilot`, and the panel sends it as off (the tick is remembered for when you go back to `pilot`); the same applies to **Board selected ship**. `spawn.ship_options` itself still refuses power without the pilot seat. On the Squadron 42 tab the ships list preselected the Idris-P, so one click spawned a capital ship beside you; no ship is selected now, the list is labelled "choose a ship", and **Spawn via external spawn.ship_options** stays greyed out until you pick one (the buildables list already started empty). Checked by the picker and loadout widget tests against synthetic services; not run in game.
+- Equipping gear through `game.loadout.async` attaches the items (`AttachmentReceived` in `Game.log`).
+- Placing a prefab through `game.prefabs` places an Outposts item.
+- Ship spawn, boarding and Flight Ready work.
+- Character spawn works.
+- A saved-spot move really moves the player. Core did not confirm the arrival; see "Travel" below.
+- The seat probe logged Enter and Exit.
 
-- **Launcher window: Play turns into Stop, Repair replaces Uninstall, Status is a panel, and the log choice is remembered.** While the game runs, **Play** becomes **Stop**: it posts WM_CLOSE to the `StarCitizen.exe` window(s) of this install, so the existing play flow takes the mod out and undoes the PC changes as for any normal exit; if the game is still running 60 seconds later a second confirm, "End the game process?", is offered, and only **Yes** ends that process (nothing terminates it automatically). **Install** and **Uninstall** are gone from the home page (`sc-offline.exe install` / `uninstall` still work); **Repair: undo PC changes** (the old Uninstall) is on a new **Settings** page, and a prominent **Repair** banner shows on the home page whenever `%ProgramData%\sc-offline\pc-changes.txt` holds a record and the game is not running. **Status** is now a read-only panel (game found and build, mod installed, PC changes left, network block, anti-cheat, plugin count) checked at start, after the game exits and on its refresh icon. `sc-offline.exe status` is read-only too: it no longer writes `data\launcher.log` or `data\game-path.txt`, migrates `discord_presence`, settles an interrupted update, opens the folder picker or asks GitHub for updates (those stay with `play` and `update`). `clean_logs` is now `ask | always | never` (`on` = `ask`, `off` = `never` still work); the console and window questions offer Delete, Keep, **Always delete** and **Never delete**, and the last two write `clean_logs` into `sc-offline.ini` without touching its other lines. New tests: `tools/launcher_status_config_test.cpp` (config parsing, the ini writer, session-log answers and modes, `status` writing nothing, the panel's checks). The launcher window and Stop are **not run in game**.
+### Launcher: Rust, with the C++ launcher kept as the fallback
 
-- **Spawn: board with the player's entity id, and never remove a ship on a boarding timeout.** The `spawn` plugin passed `game.actors.local_player`'s actor id to `game.vehicles` `seat` and compared it with `seat_occupant`, but the vehicles service works in entity ids, so every seat request was refused (`actor ... isn't yours`) and a player who boarded by hand was not recognised. It now uses the entity id; the `crew` plugin's `crew.sit`/`crew.stand_all` had the same mistake and are fixed too. When the 60 s boarding wait expires the plugin gives up the automatic boarding only (ticket Ready, `Boarding not completed in 60 s; ship kept`): the ship stays owned and is removed on unload or `spawn.remove`. Only a ship that never streamed in is removed. README: the Vehicles panel's Spawn button boards through `spawn.ship_options`; plain `spawn.ship` does not board. Synthetic tests only (fake ids differ for actor and entity); **not run in game**.
+- **`sc-offline.exe` is now the Rust launcher** (`launcher-rs/`, 14 crates). It has the whole command line of the C++ launcher: `play`, `install`, `uninstall`, `status`, `update`, `mcp`, `help`, the hidden helper modes and the window, plus the new `stop` and `plugins` commands. Status and dry-run output match the C++ launcher in 85 synthetic scenarios. A stand-in game process runs against the real helper process and named events.
+- **The C++ launcher ships beside it as `sc-offline-classic.exe`**, the fallback. It reads the same `sc-offline.ini`, `data` folder and `%ProgramData%\sc-offline\pc-changes.txt`, so `sc-offline-classic.exe uninstall` undoes the PC changes a Rust run recorded. See [docs/launcher.md](docs/launcher.md#the-classic-launcher).
+- **New window (egui, English and Russian):** Home (status, Play/Stop, Update, Repair banner), Output, Plugins with a Catalogue tab, Capabilities and Settings. Stop lets the mod run its exit work before the game's window is closed: the mod creates `Local\sc-offline-stop-<pid>` and `Local\sc-offline-stopped-<pid>`, the launcher signals the first and waits up to 10 s for the second, and the mod saves the wallet, closes the private session and sends `game.exit`. After 60 s a second confirm, "End the game process?", is offered; nothing ends the game by itself. The Status panel is re-checked when the game starts or stops and reads "Installed (this session)" while you play.
+- **Settings in the window:** Repair (undo PC changes), game logs after a session (`clean_logs = ask | always | never`; `on` and `off` still work), language, in-game menu, plugins on or off, check for updates, and shortcuts to the ini and the data folder.
+- **`status` is read-only.** It writes no file (not `launcher.log`, not `game-path.txt`), migrates nothing, settles no interrupted update, opens no folder picker and makes no network request.
+- **`stop` command:** `sc-offline.exe stop [--end]` is the window's Stop from a terminal: the mod runs its exit work, the game's window is told to close, and `stop` waits up to 60 s. `--end` ends the process without asking if it is still open then.
+- **`plugins` command:** `list [--json]`, `enable`, `disable`, `install <folder|zip>`, `remove [--purge]`, `catalogue list|install|update` and `update`, each journaled and refused while the game runs. Everything installed lands disabled. The catalogue reads a signed index from a local folder (`--source`). No production signing key exists, so the shipped trust root is empty and a real index is refused; adding a key is a release-time owner act.
+- **`mcp`:** the read-only MCP server for AI agents (`get_status`, `list_plugins`, `read_log`, `get_settings`) is part of the Rust launcher and answers the same protocol as the C++ one. `Game.log` is served only with `mcp --game-log`. Log lines are redacted by one shared redactor (handles, nicknames, character names, GEIDs, account numbers, e-mail addresses, Windows user name, with bounded learning from login lines) before any text filter runs; the crash report uses the same redactor. See [docs/ai-agents.md](docs/ai-agents.md).
+- **Game capability switches in `sc-offline.ini`:** `exp_loadout_async`, `exp_inventory_read`, `exp_actor_stats_write`, `exp_cvars_native` and `exp_audio_native` are `on` by default; `exp_entities_diag` (log-only diagnostics) is `off`. The launcher sets the matching `SCO_*` variable to `1` when a key is on and removes it when the key is off, so a variable left in your shell cannot turn one on. It prints one line listing the switches that are on. The window's Capabilities page has a toggle for each. Behaviour change: `play` removes an inherited `SCO_*` capability variable when its key is off.
+- **Updates from 0.7.x:** your `sc-offline.ini` and `data` files are kept, and the 0.7.x updater swaps in the Rust `sc-offline.exe` like any other listed file (the new launcher answers `--self-test` the same way). New ini keys are appended commented out. See [docs/launcher.md](docs/launcher.md#updating-from-07x).
+- **Launcher language:** stable text keys, strict UTF-8 catalogues and an English/Russian/auto selector. An optional `data/locales/ru.ini` overrides the Russian text.
+- **One entry per physical installation:** discovery combines paths only when the channel directory and `Bin64` both match.
+- **Release package:** `tools/package_release.py` assembles the release folder and zip from build outputs, so a package can be built without CI ([docs/build.md](docs/build.md#build-a-release-package-without-ci)); the release job runs it. The zip holds `sc-offline.exe` (Rust), `sc-offline-classic.exe`, `sc_offline_menu.dll`, `dinput8.dll`, the ini, docs, data and the plugin folders, plus `manifest.json` (format 1). The package ships a `locations_catalog` data pack, which the quantum plugin requires. `tools/check_package_tree.py` now requires the four binaries.
+- **CI:** the `rust-launcher` job builds and tests every crate, runs the parity scripts that need no game (status, dry-run play, install and uninstall, the stand-in game, the zip corpus, the launcher contract files, the MCP stdio session against the Rust exe) and uploads the launcher for the release job.
 
-- **Publish the `spawn.ship` capability.** The `spawn` plugin gates on `spawn.ship`, but the host only set `spawn.helpers`, so Vehicles-tab spawns refused with `capability spawn.ship is off`. The host now sets `spawn.ship` from the same readiness as the `ship spawner: ready` line, with a reason when the spawner is unavailable. Synthetic test only; **not run in game**.
+### In-game menu
 
-- **Loadout manual slots skip None and default.** A `slot=None` or `slot=default` entry is skipped instead of refusing the whole line; with nothing chosen the status says to choose at least one slot, and nothing is sent. Malformed input is still refused. A forwarded external command (`spawn.ship_options`, `build.place`) that comes back with no reply now logs `External command <name> refused: <SCO result>` so the command is identifiable. Synthetic tests only; **not run in game**.
+- **Sidebar of pages, every page rewritten in plain words.** The menu (**M**) opens on a sidebar grouped by purpose (Character, Travel, Ships & vehicles, Build, People, Squadron 42, Multiplayer, More plugins, Settings; the Inspector sits under a Developer group shown only with **Menu settings > Show developer pages**). Each page opens under a header that says what it is for, and the open page is remembered in `menu-view.ini`. Controls that could only refuse on this build are gone; where nothing works yet the page says so in one line. Spawn seat is a choice between "Get in as pilot" and "Stay outside". Command replies keep their technical text, except spawn, crew and npc, which reply in plain words; `mod.log` keeps the detail. `tools/check_menu_wording.py` checks the wording, `tools/menu_navigation_test.cpp` the sidebar, and `tools/menu_preview` draws the pages without the game.
+- **Rust in-game menu, opt-in.** `sc_offline_menu.dll` (egui) draws `sco.widgets` panels through Core's widgets view interface. Set `menu = rust` in `sc-offline.ini` (default `imgui`); it opens on M and falls back to the ImGui menu if it cannot start (`SC_OFFLINE_MENU_KEY` picks another key). It needs a `dinput8.dll` built with `-DSCO_HOST_MENU_CLIENT=ON`, which the release package is. Plugin pages that are only `sco.ui` ImGui tabs open through its "Classic pages" entry. Not run in game.
+- **Window size is stable.** The saved size is the outer size at 96 dpi, restored for the monitor the game is on and clamped between 720 x 520 and 90% of that monitor's work area; a bad file falls back to the default. Drag the window's edges or corners to resize; the size is saved in `data/menu-window.ini` when the drag ends.
+- **Easier to read:** disabled controls are less faded, selected and hovered rows stand out, popups have a visible border. The menu closes on Escape release ([#216](https://github.com/scuba-sc/sc-offline/issues/216) by [@sKeepers](https://github.com/sKeepers)).
+- **Vehicles tab:** Flight Ready follows the seat (greyed out with "Flight Ready needs the pilot seat" unless the seat is `pilot`), and the Squadron 42 ship list starts with nothing selected, so one click no longer spawns a capital ship.
+- **Loadout:** primary and secondary choices sit in two columns with independent type, weapon and attachment filters (based on [#198](https://github.com/scuba-sc/sc-offline/pull/198) by [@sKeepers](https://github.com/sKeepers)); long Squadron 42 outfit and buildable lists page 64 rows at a time; duplicated weapon-group labels are gone; manual slots skip `None` and `default`; seven attributed public tool and canister labels sit beside their class IDs; a finished job no longer blocks Equip; only outfits that can be worn are listed; clothing slots 22 to 34 use Core's `game.loadout.outfit` (hair, hair colour and eyebrow also need `game.loadout.appearance`).
 
-- **Set the AI debug-nodes cvar without the console.** The mission loader wrote `SubsumptionEnableDebugNodes` through the console runner, which refuses arbitrary commands, so the line was always refused. It now sets the cvar through the typed cvar path and logs one `[missions] AI debug nodes` line with the outcome. Synthetic build only; **not run in game**.
+### Travel
 
-- **Move the Creative plugin to its own repository and ship it enabled.** `plugins/creative/` now lives in [`sc-creative`](https://github.com/scuba-sc/sc-creative) (history preserved) and is carried as the `external/sc-creative` submodule, pinned to a commit. The plugin build, the package preflight (`tools/check_package_tree.py` reads creative's commands from the submodule), the release profiles and CI use it from there; the creative proof is that repository's `tools/check_creative_sdk.py`, run from the submodule before staging. Creative no longer ships a `disabled` marker, so it loads by default. The Player tab (Loadout) and the Vehicles tab (Spawn) drop their creative controls (Noclip, God mode, Infinite ammo, Noclip speed, Infinite ship ammo) and no longer invoke `creative.*`; all five controls are on the Creative tab, so neither plugin depends on creative. Fresh clones need `git clone --recurse-submodules` (or `git submodule update --init`). Synthetic tests only; **not run in game**.
+- **Arrival is checked against the player's own position.** Core's arrival check (0.05 m and 1 degree after one apply) stayed unmet while the owner really was moved to the saved spot. The teleport plugin now reads the player's pose every tick, says "arrived" within 2 m, releases Core's request slot and logs `confirmation not received; you had arrived` if Core never confirms. Moving while seated in a ship is untested.
+- **Travel to another planet is not in this release.** The zone lookup works only along the player's own chain; this is a documented gap ([docs/features.md](docs/features.md#travel-between-places)).
+- Curated Travel locations come from an enabled `lists/locations.txt` data pack (the release ships one copied from `data/locations.txt`); missing, ambiguous or malformed lists refuse without a raw-file fallback. The quantum controls show received GameRules and pause new boosts when the rules are unreadable or forbid them. Bookmark imports accept CRLF and mixed line endings.
 
-- **Add a package preflight.** `tools/check_package_tree.py` inspects a staged package and fails when an enabled plugin invokes a command no enabled plugin registers, or when a list file an enabled plugin needs is in no enabled data pack (or in several). Static check; it does not show that anything loads or works in game.
+### Ships, crew, build and plugins
 
-- **Guard the wallet and keep `wallet.txt` byte-compatible.** The wallet is saved only after the restored balance has actually been applied to the engine this session, so the engine's default balance can no longer overwrite a good `wallet.txt`; the file keeps its CR LF line ending. The exit save logs whether it wrote. The menu logs each size restore and remember with its inputs, and a pure move no longer re-saves a size that was only reduced to fit a small monitor.
+- **Spawn and crew board with the player's entity id.** The spawn plugin passed the actor id to `game.vehicles`, which works in entity ids, so every seat request was refused; `crew.sit` and `crew.stand_all` had the same mistake. A boarding timeout (60 s) now gives up only the automatic boarding; the ship stays owned. Selecting the seat you are already in cancels an older queued move. Spawn refusals name the failed check.
+- **`spawn.ship` capability** is published from the same readiness as the `ship spawner: ready` line. The menu starts even when the legacy ship spawner did not resolve.
+- **Creative plugin moved to its own repository** ([`sc-creative`](https://github.com/scuba-sc/sc-creative), the `external/sc-creative` submodule) and ships enabled; its controls are on the Creative tab only. Clone with `--recurse-submodules`.
+- **External pickers and consumers:** Build and Squadron 42 pickers (categories, search, 64-row pages, `lists/buildables.txt` snapshot), copied Contracts references (`lists/contract_scripts.txt`), Inspector snapshots with manual refresh and an English/Russian label setting, curated Loadout selectors (`lists/loadout_slots.txt`), saved gear presets can be deleted, and a package preflight (`tools/check_package_tree.py`) that fails when an enabled plugin invokes a command no enabled plugin registers or needs a list no enabled data pack holds.
+- **Stable fleet identities:** offline entitlement URNs and fleet records use never-reused session IDs. Terminals refuse stale or invalid IDs. ASOP selection work from [#117](https://github.com/scuba-sc/sc-offline/pull/117) by [@Alpha-Rome0](https://github.com/Alpha-Rome0) is in as a gated development candidate (composition off).
 
-- **Keep the menu window size stable.** The saved size is now the window's outer size at 96 dpi, restored for the monitor the game is on and clamped between 720 x 520 and 90% of that monitor's work area; a saved file outside that range, or a malformed one, falls back to the default size. Showing and hiding the menu or resizing it no longer changes the size. Synthetic size tests only; the cause of the reported growth is not confirmed; **not run in game**.
+### Host, wallet and startup
 
-- **Make menu text easier to read.** Disabled controls are less faded, selected and hovered rows stand out, and popups have a lighter background with a visible border. Not checked on screen.
+- **Native startup runs on the process-retained Core composition:** the module is pinned and never unloaded, code patches are written at the entry gate, install quiescence is attested by the shell (gate held, or the game thread inside the product's own `Start`; a known deviation, [docs/host-composition.md](docs/host-composition.md)), and stop is closure only. A Core without the composition keeps the refusal. The startup gate waits up to 180 s, and `mod.log` shows numbered `[startup]` and `[shutdown]` lines with the time since the startup thread began.
+- **Wallet:** saved on `game.exit` and written through a flushed temporary file; saved only after the restored balance was applied this session; `wallet.txt` keeps its CR LF line ending and is the only wallet store.
+- **Admission:** the launcher's `multiplayer_allow` IPv4 ranges count as firewall exceptions ([#183](https://github.com/scuba-sc/sc-offline/issues/183)); startup retries at most every 500 ms while admission is unavailable. Missions: scripts are loaded before hook installation, and the AI debug-nodes cvar is set through the typed cvar path.
+- **Honest legacy settings:** `start` and `start_ship` are still read and passed on, but destination startup is refused by the current spawn module; the ini comments no longer promise the old timed arrival.
 
-- **Wait longer at the startup gate and log where the time goes.** The game's entry gate now waits up to 180 s instead of 60 s, and the `[startup] 2/8 host Prepare` line in `mod.log` shows the milliseconds since the mod's startup thread began. **Not run in game**.
+### Tooling and checks
 
-- **Save the wallet at exit and write it safely.** A balance change in the last few seconds before the game closes is saved on `game.exit`, and `wallet.txt` is replaced through a flushed temporary file so a crash leaves the old balance or the new one. The log now says whether the balance came from `wallet.txt` or from the offline data file. The docs no longer claim a `storage/contracts.db` wallet; `wallet.txt` is the only store. **Not run in game**.
+- Development SDK 2.4.1 consumer proofs pass on a development machine (inspector, crew, npc, spawn, build, loadout, mining, discord, teleport, quantum, contracts read slice). Three proof scripts were wrong, not Core: the inspector proof did not copy `tools/panel_dump.h`, the crew proof expected eight workflow groups where the test has twelve, and the contracts proof looked for an old refusal sentence. The TitanLink plugin no longer redefines `strncpy_s` and `_TRUNCATE` under MSVC. `tools/sdk-headers.py` lets a plugin's own `*_test.cpp` include the two test helpers in `tools/`. `tools/test_native_preflight_wiring.py` allows `FreeLibrary` of the system `dwmapi.dll`, and the native write census lists the Rust menu's message hook.
 
-- Correct stale texts: the startup log no longer claims the teleport move is refused, the Teleport plugin's setting help says moves use `game.relocation` and report their own result, and the quit paragraph in the feature guide describes the closure-only stop. A new "What persists between sessions" table lists what is and is not saved.
+### Not run in game
 
-- Spawn refusals now name the failed check (class lookup, entities spawn or despawn, player pose, or the `spawn.ship` / `game.entities.spawn` capability).
-
-- Loadout: remove the duplicated weapon-group labels and page long SQ42 outfit and buildable lists 64 rows at a time. Synthetic tests only; **not run in game**.
-
-- **Run native startup on the process-retained Core composition.** On a Core that provides `Composition::ProcessRetained`, the product starts natively under retain-until-exit: its module is pinned and never unloaded, code patches are written at the entry gate, install quiescence is attested by the shell (gate held, or the game thread inside the product's own `Start`, a known deviation documented in `docs/host-composition.md`), and stop is closure only (no drain, unload or restart). The post-stop hook-callback wait is bounded to 5 s, and startup and shutdown write numbered `[startup]`/`[shutdown]` lines to `mod.log`. Any other Core keeps the refusal. Static and synthetic checks only; **not run in game**.
-
-- Install the startup gate only for a static-import load of the module, so loader retention precedes `DllMain`; a dynamic load is refused before any entry patch, event, thread or callback. Portable policy tests and a synthetic module-lifetime fixture only; native activation remains refused; **not run in game**.
-
-- Identify copied Loadout lists by data-pack ID and relative path, refuse duplicate, malformed or unreadable sources, and invalidate selections atomically on reload. Synthetic multi-pack tests only; full outfit parity remains open; **not run in game**.
-
-- Restore a copied first admissible Build catalogue selection before camera acquisition while preserving explicit selections and safe refusal. Synthetic tests only; G5 and the focus issue remain open; **not run in game**.
-
-- Submit copied Player gear and confirmed SQ42 outfits as retained public loadout 1.2 jobs, with progress and cancellation; unsupported mappings refuse. Synthetic tests only; **not run in game**.
-
-- **Pair the build-200 development SDK.** Advance the local Core gitlink to `4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd` and record the matching unpublished `2.4.1-dev.3` archive identities. Static signature scans and synthetic checks do not establish gameplay or native activation.
-
-- Close the focused menu on Escape release, following [#216](https://github.com/scuba-sc/sc-offline/issues/216) by [@sKeepers](https://github.com/sKeepers). Synthetic input tests only; **not run in game**.
-
-- **Pair the local SDK 2.4.1 development checkpoint.** Advance the embedded Core source to `248d2a65ff979909695ece68ec8a0b71cbf26172` and record the matching `2.4.1-dev.2` plugin/host archive identities. Stable SDK defaults and earlier receipts remain separate. Native startup and ASOP composition remain refused; **not run in game**.
-
-- Restore the owned `asop_ships.txt` startup selection route from [#117](https://github.com/scuba-sc/sc-offline/pull/117) by [@Alpha-Rome0](https://github.com/Alpha-Rome0), keeping the complete ship catalogue separate. ASOP composition and native activation remain refused; **not run in game**.
-
-- Harden paired-source path checks on case-insensitive filesystems; not run in game.
-- Fix paired-source qualification to refuse build paths inside either source tree on Windows; verify-only does not create the proposed path. Not run in game.
-
-- Exercise the standalone ASOP selection file adapter in Windows host CI, including fault-injection fixtures; native composition remains refused and was not run in game.
-
-- Fix the TitanLink SDK proof test fixture when the temporary directory uses a symlink.
-
-- **Coordinate the development Core source.** Update the embedded host gitlink and paired-source checks to `d33932bc14b85af0caccc4636b42028f44f97710`; rebuild host and consumer kits together. Prior archive and runtime evidence remains historical. Native startup is refused; **not run in game**.
-
-- Flight Ready keyboard fallback uses an owned worker that drains during shutdown; a refused request asks the player to press R.
-
-- **Keep plugin settings drafts on errors.** A failed Save or Reset leaves your edits in place so you can correct or retry them. Windows offscreen fixtures exercise the draft-retention behavior. **Not run in game.**
-
-- **Prepare mission scripts before hook installation.** Selected script bytes are loaded before publication; unreadable or empty inputs refuse the custom hook, and owner admission guards installation and replacement calls. Synthetic host fixtures exercise these paths; native activation stays refused and gameplay remains unrun.
-
-- **Preserve tutorial source encoding.** SDK tutorial source copies use UTF-8 explicitly; a prepare-only regression passed with Python UTF-8 mode disabled. This is not an SDK archive build or game acceptance.
-
-- Group primary and secondary loadout choices in two columns with independent type, weapon and attachment filters; filtering changes UI selections only. Based on [#198](https://github.com/scuba-sc/sc-offline/pull/198) by [@sKeepers](https://github.com/sKeepers).
-
-- **Stable SDK 2.4.0 package qualification.** The earlier host source and
-  standalone plugin archive used sco-core `6106fa36`; the combined archive is
-  checksum- and source-verified against `sdk-v2.4.0`. At that qualification the development
-  host pinned `d06f9124d6d7d380295ada4bc2af8968b98a051c`. Linux tutorial,
-  Teleport and Quantum package checks pass with synthetic/provider-free evidence.
-  Native product startup remains refused; **not run in game**.
-
-- **Read Windows line endings in legacy saved spots.** Bookmark imports and quick
-  saves accept CRLF and mixed line endings while retaining existing row order and
-  storage behavior. Synthetic checks only; **not run in game**.
-
-- **Delete saved gear presets.** The development consumer can delete a selected preset or an explicit ID to free storage capacity. Synthetic host tests only; **not run in game**.
-
-- **Loadout job status.** The Player panel refreshes a retained job observation at most every 200 ms, replaces old progress with unavailable or invalid status when the panel update succeeds, and pauses polling after malformed reports until a valid manual inspection. No automatic retry, release or inventory confirmation. **Not run in game.**
-
-- **Refuse native startup pending a real safety barrier.** This development build
-  leaves host services, plugins, product patches and the startup entry hook
-  inactive until native readers and workers can be excluded and drained. A
-  diagnostic explains the refusal; gameplay is unavailable in this candidate.
-
-- **Refuse unproven native startup.** The development host does not install its startup hook, prepare or start native game services, apply product patches, or start plugins until a reviewed reader and worker exclusion and drain protocol is available. This build is not playable; not run in game.
-
-- **Keep legacy ASOP fleet identities stable.** Offline entitlement URNs and long-lived
-  fleet records use never-reused session IDs instead of list positions. Historical class
-  names stay immutable, and stale or invalid terminal IDs are refused. Synthetic checks
-  only; **not run in game**. No picker UI or composition-default change.
-
-- **Accept configured VPN firewall gaps ([#183](https://github.com/scuba-sc/sc-offline/issues/183)).**
-  Offline admission now checks the launcher's `multiplayer_allow` IPv4 ranges
-  alongside LAN exceptions, so the documented Tailscale range can pass the
-  firewall coverage check. The launcher clears invalid INI ranges with a warning;
-  malformed INI does not itself always refuse startup. Admission independently
-  rejects malformed forwarded environment values, undeclared firewall gaps and
-  missing live firewall/TCP evidence. Canonical environment formatting is not
-  authenticated provenance: another process can supply the same text. Explicit
-  public IPv4 ranges and ranges crossing private boundaries are rejected. TCP classification and private session
-  bind/peer policy are unchanged. Synthetic checks only; **not run in game**.
-
-- **Limit startup retry noise.** While offline admission is unavailable, the host
-  retries at most every 500 ms instead of on every game message. Each attempt
-  still performs a fresh admission check. Synthetic timing checks only; **not run in game**.
-
-- **Development ASOP selection and host menu.** Incorporates selection work from
-  [#117](https://github.com/scuba-sc/sc-offline/pull/117) by [@Alpha-Rome0](https://github.com/Alpha-Rome0)
-  and follow-up maintainers. Candidate spawn-panel code can
-  edit a host-owned `asop_ships.txt` through the candidate SDK file service, but
-  the composition switches are OFF and current product policy refuses host
-  startup before the service runs. The panel therefore reports unavailable; a
-  saved selection does not change the terminal list. Native lifecycle and game
-  acceptance remain unverified. The separate host menu client is also OFF by
-  default and uses widgets 1.3 numeric presentation. The existing SDK pin is
-  unchanged.
-
-- **Inspector language setting.** Choose English or Russian for fixed Inspector panel labels and the Lua command description. The setting is independent of the launcher; structured diagnostic output remains English. Synthetic checks only; **not run in game**.
-
-- **Develop gear presets against the SDK.** A standalone, read-only consumer captures and saves complete logical layouts and compares categories with manual advice. The current production host has no logical-layout producer, and the module is not staged; the workflow is verified only with synthetic host data and is **not run in game**.
-
-- **Choose the launcher language.** Stable text keys, strict UTF-8 catalogues, checked named placeholders and an English/Russian/auto selector use the system language by default with built-in Russian and an English fallback. Existing control and command identities stay fixed. An optional `data/locales/ru.ini` can override Russian text; plugin language APIs stay separate. Checked headlessly and with synthetic files; **not run in game**.
-
-- **Find one entry for each physical game installation.** Discovery combines paths only when both the channel directory and Bin64 match, preserving the first path and discovery priority. Relative and drive-relative paths use the actual channel parent for user files and checks. Unavailable directory identity keeps the existing path comparison. Separate installs and channels remain separate even when they share executable files or a Bin64 junction. Checked with synthetic filesystem fixtures; **not run in game**.
-
-- **Loadout friendly names and shared search.** Curated selectors show seven attributed public tool/canister labels alongside their unchanged class IDs. The shared filter matches names/classes without clearing or rebinding selected choices; apply/jobs keep their existing ordering, admission and partial/cancel behavior. No defaults, native compatibility or release staging change. **Not run in game.**
-
-- **Quantum controls show received GameRules.** The existing panel shows allowed/forbidden/unknown quantum travel and boost gates, pauses new UI boosts when rules are unreadable or forbid them, and rechecks before starting. Owned release remains available; group membership is never inferred. Automatic presentation reads occur at most once per 250 ms. Relocation and provider-authorized command behavior, native/default settings and the SDK pin stay unchanged. **Not run in game.**
-
-- **External Build and SQ42 picker.** The existing Build owner now publishes grouped categories, global search, 64-row pages and SQ42 placement controls through public widgets and one explicit `lists/buildables.txt` data-pack snapshot. Row changes clear selection; full identifiers reach the existing guarded commands. Missing/ambiguous/malformed content and failed publication refuse safely. No raw-file import, pack staging, backend/default or SDK pin change. **Not run in game.**
-- **Read copied contract references.** External Contracts adds bounded summary and single-reference commands for explicit `lists/contract_scripts.txt` data packs through published SDK 2.4.0 RC1. Source GUIDs remain metadata; native XML installation is explicitly unknown. No mission/economy calls, implicit imports, retained engine, staging, default or pin changes. **Not run in game.**
-- **Development Loadout curated selectors.** Add fourteen independent public weapon, attachment and tool selectors from an explicit `lists/loadout_slots.txt` data pack. Unchanged omits a slot; apply and jobs retain existing version, capability, ordering and partial-result rules. The optional 344-choice catalogue uses attributed public project identifiers and is never imported or staged automatically. No native/default or SDK pin changes. **Not run in game.**
-
-- **Curated Travel locations use public data packs.** The external Quantum consumer reads one explicit `lists/locations.txt` startup snapshot through published SDK 2.4.0 RC1. Missing, ambiguous or malformed curated lists refuse without a raw-file fallback. The original base file is untouched; users must explicitly copy their curated list into an ordinary pack while stopped. Generated locations/bookmarks keep their existing persistence policy. No pack staging, backend/default or SDK pin changes. **Not run in game.**
-
-- **Development Loadout manual slots.** Add explicit public SDK 2.4.0 RC1 weapon/attachment/multitool assignments to the optional Player panel and commands, plus guarded async submit/progress/cancel. Copied legacy catalogue ports remain unsupported; no None/clear or tool-default preservation is inferred. Synthetic public-provider tests cover refusal, partial results and job lifetime. Loadout remains outside production staging; no backend or capability default changes. **Not run in game.**
-
-- **Keep your current Crew seat.** If you queue a move to another seat and then
-  select the seat you are already in, Crew now cancels its older queued move.
-  This stops future consumer retries; it does not undo a native link already
-  accepted by the game. Checked with synthetic services; **not run in game**.
-- **Development Loadout panel.** Empty gear, outfit or buildable lists no longer
-  cause a widget-panel replacement to be rejected, including after SQ42 spoiler
-  confirmation. Loadout remains outside release staging; this does not add slot
-  mappings or verify native equip behavior. Checked with synthetic services;
-  **not run in game**.
-
-- **Clarify legacy startup settings.** The launcher still reads and passes
-  `start` and `start_ship`, but the current external spawn module refuses
-  destination startup. INI comments and launcher docs no longer promise the old
-  timed Daymar arrival or boarding. Wallet precedence is unchanged; this does
-  not add a startup feature or confirm the original settings report in game.
-
-- **Resize the menu.** Drag its native window edges or corners; the size is saved
-  in `data/menu-window.ini` when the drag finishes and restored on the next run.
-  The window is bounded by the monitor work area, including smaller displays.
-  Long tab titles keep their width and scroll instead of shrinking. Headless
-  geometry, file/restart and actual ImGui overflow checks cover the change;
-  Windows rendering and game acceptance remain pending. **Not run in game.**
-
-- **Linux evidence is dated.** Record the reported sc-offline 0.7.0/Bazzite Wine run with its exact game/toolchain tuple, while retaining experimental status and the current SDK 2.4.0 RC1 acceptance gap. No launcher behavior changed or new game run was performed.
-
-- **Inspector snapshots on the published SDK 2.4.0 RC1.** Integrate the public consumer commands and retained widget panel from PR #147 without restoring its obsolete SDK 2.3.0 defaults or unpublished archive pin. Manual refresh and cached paging expose explicit unavailable states; missing providers remain unavailable. Refresh returns to the first page of the new snapshot, including when the inventory shrinks. Configurable proof generators retain the hosted VS 2026 default. Local synthetic checks are separate from Windows, external-host and game acceptance. Tracking: #155.
-
-- **Host and plugins use the same SDK candidate.** Update the embedded sco-core host from `e616ed6` to exact `sdk-v2.4.0-rc.1` source `48d7055ef49e1b073ec59e4ce8ded7a6006329eb` (SDK 2.4.0, game pack 0.8.0, unchanged plugin ABI 1.1). External plugins retain their existing checksum-pinned RC1 archive. The host now includes the candidate service contracts and signature rows for build 4.10.197.2878; default-off and unavailable backends remain deferred. This does not approve a final SDK release. **Not run in game.**
-
-- **One SDK for every external plugin: SDK 2.4.0.** The creative, discord, crew, spawn, build, mining, teleport and quantum plugins and the inspector, npc and contracts proof jobs now build and check against the published sco-core SDK 2.4.0 release candidate 1 ([`sdk-v2.4.0-rc.1`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.1), combined `sco-sdk-2.4.0.zip`, game pack 0.8.0, verified game build 4.10.197.2878). The older SDK release downloads are gone; at that point the final 2.4.0 release had not yet been published. Plugin ABI 1.1 is unchanged and no plugin behaviour changes: this is a build-input bump only (spawn's `spawn.startup` refusal text no longer names an old SDK). The Windows host's `external/sco-core` pin is unchanged. Checked on a development machine with synthetic services and the SDK's plugin checker. **Not run in game.**
+- The Rust launcher's `play` path and its elevated (UAC) helper, the real firewall rules, hosts-file line and Easy Anti-Cheat rename, and the game start from an elevated launcher.
+- The Rust in-game menu (`menu = rust`).
+- The update swap (`update`), including 0.7.x to 0.8.0, and the catalogue network path.
+- The window, Stop and the PC-change repair on a real PC.
+- `exp_inventory_read`, `exp_actor_stats_write`, `exp_cvars_native`, `exp_audio_native` (this Core refuses native sounds and logs why) and `exp_entities_diag`.
+- The new arrival check of the teleport plugin, `quantum.travel`, crew actions beyond the seat probe, NPC commands, `build.undo` and `build.clear`, contracts, mining, multiplayer, creative, the inspector, ASOP terminals, hangars and ATC, and the menu pages.
+- Release packaging: the package was assembled and checked on a development machine with stand-in plugin builds.
 
 ## 0.7.8.3 (2026-10-15)
 

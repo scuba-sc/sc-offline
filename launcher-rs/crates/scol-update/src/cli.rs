@@ -170,34 +170,20 @@ fn update(
     }
     let _ = std::fs::create_dir_all(ctx.here.join("data"));
     swap::settle_previous(&ctx.here, p, out);
-    let u = match flow::check_latest(net, &ctx.version, pre) {
-        Ok(u) => u,
-        Err(why) => {
-            let _ = writeln!(out, "Update:   {why}");
-            return if why.starts_with("up to date") { 0 } else { 1 };
-        }
+    let opts = flow::OfferOptions {
+        check_only,
+        yes,
+        quiet: false,
     };
-    let _ = writeln!(
-        out,
-        "Update:   sc-offline {} is available (you have {})",
-        u.tag, ctx.version
-    );
-    if check_only {
-        return 0;
-    }
-    if p.game_running() {
-        let _ = writeln!(out, "[!] close the game before updating");
-        return 1;
-    }
-    if !yes && !ask("Update now? Your saves and sc-offline.ini are kept.") {
-        let _ = writeln!(out, "[i] not updating");
-        return 0;
-    }
-    match flow::apply_update(&ctx.here, &u, &ctx.version, net, p, out) {
-        Ok(()) => 0,
-        Err(_) => {
-            let _ = writeln!(out, "[!] update failed; your current version is unchanged");
-            1
+    match flow::offer_update(&ctx.version, pre, opts, &ctx.here, net, p, out, ask) {
+        flow::Offer::Nothing { why } => i32::from(!why.starts_with("up to date")),
+        flow::Offer::Available(_) | flow::Offer::Declined(_) => 0,
+        flow::Offer::Blocked(_) | flow::Offer::Failed(_) => 1,
+        flow::Offer::Applied(_) => {
+            // The same command again, in the new exe (the C++ launcher's `Relaunch`).
+            let mut again = vec!["update".to_string()];
+            again.extend(flags.iter().map(|f| f.to_string()));
+            flow::finish_applied(&ctx.here, &again, p, out)
         }
     }
 }

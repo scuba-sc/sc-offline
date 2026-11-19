@@ -36,6 +36,7 @@ struct State {
 #endif
     Pose target; // where the tracked move was aimed; read back if Core reports a failure after the move was applied
     uint64_t ticket=0; bool ticking=false; std::string moving; // one tracked game.relocation request; never persisted
+    bool arrived=false; // the player's own pose reached the target before Core confirmed; ticket is only watched to its end
 } g;
 // Opaque, never dereferenced; do not reuse a publication identity after reload.
 uintptr_t next_panel_cookie=0;
@@ -309,23 +310,53 @@ void Panel();
 void TravelTick(const char*,const void*,void*) noexcept;
 void StopTracking() {
     if (g.ticking && TRAVEL_FN(g.api,sco_api,unsubscribe)) g.api->unsubscribe(g.self,"tick",TravelTick);
-    g.ticking=false; g.ticket=0;
+    g.ticking=false; g.ticket=0; g.arrived=false;
 }
+// A move is "in progress" for the page only until the player has arrived or the request ended.
+bool Moving() { return g.ticket && !g.arrived; }
+// The page's sentence for reaching the tracked target; used when the player's own pose confirms it.
+std::string ArrivedPlain() {
+    const bool saved=g.moving.find("saved spot")!=std::string::npos&&g.moving.find("area around")==std::string::npos;
+    return saved?std::string(at_saved_spot_plain):"You are at "+g.moving+".";
+}
+// Releases Core's single request slot once the player has arrived. Cancellation cannot undo a movement that
+// already started (sc_relocation.h), so the player stays where they are. Failure is harmless: the request
+// then simply runs to its own end.
+void ReleaseRequest(uint64_t ticket) {
+    const auto* service=Open<sc_relocation_v1>(SC_RELOCATION_NAME);
+    if (ticket && TRAVEL_FN(service,sc_relocation_v1,cancel)) service->cancel(g.self,ticket);
+}
+void LogInfo(const std::string& text) { if (TRAVEL_FN(g.api,sco_api,log)) g.api->log(g.self,SCO_LOG_INFO,text.c_str()); }
 // Game thread, per tick while a request is tracked: status only reads; report the terminal state once.
+// Not run in game: the player's pose is checked every tick, because Core's own arrival check (0.05 m, 1 degree
+// after one apply) has been seen to stay unmet while the player really was moved to the saved spot.
+// Moving while seated in a ship is untested in game; it is not blocked, and nothing here claims it works.
 void TravelTick(const char*,const void*,void*) noexcept {
     try {
         if (!g.ticket) { StopTracking(); return; }
         sc_relocation_status s{};
         const auto r=Poll(Open<sc_relocation_v1>(SC_RELOCATION_NAME),g.self,g.ticket,s);
-        if (r==SCO_OK && s.state==SC_RELOCATION_PENDING) return;
+        if (g.arrived) { // already reported to the player; only see the request through
+            if (r==SCO_OK && s.state==SC_RELOCATION_PENDING) return;
+            if (r!=SCO_OK || s.state!=SC_RELOCATION_COMPLETE) LogInfo("confirmation not received; you had arrived");
+            StopTracking(); return;
+        }
+        if (r==SCO_OK && s.state==SC_RELOCATION_PENDING) {
+            if (!PlayerWithin(Open<sc_spatial_v1>(SC_SPATIAL_SERVICE_NAME),Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),g.target,arrived_after_report_metres)) return;
+            const auto plain=ArrivedPlain();
+            Reply(SCO_OK,nullptr,0,"Player pose is within 2 m of "+g.moving+"; arrived (the game has not confirmed it yet)",plain); g.last_status=g.plain;
+            g.arrived=true; g.moving.clear(); ReleaseRequest(g.ticket);
+            if (TRAVEL_FN(g.api,sco_api,status)) g.api->status(g.self,g.plain.c_str());
+            Panel(); return;
+        }
         std::string text,plain; sco_result result=SCO_FAILED;
         if (r!=SCO_OK) { text="Lost track of the move to "+g.moving+" (game.relocation status unavailable); arrival not confirmed";
             plain="Lost track of the move to "+g.moving+". Check where you are."; }
         else if (s.state==SC_RELOCATION_COMPLETE) { result=SCO_OK; text="Arrived at "+g.moving; plain="Arrived at "+g.moving+"."; }
         else if (ArrivedDespiteReport(Open<sc_spatial_v1>(SC_SPATIAL_SERVICE_NAME),Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),g.target,s.state,s.applied)) {
-            result=SCO_OK; const bool saved=g.moving.find("saved spot")!=std::string::npos&&g.moving.find("area around")==std::string::npos;
+            result=SCO_OK;
             text="Core reported "+std::string(ReasonText(s.reason))+" but the move had been applied and the player is within 2 m of "+g.moving+"; counted as arrived";
-            plain=saved?std::string(at_saved_spot_plain):"You are at "+g.moving+".";
+            plain=ArrivedPlain();
         }
         else {
             text=std::string(s.state==SC_RELOCATION_CANCELLED?"Move cancelled":"Move failed")+" ("+ReasonText(s.reason)+"): "+g.moving+(s.applied?"; the move had started":"; not moved");
@@ -340,7 +371,8 @@ void TravelTick(const char*,const void*,void*) noexcept {
 }
 // label is how the page names the place; note is extra detail for the log only.
 sco_result Move(const Pose& target,const std::string& label,char* out,uint32_t n,const std::string& note={}) {
-    if (g.ticket) return Reply(SCO_TOO_MANY,out,n,"Already moving to "+g.moving+"; one move at a time","You're already travelling to "+g.moving+". Wait until you arrive.");
+    if (Moving()) return Reply(SCO_TOO_MANY,out,n,"Already moving to "+g.moving+"; one move at a time","You're already travelling to "+g.moving+". Wait until you arrive.");
+    if (g.ticket) { ReleaseRequest(g.ticket); StopTracking(); } // the player arrived earlier; drop the old request before a new one
     if (!MovesAllowed()) return Reply(SCO_UNAVAILABLE,out,n,switched_off,switched_off_plain);
     if (!TRAVEL_FN(g.api,sco_api,subscribe) || !TRAVEL_FN(g.api,sco_api,unsubscribe)) return Reply(SCO_UNAVAILABLE,out,n,"Cannot follow a move without game ticks; not moved","Couldn't start the move. You haven't moved.");
     const auto* service=Open<sc_relocation_v1>(SC_RELOCATION_NAME);
@@ -373,7 +405,7 @@ sco_result GoSaved(const sco_arg*,uint32_t,void*,char* out,uint32_t n) {
     Restoration r; const auto found=Resolve(Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),g.saved,r);
     if (found!=SCO_OK) return Reply(found,out,n,"Saved spot unavailable (none saved, unloaded/expired metadata or root-only match); not moved",
         "Can't go there. Either nothing is saved yet, or you are too far from that place for the game to find it. You haven't moved.");
-    if (!g.ticket && AlreadyThere(Open<sc_spatial_v1>(SC_SPATIAL_SERVICE_NAME),Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),r)) {
+    if (!Moving() && AlreadyThere(Open<sc_spatial_v1>(SC_SPATIAL_SERVICE_NAME),Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),r)) {
         const auto here=Reply(SCO_OK,out,n,"Already at the saved spot (within 2 m); not moved",already_there_plain);
         Announce(); return here;
     }
@@ -392,7 +424,7 @@ sco_result GoBookmarkAt(size_t index,char* out,uint32_t n) {
     const auto found=Resolve(Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),bookmark.spot,r);
     if (found!=SCO_OK) return Reply(found,out,n,"Bookmark pose unavailable (unloaded/expired metadata or root-only match); not moved",
         "Can't go to '"+bookmark.name+"' from here. The game can't find that place from where you are. You haven't moved.");
-    if (!g.ticket && AlreadyThere(Open<sc_spatial_v1>(SC_SPATIAL_SERVICE_NAME),Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),r)) {
+    if (!Moving() && AlreadyThere(Open<sc_spatial_v1>(SC_SPATIAL_SERVICE_NAME),Open<sc_game_spatial_v1>(SC_GAME_SPATIAL_NAME),r)) {
         const auto here=Reply(SCO_OK,out,n,"Already at saved spot '"+bookmark.name+"' (within 2 m); not moved",already_there_plain);
         Announce(); return here;
     }
@@ -424,9 +456,9 @@ sco_result Status(const sco_arg*,uint32_t,void*,char* out,uint32_t n) {
 #endif
     if (!MovesAllowed()) plain+=" Travel is turned off in this plugin's settings.";
     else if (!RelocationOn()) plain+=" Travel isn't available in this game right now.";
-    if (g.ticket) plain+=" You're travelling to "+g.moving+".";
+    if (Moving()) plain+=" You're travelling to "+g.moving+".";
     return Reply(SCO_OK,out,n,std::string(id)+": "+std::to_string(g.marks.size())+" bookmarks, "+std::to_string(g.places.size())+" destinations; moves "+
-        (MovesAllowed()?"allowed":"off in settings")+"; game.relocation "+(RelocationOn()?"on":"off")+"; "+(g.ticket?"moving to "+g.moving:std::string("no move in progress"))+
+        (MovesAllowed()?"allowed":"off in settings")+"; game.relocation "+(RelocationOn()?"on":"off")+"; "+(Moving()?"moving to "+g.moving:std::string("no move in progress"))+
         "; system identity unknown unless explicitly provided; scan is observed ancestry only"
 #ifndef TRAVEL_TELEPORT
         "; curated locations: "+g.curated_status

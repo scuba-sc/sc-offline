@@ -28,7 +28,9 @@ Questions and ideas: open an issue or ask in the [Discord](https://discord.gg/NJ
    - macOS or Linux: `tools/check.sh` must report `0 new` diagnostics. It isn't a build; CI's MSVC build is the real check.
    - `python3 tools/sdk-headers.py` must pass if you touched `src/builtins/` or `plugins/`: it checks public SDK dependencies and recorded legacy exceptions (see [docs/build.md](docs/build.md#include-and-scan-gates)). Do not add an exception for a new feature.
    - Touching the self-update: run `tools/update-test/run.sh` under Wine (see [docs/build.md](docs/build.md#self-update-tests-under-wine)).
-   - Touching `launcher/mcp_server.h` or the `mcp` command: `python tools/check_launcher_mcp.py` must pass (see [docs/ai-agents.md](docs/ai-agents.md#for-developers)).
+   - Touching `launcher/mcp_server.h`, `launcher-rs/crates/scol-mcp` or the `mcp` command: `python tools/check_launcher_mcp.py` must pass, and `--exe <built sc-offline.exe>` for the exe you changed (see [docs/ai-agents.md](docs/ai-agents.md#for-developers)).
+   - Touching `launcher-rs/`: `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` must pass (see [docs/build.md](docs/build.md#build-the-rust-launcher-and-menu)). The launcher players run is the Rust one; keep the C++ launcher in `launcher/` working as `sc-offline-classic.exe`.
+   - Touching the release recipe: `python tools/test_package_release.py` and `python tools/test_release_manifest.py` must pass.
 4. Test in game if you can, and say in the PR what you tested and what you didn't.
 5. Update the docs your change affects (`README.md`, `docs/`, `sc-offline.ini` comments) in the same PR.
 6. Add a line under the top section of [CHANGELOG.md](CHANGELOG.md) for anything a player would notice.
@@ -38,7 +40,7 @@ PRs are squash-merged. Keep one change per PR.
 
 ## Code style
 
-- Match the surrounding code: C++ in `src/` (the mod) and `launcher/` (the launcher), no new dependencies without discussing it first.
+- Match the surrounding code: C++ in `src/` (the mod) and `launcher/` (the classic launcher), Rust in `launcher-rs/` (the launcher and the opt-in in-game menu), no new dependencies without discussing it first. Rust dependencies also pass `cargo deny check`.
 - In `src/`, don't put `__try` in a function that owns objects with destructors (such as `std::string`); MSVC rejects it (C2712) and `tools/check.sh` screens for it.
 - Write messages players will read in plain words: what happened and what to do.
 

@@ -29,6 +29,10 @@ Copy existing user-edited lists into the pack while stopped; there is no implici
 base-file import or private-reader fallback. Restart after edits. Shared filter/
 paging and bounded ownership rules: [pickers.md](pickers.md).
 
+## Travel locations pack
+
+The release also ships `data/plugins/locations_catalog/lists/locations.txt`, a copy of `data/locations.txt`, with an ordinary data manifest (`tools/package_release.py` makes the copy). The external Quantum/Travel plugin requires exactly one enabled `lists/locations.txt` and reads it once at startup; there is no base-file fallback. Copy your edits of `data/locations.txt` into the pack while the game is closed. Reaching a place outside the player's own zone chain is not in 0.8.0 ([features.md](features.md#travel-between-places)).
+
 ## Ordinary data packs and content access
 
 The external Loadout Player panel reads curated weapon/tool choices from exactly
@@ -176,6 +180,8 @@ When one of these files is present, `src/contracts.cpp` or `src/spawner.cpp` cha
 | `SC_OFFLINE_MULTIPLAYER_ALLOW` | From `multiplayer_allow`, checked by the launcher: extra IPv4 ranges a session may use |
 | `SC_OFFLINE_ASOP_FLEET_LIST` | From `asop_fleet_list`: `ships` lists `ships.txt` at the terminals; unset or anything else leaves the game's own list (with `asop` on) |
 | `SC_OFFLINE_MINING` | Legacy import-only preference; ignored by the runtime. `SC_OFFLINE_MINING_DEBUG` likewise. Explicit `--environment` import is documented in [mining](../plugins/mining/README.md). |
+| `SC_OFFLINE_MENU` | From `menu`: `rust` loads `sc_offline_menu.dll` and shows the Rust in-game menu; anything else (or unset) keeps the ImGui menu. Opt-in: the Rust menu has not run in game |
+| `SC_OFFLINE_MENU_KEY` | The key that opens the Rust menu (default M). Read only when the Rust menu is on |
 | `SC_OFFLINE_ASOP` | From `asop`: `off` (or `0`, `no`, `false`) leaves the ship terminals, hangars and ATC alone; unset or anything else is on |
 | `SC_OFFLINE_SHIPS_FILE` | Where the ship list is read from |
 | `SC_OFFLINE_REGISTRY_PROBE` | From `registry_probe`. `1` writes `registry-dump.txt` beside `mod.log` |

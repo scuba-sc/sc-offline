@@ -66,13 +66,47 @@ fn journal_line(here: &Path, line: &str) -> bool {
 
 /// D2: antivirus and indexers hold files for a moment. Retry sharing, access-denied and lock errors
 /// with growing waits.
-const LOCK_WAITS: [u64; 6] = [100, 250, 500, 1000, 2000, 4000];
+pub const LOCK_WAITS: [u64; 6] = [100, 250, 500, 1000, 2000, 4000];
 
 fn transient(e: &std::io::Error) -> bool {
     matches!(e.raw_os_error(), Some(5) | Some(32) | Some(33))
 }
 
-fn retrying<T>(
+/// Moves `from` to `to`, replacing `to`, and asks Windows to have it on disk before returning
+/// (`MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH`, as the C++ launcher's `MoveRetrying`): a power cut
+/// right after the swap must not leave the journal ahead of the files. Elsewhere a plain rename.
+pub fn move_through(from: &Path, to: &Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+        };
+        let wide = |p: &Path| -> Vec<u16> { p.as_os_str().encode_wide().chain(Some(0)).collect() };
+        let (f, t) = (wide(from), wide(to));
+        // SAFETY: both paths are NUL-terminated and outlive the call.
+        let ok = unsafe {
+            MoveFileExW(
+                f.as_ptr(),
+                t.as_ptr(),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            )
+        };
+        if ok == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::rename(from, to)
+    }
+}
+
+/// Runs `op`, and while it fails with a sharing, access-denied or lock error waits (through
+/// [`Platform::sleep_ms`]) [`LOCK_WAITS`] in turn and tries again; any other error, or the last wait
+/// used up, is the result.
+pub fn retrying<T>(
     p: &mut dyn Platform,
     mut op: impl FnMut() -> std::io::Result<T>,
 ) -> std::io::Result<T> {
@@ -129,9 +163,9 @@ pub fn roll_back(here: &Path, p: &mut dyn Platform) {
             // A running new exe can't be deleted, but it can be renamed out of the way.
             if path.is_file() && std::fs::remove_file(&path).is_err() {
                 let failed = with_suffix(&path, ".update-failed");
-                let _ = retrying(p, || std::fs::rename(&path, &failed));
+                let _ = retrying(p, || move_through(&path, &failed));
             }
-            let _ = retrying(p, || std::fs::rename(&old, &path));
+            let _ = retrying(p, || move_through(&old, &path));
         }
     }
 }
@@ -306,7 +340,7 @@ pub fn swap_staged(
             failure = Some("couldn't write the journal".into());
             break;
         }
-        if had && retrying(p, || std::fs::rename(&dst, &old)).is_err() {
+        if had && retrying(p, || move_through(&dst, &old)).is_err() {
             let _ = writeln!(out, "[!] couldn't move {} aside", mf.path);
             let _ = std::fs::remove_file(&fresh);
             failure = Some(format!("couldn't move {} aside", mf.path));
@@ -315,7 +349,7 @@ pub fn swap_staged(
         if opts.crash_after.is_some_and(|n| done >= n) {
             return Err("simulated crash".into());
         }
-        let placed = retrying(p, || std::fs::rename(&fresh, &dst)).is_ok()
+        let placed = retrying(p, || move_through(&fresh, &dst)).is_ok()
             && file_sha256(&dst).is_some_and(|(h, _)| h == mf.sha256);
         if !placed {
             let _ = writeln!(out, "[!] couldn't put {} in place", mf.path);

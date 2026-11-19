@@ -12,6 +12,7 @@
 //!   combo <tag> <index>           open the combo and press item <index>
 //!   list <tag> <index>            press row <index> (absolute row) of a LIST
 //!   text <tag> <text...>          focus the box, select all, type the text
+//!   scroll <fraction>             scroll the open page (0 top, 1 bottom)
 //!   shot <name>                   save <name>.png in the screenshot folder
 //!   wait <ms>
 //!   check <tag>                   fail unless the node was drawn
@@ -43,6 +44,8 @@ pub enum Op {
     Text(String),
     Shot(String),
     Pause(u64),
+    /// Scroll the open page to a fraction (0 top, 1 bottom) of its range.
+    Scroll(f64),
     Check(Target),
     Report,
 }
@@ -114,6 +117,12 @@ pub fn parse(line: &str) -> Result<Vec<Op>, String> {
             ]);
             ops
         }
+        "scroll" => vec![Op::Scroll(
+            need("fraction")?
+                .parse::<f64>()
+                .map_err(|_| "scroll: fraction is not a number".to_string())?
+                .clamp(0.0, 1.0),
+        )],
         "shot" => vec![Op::Shot(need("name")?)],
         "wait" => vec![Op::Pause(
             need("ms")?

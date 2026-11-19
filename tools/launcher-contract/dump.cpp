@@ -83,6 +83,7 @@ static std::string ConfigDump(const Config& c, bool returned, const std::string&
     t += "multiplayer_allow=" + Narrow(c.multiplayerAllow) + "\n";
     t += std::string("asop=") + OnOff(c.asop) + "\n";
     t += "asop_fleet_list=" + Narrow(c.asopFleetList) + "\n";
+    t += "menu=" + Narrow(c.menu) + "\n";
     for (size_t i = 0; i < ARRAYSIZE(kExperimental); ++i)
         t += Narrow(kExperimental[i].key) + "=" + OnOff(c.experimental[i]) + "\n";
     for (size_t pos = 0; pos < messages.size();) {
@@ -98,7 +99,7 @@ static std::string ConfigDump(const Config& c, bool returned, const std::string&
 static std::string EnvDump(const Config& c) {
     ct::PlayEnvInput in;
     in.bootMap = c.bootMap; in.start = c.start; in.startShip = c.startShip;
-    in.multiplayerAllow = c.multiplayerAllow; in.asopFleetList = c.asopFleetList; in.registryProbe = c.registryProbe;
+    in.multiplayerAllow = c.multiplayerAllow; in.asopFleetList = c.asopFleetList; in.registryProbe = c.registryProbe; in.menu = c.menu;
     in.data = L"C:\\sc-offline\\data";
     in.userDir = L"C:\\Games\\StarCitizen\\LIVE\\user\\client\\0";
     in.plugins = c.plugins; in.relocation = c.relocation; in.multiplayer = c.multiplayer; in.asop = c.asop;
@@ -258,6 +259,14 @@ asop_fleet_list = both
     cases.push_back({ "language-auto", "language = auto\r\n" });
     cases.push_back({ "language-upper", "language = RU\r\n" });
     cases.push_back({ "language-empty", "language =\r\n" });
+    // The in-game menu key: each value, spelling, malformed, duplicates.
+    cases.push_back({ "menu-rust", "menu = rust\r\n" });
+    cases.push_back({ "menu-imgui", "menu = imgui\r\n" });
+    cases.push_back({ "menu-upper", "menu = RUST\r\n" });
+    cases.push_back({ "menu-bad", "menu = egui\r\n" });
+    cases.push_back({ "menu-empty", "menu =\r\n" });
+    cases.push_back({ "menu-bad-after-rust", "menu = rust\r\nmenu = nope\r\n" });
+    cases.push_back({ "menu-rust-then-imgui", "menu = rust\r\nmenu = imgui\r\n" });
     // The capability switches (exp_* keys): defaults, each key on and off, spellings, malformed, duplicates.
     for (const auto& s : kExperimental) {
         const std::string key = Narrow(s.key);

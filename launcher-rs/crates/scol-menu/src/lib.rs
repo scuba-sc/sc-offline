@@ -11,18 +11,21 @@
 //! does anything else and leaves on every exit path.
 pub mod app;
 pub mod blob;
+pub mod dump;
 pub mod fake;
 pub mod ffi;
+pub mod nav;
 pub mod render;
 pub mod samples;
 pub mod script;
 pub mod theme;
 pub mod view;
+pub mod win;
 
 #[cfg(test)]
 mod tests;
 
-pub use app::{Config, LogFn};
+pub use app::{Config, Host, LogFn};
 use std::ffi::{c_char, c_void, CStr};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
@@ -50,10 +53,22 @@ pub struct Shared {
     pub hotkey: u32,
     pub jobs: Mutex<std::collections::VecDeque<Job>>,
     pub ctx: Mutex<Option<egui::Context>>,
+    /// Asks the host whether the ImGui window is up.
+    pub classic_visible: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
 }
 
 impl Shared {
+    #[cfg(test)]
     fn new(visible: bool, test_mode: bool, hotkey: u32) -> Self {
+        Shared::with_host(visible, test_mode, hotkey, None)
+    }
+
+    fn with_host(
+        visible: bool,
+        test_mode: bool,
+        hotkey: u32,
+        classic_visible: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
+    ) -> Self {
         Shared {
             stop: AtomicBool::new(false),
             typing: AtomicBool::new(false),
@@ -64,6 +79,7 @@ impl Shared {
             hotkey,
             jobs: Mutex::new(Default::default()),
             ctx: Mutex::new(None),
+            classic_visible,
         }
     }
 
@@ -184,10 +200,11 @@ impl Handle {
 
 /// Starts the menu thread. The view calls all happen on that thread.
 pub fn spawn(config: Config) -> std::io::Result<Handle> {
-    let shared = Arc::new(Shared::new(
+    let shared = Arc::new(Shared::with_host(
         config.start_visible,
         config.test_mode,
         config.hotkey,
+        config.host.classic_visible.clone(),
     ));
     let s = shared.clone();
     let thread = std::thread::Builder::new()
@@ -232,6 +249,8 @@ fn menu_thread(config: Config, shared: Arc<Shared>) {
         }
     }
     shared.visible.store(false, Ordering::Release);
+    // The clip is process-wide: never leave it behind, whatever way the window ended.
+    win::release_clip();
 }
 
 fn run_window(config: Config, shared: Arc<Shared>) -> Result<(), String> {
@@ -246,14 +265,21 @@ fn run_window(config: Config, shared: Arc<Shared>) -> Result<(), String> {
     }
     let test = config.test_mode;
     let visible = config.start_visible;
+    // No system frame: the menu draws its own title bar and resizes through its edges (app.rs).
+    // The size is a first guess; the saved size is applied when the window is shown.
     let mut viewport = egui::ViewportBuilder::default()
-        .with_title("Star Citizen Offline Mods")
-        .with_inner_size([1000.0, 760.0])
-        .with_min_inner_size([640.0, 420.0])
-        .with_visible(visible)
-        .with_always_on_top();
+        .with_title(config.title.clone())
+        .with_inner_size([
+            nav::DEFAULT_SIZE.width as f32,
+            nav::DEFAULT_SIZE.height as f32,
+        ])
+        .with_min_inner_size([nav::MIN_WIDTH as f32, nav::MIN_HEIGHT as f32])
+        .with_resizable(true)
+        .with_decorations(false)
+        .with_taskbar(false)
+        .with_visible(visible);
     if !test {
-        viewport = viewport.with_decorations(false).with_taskbar(false);
+        viewport = viewport.with_always_on_top();
     }
     let mut options = eframe::NativeOptions {
         viewport,
@@ -306,7 +332,8 @@ fn hotkey_thread(shared: Arc<Shared>) {
         was_down = down;
         // The hotkey opens or closes the menu, only while one of this process's windows is in front and no
         // text box has the keyboard.
-        if edge && ours && !shared.typing.load(Ordering::Acquire) {
+        let classic = shared.classic_visible.as_ref().is_some_and(|f| f());
+        if edge && ours && !classic && !shared.typing.load(Ordering::Acquire) {
             shared.set_visible(!shared.visible.load(Ordering::Acquire));
         }
     }
@@ -317,7 +344,10 @@ fn hotkey_thread(_shared: Arc<Shared>) {}
 
 // ---- the C exports the C++ host calls (src/menu_rust.cpp) ----
 
-pub const ABI: u32 = 1;
+/// Version 2 added the title, the two ini paths and the three host callbacks to the start block.
+pub const ABI: u32 = 2;
+/// Build version of this module, for the host log.
+pub const VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "\0");
 pub const FLAG_START_VISIBLE: u32 = 1;
 pub const FLAG_TEST_MODE: u32 = 2;
 
@@ -338,6 +368,19 @@ pub struct StartV1 {
     pub flags: u32,
     /// Virtual-key code of the open/close key (for example 0x4D for M), or 0 for none.
     pub hotkey: u32,
+    /// UTF-8, or NULL for "sc-offline".
+    pub title: *const c_char,
+    /// Full paths of `menu-view.ini` and `menu-window.ini` (UTF-8), or NULL for no persistence.
+    pub view_path: *const c_char,
+    pub size_path: *const c_char,
+    /// Opens the ImGui window with the `sco.ui` pages. Menu thread. May be NULL.
+    pub open_classic: Option<unsafe extern "C" fn()>,
+    /// The game window handle, or NULL until it is known. Any thread. May be NULL.
+    pub game_window_fn: Option<unsafe extern "C" fn() -> *mut c_void>,
+    /// 1 when the game's own ship list is readable. Any thread. May be NULL.
+    pub asop_available: Option<unsafe extern "C" fn() -> i32>,
+    /// 1 while the ImGui window is up or went down a moment ago. Any thread. May be NULL.
+    pub classic_visible: Option<unsafe extern "C" fn() -> i32>,
 }
 
 static RUNNING: Mutex<Option<Handle>> = Mutex::new(None);
@@ -389,6 +432,35 @@ unsafe fn start_inner(start: *const StartV1) -> i32 {
     } else {
         CStr::from_ptr(s.shot_dir).to_str().ok().map(PathBuf::from)
     };
+    let path = |p: *const c_char| -> Option<PathBuf> {
+        if p.is_null() {
+            None
+        } else {
+            CStr::from_ptr(p).to_str().ok().map(PathBuf::from)
+        }
+    };
+    let title = if s.title.is_null() {
+        "sc-offline".to_string()
+    } else {
+        CStr::from_ptr(s.title)
+            .to_str()
+            .unwrap_or("sc-offline")
+            .to_string()
+    };
+    let host = Host {
+        open_classic: s
+            .open_classic
+            .map(|f| Arc::new(move || f()) as Arc<dyn Fn() + Send + Sync>),
+        game_window: s
+            .game_window_fn
+            .map(|f| Arc::new(move || f() as isize) as Arc<dyn Fn() -> isize + Send + Sync>),
+        asop_available: s
+            .asop_available
+            .map(|f| Arc::new(move || f() != 0) as Arc<dyn Fn() -> bool + Send + Sync>),
+        classic_visible: s
+            .classic_visible
+            .map(|f| Arc::new(move || f() != 0) as Arc<dyn Fn() -> bool + Send + Sync>),
+    };
     let cfg = Config {
         view,
         log,
@@ -397,6 +469,10 @@ unsafe fn start_inner(start: *const StartV1) -> i32 {
         start_visible: s.flags & FLAG_START_VISIBLE != 0,
         test_mode: s.flags & FLAG_TEST_MODE != 0,
         hotkey: s.hotkey,
+        title,
+        view_path: path(s.view_path),
+        size_path: path(s.size_path),
+        host,
     };
     match spawn(cfg) {
         Ok(h) => {
@@ -501,6 +577,12 @@ pub unsafe extern "C" fn scol_menu_test_step(
         *out.add(n) = 0;
     }
     code
+}
+
+/// NUL-terminated build version of this module (static, never freed).
+#[no_mangle]
+pub extern "C" fn scol_menu_version() -> *const c_char {
+    VERSION.as_ptr() as *const c_char
 }
 
 /// ABI number of this module's export set.

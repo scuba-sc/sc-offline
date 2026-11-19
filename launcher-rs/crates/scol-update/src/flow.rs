@@ -285,3 +285,134 @@ pub fn elevated_update(
         Err(_) => 1,
     }
 }
+
+// ---------------------------------------------------------------- the offer
+
+/// What [`offer_update`] ended with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Offer {
+    /// Nothing to install. `why` is what the C++ launcher prints after `Update:   `
+    /// (`up to date (latest v1.2.3)`, `couldn't reach GitHub`, ...).
+    Nothing { why: String },
+    /// One is on offer and this run only says so: `--check`, or nobody could be asked.
+    Available(UpdateInfo),
+    /// One is on offer and StarCitizen.exe is running: the game must be closed first.
+    Blocked(UpdateInfo),
+    /// The player said no.
+    Declined(UpdateInfo),
+    /// Swapped in; the files on disk are the new version.
+    Applied(UpdateInfo),
+    /// Stage or swap failed; the current version is unchanged.
+    Failed(UpdateInfo),
+}
+
+/// How an offer behaves.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct OfferOptions {
+    /// `update --check`: report, never ask.
+    pub check_only: bool,
+    /// `update --yes`: the question was already answered (the window's button).
+    pub yes: bool,
+    /// The automatic check before `play`: say nothing when there is nothing to install.
+    pub quiet: bool,
+}
+
+/// The C++ launcher's update section (`wmain`, "0. Updates"): check the player's channel, say what is on
+/// offer, refuse while the game runs, ask (`ask` is the console prompt or the window's callback; the
+/// platform says whether anybody can answer), download, check, stage and swap, with the text the C++
+/// launcher prints. The caller decides what follows an [`Offer::Applied`].
+#[allow(clippy::too_many_arguments)]
+pub fn offer_update(
+    current: &str,
+    prerelease: bool,
+    opts: OfferOptions,
+    here: &Path,
+    net: &mut dyn Fetcher,
+    p: &mut dyn Platform,
+    out: &mut dyn Write,
+    ask: &mut dyn FnMut(&str) -> bool,
+) -> Offer {
+    let u = match check_latest(net, current, prerelease) {
+        Ok(u) => u,
+        Err(why) => {
+            if !opts.quiet {
+                let _ = writeln!(out, "Update:   {why}");
+            }
+            return Offer::Nothing { why };
+        }
+    };
+    let _ = writeln!(
+        out,
+        "Update:   sc-offline {} is available (you have {current})",
+        u.tag
+    );
+    if opts.check_only {
+        return Offer::Available(u);
+    }
+    if p.game_running() {
+        let _ = writeln!(out, "[!] close the game before updating");
+        return Offer::Blocked(u);
+    }
+    if !opts.yes {
+        if !p.can_ask() {
+            let _ = writeln!(out, "          (not asking: no console to answer in)");
+            return Offer::Available(u);
+        }
+        if !ask("Update now? Your saves and sc-offline.ini are kept.") {
+            let _ = writeln!(out, "[i] not updating");
+            return Offer::Declined(u);
+        }
+    }
+    match apply_update(here, &u, current, net, p, out) {
+        Ok(()) => Offer::Applied(u),
+        Err(_) => {
+            let _ = writeln!(out, "[!] update failed; your current version is unchanged");
+            Offer::Failed(u)
+        }
+    }
+}
+
+/// The automatic check of `play` (`check_updates = on`): [`offer_update`] with the `play` command line
+/// to carry on with. `Some(code)` means `play` must end now with that code: an update was swapped in
+/// and the new exe took over (or, with no way to start it, the player is told to start again).
+#[allow(clippy::too_many_arguments)]
+pub fn check_and_offer_for_play(
+    current: &str,
+    prerelease: bool,
+    here: &Path,
+    args: &[String],
+    net: &mut dyn Fetcher,
+    p: &mut dyn Platform,
+    out: &mut dyn Write,
+    ask: &mut dyn FnMut(&str) -> bool,
+) -> Option<i32> {
+    let opts = OfferOptions {
+        quiet: true,
+        ..OfferOptions::default()
+    };
+    match offer_update(current, prerelease, opts, here, net, p, out, ask) {
+        Offer::Applied(_) => Some(finish_applied(here, args, p, out)),
+        _ => None,
+    }
+}
+
+/// What follows an applied update: the platform's restart (a console run starts the new exe with the
+/// same arguments; a window child answers with the restart code), else a note to start again.
+/// Returns the exit code.
+pub fn finish_applied(
+    here: &Path,
+    args: &[String],
+    p: &mut dyn Platform,
+    out: &mut dyn Write,
+) -> i32 {
+    match p.after_update(here, args, out) {
+        Some(code) => code,
+        None => {
+            let _ = writeln!(
+                out,
+                "[i] updated; start sc-offline.exe again to use the new version"
+            );
+            0
+        }
+    }
+}

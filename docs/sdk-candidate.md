@@ -1,4 +1,19 @@
-# SDK 2.4.0 release coordinates and consumer qualification
+# SDK release coordinates and consumer qualification
+
+## Target for sc-offline 0.8.0: SDK 2.4.1 (not yet published)
+
+sc-offline 0.8.0 is built for sco-core SDK **2.4.1**, game pack **0.8.1**, plugin ABI **1.1**, game build **4.10.200.58746**. The release job refuses to package until the owner publishes SDK 2.4.1 and the `external/sco-core` pin matches it. The development archive the 0.8.0 consumer proofs ran against (a local, unpublished build; `--candidate`, profile `legacy`):
+
+| Item | Value |
+|---|---|
+| Archive | `sco-sdk-2.4.1.zip` |
+| SHA-256 | `634ec29627646c37200d4cc570fed1fb5d487bfb3b161fc1271581e491bc4aa7` |
+| Core source (`COMPATIBILITY.json`) | `5858fdb65bf816ae28133d14683828ad63e451b3` |
+| Proofs run | inspector, crew, npc, spawn, build, loadout, mining, discord, teleport, quantum, contracts (read slice): pass, synthetic, MSVC 2022, not run in game |
+
+These are development receipts. They do not replace the published release's own `SHA256SUMS` and `release.json`, which the owner records when the SDK is published.
+
+## Historical: SDK 2.4.0 release coordinates and consumer qualification
 
 The following section records the historical published stable SDK 2.4.0
 release, tag [`sdk-v2.4.0`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0).

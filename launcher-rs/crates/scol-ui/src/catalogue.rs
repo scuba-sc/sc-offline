@@ -1,26 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! The Catalogue tab's data and the install step. The index is read from
-//! `data\launcher\catalogue\index.json` and `index.json.sig` and checked by `scol-catalogue`
-//! (signature first). Install downloads through the backend's fetcher, verifies against the signed
-//! index, extracts, and lands the plugin disabled. The window never runs plugin code.
+//! The Catalogue tab's data and the install step, through `scol-plugin-manager`.
+//!
+//! This release reads the catalogue from a local folder, `data\launcher\catalogue`, that holds
+//! `index.json`, `index.json.sig` and the plugin zips. The index must be signed by a key in the trust
+//! root. The shipped trust root is empty (no production signing key exists yet), so the tab says that
+//! no catalogue is published for this build. Adding a key is a release-time step.
+//! The window never runs plugin code; an install lands the plugin disabled.
 
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use scol_catalogue::fetch::{download_zip, Fetcher};
-use scol_catalogue::index::{open_index, Entry, LastAccepted};
-use scol_catalogue::install::{
-    plan_install, stage_download, InstalledFile, LocalState, PlanOptions, Replaces,
-};
-use scol_catalogue::policy::{offered, Host};
-use scol_catalogue::semver::Version;
-use scol_catalogue::trust::TrustRoot;
+use scol_catalogue::index::Entry;
+use scol_catalogue::policy::offered;
+use scol_plugin_manager::cli::{Capture, Ctx};
+use scol_plugin_manager::fetcher::{FileFetcher, INDEX_URL, SIG_URL};
+use scol_plugin_manager::install::{self, Opts, Source};
+use scol_plugin_manager::store;
 
-use crate::extract::extract_zip;
-use crate::plugins::{self, HOST_API};
-
-/// The SDK this launcher is pinned to (sco-core 2.4.1, held open).
-pub const HOST_SDK: &str = "2.4.1";
+pub use crate::plugins::HOST_SDK;
 
 #[derive(Debug, Clone)]
 pub struct OfferRow {
@@ -35,92 +31,46 @@ pub struct OfferRow {
 pub struct Loaded {
     pub sequence: u64,
     pub expires: String,
-    pub digest: String,
     pub rows: Vec<OfferRow>,
+}
+
+/// What the Catalogue tab can show.
+#[derive(Debug, Clone)]
+pub enum State {
+    /// The trust root has no key: no catalogue is published for this build.
+    NoCatalogue,
+    /// The catalogue folder has no index.
+    NoIndex,
+    /// The index was refused (bad signature, expired, older than one seen before ...).
+    Refused(String),
+    Loaded(Loaded),
 }
 
 pub fn dir(here: &Path) -> PathBuf {
     here.join("data").join("launcher").join("catalogue")
 }
 
-pub fn installed_json(here: &Path) -> PathBuf {
-    here.join("data").join("launcher").join("installed.json")
-}
-
-pub fn now_unix() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
-}
-
-/// `YYYY-MM-DDTHH:MM:SSZ` for a Unix time (civil-from-days, no time-zone data).
-pub fn utc_text(t: i64) -> String {
-    let days = t.div_euclid(86400);
-    let secs = t.rem_euclid(86400);
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    format!(
-        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
-        secs / 3600,
-        secs % 3600 / 60,
-        secs % 60
-    )
-}
-
-pub fn host() -> Host {
-    Host {
-        api_major: HOST_API.major,
-        api_minor: HOST_API.minor,
-        sdk: Version::parse(HOST_SDK).expect("HOST_SDK is a version"),
+/// Read and check the index of the local catalogue folder.
+pub fn load(ctx: &Ctx) -> State {
+    if ctx.trust.is_empty() {
+        return State::NoCatalogue;
     }
-}
-
-fn read_installed(here: &Path) -> InstalledFile {
-    std::fs::read(installed_json(here))
-        .ok()
-        .and_then(|b| InstalledFile::parse(&b).ok())
-        .unwrap_or_default()
-}
-
-/// The newest index the launcher accepted before, from the catalogue records in `installed.json`.
-fn last_accepted(f: &InstalledFile) -> Option<LastAccepted> {
-    f.plugins
-        .iter()
-        .filter(|r| r.source == "catalogue")
-        .filter_map(|r| {
-            Some(LastAccepted {
-                sequence: r.index_sequence?,
-                digest: r.index_digest.clone()?,
-            })
-        })
-        .max_by_key(|l| l.sequence)
-}
-
-/// Read and check the index on disk. `Err("")` means no index files are on this PC; any other Err
-/// is the reason the index was refused.
-pub fn load(here: &Path, trust: &TrustRoot) -> Result<Loaded, String> {
-    let d = dir(here);
-    let (Ok(bytes), Ok(sig)) = (
-        std::fs::read(d.join("index.json")),
-        std::fs::read_to_string(d.join("index.json.sig")),
-    ) else {
-        return Err(String::new());
+    let d = dir(&ctx.layout.root);
+    if !d.join("index.json").is_file() || !d.join("index.json.sig").is_file() {
+        return State::NoIndex;
+    }
+    let mut fetcher = FileFetcher::new(&d);
+    let mut src = Source {
+        fetcher: &mut fetcher,
+        index_url: INDEX_URL.into(),
+        sig_url: SIG_URL.into(),
     };
-    let installed = read_installed(here);
-    let last = last_accepted(&installed);
-    let acc =
-        open_index(&bytes, &sig, trust, now_unix(), last.as_ref()).map_err(|e| e.to_string())?;
-    let h = host();
-    let rows = offered(&acc.index, &h)
+    let acc = match install::open_catalogue(ctx, &mut src, &mut Capture::default()) {
+        Ok(a) => a,
+        Err(e) => return State::Refused(e),
+    };
+    let installed = store::read_installed(&ctx.layout).unwrap_or_default();
+    let rows = offered(&acc.index, &ctx.host)
         .into_iter()
         .map(|o| OfferRow {
             entry: o.entry.clone(),
@@ -131,10 +81,9 @@ pub fn load(here: &Path, trust: &TrustRoot) -> Result<Loaded, String> {
                 .map(|r| r.version.clone()),
         })
         .collect();
-    Ok(Loaded {
+    State::Loaded(Loaded {
         sequence: acc.index.sequence,
         expires: acc.index.expires.clone(),
-        digest: acc.digest,
         rows,
     })
 }
@@ -143,85 +92,32 @@ pub fn load(here: &Path, trust: &TrustRoot) -> Result<Loaded, String> {
 #[derive(Debug, Clone)]
 pub struct Installed {
     pub id: String,
+    pub name: String,
     pub version: String,
-    pub warnings: Vec<String>,
+    /// `native`, `lua` or `data`.
+    pub kind: String,
 }
 
-/// Download, verify, extract and land one catalogue entry, disabled. `loaded` is the index it came from.
-pub fn install(
-    here: &Path,
-    loaded: &Loaded,
-    id: &str,
-    fetcher: &mut dyn Fetcher,
-    hosts: (&[&str], &[&str]),
-) -> Result<Installed, String> {
-    let row = loaded
-        .rows
-        .iter()
-        .find(|r| r.entry.id == id)
-        .ok_or_else(|| format!("{id} is not in the index"))?;
-    if let Some(why) = &row.refused {
-        return Err(why.clone());
-    }
-    let entry = &row.entry;
-    let folders = std::fs::read_dir(plugins::plugins_dir(here))
-        .map(|rd| {
-            rd.flatten()
-                .map(|e| e.file_name().to_string_lossy().into_owned())
-                .collect()
-        })
-        .unwrap_or_default();
-    let state = LocalState {
-        installed: read_installed(here),
-        folders,
+/// Install one catalogue entry, disabled. The manager checks the signed index again, downloads the
+/// zip from the catalogue folder, verifies size and digest, extracts and records it.
+pub fn install(ctx: &Ctx, id: &str) -> Result<Installed, String> {
+    let d = dir(&ctx.layout.root);
+    let mut fetcher = FileFetcher::new(&d);
+    let mut src = Source {
+        fetcher: &mut fetcher,
+        index_url: INDEX_URL.into(),
+        sig_url: SIG_URL.into(),
     };
-    let work = plugins::staging_dir(here).join(&entry.id);
-    let _ = std::fs::remove_dir_all(&work);
-    std::fs::create_dir_all(&work).map_err(|e| e.to_string())?;
-    let result = (|| -> Result<Installed, String> {
-        let dl = work.join("download.zip");
-        download_zip(fetcher, entry, &dl, hosts.0, hosts.1).map_err(|e| e.to_string())?;
-        let (staged_zip, report) =
-            stage_download(&dl, entry, &work.join("staged")).map_err(|e| e.to_string())?;
-        let plan = plan_install(
-            entry,
-            &report,
-            &loaded.digest,
-            loaded.sequence,
-            &host(),
-            &state,
-            PlanOptions::default(),
-            here,
-            &utc_text(now_unix()),
-        )
-        .map_err(|e| e.to_string())?;
-        let files = work.join("files");
-        extract_zip(&staged_zip, &report, &files)?;
-        let replace = !matches!(plan.replaces, Replaces::Nothing);
-        plugins::land(here, &entry.id, &files, replace)?;
-        if let Some(parent) = plan.installed_json.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        std::fs::write(&plan.installed_json, plan.installed_json_after.as_bytes())
-            .map_err(|e| e.to_string())?;
-        Ok(Installed {
-            id: entry.id.clone(),
-            version: entry.version.clone(),
-            warnings: plan.warnings,
-        })
-    })();
-    let _ = std::fs::remove_dir_all(&work);
-    result
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn utc_text_known_values() {
-        assert_eq!(utc_text(0), "1970-01-01T00:00:00Z");
-        assert_eq!(utc_text(951_782_400), "2000-02-29T00:00:00Z");
-        assert_eq!(utc_text(1_798_761_599), "2026-12-31T23:59:59Z");
-    }
+    install::catalogue_install(ctx, &mut src, id, Opts::default(), &mut Capture::default())?;
+    let a = crate::plugins::describe(ctx, id);
+    let version = store::read_installed(&ctx.layout)
+        .ok()
+        .and_then(|f| f.find(id).map(|r| r.version.clone()))
+        .unwrap_or_default();
+    Ok(Installed {
+        id: a.id,
+        name: a.name,
+        version,
+        kind: a.kind,
+    })
 }

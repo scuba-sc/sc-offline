@@ -496,7 +496,7 @@ def main(args):
     for feature in ('npc', 'inspector'):
         shutil.copytree(ROOT / 'plugins' / feature, source / 'plugins' / feature)
     (source / 'tools').mkdir()
-    for name in ('inspector_test.cpp', 'npc_workflow_test.cpp', 'workflow_module.h'):
+    for name in ('inspector_test.cpp', 'npc_workflow_test.cpp', 'workflow_module.h', 'panel_dump.h'):
         shutil.copy2(ROOT / 'tools' / name, source / 'tools' / name)
     build = work / 'plugin-build'
     configure = ['cmake', '-S', source / 'plugins', '-B', build,

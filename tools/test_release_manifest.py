@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,11 @@ spec = importlib.util.spec_from_file_location("release_manifest", os.path.join(H
 assert spec and spec.loader
 rm = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rm)
+
+spec_pr = importlib.util.spec_from_file_location("package_release", os.path.join(HERE, "package_release.py"))
+assert spec_pr and spec_pr.loader
+pr = importlib.util.module_from_spec(spec_pr)
+spec_pr.loader.exec_module(pr)
 
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
 
@@ -136,8 +142,8 @@ class ReleaseManifest(unittest.TestCase):
         self.assertEqual(rm.check(extracted)[1], [])
 
     def test_release_data_commands_preserve_legacy_and_package_catalog(self):
-        # Execute the data-staging commands from the release workflow itself, not a
-        # Python reconstruction. No updater, game, plugin DLLs or release publish.
+        # Run the data staging of tools/package_release.py, the step the release job uses.
+        # No updater, game, plugin DLLs or release publish.
         root = os.path.dirname(HERE)
         tracked = subprocess.check_output(
             ["git", "ls-files", "-z", "--", "data"], cwd=root
@@ -146,22 +152,7 @@ class ReleaseManifest(unittest.TestCase):
         source = os.path.join(root, "data", "buildables.txt")
         with open(source, "rb") as f:
             original = f.read()
-        with open(os.path.join(root, ".github", "workflows", "build.yml"), encoding="utf-8") as f:
-            workflow = f.read()
-        start = workflow.index('          git ls-files -z -- data ')
-        end = workflow.index('          # Only the selected player profile', start)
-        commands = workflow[start:end]
-        # The command remains directly sourced from the workflow; redirect its stage
-        # directory to a private test fixture, without editing or cleaning the tree.
-        target = self.dir.replace("\\", "/")
-        commands = commands.replace('stage/$pkg', target)
-        if os.name == "nt":
-            git = shutil.which("git")
-            bash = os.path.join(os.path.dirname(os.path.dirname(git)), "bin", "bash.exe")
-        else:
-            bash = shutil.which("bash")
-        self.assertTrue(bash and os.path.isfile(bash), "Git Bash or bash is required")
-        subprocess.run([bash, "-eu", "-c", commands], cwd=root, check=True)
+        pr.stage_data(pathlib.Path(root), pathlib.Path(self.dir))
         with open(source, "rb") as f:
             self.assertEqual(f.read(), original)
         catalog = "data/plugins/build_catalog/lists/buildables.txt"

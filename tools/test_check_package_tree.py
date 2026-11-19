@@ -19,7 +19,7 @@ def write(path, text=''):
 
 
 def make_tree(base, disabled=('creative', 'discord'), packs=None, plugins_in_tree=PLUGINS):
-    for name in ('dinput8.dll', 'sc-offline.exe'):
+    for name in ('dinput8.dll', 'sc-offline.exe', 'sc-offline-classic.exe', 'sc_offline_menu.dll'):
         write(base / name)
     plugins = base / 'data' / 'plugins'
     for plugin in plugins_in_tree:
@@ -127,9 +127,12 @@ def main():
         # 7. Missing package files are reported.
         tree = make_tree(work / 'missing', disabled=('discord',), packs=FULL_PACKS)
         (tree / 'dinput8.dll').unlink()
+        (tree / 'sc-offline-classic.exe').unlink()
+        (tree / 'sc_offline_menu.dll').unlink()
         (tree / 'data' / 'plugins' / 'spawn' / 'spawn.dll').unlink()
         code, out = run(tree)
-        expect(code == 1 and 'dinput8.dll is missing' in out and 'spawn: entry file spawn.dll is missing' in out,
+        expect(code == 1 and 'dinput8.dll is missing' in out and 'spawn: entry file spawn.dll is missing' in out
+               and 'sc-offline-classic.exe is missing' in out and 'sc_offline_menu.dll is missing' in out,
                'missing package files must fail', out)
 
         # 8. Usage error.

@@ -18,11 +18,14 @@ name = "scol-pm"
 path = "src/main.rs"
 
 [dependencies]
+scol-contract = { path = "../scol-contract" }
+scol-config = { path = "../scol-config" }
 scol-plugins = { path = "../scol-plugins" }
 scol-catalogue = { path = "../scol-catalogue" }
 # Inflate only, same backend as scol-plugins.
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 serde_json = "1"
+rusqlite = { version = "0.43.0", features = ["bundled"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

@@ -77,3 +77,47 @@ Product-owner decisions for the Rust launcher plan, recorded in full in
 
 The remaining items of the design's decision list are still pending owner answers. Only the P0
 skeleton exists (`launcher-rs/`). No in-game result supports any of this.
+
+## 2026-11-18: sc-offline 0.8.0 release decisions
+
+Product-owner decisions for the 0.8.0 release. The owner will do no more testing before it, so these
+close the questions that were still open. Each says what it changes and what it does not prove.
+
+1. **Launcher names.** The Rust launcher becomes `sc-offline.exe` in the release package. The C++
+   launcher ships beside it as `sc-offline-classic.exe`, documented as the fallback. It can undo PC
+   changes from the same `%ProgramData%\sc-offline\pc-changes.txt` record. See
+   [the classic launcher](launcher.md#the-classic-launcher).
+2. **In-game menu.** The Rust menu ships opt-in: ini key `menu = rust`, default `imgui`. It has never
+   run in a game. See [The Rust menu](plugin-ui.md#the-rust-menu-opt-in).
+3. **Capability switches.** `exp_loadout_async`, `exp_inventory_read`, `exp_actor_stats_write`,
+   `exp_cvars_native` and `exp_audio_native` default **on**; `exp_entities_diag` (log-only
+   diagnostics) defaults **off**. Only the loadout switch has been seen working in game.
+4. **Travel.** Travel to other planets (a zone lookup beyond the player's own chain) is **not** in
+   2.4.1. It is a documented gap: [features.md](features.md#travel-between-places).
+5. **Core defaults.** Core capability defaults are unchanged. What the owner saw in game is recorded
+   as evidence text in [status.md](status.md), not as a changed default.
+6. **Plugin catalogue.** A signed index. First-party and reviewed native plugins are allowed, and
+   everything lands disabled. No production signing key exists yet, so the shipped trust root is
+   empty and the catalogue works from a local folder (`plugins catalogue ... --source <folder>`).
+   Adding a key is a release-time owner act, not something an agent or a player does.
+7. **Versions.** sc-offline **0.8.0**; sco-core SDK **2.4.1**; game pack **0.8.1**; game build
+   **4.10.200.58746**.
+8. **Publishing.** Nothing is pushed, tagged or published by an agent. The owner tags the release.
+
+Decisions made while preparing the release, under the owner's instruction to decide:
+
+- **Travel places list.** The release ships `data/plugins/locations_catalog` (a copy of
+  `data/locations.txt`) as an ordinary data pack. The quantum plugin requires one enabled
+  `lists/locations.txt` and `tools/check_package_tree.py` fails a package without it. Same-chain
+  destinations are what that list can serve; the gap in decision 4 stays.
+- **Rust menu hook is a build option.** `menu = rust` works only in a `dinput8.dll` configured with
+  `-DSCO_HOST_MENU_CLIENT=ON`, which also changes how the ImGui menu gets its panels. The default
+  build and CI keep it `OFF`: switching the default menu to a path never run in game is a bigger risk
+  than a menu key that does nothing. Enabling it for a release is an owner act
+  ([build.md](build.md#cmake-options-that-change-the-menu)).
+- **Release script.** The release job runs `tools/package_release.py`, which also builds a package by
+  hand ([build.md](build.md#build-a-release-package-without-ci)). The release manifest stays format 1.
+- **Release job guard.** The first step of the `release` job still refuses to package an unpublished
+  development Core. It is removed when the owner publishes SDK 2.4.1 and the pin matches it.
+- **Updating from 0.7.x.** The ini and data files are kept; the updater swaps the exe
+  ([launcher.md](launcher.md#updating-from-07x)).

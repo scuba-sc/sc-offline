@@ -29,6 +29,8 @@ static void ReleaseStartupGate() { ++released; }
 static void Menu_RequestStop() { ++menuStopped; }
 struct Admission { void Close() { ++closed; } bool ClosedAndDrained() { return true; } };
 static Admission g_hookCallbackAdmission;
+struct StopChannel { void Retire() {} };
+static StopChannel g_stopChannel;
 static int event1 = 0, event2 = 0;
 static int* g_hookCallbacksDrainedEvent = &event1;
 static int* g_controlWakeEvent = &event2;

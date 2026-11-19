@@ -2,6 +2,17 @@
 
 sc-offline's menu (**M**) is a shell over sco-core's `sco.ui` service ([sco-core docs/ui.md](https://github.com/scuba-sc/sco-core/blob/main/docs/ui.md)). The host registers no feature tabs. Feature panels (Vehicles, Crew, NPCs, Player, Squadron 42, Build and the inspector) come from the external plugins through `sco.widgets` and are drawn by the host's ImGui adapter. A plugin can also add its own tab, overlay and hotkeys through `sco.ui`. This page covers what sc-offline adds to sco-core's `sco.ui` contract.
 
+## The Rust menu (opt-in)
+
+From 0.8.0 the mod can show a second menu, built in Rust (`sc_offline_menu.dll`, crate `scol-menu`, drawn with egui). It is **opt-in**: set `menu = rust` in `sc-offline.ini` (or choose **New (not tested in game yet)** under **Settings > In-game menu** in the launcher). The default is `menu = imgui`, the menu this page describes. The Rust menu has never run in a game; it is checked only against a stand-in widgets view and Core's own view in synthetic tests.
+
+- **What it shows.** `sco.widgets` panels only, read through Core's widgets view interface (`sco/widgets_view.h`) and answered with the same events. Every shipped plugin page is a `sco.widgets` panel, so these appear. A plugin page that is only a `sco.ui` ImGui tab (a draw callback) does **not** appear in the Rust menu; it stays in the ImGui menu.
+- **Which key.** The Rust menu opens on **M**, the key of the ImGui menu. While the Rust menu is selected and healthy, M does not open the ImGui window; if the Rust menu reports itself broken, M goes back to the ImGui menu. To use another key (for example next to the ImGui menu while testing), set the Windows environment variable `SC_OFFLINE_MENU_KEY` to a letter or `F1` to `F12` before you start the launcher. The M handoff has not been run in game.
+- **If it cannot start.** A missing `sc_offline_menu.dll`, a wrong ABI, or a Core with no widgets view leaves the ImGui menu in place and logs one `[menu]` line to `mod.log`. A `dinput8.dll` built without `-DSCO_HOST_MENU_CLIENT=ON` has no Rust hook and ignores `menu = rust` ([build.md](build.md#cmake-options-that-change-the-menu)).
+- **Not done yet:** a Settings page in the Rust menu, window size and position memory (`menu-window.ini`, `menu-view.ini`), a cursor clip, and a background image. Design and status: [rust-menu.md](rust-menu.md).
+
+Plugin authors: nothing changes. Keep drawing pages with `sco.widgets`; give a tag to every control that must survive a republish.
+
 ## Pages and the sidebar
 
 The menu is a sidebar of pages on the left and the open page on the right, with the status strip along the bottom. A page is a `sco.widgets` panel (what every shipped plugin uses), a `sco.ui` tab (ImGui drawing, below), or the menu's own **Menu settings**. Each page opens under a header: its name, then one line that says what it is for.

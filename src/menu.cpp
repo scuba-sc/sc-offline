@@ -277,6 +277,9 @@ static void KeepCursorInMenu() {
 }
 
 static void ShowMenu(bool show) {
+#ifdef SCO_MENU_RUST
+    sc_offline::menu_rust::NoteClassicWindow(show);
+#endif
     if (!show) g_escapeInput.Reset();
     if (show) {
         RECT r = {};
@@ -487,6 +490,9 @@ static void DrawStatusStrip(float height) {
 // =============================================================================================
 
 static bool g_closeRequested = false;   // MenuClose(), during a frame
+#ifdef SCO_MENU_RUST
+static bool g_classicSelectTab = false;  // set by the menu thread, read by the game thread while it builds a frame
+#endif
 static bool g_backToFirstTab = false;   // MenuSelectFirstTab(), applied in the next frame
 
 void MenuClose() { g_closeRequested = true; }
@@ -591,6 +597,15 @@ static bool DrawMenu() {
 
     if (g_backToFirstTab) SelectPage(pages.front().id);   // never empty: Settings is always there
     g_backToFirstTab = false;
+#ifdef SCO_MENU_RUST
+    // Opened from the Rust menu's "Classic pages" entry: start on the first sco.ui tab, which is
+    // what that entry is for.
+    if (g_classicSelectTab) {
+        g_classicSelectTab = false;
+        for (const Nav::Page& page : pages)
+            if (page.source == Nav::Source::Tab) { SelectPage(page.id); break; }
+    }
+#endif
     const std::string current = Nav::Choose(pages, g_view.page);
 
     struct PageContext {
@@ -902,13 +917,32 @@ static DWORD WINAPI MenuThread(LPVOID) {
 #endif
                             && ImGui::GetIO().WantTextInput;
         g_typing = typing;
+#ifdef SCO_MENU_RUST
+        // With the Rust menu selected it owns M: this window does not open on M. It still closes on M
+        // when it was opened as the classic pages, and opens when the Rust menu's "Classic pages" entry asks.
+        const bool rustOwnsM = sc_offline::menu_rust::Active();
+#else
+        const bool rustOwnsM = false;
+#endif
         if (down && !wasDown && !typing
 #ifdef SCO_HOST_MENU_CLIENT
             && g_imguiUsable.load()
 #endif
-            && OurProcessHasFocus()) { visible = !visible; ShowMenu(visible); }
+            && OurProcessHasFocus() && (!rustOwnsM || visible)) { visible = !visible; ShowMenu(visible); }
         wasDown = down;
-        if (visible && !IsWindowVisible(g_wnd)) { visible = false; g_escapeInput.Reset(); ClipCursor(nullptr); g_clipped = false; }
+#ifdef SCO_MENU_RUST
+        if (sc_offline::menu_rust::TakeClassicRequest() && !visible && g_imguiUsable.load()) {
+            g_classicSelectTab = true;
+            visible = true;
+            ShowMenu(true);
+        }
+#endif
+        if (visible && !IsWindowVisible(g_wnd)) {
+            visible = false; g_escapeInput.Reset(); ClipCursor(nullptr); g_clipped = false;
+#ifdef SCO_MENU_RUST
+            sc_offline::menu_rust::NoteClassicWindow(false);
+#endif
+        }
 
 #ifdef SCO_HOST_MENU_CLIENT
         if (!g_imguiUsable.load()) { g_typing = false; Sleep(50); continue; }

@@ -110,6 +110,21 @@ fn bump(s: &mut State) -> u64 {
 
 /// Adds or replaces a panel (a replace gets a new epoch).
 pub fn set_panel(id: &str, title: &str, owner: &str, nodes: Vec<NodeSpec>) {
+    set_panel_flags(id, title, owner, PANEL_TAGGED_EVENTS, nodes);
+}
+
+/// A panel of the host's reserved identity (`menu.main`, `menu.status`): flagged host-owned.
+pub fn set_host_panel(id: &str, title: &str, nodes: Vec<NodeSpec>) {
+    set_panel_flags(
+        id,
+        title,
+        "menu",
+        PANEL_TAGGED_EVENTS | PANEL_HOST_OWNED,
+        nodes,
+    );
+}
+
+fn set_panel_flags(id: &str, title: &str, owner: &str, flags: u32, nodes: Vec<NodeSpec>) {
     with(|s| {
         let rev = bump(s);
         s.list = rev;
@@ -117,7 +132,7 @@ pub fn set_panel(id: &str, title: &str, owner: &str, nodes: Vec<NodeSpec>) {
             id: id.into(),
             title: title.into(),
             owner: owner.into(),
-            flags: PANEL_TAGGED_EVENTS,
+            flags,
             revision: rev,
             epoch: rev,
             nodes,

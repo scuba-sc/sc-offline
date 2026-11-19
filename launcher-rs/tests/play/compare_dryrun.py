@@ -39,9 +39,9 @@ HERE = Path(__file__).resolve().parent
 RUST_DEFAULT = Path("D:/t/cargo-play/debug/sc-offline.exe")
 SCRATCH_ROOT = Path(os.environ.get("SCOL_SCRATCH", "D:/t"))
 
-OURS_DLL = b"MZ\x90\x00 padding sc-offline v0.7.8.3\x00 more bytes"
+OURS_DLL = b"MZ\x90\x00 padding sc-offline v0.8.0\x00 more bytes"
 OTHER_DLL = b"MZ\x90\x00 some other mod's dinput8"
-MARKER = b"version=0.7.8.3\nsha256=abc\nmode=install\ntime=2026-11-17 09:05:03\nxml=none\n"
+MARKER = b"version=0.8.0\nsha256=abc\nmode=install\ntime=2026-11-17 09:05:03\nxml=none\n"
 PC_ALL = (b"time=2026-11-17 09:05\nfirewall=added\nfw_launcher=added\nfw_crash=added\n"
           b"fw_mp=added\nhosts=added\neac=renamed\n")
 HOSTS_PLAIN = b"# a hosts file\n127.0.0.1 localhost\n"

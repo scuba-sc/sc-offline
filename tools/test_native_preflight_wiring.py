@@ -52,7 +52,8 @@ assert worker.index('RetainStartupGateModule()') < worker.index('if (InspectAnti
 import re
 for src_file in sorted((root / 'src').rglob('*')):
     if src_file.suffix in ('.cpp', '.h') and 'third_party' not in src_file.parts:
-        assert not re.search(r'\bFreeLibrary(AndExitThread)?\s*\(', src_file.read_text(errors='replace')), \
+        # FreeLibrary(dwm) releases the system dwmapi.dll the menu borrows; it is not the product module.
+        assert not re.search(r'\bFreeLibrary(AndExitThread)?\s*\((?!dwm\))', src_file.read_text(errors='replace')), \
             f'{src_file.name}: the product module must never be unloaded'
 assert 'Unloading in 5s.' not in worker
 assert 'Offline startup is refused; close the game.' in worker

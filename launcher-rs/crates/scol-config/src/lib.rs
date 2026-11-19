@@ -17,7 +17,7 @@ pub mod ini_edit;
 pub mod plugin_ini;
 
 pub use capabilities::Capabilities;
-pub use config::{read_config, Config, Language, LogChoice, Parsed};
+pub use config::{read_config, Config, Language, LogChoice, MenuChoice, Parsed};
 pub use env::{
     apply_capabilities, full_env, play_env, render_capabilities, CapabilityApply, EnvVar, PlayPaths,
 };

@@ -91,6 +91,13 @@ def scan(root):
     return caps, queries
 
 
+# Names the product asks Core for before Core 2.4.1 defines them. `has` answers false for an unknown name, so the
+# query is harmless: the feature behind it stays off. Add a name here only with a comment saying which Core adds it.
+FUTURE_OPTIONAL = {
+    'game.loadout.appearance',   # hair, hair colour and eyebrow outfit slots; Core 2.4.1 has no slot for them
+}
+
+
 def check(root, core):
     """Return (errors, notes, number of game.* capability names used)."""
     known, services = core_names(core)
@@ -100,7 +107,9 @@ def check(root, core):
     # call names (settings keys, offline patch names) and are not Core capabilities.
     used = {name: where for name, where in caps.items() if name.startswith('game.')}
     for name, where in sorted(used.items()):
-        if name not in known:
+        if name in FUTURE_OPTIONAL and name not in known:
+            notes.append(f'capability {name} is not in this Core yet (asked for, answers false): {", ".join(where)}')
+        elif name not in known:
             errors.append(f'unknown capability {name}: {", ".join(where)}')
         elif known[name] == 'OFF':
             notes.append(f'capability {name} is OFF by default in Core: {", ".join(where)}')
