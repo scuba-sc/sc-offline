@@ -158,6 +158,34 @@ def main():
         code, out = run(tree)
         expect(code == 0, 'the UTF-16 spelling of the name counts', out)
 
+        # 7c. A build-machine path inside any .exe or .dll is an error, in ASCII and in UTF-16LE; the
+        # report gives the count and the kind, never the path itself.
+        secret = 'zz_builder_name'
+        wide = lambda text: text.encode('utf-16-le')
+        cases = (
+            ('sc-offline.exe', b'MZ panic at ' + ('C:BSUsersBS' + secret + 'BS.cargoBSregistry').replace('BS', chr(92)).encode(),
+             'drive letter followed by Users', 'ASCII'),
+            ('sc_offline_menu.dll', b'MZ ' + wide('D:/Users/' + secret + '/x'), 'drive letter followed by Users', 'UTF-16LE'),
+            ('sc-offline-classic.exe', b'MZ ' + bytes([0]) + wide('E:' + chr(92) + 'Users' + chr(92) + secret), 'drive letter followed by Users', 'UTF-16LE'),
+            ('data/plugins/spawn/spawn.dll', b'MZ /home/' + secret.encode() + b'/src/spawn.cpp', '/home/<name>/', 'ASCII'),
+            ('dinput8.dll', b'MZ src.cargoBSregistrysrc'.replace(b'BS', bytes([92])), 'cargo registry', 'ASCII'),
+            ('sc-offline.exe', b'MZ /x/.cargo/registry/src/a', 'cargo registry', 'ASCII'),
+            ('sc-offline.exe', b'MZ ' + wide('.rustup' + chr(92) + 'toolchains' + chr(92) + '1.99'), 'rustup toolchain', 'UTF-16LE'),
+            ('data/plugins/crew/crew.dll', b'MZ .rustup/toolchains/stable', 'rustup toolchain', 'ASCII'),
+        )
+        for index, (name, content, kind, encoding) in enumerate(cases):
+            tree = make_tree(work / f'buildpath-{index}', disabled=('discord',), packs=FULL_PACKS)
+            (tree / name).write_bytes(content)
+            code, out = run(tree)
+            expect(code == 1 and f'ERROR: {name}: ' in out and kind in out and f', {encoding})' in out,
+                   f'{kind} in {name} ({encoding}) must fail', out)
+            expect(secret not in out, f'the report for {name} must never print the path', out)
+        # A tree whose binaries carry no such path still passes, and a path in a non-binary file is not read.
+        tree = make_tree(work / 'buildpath-clean', disabled=('discord',), packs=FULL_PACKS)
+        write(tree / 'data' / 'plugins' / 'spawn' / 'notes.txt', 'C:\\Users\\' + secret + '\\x')
+        code, out = run(tree)
+        expect(code == 0, 'a clean binary set must pass', out)
+
         # 8. Usage error.
         code, _ = run(work / 'does-not-exist')
         expect(code == 2, 'a missing tree is a usage error')

@@ -26,6 +26,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -443,7 +444,8 @@ static void Script(const MenuApi& api, std::atomic<bool>& done) {
 
 int main(int argc, char** argv) {
     if (argc < 2) { std::printf("usage: rust_menu_host <sc_offline_menu.dll> [screenshot folder]\n"); return 2; }
-    const std::string shots = argc > 2 ? argv[2] : "D:/sc241/menu-previews/rust2";
+    const std::string shots = argc > 2 ? argv[2]
+        : (std::filesystem::temp_directory_path() / "rust-menu-host-shots").generic_string();
     if (argc > 3) g_dump = BestStates(ReadDump(argv[3]));
     sco::SetGameThread();
     sco::host::BuildApi({"rust-menu-host 1.0"});

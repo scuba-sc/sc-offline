@@ -4,7 +4,7 @@ Which sco-core SDK sc-offline builds against, and how to check an archive before
 
 ## Target for 0.8.0: SDK 2.4.1 (not yet published)
 
-sc-offline 0.8.0 is built for sco-core SDK **2.4.1**, game pack **0.8.1**, plugin ABI **1.1**, game build **4.10.200.58746**. The release job refuses to package until the owner publishes SDK 2.4.1 and the `external/sco-core` pin matches it. The pin currently selects a development revision of the 2.4.1 line.
+sc-offline 0.8.0 is built for sco-core SDK **2.4.1**, game pack **0.8.1**, plugin ABI **1.1**, game build **4.10.200.58746**. The release job refuses to package until the maintainer publishes SDK 2.4.1 and the `external/sco-core` pin matches it. The pin currently selects a development revision of the 2.4.1 line.
 
 The consumer proofs for 0.8.0 ran against a local, unpublished development archive (`--candidate`, profile `legacy`):
 
@@ -15,7 +15,7 @@ The consumer proofs for 0.8.0 ran against a local, unpublished development archi
 | Core source (`COMPATIBILITY.json`) | `5858fdb65bf816ae28133d14683828ad63e451b3` |
 | Proofs that passed | inspector, crew, npc, spawn, build, loadout, mining, discord, teleport, quantum, contracts (read slice). Synthetic, MSVC 2022. |
 
-These are development receipts. When the SDK is published, the release's own `SHA256SUMS` and `release.json` replace them. Not run in game; see [status.md](status.md). Earlier development archives (`2.4.1-dev.2`, `2.4.1-dev.3` and `2.4.1-dev.6`) are superseded, and their hashes are in this file's git history.
+These are development receipts. When the SDK is published, the release's own `SHA256SUMS` and `release.json` replace them. Nothing built from these archives has been run in game; see [status.md](status.md). Earlier development archives (`2.4.1-dev.2`, `2.4.1-dev.3` and `2.4.1-dev.6`) are superseded, and their hashes are in this file's git history.
 
 ## Published SDK 2.4.0
 
@@ -37,9 +37,9 @@ The external plugin jobs in CI use the combined 2.4.0 archive, not the host pin.
 
 Proof scripts such as `tools/check_inspector_sdk.py` verify the archive's SHA-256 against a checksum list, extract it into a fresh folder, check the extracted inventory, and build the module against only the extracted `include/`. To use an unpublished archive, pass the explicit options listed in [SDK workflows](sdk-workflows.md). These checks bind an identity to the archive's contents. They do not verify source rights or release authority.
 
-## Loadout profile candidate composition
+## Release profile composition
 
-The profile `player-offline-loadout-candidate` in `tools/release-plugin-profiles.json` is the 11 plugins of `player-offline` plus Loadout, 12 in all. Discord is disabled; the other eleven are enabled. It is for inspection only. It does not change the release profile, publish a package, or approve anything.
+The profile `player-offline` in `tools/release-plugin-profiles.json` is the release plugin list: 12 native plugins, with Loadout among them. Discord is disabled; the other eleven are enabled. The staging tool below builds a folder from that profile for inspection. It does not publish a package or approve anything.
 
 Run the staging tool with real, caller-built artifacts for all 12 entries. The tool builds nothing. Choose an existing absolute staging parent outside any game or launcher folder, and restrict its access to your own account:
 
@@ -67,4 +67,4 @@ The parent must exist, must not be a redirect, and must be separate from the sou
 
 ## Loadout consumer proofs
 
-The Loadout consumer ran six synthetic CTest cases against a development `legacy` archive, and a content-host check ran 1 of 1 against a clean Core source, using `tools/test_loadout_content_host.ps1`. Both are synthetic. Loadout has not been run in game, and neither check shows full outfit or provider parity.
+The Loadout consumer ran six synthetic CTest cases against a development `legacy` archive, and a content-host check ran 1 of 1 against a clean Core source, using `tools/test_loadout_content_host.ps1`. Both are synthetic. Gear equip has been seen in game; nothing else about Loadout has. Neither check shows full outfit or provider parity.

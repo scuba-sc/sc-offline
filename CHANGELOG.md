@@ -2,23 +2,24 @@
 
 ## 0.8.0 (2026-11-18)
 
-Built for sco-core SDK 2.4.1, game pack 0.8.1 and game build 4.10.200.58746. Plugin ABI 1.1 is unchanged. The owner saw six things work in game: gear equip, prefab placement, ship spawn with boarding and Flight Ready, character spawn, a saved-spot move and the seat probe. [Status](docs/status.md#080-what-was-and-was-not-run-in-game) has the detail and everything else.
+Built for sco-core SDK 2.4.1, game pack 0.8.1 and game build 4.10.200.58746. Plugin ABI 1.1 is unchanged. The maintainer saw seven things work in game: startup with the classic menu, gear equip, placing an Outposts item, ship spawn with boarding and Flight Ready, character spawn, a saved-spot move and a seat event test. [Status](docs/status.md) has the detail and everything else.
 
 ### Added
 
 - **Rust launcher.** `sc-offline.exe` is now the Rust launcher (`launcher-rs/`, 14 crates). It has every command of the C++ launcher (`play`, `install`, `uninstall`, `status`, `update`, `mcp`, `help`, the hidden helper modes and the window) and two new ones. Its status and dry-run output match the C++ launcher in 85 synthetic scenarios.
 - **Classic launcher.** The C++ launcher ships beside it as `sc-offline-classic.exe`, the fallback. It reads the same `sc-offline.ini`, `data` folder and `%ProgramData%\sc-offline\pc-changes.txt`, so `sc-offline-classic.exe uninstall` undoes the PC changes a Rust run recorded ([details](docs/launcher.md#the-classic-launcher)).
-- **Two game DLLs.** The package holds `dinput8.dll`, built with `SCO_HOST_MENU_CLIENT=OFF` (the configuration the owner ran in game), and `dinput8-rust-menu.dll`, the same sources built with `SCO_HOST_MENU_CLIENT=ON` and the hook for the new menu. `sc-offline.exe` installs the second one, under the name `dinput8.dll`, only when the ini says `menu = rust` and the file is beside the launcher. Every other case, and the classic launcher always, installs `dinput8.dll`. A changed `menu` key takes effect on the next Play ([why](docs/decisions.md#2026-11-18-two-game-dlls)).
+- **Two game DLLs.** The package holds `dinput8.dll`, built with `SCO_HOST_MENU_CLIENT=OFF` (the configuration the maintainer ran in game), and `dinput8-rust-menu.dll`, the same sources built with `SCO_HOST_MENU_CLIENT=ON` and the hook for the new menu. `sc-offline.exe` installs the second one, under the name `dinput8.dll`, only when the ini says `menu = rust` and the file is beside the launcher. Every other case, and the classic launcher always, installs `dinput8.dll`. A changed `menu` key takes effect on the next Play ([why](docs/decisions.md#2026-11-18-two-game-dlls)).
 - **New in-game menu, opt-in.** `sc_offline_menu.dll` (egui) draws `sco.widgets` pages. Choose it with `menu = rust` (default `imgui`) or **Settings > In-game menu** in the launcher window. It opens on **M**, falls back to the classic menu if it cannot start (`SC_OFFLINE_MENU_KEY` picks another key), and shows `sco.ui` ImGui-only pages through its "Classic pages" entry.
 - **New launcher window** (egui, English and Russian): Home (status, Play and Stop, Update, Repair banner), Output, Plugins with a Catalogue tab, Capabilities and Settings. Stop lets the mod run its exit work before the game window closes: the launcher signals `Local\sc-offline-stop-<pid>` and waits up to 10 s for `Local\sc-offline-stopped-<pid>`, and the mod saves the wallet, closes the private session and sends `game.exit`. After 60 s a second question, "End the game process?", is offered. Nothing ends the game by itself.
 - **Settings in the window:** Repair (undo PC changes), game logs after a session (`clean_logs = ask | always | never`; `on` and `off` still work), language, in-game menu, plugins on or off, check for updates, and shortcuts to the ini and the data folder.
 - **`stop` command:** `sc-offline.exe stop [--end]` is the window's Stop from a terminal. It waits up to 60 s, and `--end` ends the process without asking if it is still open then.
-- **`plugins` command:** `list [--json]`, `enable`, `disable`, `install <folder|zip>`, `remove [--purge]`, `settings`, `catalogue list|install|update` and `update`. Each is journaled and refused while the game runs, and everything installed lands disabled. The catalogue reads a signed index from a local folder (`--source`). No production signing key exists, so the shipped trust root is empty and a real index is refused. Adding a key is a release-time act of the owner.
+- **`plugins` command:** `list [--json]`, `enable`, `disable`, `install <folder|zip>`, `remove [--purge]`, `settings`, `catalogue list|install|update` and `update`. Each is journaled and refused while the game runs, and everything installed lands disabled. The catalogue reads a signed index from a local folder (`--source`). No production signing key exists, so the shipped trust root is empty and a real index is refused. Adding a key is a release-time act of the maintainer.
 - **Capability switches in `sc-offline.ini`.** `exp_loadout_async`, `exp_inventory_read`, `exp_actor_stats_write`, `exp_cvars_native` and `exp_audio_native` are `on` by default, and `exp_entities_diag` (log-only diagnostics) is `off`. The launcher sets the matching `SCO_*` variable to `1` when a key is on and removes it when the key is off. It prints one line listing the switches that are on. The window's Capabilities page has a toggle for each.
 - **Launcher language:** stable text keys, strict UTF-8 catalogues and an English, Russian or auto selector. An optional `data/locales/ru.ini` overrides the Russian text.
 - **Release package script.** `tools/package_release.py` assembles the release folder and zip from build outputs, so a package can be built without CI ([Build](docs/build.md#build-a-release-package-without-ci)). The zip holds `sc-offline.exe`, `sc-offline-classic.exe`, `sc_offline_menu.dll`, `dinput8.dll`, `dinput8-rust-menu.dll`, the ini, docs, data and the plugin folders, plus `manifest.json` (format 1). It also ships a `locations_catalog` data pack, which the quantum plugin requires.
 - **CI:** the `rust-launcher` job builds and tests every crate, runs the parity scripts that need no game, and uploads the launcher for the release job. `tools/check_package_tree.py` now requires the shipped binaries and fails a package whose enabled plugin invokes a command no enabled plugin registers or needs a list no enabled data pack holds.
 - **External pickers and consumers:** Build and Squadron 42 pickers (categories, search, 64-row pages, a `lists/buildables.txt` snapshot), copied Contracts references (`lists/contract_scripts.txt`), Inspector snapshots with manual refresh and an English or Russian label setting, curated Loadout selectors (`lists/loadout_slots.txt`), and deletable saved gear presets.
+- **Loadout ships.** The `loadout` plugin (the Gear page, the Squadron 42 page and the `loadout.*` commands) is in the release, on, with the `loadout_lists` pack it needs. That makes 12 native plugins: spawn, crew, build, mining, npc, inspector, teleport, quantum, contracts, creative and loadout (all on) and discord (off). Gear equip is the one switch-gated feature seen working in game.
 - **ASOP selection.** Work from [#117](https://github.com/scuba-sc/sc-offline/pull/117) by [@Alpha-Rome0](https://github.com/Alpha-Rome0) is in the source but not enabled in this build.
 
 ### Changed
@@ -44,20 +45,20 @@ Built for sco-core SDK 2.4.1, game pack 0.8.1 and game build 4.10.200.58746. Plu
 
 ### Fixed
 
-- **Arrival check for saved-spot moves.** Core's own check (0.05 m and 1 degree after one apply) stayed unmet while the owner really was moved to the saved spot. The teleport plugin now reads the player's pose every tick and says "arrived" within 2 m. It releases Core's request slot, and logs `confirmation not received; you had arrived` if Core never confirms.
+- **Arrival check for saved-spot moves.** Core's own check (0.05 m and 1 degree after one apply) stayed unmet while the player really was moved to the saved spot. The teleport plugin now reads the player's pose every tick and says "arrived" within 2 m. It releases Core's request slot, and logs `confirmation not received; you had arrived` if Core never confirms.
 - **Boarding.** The spawn plugin passed the actor id to `game.vehicles`, which works in entity ids, so every seat request was refused. `crew.sit` and `crew.stand_all` had the same mistake. A boarding timeout (60 s) now gives up only the automatic boarding, and the ship stays owned. Selecting the seat you are already in cancels an older queued move. Spawn refusals name the failed check.
 - **`spawn.ship` capability** is published from the same readiness as the `ship spawner: ready` line, and the menu starts even when the legacy ship spawner did not resolve.
 
 ### Not run in game
 
-Not run in game. That covers everything the owner has not seen. This is the short list; [Status](docs/status.md#080-what-was-and-was-not-run-in-game) has the full one.
+These parts of 0.8.0 have not been run in game. This is the short list; [Status](docs/status.md#ships-in-080-but-not-run-in-game) has the full one.
 
 - The Rust launcher's `play` path and elevated (UAC) helper, the real firewall rules, hosts-file line and Easy Anti-Cheat rename, and the game start from an elevated launcher.
 - The new in-game menu and `dinput8-rust-menu.dll` (`menu = rust`).
 - The update swap, including 0.7.x to 0.8.0, and the catalogue network path.
 - The window, Stop and the PC-change repair on a real PC.
 - `exp_inventory_read`, `exp_actor_stats_write`, `exp_cvars_native`, `exp_audio_native` (this Core refuses native sounds and logs why) and `exp_entities_diag`.
-- The new arrival check, `quantum.travel`, crew actions beyond the seat probe, NPC commands, `build.undo` and `build.clear`, contracts, mining, multiplayer, creative, the inspector, ASOP terminals, hangars and ATC, and the menu pages.
+- The new arrival check, `quantum.travel`, crew actions beyond the seat event test, gear beyond equipping, NPC commands, `build.undo` and `build.clear`, contracts, mining, multiplayer, creative, the inspector, ASOP terminals, hangars and ATC, and the menu pages.
 - The package as built. It was assembled and checked on a development machine with stand-in plugin builds.
 
 ## 0.7.8.3 (2026-10-15)

@@ -2,7 +2,7 @@
 
 Loadout puts armour, weapons and tools on your character from the **Gear** page of the in-game menu. The **Squadron 42** page, behind a spoiler warning, wears Squadron 42 outfits and shows four game settings.
 
-The 0.8.0 release package does not include this plugin. `tools/release-plugin-profiles.json` lists it as excluded, and the profile `player-offline-loadout-candidate` adds it. Build it yourself (see Developer notes) or stage it with that profile.
+The 0.8.0 release package includes this plugin, enabled, with the `loadout_lists` pack it reads. `tools/release-plugin-profiles.json` lists it in the `player-offline` profile.
 
 ## What the Gear page can equip
 

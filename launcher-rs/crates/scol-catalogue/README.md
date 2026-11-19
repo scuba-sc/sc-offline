@@ -2,7 +2,7 @@
 
 The plugin catalogue client of the sc-offline Rust launcher ([docs/rust-launcher.md](../../../docs/rust-launcher.md#plugins-and-the-catalogue)). No network code, no UI, no file writes, and it never loads plugin code. The network is `scol-update`'s WinHTTP code behind the `Fetcher` trait, and the file writes are `scol-plugin-manager`'s.
 
-Not run in game. See [docs/status.md](../../../docs/status.md). The tests are synthetic.
+None of this has been run in game; see [docs/status.md](../../../docs/status.md). The tests are synthetic.
 
 ## Pipeline
 

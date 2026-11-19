@@ -57,7 +57,6 @@ struct Snapshot {
     uint32_t params_total = 0;
 };
 Snapshot g_snapshot;
-uint64_t g_provider_reads = 0;
 constexpr char kPanelId[] = "inspector.main";
 enum : uint32_t { kRefresh = 10, kStatus = 11, kDiagnostics = 20, kInventory = 21,
                   kActions = 22, kParameters = 23, kTable = 30, kActionName = 40,
@@ -161,7 +160,6 @@ template <typename T>
 const T* Service(const char* name, uint32_t version) {
     const void* table = nullptr;
     if (!HAS_FN(g_api, sco_api, query_service)) return nullptr;
-    ++g_provider_reads;
     return g_api->query_service(name, version, &table) == SCO_OK ? static_cast<const T*>(table) : nullptr;
 }
 
@@ -174,7 +172,6 @@ void Refresh() {
         HAS_FN(build, sc_game_build_v1, read)) {
         sc_game_build_info value{};
         value.size = sizeof(value);
-        ++g_provider_reads;
         const auto result = build->read(g_self, &value);
         if (result == SCO_OK && value.size >= sizeof(value)) {
             next.build = value;
@@ -185,7 +182,6 @@ void Refresh() {
     const auto* actors = Service<sc_actors_v1>(SC_ACTORS_NAME, SC_ACTORS_VERSION_1_0);
     if (HAS_FN(actors, sc_actors_v1, local_player) && HAS_FN(g_api, sco_api, has) &&
         g_api->has("game.actors.local_player")) {
-        ++g_provider_reads;
         next.player_status = actors->local_player(&next.actor, &next.entity);
         if (next.player_status == SCO_OK && (!next.actor || !next.entity)) next.player_status = SCO_NOT_FOUND;
         if (next.player_status != SCO_OK) next.actor = next.entity = 0;
@@ -197,7 +193,6 @@ void Refresh() {
             next.stats_status = SCO_OK;
             for (uint32_t id = 1; id <= SC_ACTOR_STAT_LAST_1_0; ++id) {
                 float value = std::numeric_limits<float>::quiet_NaN();
-                ++g_provider_reads;
                 const auto result = stats->read(next.entity, id, &value);
                 if (result == SCO_OK && std::isfinite(value)) {
                     next.stats[id] = value;
@@ -212,7 +207,6 @@ void Refresh() {
     if (HAS_FN(rules, sc_gamerules_v1, read) && HAS_FN(g_api, sco_api, has) && g_api->has("game.gamerules.read")) {
         sc_gamerules_state value{};
         value.size = sizeof(value);
-        ++g_provider_reads;
         const auto result = rules->read(g_self, &value);
         if (result == SCO_OK && value.size >= sizeof(value)) {
             next.rules = value;
@@ -229,7 +223,6 @@ void Refresh() {
         g_api->has("game.inventory.read")) {
         next.inventory.size = sizeof(next.inventory);
         next.inventory.count = SC_INVENTORY_MAX_PORTS;
-        ++g_provider_reads;
         const auto result = inventory->snapshot(g_self, &next.inventory);
         if (result == SCO_OK && next.inventory.size >= SC_INVENTORY_SNAPSHOT_SIZE_1_0 &&
             next.inventory.count <= SC_INVENTORY_MAX_PORTS) next.inventory_status = SCO_OK;
@@ -773,7 +766,6 @@ void Unload() {
     g_tab = kDiagnostics; g_page = 0; g_query[0] = '\0';
     std::snprintf(g_widget_status, sizeof(g_widget_status), "Not refreshed yet. Press Refresh to read the game.");
     g_snapshot = {};
-    g_provider_reads = 0;
 }
 
 #undef HAS_FN

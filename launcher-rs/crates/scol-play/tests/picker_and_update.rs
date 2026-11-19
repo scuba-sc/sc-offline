@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The game folder picker (the last resort when no game was found) and the update check before `play`,
 //! over the fake host: the folder dialog and the update are scripted, discovery is scripted, nothing opens a
-//! window or reaches the network. Folders under `D:\t`. Nothing here was run in game.
+//! window or reaches the network. Folders under the system temp folder. Nothing here was run in game.
 #![cfg(windows)]
 
 mod common;
@@ -112,12 +112,16 @@ fn no_dialog_unless_the_host_can_show_one_and_nothing_was_named_or_found() {
 
     // --game wins: no dialog, even for a wrong folder
     host.can_pick = true;
-    let mut a = args(Mode::Play, false, &["play", "--game", "D:\\t\\nope"]);
-    a.game_arg = "D:\\t\\nope".into();
+    let mut a = args(
+        Mode::Play,
+        false,
+        &["play", "--game", "C:\\scol-test\\nope"],
+    );
+    a.game_arg = "C:\\scol-test\\nope".into();
     let (code, text) = run(&w, &mut host, &a);
     assert_eq!(code, 1);
     assert!(
-        text.contains("no StarCitizen.exe under --game D:\\t\\nope"),
+        text.contains("no StarCitizen.exe under --game C:\\scol-test\\nope"),
         "{text}"
     );
     assert_eq!(host.pick_calls, 0);
@@ -142,7 +146,8 @@ fn game_in_the_ini_wins_over_the_dialog() {
     let w = World::new("pick-ini", NO_PC); // has a `game =` line
     let mut host = w.host(w.system());
     host.can_pick = true;
-    host.picks.push_back(Some("D:\\t\\elsewhere".into()));
+    host.picks
+        .push_back(Some("C:\\scol-test\\elsewhere".into()));
     let (code, _) = run(
         &w,
         &mut host,

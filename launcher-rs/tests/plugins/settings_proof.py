@@ -3,7 +3,7 @@
 """Proof that `sc-offline.exe plugins settings` keeps a plugin's [settings] values in the format the host and
 the C++ launcher use, checked with a second SQLite implementation (Python's sqlite3, not the one in the exe).
 
-Scratch folder under D:\\t only; the real game and the real launcher folder are never touched. Steps:
+Scratch folder under SCOL_SCRATCH (else the system temp folder) only; the real game and the real launcher folder are never touched. Steps:
   1. a synthetic plugin with five typed settings; `plugins settings demo` lists the defaults
   2. `plugins settings demo speed=7 mode=c fast=true` writes data\\storage\\demo.db
   3. Python opens that file: table sco_kv(key TEXT PRIMARY KEY, value BLOB) WITHOUT ROWID, keys
@@ -20,10 +20,12 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
-ROOT = Path(os.environ.get("SCOL_SCRATCH", "D:/t"))
-RUST = Path(os.environ.get("SCOL_RUST_EXE", "D:/t/cargo-launcher-core/debug/sc-offline.exe"))
+HERE = Path(__file__).resolve().parent
+ROOT = Path(os.environ.get("SCOL_SCRATCH") or Path(tempfile.gettempdir()) / "scol-scratch")
+RUST = Path(os.environ.get("SCOL_RUST_EXE") or HERE.parents[1] / "target" / "release" / "sc-offline.exe")
 
 PLUGIN_INI = (
     "id = demo\nname = Demo\nversion = 1.0.0\nauthor = tests\napi = 1.1\nkind = native\nentry = demo.dll\n"

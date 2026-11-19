@@ -1,6 +1,6 @@
 # ASOP host composition
 
-ASOP (the in-game ship terminals and hangars) is unavailable in 0.8.0. Not run in game; see [status.md](status.md).
+ASOP (the in-game ship terminals and hangars) is unavailable in 0.8.0, and nothing on this page has been run in game; see [status.md](status.md).
 
 Both CMake options `SCO_ASOP_HOST_COMPOSITION` and `SCO_ASOP_SELECTION_COMPOSITION` default to `OFF`, and CMake rejects either one with an error. They stay rejected until the product has a reviewed, non-blocking stop request and an ordered control-thread drain. This is separate from native startup, which is on with a Core that provides the process-retained composition ([host composition](host-composition.md)).
 

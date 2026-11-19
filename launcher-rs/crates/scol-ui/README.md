@@ -5,7 +5,7 @@ Reference: [docs/rust-launcher.md](../../../docs/rust-launcher.md#window). The C
 `RunGui`, [docs/launcher.md](../../../docs/launcher.md)) is the behaviour to match; the colours are its `kUi*`
 constants (dark grey panels, a light main button with dark text, green for good status).
 
-Not run in game. See [docs/status.md](../../../docs/status.md).
+None of this has been run in game; see [docs/status.md](../../../docs/status.md).
 
 ## Pages
 

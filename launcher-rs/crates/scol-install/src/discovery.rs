@@ -397,7 +397,10 @@ mod tests {
 
     #[test]
     fn resolve_upward_of_nothing_is_empty() {
-        assert_eq!(resolve_upward("D:\\t\\no\\such\\scol\\folder", "LIVE"), "");
+        assert_eq!(
+            resolve_upward("C:\\scol-test\\no\\such\\scol\\folder", "LIVE"),
+            ""
+        );
     }
 
     fn tree(tag: &str) -> std::path::PathBuf {

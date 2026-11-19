@@ -2,7 +2,7 @@
 
 The Rust menu is a DLL, `sc_offline_menu.dll`, built from the crate `scol-menu` in `launcher-rs/`. It opens on **M** in its own window, reads the panels that plugins publish through `sco.widgets`, draws them with egui, and sends the player's clicks back to the plugins. The C++ host (`dinput8.dll`, hooks, Core host kit) stays C++ and loads the DLL. The ImGui menu stays compiled as the fallback and as the home of `sco.ui` pages. Player text: [plugin-ui.md](plugin-ui.md#the-new-menu-opt-in). The launcher is in [rust-launcher.md](rust-launcher.md).
 
-Evidence: source, build and synthetic tests only. Not run in game. See [status.md](status.md).
+Evidence: source, build and synthetic tests only. The menu has not been run in game; see [status.md](status.md).
 
 ## How the new menu is enabled
 
@@ -10,7 +10,7 @@ The package ships two host DLLs built from the same sources.
 
 | File in the package | Built with | Installed |
 |---|---|---|
-| `dinput8.dll` | `SCO_HOST_MENU_CLIENT=OFF`, the configuration the owner ran in game | by default |
+| `dinput8.dll` | `SCO_HOST_MENU_CLIENT=OFF`, the configuration the maintainer ran in game | by default |
 | `dinput8-rust-menu.dll` | `SCO_HOST_MENU_CLIENT=ON`, with the Rust menu hook (`src/menu_rust.cpp`) | only for `menu = rust` |
 
 The ON build also changes how the classic menu gets its pages, at about a dozen `#ifdef` sites. That has never run in game either, which is why it is not the default. The path from the ini to the screen:
@@ -124,9 +124,9 @@ The C++ host side builds from the top-level CMake. `-DSCO_HOST_MENU_CLIENT=ON` a
 
 ## Not run in game
 
-Loading the DLL in the game at all. The M handoff, the cursor clip, giving the foreground back, resize by edge, DPI and two-monitor placement, typing in a text box with game hotkeys quiet, the classic-pages handoff, overlays the owner runs next to the game, clicks across a republish on a page that republishes on a timer (the loadout pages republish from a tick and have untagged nodes), game exit with the menu open, and the ON host DLL itself. The default build (`dinput8.dll`, OFF) does not contain the menu hook.
+Loading the DLL in the game at all. The M handoff, the cursor clip, giving the foreground back, resize by edge, DPI and two-monitor placement, typing in a text box with game hotkeys quiet, the classic-pages handoff, overlays the maintainer runs next to the game, clicks across a republish on a page that republishes on a timer (the loadout pages republish from a tick and have untagged nodes), game exit with the menu open, and the ON host DLL itself. The default build (`dinput8.dll`, OFF) does not contain the menu hook.
 
-The owner's list for the first run, each recorded as pass, fail or not run with the game build, the sc-offline build and the DLL digests:
+The maintainer's list for the first run, each recorded as pass, fail or not run with the game build, the sc-offline build and the DLL digests:
 
 1. M opens the menu above the game, windowed, borderless and exclusive fullscreen; Esc, M and the close button hide it and return input.
 2. The cursor is clipped while open and free after hide, Alt+Tab, size and move.
@@ -134,7 +134,7 @@ The owner's list for the first run, each recorded as pass, fail or not run with 
 4. 100, 125 and 150 percent scale and two monitors; the saved size comes back.
 5. Each shipped page changes the game state it names, or says plainly that it cannot.
 6. A page that republishes on a timer: press a button 20 times, then once a second for a minute; each press acts once. Write down lost presses.
-7. Overlays the owner normally runs do not break the menu.
+7. Overlays the maintainer normally runs do not break the menu.
 8. With `sc_offline_menu.dll` deleted, the ImGui menu stays and `mod.log` has the line.
 9. A `sco.ui` plugin opens in the classic window and returns.
 10. The game exits cleanly with the menu open and closed.
@@ -146,7 +146,7 @@ The owner's list for the first run, each recorded as pass, fail or not run with 
 - In-process DLL (shape A), not a separate process. It matches what the ImGui menu already does (own thread and window inside the game), adds no second wire format and no second executable. Reconsider only if an in-game run shows a conflict with the game or overlays, an uncontainable fault, or too much `unsafe`.
 - The renderer is eframe with glow, from the launcher spike, not a custom Direct3D 11 painter. The window sets no process DPI awareness.
 - Two host DLLs, chosen by the launcher from `menu`. The configuration that ran in game is the default, and the Rust menu cannot change it. Switching takes effect on the next Play.
-- `menu` defaults to `imgui`. It changes only after the owner records an in-game run.
+- `menu` defaults to `imgui`. It changes only after the maintainer records an in-game run.
 - The interface is a host-source seam (`core-source` profile, outside the SDK catalogue), not offered to plugins. A plugin that could read it could read other plugins' panels and inject clicks.
 - A relabelled untagged control loses a click that races a republish, counted and shown, rather than being sent to a control that reused its id. Tag any control that must survive a republish.
 - Password text never leaves Core, so the Rust field shows no dots for an existing value.
@@ -157,4 +157,4 @@ The owner's list for the first run, each recorded as pass, fail or not run with 
 - Capability readout on the Settings page: one row per switch with On or Off and "Not run in game.", and `exp_entities_diag` shown apart as a diagnostic. The host would pass a read-only copy of the switch state at start.
 - Port the in-tree `sco.ui` pages to `sco.widgets` and delete the dead `src/builtins/build_ui.cpp`.
 - Golden pictures through a headless renderer, and a Cyrillic check with an approved font.
-- The owner's in-game run above, then the default may change.
+- The maintainer's in-game run above, then the default may change.

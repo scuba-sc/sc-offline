@@ -1,15 +1,15 @@
 # Build plugins against the published SDK: inspector and NPC
 
-This page walks through building, checking and installing two plugins, `inspector` and `npc`, from their sources in `plugins/`, using only a verified SDK archive. Use it as a pattern for your own plugin. Every check here uses synthetic or absent providers. Not run in game; see [status.md](status.md).
+This page walks through building, checking and installing two plugins, `inspector` and `npc`, from their sources in `plugins/`, using only a verified SDK archive. Use it as a pattern for your own plugin. Every check here uses synthetic or absent providers, so none of it has been run in game; see [status.md](status.md).
 
 For plugins of your own with distinct IDs, copy the [SDK and MCP tutorial sources](../examples/sdk-mcp/README.md) instead. They supply `tutorial_npc` and `tutorial_inspector`.
 
 ## Where plugins come from
 
-The host registers no built-in features. The release stages 11 external plugin folders under `data/plugins/`. Inspector and NPC are two of them, enabled and not linked into the host. `plugins = off` or a `disabled` marker does not bring a hidden implementation back. Discord ships disabled and refuses presence pending a review; see its [README](../plugins/discord/README.md).
+The host registers no built-in features. The release stages 12 external plugin folders under `data/plugins/`. Inspector and NPC are two of them, enabled and not linked into the host. `plugins = off` or a `disabled` marker does not bring a hidden implementation back. Discord ships disabled and refuses presence pending a review; see its [README](../plugins/discord/README.md).
 
 - Creative lives in its own repository, [`sc-creative`](https://github.com/scuba-sc/sc-creative) (the `external/sc-creative` submodule). It has its own [build, check and install guide](https://github.com/scuba-sc/sc-creative/blob/main/plugins/creative/README.md), and CI runs its `tools/check_creative_sdk.py` before staging.
-- The [loadout plugin](../plugins/loadout/README.md) uses typed equip, read-only cvars, copied content and optional widgets. It is a development consumer and is not staged.
+- The [loadout plugin](../plugins/loadout/README.md) uses typed equip, read-only cvars, copied content and optional widgets. It ships in the release, enabled.
 - Modules use their own sources and public SDK headers only. They use no private host registration, product version, host include path or new ImGui input. The old NPC tab is gone until renderer-neutral widgets cover it ([sco-core #139](https://github.com/scuba-sc/sco-core/issues/139)). Crew and ordinary spawn are command-first plugins and have no product picker tabs.
 
 ## Which SDK

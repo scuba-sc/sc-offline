@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Shared fixture: a synthetic world under `D:\t` (the launcher folder, a fake game with the stand-in
+//! Shared fixture: a synthetic world under the system temp folder (the launcher folder, a fake game with the stand-in
 //! exe as StarCitizen.exe, ProgramData and Program Files (x86)), and a fake host over it. Made-up names
 //! only. No test here starts the real game or changes this PC.
 
@@ -41,7 +41,7 @@ impl World {
     /// A fresh world. `ini` is the content of sc-offline.ini; a game folder is given in it.
     pub fn new(tag: &str, ini: &str) -> World {
         let guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let root = PathBuf::from(format!(r"D:\t\play-{tag}-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("scol-play-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let here = root.join("here");
         let channel = root.join("lib").join("StarCitizen").join("LIVE");

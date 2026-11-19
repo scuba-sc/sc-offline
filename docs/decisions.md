@@ -1,10 +1,16 @@
 # Decisions
 
-Owner: **scubamount**. This page records product decisions with their dates. A decision here is policy, not a claim that the work is finished or that anything was seen in game; [Status](status.md) records that. Nothing here tags, publishes or certifies a release.
+Maintainer: **scubamount**. This page records product decisions with their dates. A decision here is policy, not a claim that the work is finished or that anything was seen in game; [Status](status.md) records that. Nothing here tags, publishes or certifies a release.
+
+## 2026-11-18: The loadout plugin ships in 0.8.0
+
+The loadout plugin (the Gear page, the Squadron 42 page and the `loadout.*` commands) ships on in 0.8.0, with the list pack it needs. Gear equip is the one switch-gated feature seen working in game, and the packages the maintainer ran had this plugin.
+
+The release plugin list is therefore 12 native plugins: spawn, crew, build, mining, npc, inspector, teleport, quantum, contracts, creative and loadout (all on), and discord (off). See [Features](features.md#plugins).
 
 ## 2026-11-18: Two game DLLs
 
-The 0.8.0 package ships two game DLLs. Every build the owner ran in game used the CMake option `SCO_HOST_MENU_CLIENT=OFF`. Turning it on, which the new menu needs, changes how the classic menu gets its pages at about a dozen places in the source, and that configuration has never run in game. So the package carries the configuration that has run as the default `dinput8.dll`, and the new-menu configuration as a separate file the player must choose.
+The 0.8.0 package ships two game DLLs. Every build the maintainer ran in game used the CMake option `SCO_HOST_MENU_CLIENT=OFF`. Turning it on, which the new menu needs, changes how the classic menu gets its pages at about a dozen places in the source, and that configuration has never run in game. So the package carries the configuration that has run as the default `dinput8.dll`, and the new-menu configuration as a separate file the player must choose.
 
 - **`dinput8.dll`** is built with `SCO_HOST_MENU_CLIENT=OFF`. It is installed by default.
 - **`dinput8-rust-menu.dll`** is the same sources built with `SCO_HOST_MENU_CLIENT=ON` and the Rust menu hook. It has never run in game.
@@ -16,22 +22,22 @@ See [Which game DLL](launcher.md#which-game-dll), [The new menu](plugin-ui.md#th
 
 ## 2026-11-18: sc-offline 0.8.0 release decisions
 
-The owner will do no more testing before 0.8.0, so these close the questions that were still open.
+The maintainer will do no more testing before 0.8.0, so these close the questions that were still open.
 
 1. **Launcher names.** The Rust launcher is `sc-offline.exe` in the package. The C++ launcher ships beside it as `sc-offline-classic.exe`, the documented fallback. It can undo PC changes from the same `%ProgramData%\sc-offline\pc-changes.txt` record ([the classic launcher](launcher.md#the-classic-launcher)).
 2. **In-game menu.** The new (Rust) menu ships opt-in: ini key `menu = rust`, default `imgui`. It has never run in game. How the package carries it: [Two game DLLs](#2026-11-18-two-game-dlls).
 3. **Capability switches.** `exp_loadout_async`, `exp_inventory_read`, `exp_actor_stats_write`, `exp_cvars_native` and `exp_audio_native` default **on**. `exp_entities_diag` (log-only diagnostics) defaults **off**. Only the loadout switch has been seen working in game.
 4. **Travel.** Travel to another planet, which needs a zone lookup beyond the player's own chain, is **not** in 0.8.0. It is a documented gap ([Features](features.md#travel-between-places)).
-5. **Core defaults.** sco-core's capability defaults are unchanged. What the owner saw in game is recorded as evidence text in [Status](status.md), not as a changed default.
-6. **Plugin catalogue.** A signed index. First-party and reviewed native plugins are allowed, and everything lands disabled. No production signing key exists yet, so the shipped trust root is empty and the catalogue works from a local folder (`plugins catalogue ... --source <folder>`). Adding a key is a release-time act of the owner.
+5. **Core defaults.** sco-core's capability defaults are unchanged. What the maintainer saw in game is recorded as evidence text in [Status](status.md), not as a changed default.
+6. **Plugin catalogue.** A signed index. First-party and reviewed native plugins are allowed, and everything lands disabled. No production signing key exists yet, so the shipped trust root is empty and the catalogue works from a local folder (`plugins catalogue ... --source <folder>`). Adding a key is a release-time act of the maintainer.
 7. **Versions.** sc-offline **0.8.0**, sco-core SDK **2.4.1**, game pack **0.8.1**, game build **4.10.200.58746**.
-8. **Publishing.** Nothing is pushed, tagged or published by an agent. The owner tags the release.
+8. **Publishing.** Nothing is pushed, tagged or published by an agent. The maintainer tags the release.
 
 Decisions made while preparing the release:
 
 - **Travel places list.** The package ships `data/plugins/locations_catalog`, a copy of `data/locations.txt`, as an ordinary data pack. The quantum plugin requires one enabled `lists/locations.txt`, and `tools/check_package_tree.py` fails a package without it. The list serves same-chain destinations only; decision 4 stands.
 - **Release script.** The release job runs `tools/package_release.py`, which also builds a package by hand ([Build](build.md#build-a-release-package-without-ci)). The release manifest stays format 1.
-- **Release job guard.** The first step of the `release` job still refuses to package an unpublished development Core. It goes when the owner publishes SDK 2.4.1 and the pin matches it.
+- **Release job guard.** The first step of the `release` job still refuses to package an unpublished development Core. It goes when the maintainer publishes SDK 2.4.1 and the pin matches it.
 - **Updating from 0.7.x.** The ini and data files are kept, and the updater swaps the exe ([launcher.md](launcher.md#updating-from-07x)).
 
 ## 2026-11-17: Rust launcher and in-game menu
@@ -45,7 +51,7 @@ The decisions for the Rust launcher plan are recorded in full in [Rust launcher 
 
 ## 2026-11-13: run on the process-retained composition
 
-sc-offline runs on the Core's opt-in process-retained host composition, with the bar "loads and works in game like the last shipped version". The product relies on retain-until-exit (no unload; stop is closure) instead of a proof that readers and workers drain. Install quiescence is attested only while the entry gate is held, plus the game thread's own service start. That is a known deviation to revisit after in-game evidence. A Core without the composition keeps the native-startup refusal. See [host composition](host-composition.md) and [Status](status.md#process-retained-startup).
+sc-offline runs on the Core's opt-in process-retained host composition, with the bar "loads and works in game like the last shipped version". The product relies on retain-until-exit (no unload; stop is closure) instead of a proof that readers and workers drain. Install quiescence is attested only while the entry gate is held, plus the game thread's own service start. That is a known deviation to revisit after in-game evidence. A Core without the composition keeps the native-startup refusal. See [host composition](host-composition.md) and [the evidence record](handoff/2026-11-18-release-0.8.0-evidence.md#process-retained-startup).
 
 ## 2026-10-12: SDK migration decisions
 
@@ -53,9 +59,9 @@ These set the product policy for the move to external plugins on the sco-core SD
 
 | Topic | Decision | Where it stands |
 | --- | --- | --- |
-| Feature preservation | The target is **13 baseline feature units**: teleport, spawn, crew, loadout, npc, inspector, quantum, build, contracts, mining, multiplayer, creative and discord. **Two optional bridges** (titanlink, voxel_bridge) are counted separately and stay outside the normal release. No silent retirement of a feature. | The host registers no feature built-ins. The release stages **11 native plugins**: spawn, crew, build, mining, npc, inspector, teleport, quantum, creative, discord and contracts. `loadout` has an implementation that is not staged. Multiplayer is not registered or staged. These are 13 baseline IDs, not 13 of 13 complete. Supporting data packs are not counted as features. |
+| Feature preservation | The target is **13 baseline feature units**: teleport, spawn, crew, loadout, npc, inspector, quantum, build, contracts, mining, multiplayer, creative and discord. **Two optional bridges** (titanlink, voxel_bridge) are counted separately and stay outside the normal release. No silent retirement of a feature. | The host registers no feature built-ins. The release stages **12 native plugins**: spawn, crew, build, mining, npc, inspector, teleport, quantum, creative, discord, contracts and loadout (decided 2026-11-18). Multiplayer is not registered or staged. These are 13 baseline IDs, not 13 of 13 complete. Supporting data packs are not counted as features. |
 | Host and plugin dependencies | The Windows host uses an exact sco-core source pin. Standalone plugins use verified published SDK archives, never a source-checkout include tree. | See [SDK coordinates](sdk-candidate.md). |
-| Enable and disable | Every feature has an explicit per-folder enable and disable, with no hidden built-in fallback. First-party folders are on by default and the user can disable them. | Ten native plugin folders (creative included) ship enabled and need `plugins = on`. Discord ships with a `disabled` marker. |
+| Enable and disable | Every feature has an explicit per-folder enable and disable, with no hidden built-in fallback. First-party folders are on by default and the user can disable them. | Eleven native plugin folders (creative and loadout included) ship enabled and need `plugins = on`. Discord ships with a `disabled` marker. |
 | UI | Invest in renderer-neutral SDK widgets ([sco-core #139](https://github.com/scuba-sc/sco-core/issues/139)). Command-first examples meanwhile, and no new ImGui coupling. | The spawn, crew and npc plugins own the Vehicles, Crew and NPCs pages through public `sco.widgets`. The host draws them with its own ImGui adapter. |
 | Persistent build ownership | Retained placements need scoped, removable handles that survive a plugin reload. No arbitrary entity deletion and no private-pointer fallback. | The build plugin removes its placements on unload. Persistence across a reload is not implemented. |
 | Crew ownership | Crew may remove only NPCs it spawned itself, not other seat occupants or another plugin's NPCs. | Applies to every seat and removal path. |

@@ -35,12 +35,7 @@ struct Scratch(PathBuf);
 
 impl Scratch {
     fn new(tag: &str) -> Scratch {
-        let base = if Path::new("D:/t").is_dir() {
-            PathBuf::from("D:/t")
-        } else {
-            std::env::temp_dir()
-        };
-        let p = base.join(format!("scol-ui-test-{tag}-{}", std::process::id()));
+        let p = std::env::temp_dir().join(format!("scol-ui-test-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&p);
         std::fs::create_dir_all(&p).unwrap();
         Scratch(p)

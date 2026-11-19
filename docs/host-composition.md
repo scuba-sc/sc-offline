@@ -1,6 +1,6 @@
 # Host composition and startup rules
 
-This page is for host developers. It says how `dinput8.dll` starts sco-core's game-pack host, which lifetime rules it relies on, and what it refuses. Not run in game. See [status.md](status.md).
+This page is for host developers. It says how `dinput8.dll` starts sco-core's game-pack host, which lifetime rules it relies on, and what it refuses. None of it has been run in a real game session beyond the startup runs in [status.md](status.md).
 
 Native startup works only with a Core that provides the process-retained composition. CMake probes the selected Core's `include/sco/game/host.h` for `Composition::ProcessRetained` and defines `SCO_CORE_PROCESS_RETAINED_COMPOSITION`. Together with the non-draining stop API (`SCO_CORE_NON_DRAINING_STOP_API`), that makes `NativeActivationAvailable()` true. The Core at the `external/sco-core` gitlink provides both, so startup is on. With an older Core (for example one chosen with `SCO_HOST_SOURCE_DIR`), configure prints that native startup stays refused, and the product refuses: no entry hook, no native Prepare or Start, no product patch, no plugin activation.
 

@@ -21,4 +21,4 @@ Only the pass or refuse verdict is compared with Python for refused archives. Me
 guaranteed identical (quoting of names and number formatting differ). The Rust test checks the exact
 Rust error code against `expected.tsv`.
 
-Both tools passed all files at the pinned commit. Static checks only. Not run in game. See [docs/status.md](../../../docs/status.md).
+Both tools passed all files at the pinned commit. Static checks only. None of this has been run in game; see [docs/status.md](../../../docs/status.md).

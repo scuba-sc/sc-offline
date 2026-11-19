@@ -9,7 +9,7 @@ Everything the menu reads is plain text in `data/`. Most files explain their own
 | `ships.txt` | 1102 spawnable vehicles |
 | `npcs.txt` | 2239 NPC archetypes |
 | `items.txt` | 1489 gear items, in ten slot sections |
-| `loadout_slots.txt` | Optional catalogue: 344 logical weapon, attachment and tool choices in fourteen target sections. Copy it into an enabled data pack to use it. |
+| `loadout_slots.txt` | Catalogue of 344 logical weapon, attachment and tool choices in fourteen target sections. The release carries a copy in the `loadout_lists` pack. |
 | `outfits.txt` | 35 outfits: each is a `[name]` line, then one line per piece |
 | `locations.txt` | Places for the Travel page: system, name, entity, radius |
 | `contract_scripts.txt` | The 796 contracts that run without any CIG mission script ([Features](features.md#contracts)) |
@@ -17,6 +17,7 @@ Everything the menu reads is plain text in `data/`. Most files explain their own
 | `plugins/quantum_drive/datacore/quantum_drive.toml` | The new quantum drive's game data, applied as the game loads ([Features](features.md#logging)) |
 | `OfflineDB/default_1.xml` | The starting loadout. The launcher copies it to `user\client\0`. |
 | `plugins\discord\` | The disabled Discord plugin: `plugin.ini`, `disabled` and `discord.dll` ([launcher.md](launcher.md#discord-status)) |
+| `plugins\loadout_lists\` | The lists the Gear page reads: copies of `items.txt`, `outfits.txt` and `loadout_slots.txt` ([Features](features.md#plugins)) |
 | `plugins\creative\` | The creative plugin: `plugin.ini` and `creative.dll`, enabled by default ([Features](features.md#the-creative-plugin)) |
 
 Other plugins go in their own folder under `plugins\`, with `plugins = on`.
@@ -43,7 +44,7 @@ Two enabled packs holding the same list are ambiguous, and the picker refuses th
 
 Format and limits: [Build picker](../plugins/build/README.md#build-page).
 
-**Loadout slots.** The loadout plugin reads curated choices from exactly one enabled `lists/loadout_slots.txt`. Copy the catalogue into a pack yourself; `loadout.reload_slots` re-reads that copy, not the file on disk. Target sections request equipment but do not certify that a part fits its parent or exists in your game build. Format and attribution: [curated Loadout selectors](../plugins/loadout/README.md#curated-weapon-and-tool-selectors).
+**Loadout slots.** The loadout plugin reads curated choices from exactly one enabled `lists/loadout_slots.txt`. The release already carries it in the `loadout_lists` pack. If you edit `data/loadout_slots.txt`, copy it into the pack yourself; `loadout.reload_slots` re-reads the pack copy, not the file on disk. Target sections request equipment but do not certify that a part fits its parent or exists in your game build. Format and attribution: [curated Loadout selectors](../plugins/loadout/README.md#curated-weapon-and-tool-selectors).
 
 **Travel.** The quantum plugin reads its destinations once at startup from the one enabled `lists/locations.txt`. Your edits of `data/locations.txt` go into the pack. Travel outside the player's own zone chain is not in 0.8.0 ([Features](features.md#travel-between-places)). Scan results (`locations_found.txt`) and bookmarks keep their own files ([Saves](#saves)). More: [Quantum curated destinations](../plugins/quantum/README.md#curated-destinations-from-an-ordinary-data-pack).
 

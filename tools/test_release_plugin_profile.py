@@ -6,6 +6,7 @@ from __future__ import annotations
 import contextlib
 import io
 import importlib.util
+import json
 import shutil
 import sys
 import tempfile
@@ -34,10 +35,6 @@ def offline_profile():
     return stage.load_profile("player-offline", PROFILE_PATH)
 
 
-def candidate_profile():
-    return stage.load_profile("player-offline-loadout-candidate", PROFILE_PATH)
-
-
 def make_artifacts(root: Path, profile: dict) -> None:
     for entry in profile["plugins"]:
         source = root / entry["artifact_dir"]
@@ -52,35 +49,30 @@ def make_artifacts(root: Path, profile: dict) -> None:
 
 
 class ReleasePluginProfile(unittest.TestCase):
-    def test_candidate_preserves_stable_entries_and_adds_enabled_loadout(self):
-        stable = offline_profile()
-        candidate = candidate_profile()
+    def test_release_profile_has_twelve_plugins_with_loadout_enabled(self):
+        profile = offline_profile()
         loadout = {
             "id": "loadout",
             "artifact_dir": "built-loadout/loadout",
             "module": "loadout.dll",
             "disabled": False,
         }
-
-        self.assertEqual(candidate["plugins"], stable["plugins"] + [loadout])
-        ids = [entry["id"] for entry in candidate["plugins"]]
+        self.assertIn(loadout, profile["plugins"])
+        ids = [entry["id"] for entry in profile["plugins"]]
         self.assertEqual(len(ids), 12)
         self.assertEqual(len(ids), len(set(ids)))
-        self.assertEqual(set(ids), {entry["id"] for entry in stable["plugins"]} | {"loadout"})
-        self.assertEqual(candidate["excluded"], {
-            plugin_id: reason
-            for plugin_id, reason in stable["excluded"].items()
-            if plugin_id != "loadout"
-        })
-        self.assertEqual(candidate["external_exclusions"], stable["external_exclusions"])
+        self.assertNotIn("loadout", profile["excluded"])
+        self.assertEqual(set(profile["excluded"]), {"gear_presets", "titanlink", "voxel_bridge"})
+        self.assertNotIn("player-offline-loadout-candidate",
+                         json.loads(PROFILE_PATH.read_text(encoding="utf-8"))["profiles"])
 
         manifest = (ROOT / "plugins" / "loadout" / "plugin.ini").read_text(encoding="utf-8")
         self.assertRegex(manifest, r"(?m)^id\s*=\s*loadout\s*$")
         self.assertRegex(manifest, r"(?m)^entry\s*=\s*loadout\.dll\s*$")
         self.assertFalse((ROOT / "plugins" / "loadout" / "disabled").exists())
 
-    def test_candidate_stages_all_twelve_plugins_and_disabled_defaults(self):
-        profile = candidate_profile()
+    def test_release_stages_all_twelve_plugins_and_disabled_defaults(self):
+        profile = offline_profile()
         with tempfile.TemporaryDirectory() as tmp:
             temp = Path(tmp)
             artifacts = temp / "artifacts"
@@ -109,8 +101,8 @@ class ReleasePluginProfile(unittest.TestCase):
             for excluded in profile["excluded"]:
                 self.assertFalse(any((destination / excluded).glob("*.dll")), excluded)
 
-    def test_candidate_loadout_conflicting_destination_refuses_to_stage(self):
-        profile = candidate_profile()
+    def test_release_loadout_conflicting_destination_refuses_to_stage(self):
+        profile = offline_profile()
         with tempfile.TemporaryDirectory() as tmp:
             temp = Path(tmp)
             artifacts = temp / "artifacts"
@@ -124,8 +116,8 @@ class ReleasePluginProfile(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "conflicts with existing product data"):
                 stage.stage_profile(profile, artifacts, destination)
 
-    def test_candidate_loadout_disabled_marker_must_be_absent(self):
-        profile = candidate_profile()
+    def test_release_loadout_disabled_marker_must_be_absent(self):
+        profile = offline_profile()
         with tempfile.TemporaryDirectory() as tmp:
             temp = Path(tmp)
             artifacts = temp / "artifacts"
@@ -137,8 +129,8 @@ class ReleasePluginProfile(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "loadout disabled marker must be absent"):
                 stage.stage_profile(profile, artifacts, destination)
 
-    def test_candidate_rejects_wrong_loadout_manifest_without_staging_modules(self):
-        profile = candidate_profile()
+    def test_release_rejects_wrong_loadout_manifest_without_staging_modules(self):
+        profile = offline_profile()
         with tempfile.TemporaryDirectory() as tmp:
             temp = Path(tmp)
             artifacts = temp / "artifacts"
@@ -168,7 +160,7 @@ class ReleasePluginProfile(unittest.TestCase):
         }
         self.assertEqual(selected, {
             "creative", "discord", "crew", "spawn", "build", "mining",
-            "teleport", "quantum", "inspector", "npc", "contracts",
+            "teleport", "quantum", "inspector", "npc", "contracts", "loadout",
         })
         self.assertEqual(selected | excluded, repository_plugins)
         self.assertTrue(all(reason.strip() for reason in profile["excluded"].values()))
@@ -196,7 +188,7 @@ class ReleasePluginProfile(unittest.TestCase):
         tracked = ROOT / "data" / "plugins" / "creative"
         self.assertEqual({p.name for p in tracked.iterdir()}, {"plugin.ini"}, "no tracked disabled marker")
         self.assertEqual((tracked / "plugin.ini").read_bytes(), (source / "plugin.ini").read_bytes())
-        for profile in (offline_profile(), candidate_profile()):
+        for profile in (offline_profile(),):
             entry = next(e for e in profile["plugins"] if e["id"] == "creative")
             self.assertEqual(entry, {"id": "creative", "artifact_dir": "built-external/creative",
                                      "module": "creative.dll", "disabled": False})
@@ -222,7 +214,7 @@ class ReleasePluginProfile(unittest.TestCase):
 
             dirs = {p.name for p in destination.iterdir() if p.is_dir()}
             self.assertEqual(dirs, {
-                "build", "contracts", "creative", "crew", "discord", "inspector",
+                "build", "contracts", "creative", "crew", "discord", "inspector", "loadout",
                 "build_catalog", "locations_catalog", "mining", "npc", "picker_catalog", "quantum", "quantum_drive",
                 "spawn", "teleport",
             })

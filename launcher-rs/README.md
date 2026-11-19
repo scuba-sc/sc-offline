@@ -2,7 +2,7 @@
 
 Rust workspace of the sc-offline launcher and the in-game Rust menu. It builds `sc-offline.exe`, the launcher of the 0.8.0 package, and `sc_offline_menu.dll`. The C++ launcher in `launcher/` ships beside it as `sc-offline-classic.exe`. The crates, the commands and how they work are in [docs/rust-launcher.md](../docs/rust-launcher.md). The menu is in [docs/rust-menu.md](../docs/rust-menu.md).
 
-Not run in game. See [docs/status.md](../docs/status.md).
+None of this has been run in game; see [docs/status.md](../docs/status.md).
 
 ## Build
 

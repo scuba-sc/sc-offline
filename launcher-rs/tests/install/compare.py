@@ -49,11 +49,14 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 RUST_DEFAULT = HERE.parent.parent / "target" / "debug" / "examples" / "install_probe.exe"
-SCRATCH_ROOT = Path("D:/t")
+SCRATCH_ROOT = Path(os.environ.get("SCOL_SCRATCH") or Path(tempfile.gettempdir()) / "scol-scratch")
+SCRATCH_ROOT.mkdir(parents=True, exist_ok=True)
+SCRATCH_ROOT = SCRATCH_ROOT.resolve()
 PING = Path(os.environ.get("SystemRoot", "C:/Windows")) / "System32" / "PING.EXE"
 
 OURS_DLL = b"MZ\x90\x00 padding sc-offline v0.8.0\x00 more bytes"

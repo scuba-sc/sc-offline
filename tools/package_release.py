@@ -3,10 +3,14 @@
 """Assemble the sc-offline player release folder and zip from build outputs, without CI.
 
     python tools/package_release.py --tag v0.8.0 --out dist \\
-        --rust-exe <sc-offline.exe of launcher-rs> --classic-exe <C++ sc-offline.exe> \\
-        --menu-dll <sc_offline_menu.dll> --dinput8 <dinput8.dll> \\
+        --rust-exe <sc-offline.exe from tools/build_rust_release.py> --classic-exe <C++ sc-offline.exe> \\
+        --menu-dll <sc_offline_menu.dll from tools/build_rust_release.py> --dinput8 <dinput8.dll> \\
         --dinput8-rust-menu <dinput8-rust-menu.dll> \\
         [--artifact-root <folder with built-external/, built-inspector/, ...>]
+
+Build the two Rust binaries with tools/build_rust_release.py, not a plain `cargo build --release`: it remaps the
+builder's cargo home, toolchain and folders out of the binaries, and tools/check_package_tree.py (--check-tree)
+fails a package whose .exe or .dll still carries such a path.
 
 The release job of .github/workflows/build.yml runs this script, so a package built by hand has the
 same layout as the CI package. The folder `<out>/sc-offline-<tag>/` holds:
@@ -20,7 +24,8 @@ same layout as the CI package. The folder `<out>/sc-offline-<tag>/` holds:
                             game). The Rust launcher installs it as dinput8.dll only for `menu = rust`
     sc-offline.ini, sc-offline.sh, README.md, CHANGELOG.md, LICENSE, THIRD_PARTY_NOTICES.md
     docs/, data/            tracked files (data/buildables.txt moves into the build_catalog pack)
-    data/plugins/<pack>/    data packs: build_catalog, picker_catalog and locations_catalog (copies of base lists)
+    data/plugins/<pack>/    data packs: build_catalog, picker_catalog, locations_catalog and loadout_lists (copies of base lists;
+                            loadout_lists holds items, outfits and loadout_slots for the loadout plugin)
     data/plugins/<id>/      the plugin profile selected with --profile (tools/stage-release-plugins.py)
     manifest.json           format 1: every other file with its SHA-256 and size
 
@@ -77,6 +82,9 @@ BINARIES = (
     ("dinput8_rust_menu", "dinput8-rust-menu.dll"),
 )
 LEGACY_BUILDABLES = "data/buildables.txt"
+# The loadout plugin's list pack: the manifest and the data/*.txt files copied into lists/.
+LOADOUT_PACK_MANIFEST = "plugins/loadout/lists-plugin.ini"
+LOADOUT_LISTS = ("items", "outfits", "loadout_slots")
 
 
 class PackageError(Exception):
@@ -123,6 +131,15 @@ def stage_data(source: Path, pkg: Path) -> None:
     locations = pkg / "data/plugins/locations_catalog/lists"
     locations.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source / "data/locations.txt", locations / "locations.txt")
+    # The lists the loadout plugin reads through the content service: items and outfits (gear and wear),
+    # loadout_slots (the curated weapon and attachment slots). buildables stay in build_catalog only: a
+    # second pack with the same list would make lists/buildables.txt ambiguous. The pack manifest is the
+    # one the plugin tree carries (plugins/loadout/lists-plugin.ini).
+    loadout_pack = pkg / "data/plugins/loadout_lists"
+    (loadout_pack / "lists").mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source / LOADOUT_PACK_MANIFEST, loadout_pack / "plugin.ini")
+    for name in LOADOUT_LISTS:
+        shutil.copyfile(source / "data" / f"{name}.txt", loadout_pack / "lists" / f"{name}.txt")
     # The legacy top-level list is player-owned, including for older launchers.
     build = pkg / "data/plugins/build_catalog"
     (build / "lists").mkdir(parents=True, exist_ok=True)

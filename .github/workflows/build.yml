@@ -575,7 +575,8 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # Loadout development proofs only: no upload or production release-folder input.
+  # Loadout proofs. The Windows job uploads the enabled loadout plugin folder, which the release job stages
+  # (the player-offline profile ships it enabled; its lists are staged by tools/package_release.py).
   loadout-sdk-posix:
     runs-on: ubuntu-24.04
     steps:
@@ -601,6 +602,13 @@ jobs:
         run: gh release download sdk-v2.4.0 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
       - name: Validate MSVC Loadout module workflows and public dependency traces
         run: python tools/check_loadout_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.4.0.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/loadout-proof"
+      - name: Upload enabled loadout release folder
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: loadout-plugin
+          path: ${{ runner.temp }}/loadout-proof/stage/data/plugins
+          if-no-files-found: error
+          retention-days: 30
 
   install-aliases:
     runs-on: windows-2025-vs2026
@@ -662,8 +670,13 @@ jobs:
           cargo --version
       - name: Clippy, warnings are errors
         run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Build every crate (release, locked)
-        run: cargo build --locked --release --workspace
+      # tools/build_rust_release.py is the release build: `cargo build --locked --release --workspace` with the
+      # cargo home, toolchain, workspace and target folder remapped out of the binaries, then a scan of both
+      # release files for build-machine paths. The binaries land in target/release (used by the steps below)
+      # and are copied to RUNNER_TEMP/rust-release for the upload.
+      - name: Build every crate (release, locked, build-machine paths remapped)
+        shell: bash
+        run: python ../tools/build_rust_release.py --target-dir target --out "$RUNNER_TEMP/rust-release"
       - name: Test every crate (locked)
         run: cargo test --locked --workspace
       - name: Window self test (no window, no GPU; fixture index and TEST key, never a release build)
@@ -746,8 +759,8 @@ jobs:
         with:
           name: rust-launcher-release
           path: |
-            launcher-rs/target/release/sc-offline.exe
-            launcher-rs/target/release/sc_offline_menu.dll
+            ${{ runner.temp }}/rust-release/sc-offline.exe
+            ${{ runner.temp }}/rust-release/sc_offline_menu.dll
           if-no-files-found: error
           retention-days: 30
 
@@ -1020,7 +1033,7 @@ jobs:
   # G3 requires a future approved SDK; do not revive host-embedded bridges-test builds.
 
   release:
-    needs: [build, rust-launcher, development-sdk-proofs, inspector-sdk, npc-sdk, contracts-sdk, external-sdk, creative-sdk]
+    needs: [build, rust-launcher, development-sdk-proofs, inspector-sdk, npc-sdk, contracts-sdk, loadout-sdk, external-sdk, creative-sdk]
     runs-on: ubuntu-24.04
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
@@ -1072,6 +1085,12 @@ jobs:
         with:
           name: npc-plugin
           path: built-npc
+
+      - name: Download loadout plugin artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: loadout-plugin
+          path: built-loadout
 
       # The player download: everything to play, in one folder, with the DLL CI just built.
       # tools/package_release.py assembles it (the same script builds a package by hand, see docs/build.md):

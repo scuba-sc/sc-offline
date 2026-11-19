@@ -9,7 +9,7 @@
 
 [**Download**](https://github.com/scuba-sc/sc-offline/releases/latest) · [**Discord**](https://discord.gg/NJKeVfYCCC) · [**Features and status**](docs/features.md) · [**Changelog**](CHANGELOG.md) · [**Issues**](https://github.com/scuba-sc/sc-offline/issues)
 
-sc-offline starts Star Citizen offline with a mod loaded and takes the mod out again when the game closes. In game, press **M** for a menu with ships, NPCs, gear, saved positions and other single-player tools. It is built on [sco-core](https://github.com/scuba-sc/sco-core), and its plugins use the same public SDK that other plugin authors use.
+sc-offline lets you play Star Citizen offline with a mod. The launcher starts the game with the mod loaded and takes the mod out again when the game closes. In game, press **M** for a menu with ships, characters, gear, saved positions and other single-player tools.
 
 > [!WARNING]
 > Using this mod may breach the Star Citizen EULA and Terms of Service, and it may get your account banned. Use it only offline, never on Cloud Imperium Games' servers. You are responsible for your own account. Before going online again, close the game and [check cleanup](#go-back-online).
@@ -22,11 +22,12 @@ sc-offline starts Star Citizen offline with a mod loaded and takes the mod out a
 ## Install and start
 
 1. Download **`sc-offline-<version>.zip`** from [Releases](https://github.com/scuba-sc/sc-offline/releases/latest), not GitHub's source-code zip.
-2. Extract it into its own folder and keep the files together. Do not copy the DLLs into the game folder yourself.
+2. Extract it into its own folder and keep the files together.
 3. Close the game, open **`sc-offline.exe`** and click **Play**. Windows asks for administrator rights once, for the [PC changes](docs/launcher.md#pc-changes) that cut the game's network while you play.
-4. Wait for startup. The launcher holds the game while the mod starts, so about 15 seconds pass before the game window appears (up to 3 minutes at most). In game, press **M**.
+4. Wait for the game window. The launcher holds the game while the mod starts, so this takes about 15 seconds, and 3 minutes at the most.
+5. In game, press **M**.
 
-If `sc-offline.exe` does not start or fails on your PC, run **`sc-offline-classic.exe`** from the same folder instead. It is the older launcher and takes the same commands ([details](docs/launcher.md#the-classic-launcher)).
+If `sc-offline.exe` does not start or fails on your PC, run **`sc-offline-classic.exe`** from the same folder. It is the older launcher and takes the same commands ([details](docs/launcher.md#the-classic-launcher)).
 
 Coming from 0.7.x? Extract 0.8.0 into the old folder or run `sc-offline.exe update`. Your `sc-offline.ini` and data files are kept ([how](docs/launcher.md#updating-from-07x)).
 
@@ -40,24 +41,35 @@ The launcher undoes its changes when the game closes. After a crash or power los
 .\sc-offline.exe status
 ```
 
-If the Rust launcher cannot do it, `.\sc-offline-classic.exe uninstall` reads the same `%ProgramData%\sc-offline\pc-changes.txt` record and undoes the same changes.
+If the new launcher cannot do it, `.\sc-offline-classic.exe uninstall` reads the same `%ProgramData%\sc-offline\pc-changes.txt` record and undoes the same changes.
 
-**Green** means the mod is out of the game folder and the recorded PC changes are undone. It does not speak for your account or for changes you made by hand. [PC changes](docs/launcher.md#pc-changes) lists each one.
-
-## Which menu
-
-The game menu you get by default is the **classic** menu. A **new** menu (written in Rust) is opt-in: choose **New** under **Settings > In-game menu** in the launcher window, or set `menu = rust` in `sc-offline.ini`. It works only with `sc-offline.exe`. The release folder holds two game DLLs for this reason ([why](docs/decisions.md#2026-11-18-two-game-dlls)):
-
-| File | What it is |
-| --- | --- |
-| `dinput8.dll` | The mod with the classic menu. Installed by default, and by the classic launcher always. |
-| `dinput8-rust-menu.dll` | The same mod with the new menu hook. `sc-offline.exe` installs it as `dinput8.dll` only when the ini says `menu = rust`. |
-
-The new menu has not been seen in game. Not run in game. The change takes effect on the next **Play**.
+A green status means the mod is out of the game folder and the recorded PC changes are undone. It says nothing about your account or about changes you made by hand. [PC changes](docs/launcher.md#pc-changes) lists each one.
 
 ## What works
 
-[Features](docs/features.md) lists what each part is for. [Status](docs/status.md) is the one page that says what was seen in game and what was not. Read it before you rely on a feature.
+[Status](docs/status.md) is the one page that says what was seen in game and what was not. Read it before you rely on a feature. [Features](docs/features.md) says what each part is for.
+
+## Which menu
+
+The default in-game menu is the **classic** menu. In `sc-offline.ini` that is `menu = imgui`. A **new** menu is optional: choose **New** under **Settings > In-game menu** in the launcher window, or set `menu = rust`. It works only with `sc-offline.exe`, it has not been seen in game ([Status](docs/status.md#ships-in-080-but-not-run-in-game)), and the change takes effect on the next **Play**. [Why there are two game DLLs](docs/decisions.md#2026-11-18-two-game-dlls).
+
+## What is in the folder
+
+| File | What it is |
+| --- | --- |
+| `sc-offline.exe` | The launcher. Start here. |
+| `sc-offline-classic.exe` | The older launcher, for when the new one fails. |
+| `sc-offline.ini` | Your settings. |
+| `sc_offline_menu.dll` | The new in-game menu. Loaded only when `menu = rust`. |
+| `dinput8.dll` | The mod with the classic menu. The launcher puts it in the game folder for you. |
+| `dinput8-rust-menu.dll` | The mod with the hook for the new menu. The launcher uses it only when `menu = rust`. |
+| `data` | Lists, saves, logs and the plugins in `data/plugins`. |
+| `docs` | These pages. |
+| `sc-offline.sh` | Starts the launcher under Wine on Linux. |
+| `manifest.json` | The list of files the updater checks. |
+| `README.md`, `CHANGELOG.md`, `LICENSE`, `THIRD_PARTY_NOTICES.md` | Notes and licences. |
+
+You can ignore both game DLLs. Do not copy them into the game folder by hand.
 
 ## Troubleshooting
 
@@ -91,6 +103,6 @@ Based on **ChrisWareOffline 0.9.0-rc1** by **Chris Ware and cloudyyrust**. Maint
 
 sc-offline's own code is **GPL-3.0-only** ([LICENSE](LICENSE)). Third-party code keeps its own licenses ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). Contributions: [CONTRIBUTING.md](CONTRIBUTING.md).
 
-AI was used in a limited way to make this project.
+AI coding assistants helped write parts of this project. [AGENTS.md](AGENTS.md) holds the rules they follow.
 
 This project is not affiliated with, endorsed by, or sponsored by Cloud Imperium Games or Roberts Space Industries. Star Citizen is a trademark of Cloud Imperium Games.

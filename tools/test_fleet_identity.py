@@ -9,14 +9,27 @@ never executes or validates Windows SEH or actual invalid-pointer recovery.
 """
 import os
 import pathlib
+import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
+def cannot_run_reason():
+    """Why this host cannot run the test, or None. CI runs it on Linux with clang and sanitizers."""
+    if sys.platform == "win32":
+        return ("needs a POSIX host: the extracted hooks.cpp code and strings.h come out wrong against Windows "
+                "headers (CI runs this test on Linux)")
+    if shutil.which("clang++") is None:
+        return "clang++ is not on PATH (the test builds with clang++ and ASan/UBSan; CI runs it on Linux)"
+    return None
+
+
 class FleetIdentityTest(unittest.TestCase):
+    @unittest.skipIf(cannot_run_reason() is not None, cannot_run_reason() or "")
     def test_rebuild_preserves_session_identity(self):
         source_path = pathlib.Path(os.environ.get("FLEET_IDENTITY_SOURCE", ROOT / "src/hooks.cpp"))
         source = source_path.read_text()
@@ -177,7 +190,7 @@ int main(int argc,char** argv) {
             cpp = directory / "fleet_identity.cpp"
             cpp.write_text(prelude + globals_ + registry + build + mapping + retrieve + checks)
             executable = directory / "fleet_identity"
-            subprocess.run(["clang++", "-std=c++17", "-Wall", "-Wextra", "-Werror", "-Wno-unused-variable", "-fsanitize=address,undefined", str(cpp), "-o", str(executable)], check=True)
+            subprocess.run(["clang++", "-std=c++17", "-Wall", "-Wextra", "-Werror", "-Wno-unused-variable", "-Wno-unused-but-set-global", "-fsanitize=address,undefined", str(cpp), "-o", str(executable)], check=True)
             sanitizer_env = dict(os.environ, UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1")
             for case in ("rebuild", "malformed", "null", "empty", "capacity", "snapshot", "read-fault"):
                 with self.subTest(case=case):

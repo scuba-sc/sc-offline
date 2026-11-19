@@ -2,9 +2,10 @@
 # Standalone build of the Rust menu test host against a Core source tree that has
 # include/sco/widgets_view.h (the 2.4.1 integration line). Not part of the product build.
 #
-#   cmake -S tools/rust-menu-host -B D:/t/rmenu-host -DSCO_CORE_SOURCE_DIR=<core checkout>
-#   cmake --build D:/t/rmenu-host --config Release --target rust_menu_host
-#   D:/t/rmenu-host/Release/rust_menu_host.exe <path>/sc_offline_menu.dll [screenshot folder]
+#   cmake -S tools/rust-menu-host -B <build folder> -DSCO_CORE_SOURCE_DIR=<core checkout>
+#   cmake --build <build folder> --config Release --target rust_menu_host
+#   <build folder>/Release/rust_menu_host.exe <path>/sc_offline_menu.dll [screenshot folder]
+#   (default screenshot folder: rust-menu-host-shots under the system temp folder)
 cmake_minimum_required(VERSION 3.20)
 project(rust_menu_host CXX)
 set(CMAKE_CXX_STANDARD 20)

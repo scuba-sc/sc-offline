@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
-"""Runs the real Rust `sc-offline.exe stop` against a stand-in game under D:\\t. The real game is never started.
+"""Runs the real Rust `sc-offline.exe stop` against a stand-in game under the scratch folder. The real game is never started.
 
 The stand-in is `scol-play-standin.exe` copied to StarCitizen.exe in a scratch Bin64. With
 SCOL_STANDIN_STOPPABLE=1 it creates the two named events of the stop channel for its own process id and opens one
@@ -23,12 +23,14 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
-ROOT = Path(os.environ.get("SCOL_SCRATCH", "D:/t"))
-RUST = Path(os.environ.get("SCOL_RUST_EXE", "D:/t/cargo-play/debug/sc-offline.exe"))
-STANDIN = Path(os.environ.get("SCOL_STANDIN_EXE", "D:/t/cargo-play/debug/scol-play-standin.exe"))
+HERE = Path(__file__).resolve().parent
+ROOT = Path(os.environ.get("SCOL_SCRATCH") or Path(tempfile.gettempdir()) / "scol-scratch")
+RUST = Path(os.environ.get("SCOL_RUST_EXE") or HERE.parents[1] / "target" / "release" / "sc-offline.exe")
+STANDIN = Path(os.environ.get("SCOL_STANDIN_EXE") or HERE.parents[1] / "target" / "release" / "scol-play-standin.exe")
 OURS_DLL = b"MZ\x90\x00 padding sc-offline v0.8.0\x00 more bytes"
 
 

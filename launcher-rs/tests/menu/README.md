@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: GPL-3.0-only -->
 # Rust menu tests
 
-Everything here is synthetic: no game, no Star Citizen process. Not run in game. See [docs/status.md](../../../docs/status.md).
+Everything here is synthetic: no game, no Star Citizen process. None of this has been run in game; see [docs/status.md](../../../docs/status.md).
 
 | Check | Where | What it proves |
 |---|---|---|

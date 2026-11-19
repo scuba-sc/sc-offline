@@ -40,4 +40,4 @@ then `cmake --build <dir> --config Release --target sc-offline`.
 
 `--features test-hooks` adds `--apply-zip` to the Rust command, like the C++ test build. Never in a release build.
 
-Not run in game. See [docs/status.md](../../../docs/status.md).
+None of this has been run in game; see [docs/status.md](../../../docs/status.md).

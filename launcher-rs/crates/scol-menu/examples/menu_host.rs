@@ -11,6 +11,7 @@
 //! The C++ host in tools/rust-menu-host does the click-through against sco-core's real view.
 //!
 //!   cargo run -p scol-menu --example menu_host -- [--dump panels.txt] [--out screenshot folder]
+//! (default screenshot folder: scol-menu-previews under the system temp folder)
 //!
 //! Synthetic only. Not run in game.
 use sc_offline_menu::blob::build::NodeSpec;
@@ -43,7 +44,7 @@ fn expect(what: &str, ok: impl Fn(&[Delivered]) -> bool) -> Result<(), String> {
 
 fn main() {
     let mut dump_path: Option<PathBuf> = None;
-    let mut out: PathBuf = "D:/sc241/menu-previews/rust2".into();
+    let mut out: PathBuf = std::env::temp_dir().join("scol-menu-previews");
     let mut only: Option<String> = None;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {

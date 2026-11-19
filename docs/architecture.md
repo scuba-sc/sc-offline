@@ -41,12 +41,12 @@ Native startup needs a Core with the process-retained composition. See [host com
 | Discord presence | External `discord` refusal module | Ships disabled pending a transport and privacy review. |
 | Natural mining | External `mining` on `game.mining` | The setting is off by default. The native adapter is unavailable until verified. |
 | Contracts | External `contracts` consumer | Production changes stay gated on a ready backend. See [contracts](contracts-sdk.md). |
-| Gear and SQ42 settings | Development `loadout` consumer | Not staged in releases. Unsupported slots and writes are refused. |
+| Gear and SQ42 settings | External `loadout` | Ships enabled. Unsupported slots and writes are refused. |
 | Multiplayer | Separate [sc-mp](https://github.com/scuba-sc/sc-mp) consumer | Not in the release. |
 | Quantum drive and pickers | Data packs | `data/plugins/quantum_drive`, `data/plugins/picker_catalog` |
 | Titanfall 2 and voxel bridges | Independent external consumers of `sco.ipc` | Not in the release. See [bridges](bridges.md). |
 
-The loadout plugin (`plugins/loadout`, [README](../plugins/loadout/README.md)) is a development consumer. The host does not register, compile or tick loadout code; the old sources are in `legacy/loadout`. Four SQ42 settings use public real reads and report unknown or refused states. They never use the separate cvar-write service. Optional Player and SQ42 panels use `sco.widgets`, not product ImGui globals.
+The loadout plugin (`plugins/loadout`, [README](../plugins/loadout/README.md)) ships in the release as an external plugin. The host does not register, compile or tick loadout code; the old sources are in `legacy/loadout`. Four SQ42 settings use public real reads and report unknown or refused states. They never use the separate cvar-write service. Optional Player and SQ42 panels use `sco.widgets`, not product ImGui globals.
 
 ## Plugins
 
@@ -54,9 +54,9 @@ The host registers no built-in feature plugins. Unbuilt legacy sources under `sr
 
 Optional plugins are folders under `data/plugins/<id>/` with a `plugin.ini`. They load only with `plugins = on` in `sc-offline.ini`. A plugin is off when its folder holds an entry named `disabled`. The launcher's Plugins page creates and deletes that marker and edits a plugin's `[settings]`; a change applies at the next game start. Hot reload (`sco.reload <plugin>`) works only inside the running game. The launcher has no channel into it.
 
-The release stages 11 external feature folders: creative, discord, crew, spawn, build, mining, teleport, quantum, inspector, npc and contracts. Discord keeps its disabled marker. The other ten ship enabled. Each module builds on its own from the checksum-verified SDK, with no host-private include path. A folder that ships enabled does not show that its services exist or that the feature works in game; see [status.md](status.md).
+The release stages 12 external feature folders: creative, discord, crew, spawn, build, mining, teleport, quantum, inspector, npc, contracts and loadout. Discord keeps its disabled marker. The other eleven ship enabled. Each module builds on its own from the checksum-verified SDK, with no host-private include path. A folder that ships enabled does not show that its services exist or that the feature works in game; see [status.md](status.md).
 
-The [owner decisions](decisions.md) keep 13 baseline feature units and 2 optional bridges. Eleven of the 13 are staged. Loadout is a development consumer and multiplayer is the separate sc-mp repository. The launcher and the EAC and online refusal policy are unchanged. Reloading a plugin is not evidence that a provider reloads or that the game works. Native faults need a restart.
+The [maintainer decisions](decisions.md) keep 13 baseline feature units and 2 optional bridges. Twelve of the 13 are staged. Multiplayer is the separate sc-mp repository. The launcher and the EAC and online refusal policy are unchanged. Reloading a plugin is not evidence that a provider reloads or that the game works. Native faults need a restart.
 
 ## CI jobs
 

@@ -3,7 +3,7 @@
 > [!WARNING]
 > **Experimental.** One report of sc-offline 0.7.0 on Linux exists, from October 2026. Nothing newer has run under Wine, so that report does not establish current Wine support.
 
-`sc-offline.sh` starts `sc-offline.exe` inside your Star Citizen Wine prefix. From 0.8.0 that exe is the Rust launcher, which has not run under Wine. The report below used the C++ launcher, which now ships as `sc-offline-classic.exe`. If the Rust launcher fails under Wine, run `wine sc-offline-classic.exe <command>` yourself, because `sc-offline.sh` always starts `sc-offline.exe`. Leave `menu` at its default `imgui`: the new menu has not run anywhere ([Which menu](../README.md#which-menu)). The launcher's behavior under Wine differs from Windows ([launcher.md](launcher.md)). Not run in game. That covers 0.8.0 under Wine.
+`sc-offline.sh` starts `sc-offline.exe` inside your Star Citizen Wine prefix. From 0.8.0 that exe is the Rust launcher, which has not run under Wine. The report below used the C++ launcher, which now ships as `sc-offline-classic.exe`. If the Rust launcher fails under Wine, run `wine sc-offline-classic.exe <command>` yourself, because `sc-offline.sh` always starts `sc-offline.exe`. Leave `menu` at its default `imgui`: the new menu has not run anywhere ([Which menu](../README.md#which-menu)). The launcher's behavior under Wine differs from Windows ([launcher.md](launcher.md)). 0.8.0 under Wine has not been run in game ([Status](status.md)).
 
 ## Historical observation
 

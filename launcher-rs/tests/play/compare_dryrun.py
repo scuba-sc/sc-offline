@@ -33,11 +33,14 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-RUST_DEFAULT = Path("D:/t/cargo-play/debug/sc-offline.exe")
-SCRATCH_ROOT = Path(os.environ.get("SCOL_SCRATCH", "D:/t"))
+RUST_DEFAULT = Path(os.environ.get("SCOL_RUST_EXE") or HERE.parents[1] / "target" / "release" / "sc-offline.exe")
+SCRATCH_ROOT = Path(os.environ.get("SCOL_SCRATCH") or Path(tempfile.gettempdir()) / "scol-scratch")
+SCRATCH_ROOT.mkdir(parents=True, exist_ok=True)
+SCRATCH_ROOT = SCRATCH_ROOT.resolve()
 
 OURS_DLL = b"MZ\x90\x00 padding sc-offline v0.8.0\x00 more bytes"
 OTHER_DLL = b"MZ\x90\x00 some other mod's dinput8"

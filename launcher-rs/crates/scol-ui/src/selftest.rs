@@ -64,12 +64,7 @@ fn scratch(here: Option<PathBuf>) -> PathBuf {
     if let Some(h) = here {
         return h;
     }
-    let base = if std::path::Path::new("D:/t").is_dir() {
-        PathBuf::from("D:/t")
-    } else {
-        std::env::temp_dir()
-    };
-    base.join(format!("scol-ui-selftest-{}", std::process::id()))
+    std::env::temp_dir().join(format!("scol-ui-selftest-{}", std::process::id()))
 }
 
 fn find_switch(key: &str) -> Result<&'static scol_contract::capability_env::Switch, String> {

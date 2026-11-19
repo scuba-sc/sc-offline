@@ -41,6 +41,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -651,7 +652,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--cpp", default=os.environ.get("SC_OFFLINE_EXE"), help="built C++ sc-offline.exe")
     ap.add_argument("--rust", default=str(RUST_DEFAULT), help="built Rust scol.exe")
-    ap.add_argument("--work", default=os.environ.get("SCOL_SCRATCH", "D:/t") + "/status-parity", help="scratch folder (emptied first)")
+    ap.add_argument("--work", default=str(Path(os.environ.get("SCOL_SCRATCH") or Path(tempfile.gettempdir()) / "scol-scratch") / "status-parity"), help="scratch folder (emptied first)")
     ap.add_argument("--machine", action="store_true", help="also run the unhinted drive-search scenario")
     ap.add_argument("--only", default="", help="run scenarios whose name contains this")
     ap.add_argument("--keep", action="store_true", help="keep the scratch folder")

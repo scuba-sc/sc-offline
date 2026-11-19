@@ -34,4 +34,4 @@ python tests/status/compare_status.py --cpp <build dir>/bin/Release/sc-offline.e
   test on a synthetic tree (`scol-install`, `drive_search_depth_skips_and_budget`), not compared with the
   C++ launcher.
 
-Source and synthetic evidence only. Not run in game. See [docs/status.md](../../../docs/status.md).
+Source and synthetic evidence only. None of this has been run in game; see [docs/status.md](../../../docs/status.md).

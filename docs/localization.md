@@ -40,4 +40,4 @@ The test helper covers catalogue refusal and fallback, formatting, language deci
 
 Plugins have no language service. A shared language API would need a new named service in sco-core with public lifetime and namespace contracts, and consumers that adopt it; launcher catalogues do not bypass that boundary. Game translations installed by users are not imported.
 
-These tests do not establish Wine `C:` and `Z:` behavior, staging or release approval. Not run in game.
+These tests do not establish Wine `C:` and `Z:` behavior, staging or release approval, and none of this has been run in game ([Status](status.md)).

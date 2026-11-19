@@ -1,6 +1,6 @@
 # Owned capsule fixture
 
-Synthetic, non-native tests of the host-source target. They do not change product startup, and none of them uses a game. Not run in game; see [status.md](../../docs/status.md). The product rules they test are in [host composition](../../docs/host-composition.md).
+Synthetic, non-native tests of the host-source target. They do not change product startup, and none of them uses a game, so none of it has been run in game ([status](../../docs/status.md)). The product rules they test are in [host composition](../../docs/host-composition.md).
 
 ```sh
 cmake -S tools/offline-host -B /tmp/offline-host-build \

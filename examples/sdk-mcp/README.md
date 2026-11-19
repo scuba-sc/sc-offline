@@ -22,4 +22,4 @@ python3 examples/sdk-mcp/check_rc2_mcp.py --sdk /absolute/path/rc2/extracted/sco
 
 The transcript holds full requests and replies, including generated code. The scaffold folder is created and filled but not built. Read its files before you use the kit's CMake check target. The check is not an archive authentication step or a live-host check.
 
-The receipt records real archive and synthetic results, including the Linux toolchain setup for the full tutorial proof. Windows and MSVC, game install, reload and cleanup, and runtime MCP were not verified. Not run in game; see [status.md](../../docs/status.md).
+The receipt records real archive and synthetic results, including the Linux toolchain setup for the full tutorial proof. Windows and MSVC, game install, reload and cleanup, and runtime MCP were not verified, and none of it has been run in game ([status](../../docs/status.md)).

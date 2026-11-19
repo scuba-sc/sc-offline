@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The whole play flow over the fake host: the helper on a thread, the stand-in game process, a fake
-//! system for the PC changes. Every folder is under `D:\t`. Nothing here starts the real game or changes
+//! system for the PC changes. Every folder is under the system temp folder. Nothing here starts the real game or changes
 //! this PC; nothing was run in game.
 #![cfg(windows)]
 

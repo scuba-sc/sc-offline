@@ -4,7 +4,7 @@
 The PC changes of the sc-offline launcher, ported from `launcher/launcher.cpp` to Rust. It is copied
 exactly and never widened. `scol-play` calls it, and only `scol-cli` builds its real system. It is tested with a fake system.
 
-Not run in game. See [docs/status.md](../../../docs/status.md).
+None of this has been run in game; see [docs/status.md](../../../docs/status.md).
 
 ## What it changes on the PC
 

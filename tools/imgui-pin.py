@@ -6,6 +6,7 @@ immutable sc-offline revision below; intentional upgrades hand-edit these pins
 with source provenance and require drawing-plugin rebuilds. No auto-update mode.
 """
 import hashlib
+import os
 from pathlib import Path
 import sys
 
@@ -33,9 +34,21 @@ SHA256 = {
 }
 
 
-def check(root):
+def core_imgui_dir(root, core=None):
+    """Core's public ImGui folder: --core / SCO_CORE_DIR if given, else the external/sco-core submodule."""
+    core = core or os.environ.get('SCO_CORE_DIR')
+    base = Path(core) if core else root / 'external/sco-core'
+    return base / 'sdk/third_party/imgui'
+
+
+def _normalized(content):
+    # The pins are of the committed (LF) bytes; a Windows checkout with autocrlf holds CRLF.
+    return content.replace(b'\r\n', b'\n')
+
+
+def check(root, core=None):
     host = root / 'src/third_party/imgui'
-    sdk = root / 'external/sco-core/sdk/third_party/imgui'
+    sdk = core_imgui_dir(root, core)
     errors = []
     actual = {path.relative_to(host).as_posix() for path in host.rglob('*') if path.is_file()}
     for name in sorted(actual - SHA256.keys()):
@@ -47,20 +60,27 @@ def check(root):
         except OSError:
             errors.append(f'{name}: missing/unreadable host input')
             continue
-        if hashlib.sha256(content).hexdigest() != expected:
+        if hashlib.sha256(_normalized(content)).hexdigest() != expected:
             errors.append(f'{name}: differs from exact host source pin {SOURCE_REVISION}')
         if name in PUBLIC_HEADERS:
             try:
-                if content != (sdk / name).read_bytes():
+                if _normalized(content) != _normalized((sdk / name).read_bytes()):
                     errors.append(f'{name}: host/SDK mismatch')
             except OSError:
-                errors.append(f'{name}: missing/unreadable SDK input; initialize sco-core submodule')
+                errors.append(f'{name}: missing/unreadable SDK input; initialize the sco-core submodule or set SCO_CORE_DIR')
     return errors
 
 
 def main():
     root = Path(__file__).resolve().parent.parent
-    errors = check(root)
+    args = sys.argv[1:]
+    core = None
+    if args[:1] == ['--core'] and len(args) == 2:
+        core = args[1]
+    elif args:
+        print('usage: imgui-pin.py [--core <sco-core checkout>]  (default: SCO_CORE_DIR, else external/sco-core)')
+        return 2
+    errors = check(root, core)
     for error in errors:
         print(f'imgui-pin: FAIL {error}')
     if errors:

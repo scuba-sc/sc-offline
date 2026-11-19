@@ -2,7 +2,7 @@
 
 `sc-offline.exe` is the launcher of the 0.8.0 package. It is written in Rust and lives in `launcher-rs/`. The C++ launcher ships beside it as `sc-offline-classic.exe`, the fallback. The in-game host (`dinput8.dll`, hooks, Core host kit) stays C++. This page is for someone who will maintain or rebuild the launcher. Players read [launcher.md](launcher.md).
 
-Evidence: every check below is source, build, synthetic or CI evidence. Not run in game. What the owner did run is in [status.md](status.md).
+Evidence: every check below is source, build, synthetic or CI evidence, and none of it has been run in game. What the maintainer did run is in [status.md](status.md).
 
 The in-game Rust menu is a second crate in the same workspace. It has its own page: [rust-menu.md](rust-menu.md).
 
@@ -128,7 +128,7 @@ Catalogue (`scol-catalogue`), on an explicit command or click only, never while 
 3. Offer only first-party and reviewed entries with a compatible plugin API and SDK range. Ids `sco`, `host`, `menu` and `game` are reserved.
 4. Check size and SHA-256 against the index, then run the zip verifier, then stage and swap.
 
-The shipped trust root is empty (`scol_contract::product::CATALOGUE_TRUST_KEYS`), so every index is refused. `plugins catalogue` without `--source` prints `no catalogue is published for this build yet` and makes no request. Adding the production key is a release-time act of the owner. The TEST key in `tests/catalogue/golden/` must never go there. The window's Catalogue tab reads a local folder, `data\launcher\catalogue`.
+The shipped trust root is empty (`scol_contract::product::CATALOGUE_TRUST_KEYS`), so every index is refused. `plugins catalogue` without `--source` prints `no catalogue is published for this build yet` and makes no request. Adding the production key is a release-time act of the maintainer. The TEST key in `tests/catalogue/golden/` must never go there. The window's Catalogue tab reads a local folder, `data\launcher\catalogue`.
 
 ## Self-update
 
@@ -197,9 +197,9 @@ Everything in the crate table is built. The release build gives `sc-offline.exe`
 - Play, the helper, the elevated (UAC) path, the shell-token game start when elevated, and the real PC changes (netsh, hosts file, EAC rename). The `Safer` normal-user token self-test ran only from a non-elevated process.
 - The window against a real game. The real update swap on a real install (only the release check ran against GitHub). The window's restart after an update.
 - The Rust menu: see [rust-menu.md](rust-menu.md#not-run-in-game).
-- Capability switches except `exp_loadout_async`, which was seen working in game (gear attached). The other four are on by default by owner decision.
+- Capability switches except `exp_loadout_async`, which was seen working in game (gear attached). The other four are on by default by maintainer decision.
 
-The owner's in-game session used the C++ launcher and the classic menu.
+The maintainer's in-game session used the C++ launcher and the classic menu.
 
 ## Decisions
 
@@ -207,7 +207,7 @@ Dated records are in [decisions.md](decisions.md). The ones that shape this code
 
 - Rust scope is the launcher and the menu. The host stays C++: it is bound to the C++ host kit, SEH guards, detours, the startup gate and the retain-until-exit rules.
 - The contract between launcher and game does not change. The new launcher reads the old ini, data files and `pc-changes.txt`, and updates 0.7.x in place. Manifest format 1, tag equals `SCO_VERSION`.
-- PC changes are copied exactly and never widened. The owner reviews `scol-pcchanges` before it replaces the C++ code in a release. The docs never say the launcher leaves anti-cheat alone.
+- PC changes are copied exactly and never widened. The maintainer reviews `scol-pcchanges` before it replaces the C++ code in a release. The docs never say the launcher leaves anti-cheat alone.
 - One binary with a hidden `--helper` mode, not a separate helper exe.
 - WinHTTP for network, no rustls or ring. egui with the glow backend: 3.4 MB against 6.4 MB for wgpu and 105 against 162 crates in the spike. Fonts come from Windows, none are bundled.
 - Catalogue: signed index, first-party and reviewed entries only, everything lands disabled, local plugins always allowed. Only the launcher process uses the network, and only on a user action. `status` makes no request.
@@ -220,5 +220,5 @@ Dated records are in [decisions.md](decisions.md). The ones that shape this code
 - Production catalogue key, a published index, and the sc-plugins build and signing job.
 - Test glow on a machine with no GPU driver; add a software fallback or document that the window needs one.
 - Run the PC-change checks by hand on a throwaway PC: a UNC or `\\?\` game path, and play then close with every rule, hosts line and `.bak` gone afterwards.
-- A fix for the shared install limit: when the `dinput8.dll` copy fails after a fresh `default_1.xml` was copied, install does not roll back. Both launchers share this. The owner decides; it must change in both.
-- Owner in-game runs of everything under "Not run in game".
+- A fix for the shared install limit: when the `dinput8.dll` copy fails after a fresh `default_1.xml` was copied, install does not roll back. Both launchers share this. The maintainer decides; it must change in both.
+- Maintainer in-game runs of everything under "Not run in game".

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-only
 """Runs the real Rust `sc-offline.exe play` (real helper process, real named events, real process start)
-against a synthetic world under D:\\t with a stand-in game: the test exe `scol-play-standin.exe` copied to
+against a synthetic world under the scratch folder (SCOL_SCRATCH, else the system temp folder) with a stand-in game: the test exe `scol-play-standin.exe` copied to
 StarCitizen.exe, which sleeps and exits. The real game is never started.
 
 Nothing on this PC is changed: the three PC-change switches (block_network, eac_hosts, eac_rename) are off
-in the scratch sc-offline.ini, the game folder is under D:\\t (writable, so no administrator prompt) and
+in the scratch sc-offline.ini, the game folder is under the scratch folder (writable, so no administrator prompt) and
 ProgramData, ProgramFiles(x86), APPDATA and SystemRoot point into the scratch folder.
 
 Checks: exit 0; while the stand-in runs, the mod DLL and the marker are in Bin64; after it exits both are
@@ -17,12 +17,14 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
-ROOT = Path(os.environ.get("SCOL_SCRATCH", "D:/t"))
-RUST = Path("D:/t/cargo-play/debug/sc-offline.exe")
-STANDIN = Path("D:/t/cargo-play/debug/scol-play-standin.exe")
+HERE = Path(__file__).resolve().parent
+ROOT = Path(os.environ.get("SCOL_SCRATCH") or Path(tempfile.gettempdir()) / "scol-scratch")
+RUST = Path(os.environ.get("SCOL_RUST_EXE") or HERE.parents[1] / "target" / "release" / "sc-offline.exe")
+STANDIN = Path(os.environ.get("SCOL_STANDIN_EXE") or HERE.parents[1] / "target" / "release" / "scol-play-standin.exe")
 OURS_DLL = b"MZ\x90\x00 padding sc-offline v0.8.0\x00 more bytes"
 
 

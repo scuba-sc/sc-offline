@@ -59,6 +59,9 @@ class PackageRelease(unittest.TestCase):
             put(self.src / name, name)
         put(self.src / "docs/launcher.md", "docs")
         put(self.src / "data/items.txt", "items")
+        put(self.src / "data/outfits.txt", "outfits")
+        put(self.src / "data/loadout_slots.txt", "loadout slots")
+        put(self.src / "plugins/loadout/lists-plugin.ini", "id = loadout_lists\nkind = data\n")
         put(self.src / "data/ships.txt", "ships")
         put(self.src / "data/npcs.txt", "npcs")
         put(self.src / "data/locations.txt", "locations")
@@ -114,6 +117,13 @@ class PackageRelease(unittest.TestCase):
         self.assertEqual((pkg / "data/plugins/picker_catalog/lists/ships.txt").read_bytes(), b"ships")
         self.assertEqual((pkg / "data/plugins/picker_catalog/lists/npcs.txt").read_bytes(), b"npcs")
         self.assertEqual((pkg / "data/plugins/locations_catalog/lists/locations.txt").read_bytes(), b"locations")
+        # The loadout plugin's list pack: its own manifest and three lists, and no buildables (build_catalog has it).
+        loadout = pkg / "data/plugins/loadout_lists"
+        self.assertEqual((loadout / "plugin.ini").read_bytes(), b"id = loadout_lists\nkind = data\n")
+        self.assertEqual({p.name for p in (loadout / "lists").iterdir()}, {"items.txt", "outfits.txt", "loadout_slots.txt"})
+        self.assertEqual((loadout / "lists/items.txt").read_bytes(), b"items")
+        self.assertEqual((loadout / "lists/outfits.txt").read_bytes(), b"outfits")
+        self.assertEqual((loadout / "lists/loadout_slots.txt").read_bytes(), b"loadout slots")
         self.assertTrue((pkg / "data/plugins/alpha/alpha.dll").is_file())
         self.assertFalse((pkg / "data/plugins/alpha/disabled").exists())
         self.assertTrue((pkg / "data/plugins/beta/disabled").is_file())
@@ -194,6 +204,13 @@ class PackageRelease(unittest.TestCase):
                          ["sc-offline.exe", "sc-offline-classic.exe", "sc_offline_menu.dll", "dinput8.dll",
                           "dinput8-rust-menu.dll"])
 
+    def test_rust_launcher_job_uses_the_remapping_build_script(self):
+        workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+        job = workflow.split("  rust-launcher:", 1)[1].split("\n  launcher-mcp:", 1)[0]
+        self.assertIn("python ../tools/build_rust_release.py --target-dir target", job)
+        self.assertNotIn("run: cargo build --locked --release --workspace", job)
+        self.assertIn("tools/build_rust_release.py", (HERE / "package_release.py").read_text(encoding="utf-8"))
+
     def test_repository_has_every_top_level_file_the_package_copies(self):
         for src, _ in pr.TOP_FILES:
             self.assertTrue((ROOT / src).is_file(), src)
@@ -208,6 +225,9 @@ class PackageRelease(unittest.TestCase):
         self.assertFalse((out / "data/buildables.txt").exists())
         self.assertTrue((out / "data/plugins/build_catalog/lists/buildables.txt").is_file())
         self.assertTrue((out / "docs/launcher.md").is_file())
+        pack = out / "data/plugins/loadout_lists"
+        self.assertEqual({p.name for p in (pack / "lists").iterdir()}, {"items.txt", "outfits.txt", "loadout_slots.txt"})
+        self.assertEqual((pack / "plugin.ini").read_bytes(), (ROOT / "plugins/loadout/lists-plugin.ini").read_bytes())
 
 
 if __name__ == "__main__":

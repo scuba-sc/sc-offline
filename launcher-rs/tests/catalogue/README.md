@@ -1,6 +1,6 @@
 # Catalogue test fixtures
 
-Used by `crates/scol-catalogue/tests/`. Synthetic only. Not run in game. See [docs/status.md](../../../docs/status.md).
+Used by `crates/scol-catalogue/tests/`. Synthetic only. None of this has been run in game; see [docs/status.md](../../../docs/status.md).
 
 `golden/` holds a signed index made by the sc-plugins tools (`tools/build_index.py` and
 `tools/sign_index.py`, from `tests/fixtures/` there) with made-up plugin names, and the TEST key

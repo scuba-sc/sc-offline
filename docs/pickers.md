@@ -55,4 +55,4 @@ ctest --test-dir picker-build -R '^picker-module-workflow$' --output-on-failure
 cmake --install picker-build --prefix stage --component picker_catalog
 ```
 
-It checks catalogue, filter and page events, alias search and exact-identifier selection, duplicate packs, ambiguous aliases, malformed data, incomplete reads, owned seat actions, refusal of foreign actors, missing widgets, content and game services, creative refusal and revert, and page removal and reload. None of that is renderer or game evidence. Not run in game. Windows rendering, DPI, real streaming and provider cleanup are covered in [Status](status.md).
+It checks catalogue, filter and page events, alias search and exact-identifier selection, duplicate packs, ambiguous aliases, malformed data, incomplete reads, owned seat actions, refusal of foreign actors, missing widgets, content and game services, creative refusal and revert, and page removal and reload. None of that is renderer or game evidence, and none of it has been run in game. Windows rendering, DPI, real streaming and provider cleanup are covered in [Status](status.md).

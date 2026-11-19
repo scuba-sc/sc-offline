@@ -461,10 +461,10 @@ fn helper_and_delete_logs_are_dispatched_by_argument_count() {
     );
 }
 
-/// A synthetic launcher folder and game under `D:\t`, with the environment the checks read pointed at it.
+/// A synthetic launcher folder and game under the system temp folder, with the environment the checks read pointed at it.
 fn world(tag: &str) -> (PathBuf, String, String) {
     quiet();
-    let root = PathBuf::from(format!(r"D:\t\cli-{tag}-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("scol-cli-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let here = root.join("here");
     let bin = root

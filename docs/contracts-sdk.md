@@ -2,7 +2,7 @@
 
 The `contracts` module is a separately loadable plugin that you drive with commands. It does not replace the retained legacy contracts feature. The public service contracts and sco-core's provider exist, but changes to missions and the player's balance stay gated on a backend that is admitted and ready. Until then every request fails closed, with no private fallback. The module uses no engine pointers, detours, account or online balances, or private-session controls.
 
-Not run in game; see [status.md](status.md).
+Nothing on this page has been run in game; see [status.md](status.md).
 
 ## Build, check and install
 

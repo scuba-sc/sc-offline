@@ -261,4 +261,4 @@ tested on any platform) with `RunMcp` in `launcher/launcher.cpp`, and `launcher/
 `tools/launcher_redact_diff_test.cpp`);
 `python tools/check_launcher_mcp.py --exe <built sc-offline.exe>` (the Rust exe or the C++ one) also runs real stdio sessions
 against a scratch install, with and without `--game-log`, checks that no file or folder changed, and times a log
-larger than 64 MiB with hostile lines. Not run in game; see [status.md](status.md).
+larger than 64 MiB with hostile lines. The MCP server has not been run against a real game session; see [status.md](status.md).

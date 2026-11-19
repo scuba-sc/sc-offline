@@ -26,7 +26,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILE_NAME = "player-offline-loadout-candidate"
+PROFILE_NAME = "player-offline"
 PROFILE_FILE = Path(__file__).with_name("release-plugin-profiles.json")
 PROFILE_STAGE_FILE = Path(__file__).with_name("stage-release-plugins.py")
 LIST_STAGE_FILE = Path(__file__).with_name("stage_loadout_lists.py")

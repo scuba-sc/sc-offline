@@ -6,4 +6,4 @@ entries). One shot per page, plus the scrolled lower parts of Capabilities and S
 "Works by itself" and "Not available yet" open) and Russian shots of Plugins and Capabilities.
 Synthetic fixture install; the Home page shows the status of the PC it was taken on.
 The checks themselves are in `crates/scol-ui/` (`cargo test -p scol-ui` and `scol-ui --ui-self-test`).
-Not run in game. See [docs/status.md](../../../docs/status.md).
+None of this has been run in game; see [docs/status.md](../../../docs/status.md).

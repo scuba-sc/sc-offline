@@ -19,7 +19,7 @@ The classic launcher always installs the default `dinput8.dll`. With `menu = rus
 
 **If it cannot start.** A missing `sc_offline_menu.dll`, a wrong ABI or a Core with no widgets view leaves the classic menu in place and writes one `[menu]` line to `mod.log` (`rust menu started` when it worked).
 
-**Not done yet:** a Settings page in the new menu, memory of window size and position (`menu-window.ini`, `menu-view.ini`), a cursor clip, and a background image. Design and status: [rust-menu.md](rust-menu.md). Not run in game. That covers the new menu, its hook and the M-key handoff; [Status](status.md#080-what-was-and-was-not-run-in-game) has the rest.
+**Not done yet:** a Settings page in the new menu, memory of window size and position (`menu-window.ini`, `menu-view.ini`), a cursor clip, and a background image. Design and status: [rust-menu.md](rust-menu.md). The new menu, its hook and the M-key handoff have not been run in game; [Status](status.md#ships-in-080-but-not-run-in-game) has the rest.
 
 Plugin authors: nothing changes. Keep drawing pages with `sco.widgets`, and give a tag to every control that must survive a republish.
 
@@ -47,7 +47,7 @@ The menu is a sidebar of pages on the left and the open page on the right, with 
 | Settings | Menu settings | (the menu's own) |
 | Developer | Inspector, UI probe (test plugin) | `inspector.main`, `ui_probe.main` |
 
-Gear, Saved outfits and Squadron 42 belong to the `loadout` and `gear_presets` plugins, which the standard package does not stage. Pages in **Developer** appear only when **Menu settings > Show developer pages** is on. The open page and that switch are remembered in `menu-view.ini`, next to `mod.log`. A badge appears after a page's name, as in `UI probe (3)`. A page sc-offline doesn't know goes under **More plugins**, after the known ones; its header line says which plugin added it. Unknown pages keep the order the host lists them in: `sco.ui` tabs by their `order`, then widget panels. Known pages always take the place the table above gives them, whatever their `order`.
+Gear and Squadron 42 belong to the `loadout` plugin, which ships with 0.8.0. Saved outfits belongs to `gear_presets`, which does not ship. Pages in **Developer** appear only when **Menu settings > Show developer pages** is on. The open page and that switch are remembered in `menu-view.ini`, next to `mod.log`. A badge appears after a page's name, as in `UI probe (3)`. A page sc-offline doesn't know goes under **More plugins**, after the known ones; its header line says which plugin added it. Unknown pages keep the order the host lists them in: `sco.ui` tabs by their `order`, then widget panels. Known pages always take the place the table above gives them, whatever their `order`.
 
 `teleport` (F7/F8), `contracts` and `mining` run mostly from keys and commands. `inspector` is read-only and for developers.
 

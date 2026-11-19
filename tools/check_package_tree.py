@@ -31,7 +31,9 @@ c. Capabilities. A `requires =` name in an enabled plugin's plugin.ini must be a
 d. A summary is printed: enabled and disabled plugins, data packs, every cross-plugin command
    with its provider, every list with its pack, warnings.
 
-Also reported: a missing dinput8.dll / dinput8-rust-menu.dll / sc-offline.exe / sc-offline-classic.exe / sc_offline_menu.dll,
+Also reported: a .exe or .dll anywhere in the tree that contains a build-machine path (a drive letter and
+Users, /home/<name>/, .cargo registry, .rustup toolchains; ASCII and UTF-16LE; the count is printed, never
+the path), and a missing dinput8.dll / dinput8-rust-menu.dll / sc-offline.exe / sc-offline-classic.exe / sc_offline_menu.dll,
 the two game DLLs being the same bytes, dinput8.dll naming sc_offline_menu.dll (it has no Rust menu hook) or
 dinput8-rust-menu.dll not naming it (it should), an enabled native plugin without its entry
 file, an unreadable plugin.ini.
@@ -286,6 +288,50 @@ def check_game_dlls(tree, problems):
                        'it was built without the Rust menu hook')
 
 
+# Build-machine paths that must not be inside a shipped binary: a user profile folder on Windows or Linux,
+# the cargo registry (panic locations of dependencies) and the rustup toolchain folder. Each is
+# (label, regex over bytes). The rule is the same as for tools/build_rust_release.py, which remaps them away.
+BUILD_PATH_PATTERNS = (
+    ('a drive letter followed by Users', re.compile(rb'[A-Za-z]:[\\/]Users[\\/]')),
+    ('a /home/<name>/ folder', re.compile(rb'/home/[A-Za-z0-9_.-]+/')),
+    ('a cargo registry path', re.compile(rb'\.cargo[\\/]registry')),
+    ('a rustup toolchain path', re.compile(rb'\.rustup[\\/]toolchains')),
+)
+
+
+def build_path_problems(name, data):
+    """One message per (pattern, encoding) found in the bytes of a binary; never the matched text itself.
+
+    ASCII is searched directly; UTF-16LE through both byte alignments (every second byte), which turns
+    a wide string into plain ASCII for the same patterns."""
+    problems = []
+    views = (('ASCII', data), ('UTF-16LE', data[0::2]), ('UTF-16LE', data[1::2]))
+    for label, pattern in BUILD_PATH_PATTERNS:
+        counts = {}
+        for encoding, view in views:
+            found = len(pattern.findall(view))
+            if found:
+                counts[encoding] = counts.get(encoding, 0) + found
+        for encoding, found in sorted(counts.items()):
+            problems.append(f'{name}: {found} build-machine path string(s) ({label}, {encoding}); '
+                            'build with tools/build_rust_release.py and keep builder paths out of binaries')
+    return problems
+
+
+def check_binary_paths(tree, problems):
+    """Every .exe and .dll in the package tree must be free of build-machine paths."""
+    for path in sorted(tree.rglob('*')):
+        if path.suffix.lower() not in ('.exe', '.dll') or path.is_symlink() or not path.is_file():
+            continue
+        try:
+            data = path.read_bytes()
+        except OSError as error:
+            problems.error(f'{path.relative_to(tree).as_posix()}: unreadable ({error})')
+            continue
+        for message in build_path_problems(path.relative_to(tree).as_posix(), data):
+            problems.error(message)
+
+
 def load_tree(tree, problems):
     plugins, packs = [], []
     root = tree / 'data' / 'plugins'
@@ -294,6 +340,7 @@ def load_tree(tree, problems):
         if not (tree / name).is_file():
             problems.error(f'package: {name} is missing from {tree.name}')
     check_game_dlls(tree, problems)
+    check_binary_paths(tree, problems)
     if not root.is_dir():
         problems.error('package: data/plugins is missing')
         return plugins, packs

@@ -163,16 +163,25 @@ mod tests {
 
     #[test]
     fn resolve_splits_channel() {
-        let d = resolve_directories("D:\\t\\x\\LIVE\\Bin64\\").unwrap();
-        assert_eq!(d.bin, "D:\\t\\x\\LIVE\\Bin64");
-        assert_eq!(d.channel, "D:\\t\\x\\LIVE");
-        assert_eq!(parent_dir("D:\\t\\x\\.\\LIVE\\Bin64"), "D:\\t\\x\\LIVE");
-        assert_eq!(parent_dir("D:/t/x/LIVE/Bin64"), "D:\\t\\x\\LIVE");
+        let d = resolve_directories("C:\\scol-test\\x\\LIVE\\Bin64\\").unwrap();
+        assert_eq!(d.bin, "C:\\scol-test\\x\\LIVE\\Bin64");
+        assert_eq!(d.channel, "C:\\scol-test\\x\\LIVE");
+        assert_eq!(
+            parent_dir("C:\\scol-test\\x\\.\\LIVE\\Bin64"),
+            "C:\\scol-test\\x\\LIVE"
+        );
+        assert_eq!(
+            parent_dir("C:/scol-test/x/LIVE/Bin64"),
+            "C:\\scol-test\\x\\LIVE"
+        );
     }
 
     #[test]
     fn to_bin64_empty_for_nothing() {
         assert_eq!(to_bin64("  \"\" ", "LIVE"), "");
-        assert_eq!(to_bin64("D:\\t\\no-such-folder-for-scol", "LIVE"), "");
+        assert_eq!(
+            to_bin64("C:\\scol-test\\no-such-folder-for-scol", "LIVE"),
+            ""
+        );
     }
 }

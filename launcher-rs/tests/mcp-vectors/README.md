@@ -2,7 +2,7 @@
 # MCP and redactor vectors
 
 Shared test vectors for `scol-redact` and `scol-mcp`. The C++ code wrote the expected results. The Rust tests
-must give the same bytes. Synthetic data only: made-up names, ids and paths. Not run in game. See [docs/status.md](../../../docs/status.md).
+must give the same bytes. Synthetic data only: made-up names, ids and paths. None of this has been run in game; see [docs/status.md](../../../docs/status.md).
 
 | File | Written by | Holds |
 |---|---|---|

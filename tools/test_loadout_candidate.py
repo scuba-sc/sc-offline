@@ -169,7 +169,7 @@ class LoadoutCandidateComposition(unittest.TestCase):
 
     def test_composes_all_twelve_supplied_artifacts_and_preserves_defaults(self):
         receipt = self.stage()
-        self.assertEqual(receipt["profile"], "player-offline-loadout-candidate")
+        self.assertEqual(receipt["profile"], "player-offline")
         self.assertEqual(len(receipt["plugins"]), 12)
         self.assertFalse(receipt["lists"])
         self.assertFalse(receipt["buildables"])
@@ -443,7 +443,7 @@ class LoadoutCandidateComposition(unittest.TestCase):
                     ])
         self.assertEqual(result, 0)
         report = output.getvalue()
-        self.assertIn("Staged 12 plugins for player-offline-loadout-candidate", report)
+        self.assertIn("Staged 12 plugins for player-offline", report)
         self.assertIn(str(self.output), report)
         self.assertIn("Validated caller-selected staging parent", report)
         self.assertIn(str(self.artifacts / "built-loadout" / "loadout" / "loadout.dll"), report)

@@ -7,7 +7,7 @@ This page is for people who build sc-offline from source. To play, use the relea
 | Output | Built by | What it is |
 | --- | --- | --- |
 | `dinput8.dll` | CMake, `SCO_HOST_MENU_CLIENT=OFF` | The mod. This is the build that has run in game, and the one the launcher installs by default. |
-| `dinput8-rust-menu.dll` | CMake, same sources, option `SCO_BUILD_RUST_MENU_HOST=ON`, target `dinput8_rust_menu` (built with the menu client on) | The mod with the Rust menu hook. Not run in game. The Rust launcher installs it as `dinput8.dll` only when `menu = rust` is set and this file sits beside the launcher. |
+| `dinput8-rust-menu.dll` | CMake, same sources, option `SCO_BUILD_RUST_MENU_HOST=ON`, target `dinput8_rust_menu` (built with the menu client on) | The mod with the Rust menu hook. It has not been run in game. The Rust launcher installs it as `dinput8.dll` only when `menu = rust` is set and this file sits beside the launcher. |
 | `sc-offline.exe` | Cargo, `launcher-rs/` | The Rust launcher players run. |
 | `sc_offline_menu.dll` | Cargo, `launcher-rs/` | The Rust in-game menu. |
 | `sc-offline-classic.exe` | CMake, target `sc-offline` | The C++ launcher, the fallback. It always installs `dinput8.dll`. |
@@ -57,7 +57,7 @@ The `OFF` build is the one that has run in game, so it is the default and the on
 
 The root targets are `dinput8`, the second DLL target, `sc-offline`, `imgui`, three test plugins (`spawn_probe`, `builtins_probe`, `ui_probe`) and the linked sco-core libraries. All use the static CRT. Release enables whole-program optimization.
 
-The host registers no built-in feature plugins. Feature plugins build separately against the verified SDK; see [SDK workflows](sdk-workflows.md). The player release stages the `player-offline` profile of [`tools/release-plugin-profiles.json`](../tools/release-plugin-profiles.json): 11 native modules, whose manifests and DLLs staging verifies. Discord keeps its disabled marker. `gear_presets` and `loadout` are development consumers, TitanLink and voxel_bridge are separate optional bridges, and `sc-mp` is a separate co-presence consumer. The [scuba-engine hostd profiles](https://github.com/scuba-sc/scuba-engine/blob/main/docs/engine/profiles.md) pick plugins for synthetic, headless checks only.
+The host registers no built-in feature plugins. Feature plugins build separately against the verified SDK; see [SDK workflows](sdk-workflows.md). The player release stages the `player-offline` profile of [`tools/release-plugin-profiles.json`](../tools/release-plugin-profiles.json): 12 native modules (spawn, crew, build, mining, npc, inspector, teleport, quantum, contracts, creative, loadout and discord), whose manifests and DLLs staging verifies. Discord keeps its disabled marker. `gear_presets` is a development consumer, TitanLink and voxel_bridge are separate optional bridges, and `sc-mp` is a separate co-presence consumer. The [scuba-engine hostd profiles](https://github.com/scuba-sc/scuba-engine/blob/main/docs/engine/profiles.md) pick plugins for synthetic, headless checks only.
 
 No Visual Studio? CI builds on every push to `main`. Download the `dinput8-release` artifact from [Actions](https://github.com/scuba-sc/sc-offline/actions).
 
@@ -75,6 +75,16 @@ cargo deny check
 ```
 
 Set your own `CARGO_TARGET_DIR` when several builds share a PC. Add `--locked` in CI so `Cargo.lock` must already be current.
+
+### Release binaries
+
+Build the binaries that go into a release package with `tools/build_rust_release.py`, not with a plain `cargo build --release`:
+
+```powershell
+python tools/build_rust_release.py --target-dir <scratch folder> --out <folder>
+```
+
+It runs `cargo build --locked --release --workspace` in `launcher-rs/` and copies `sc-offline.exe` and `sc_offline_menu.dll` into `--out`. `--source <repository root>` picks another checkout, and `--dry-run` prints the cargo command and builds nothing. The reason: a plain release build writes the builder's cargo home, toolchain folder and target folder, which can include a Windows user name, into the binaries (panic messages carry source paths). The script remaps those folders to fixed names, keeps the flags in `launcher-rs/.cargo/config.toml` (static C runtime, reproducible link), ignores a `RUSTFLAGS` variable because it would replace them, and then scans both files for build-machine paths. A hit fails the build. It installs, tags and publishes nothing. Pass its two output files to `package_release.py` as `--rust-exe` and `--menu-dll`.
 
 Outputs in `target\release\`: `sc-offline.exe` (about 6 MB, no dynamic C runtime), `sc_offline_menu.dll`, `scol-pm.exe`, and `scol.exe` (an alias of `sc-offline.exe` for the comparison scripts).
 
@@ -96,7 +106,7 @@ Run by hand only:
 - the Creative plugin proof: `tests/plugins/creative-proof.py`
 - the in-game menu host: `CORE=<Core checkout> bash tests/menu/run.sh` (needs a Core with `sco/widgets_view.h`)
 
-These are source, build and synthetic checks. Not run in game. See [status.md](status.md).
+These are source, build and synthetic checks. None of them has been run in game; see [status.md](status.md).
 
 ## Build a release package without CI
 
@@ -104,9 +114,9 @@ These are source, build and synthetic checks. Not run in game. See [status.md](s
 
 ```powershell
 python tools/package_release.py --tag v0.8.0 --out dist `
-  --rust-exe  launcher-rs\target\release\sc-offline.exe `
+  --rust-exe  <out>\sc-offline.exe `
   --classic-exe build\bin\Release\sc-offline.exe `
-  --menu-dll  launcher-rs\target\release\sc_offline_menu.dll `
+  --menu-dll  <out>\sc_offline_menu.dll `
   --dinput8   build\bin\Release\dinput8.dll `
   --dinput8-rust-menu build\bin\Release\dinput8-rust-menu.dll `
   --artifact-root <folder with built-external\, built-inspector\, built-npc\, built-contracts\> `
@@ -124,7 +134,7 @@ It writes `dist\sc-offline-v0.8.0\` and `dist\sc-offline-v0.8.0.zip`:
 | `sc_offline_menu.dll` | the Rust menu (`--menu-dll`) |
 | `sc-offline.ini`, `sc-offline.sh`, `README.md`, `CHANGELOG.md`, `LICENSE`, `THIRD_PARTY_NOTICES.md` | the repository |
 | `docs\`, `data\` | the tracked files (`git ls-files`; `data\buildables.txt` moves into the `build_catalog` pack) |
-| `data\plugins\picker_catalog`, `build_catalog`, `locations_catalog` | list packs copied from `data\ships.txt`, `npcs.txt`, `buildables.txt` and `locations.txt` |
+| `data\plugins\picker_catalog`, `build_catalog`, `locations_catalog`, `loadout_lists` | list packs copied from `data\ships.txt`, `npcs.txt`, `buildables.txt`, `locations.txt`, `items.txt`, `outfits.txt` and `loadout_slots.txt` |
 | `data\plugins\<id>\` | the `player-offline` profile, staged by `tools/stage-release-plugins.py` from `--artifact-root` |
 | `manifest.json` | format 1: every other file with its SHA-256 and size |
 
@@ -202,7 +212,7 @@ This builds the C++ launcher with `-DSCO_UPDATE_TEST` and runs 14 update scenari
 8. `external-sdk` builds, checks and stages discord, crew, spawn, build, mining, teleport and quantum on Windows against the same published archive. `creative-sdk` does the same for Creative from the `external/sc-creative` submodule, running that repository's `tools/check_creative_sdk.py`. `contracts-sdk` supplies the command-first contracts folder; its providers stay deferred.
 9. `launcher-mcp` runs `tools/check_launcher_mcp.py`: protocol, schema, log-limit and redaction tests on Windows. The `build` job runs it again with `--exe` against the built launcher in a scratch install and checks that the server wrote nothing.
 10. `development-sdk-proofs` runs the isolated consumer proofs against the Core the gitlink selects.
-11. `release` runs on tags only and needs the jobs above. It runs `tools/package_release.py` as in the section above, with `--check-tree`. Its first step fails on purpose ("Refuse packaging an unpublished development Core with stable plugin artifacts"), so no tag builds a release until matching release SDK and plugin artifacts have been reviewed. Loadout, multiplayer, bridges and test plugins are not staged.
+11. `release` runs on tags only and needs the jobs above. It runs `tools/package_release.py` as in the section above, with `--check-tree`. Its first step fails on purpose ("Refuse packaging an unpublished development Core with stable plugin artifacts"), so no tag builds a release until matching release SDK and plugin artifacts have been reviewed. `gear_presets`, multiplayer, bridges and test plugins are not staged.
 
 Every action is pinned to a commit SHA. The workflow defaults to `contents: read`, and only `release` gets `contents: write`.
 

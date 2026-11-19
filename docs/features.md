@@ -1,6 +1,6 @@
 # Features
 
-This page says what each feature is for and how to use it. What has been run in game is recorded once, in [Status](status.md). Not run in game. That covers every feature below except the six items Status lists as seen: gear equip, prefab placement, ship spawn with boarding and Flight Ready, character spawn, a saved-spot move and the seat probe. "Works" on this page means "is designed to".
+This page says what each feature is for and how to use it. What has been run in game is recorded once, in [Status](status.md). Only seven things have been seen working: startup with the classic menu, gear equip, placing an Outposts item, ship spawn with boarding and Flight Ready, character spawn, a saved-spot move and a seat event test. Every other feature below has not been run in game, and "works" on this page means "is designed to".
 
 Press **M** in game to open the menu. Which pages appear depends on the enabled plugins. The window can be resized from its edges and corners. When you finish a resize, the outer size (normalised to 96 dpi) is saved in `data/menu-window.ini` and restored the next time the game starts, for the monitor it is on. The size is clamped between 720 x 520 and 90% of that monitor's work area, and a missing or bad file falls back to 1000 x 800 before clamping. Delete `menu-window.ini` while the game is closed to reset it. Long tab titles keep their width; use the tab bar's arrows when they overflow. The same menu shell runs under the classic menu and the new menu ([Which menu](../README.md#which-menu)); the new one is described in [Plugin UI](plugin-ui.md#the-new-menu-opt-in).
 
@@ -9,7 +9,7 @@ Most lists are plain text files in `data/`, and the counts below come from those
 ## Player
 
 - **Creative controls.** Noclip, god mode, infinite ammo and infinite ship ammo come from the [creative plugin](#the-creative-plugin), shipped on, on its **Creative** tab.
-- **Gear.** The [loadout plugin](../plugins/loadout/README.md) equips items from copied `items.txt` lists through `game.loadout.async` (the `exp_loadout_async` switch, on by default). Unsupported slots are refused explicitly, and there is no private or XML fallback. The plugin is not in the 0.8.0 plugin list, so the standard package has no Gear page ([Plugins](#plugins)).
+- **Gear.** The Gear page of the [loadout plugin](../plugins/loadout/README.md) equips items from the `items.txt` list in the `loadout_lists` pack (with `outfits.txt` and `loadout_slots.txt` beside it) (the `exp_loadout_async` switch, on by default). Equipping was seen working in game. Slots the game does not support are refused with a reason, and there is no fallback ([Plugins](#plugins)).
 - **Wallet.** Your aUEC balance is loaded when you spawn and saved to `data/wallet.txt` when it changes (checked every 5 seconds) and once more when the game closes. That file is the only wallet store. It holds just the number; edit it while the game is closed to change your balance. Without the file you start with the `aUEC amount` in `data/OfflineDB/default_1.xml` (100,000,000). Once `wallet.txt` exists, that amount is no longer used, so delete the file to go back to it ([persistence](data-files.md#what-persists-between-sessions)).
 
 ## Travel
@@ -82,7 +82,7 @@ The `mining` plugin owns `mining.status` and two settings, `enabled` and `debug`
 
 ## Squadron 42
 
-The Squadron 42 page belongs to the loadout plugin, which is not in the 0.8.0 plugin list. It holds the Squadron 42 spoiler warning and selection state. The old built-in tab (35 outfits, four toggles, a 60-item buildable list, a ship list, a console) was removed from the host. Arbitrary console execution is refused, and nothing writes `USER.cfg` or Squadron 42 console variables.
+The Squadron 42 page belongs to the loadout plugin, which ships with 0.8.0. It holds the Squadron 42 spoiler warning and selection state. The old built-in tab (35 outfits, four toggles, a 60-item buildable list, a ship list, a console) was removed from the host. Arbitrary console execution is refused, and nothing writes `USER.cfg` or Squadron 42 console variables.
 
 ## Menu
 
@@ -96,7 +96,7 @@ For the new quantum drive the log says, in order: `[+] new quantum drive: game d
 
 ## Plugins
 
-sc-offline loads plugins built with the [sco SDK](https://github.com/scuba-sc/sco-core/blob/main/sdk/README.md): native DLLs, Lua scripts and data packs. Loading is **on by default** (`plugins = on`). The release stages 11 native plugins: `spawn`, `crew`, `build`, `mining`, `npc`, `inspector`, `teleport`, `quantum`, `contracts` and `creative` (all on), and `discord` (off). `loadout` is not staged in the standard package (the Gear and Squadron 42 pages and `loadout.*` commands belong to it). The host has no built-in fallback for any of them.
+sc-offline loads plugins built with the [sco SDK](https://github.com/scuba-sc/sco-core/blob/main/sdk/README.md): native DLLs, Lua scripts and data packs. Loading is **on by default** (`plugins = on`). The release holds 12 native plugins: `spawn`, `crew`, `build`, `mining`, `npc`, `inspector`, `teleport`, `quantum`, `contracts`, `creative` and `loadout` (all on), and `discord` (off). The Gear and Squadron 42 pages and the `loadout.*` commands belong to `loadout`. The host has no built-in fallback for any of them.
 
 1. Keep `plugins = on` in `sc-offline.ini`.
 2. Put each plugin in its own folder, `data/plugins/<id>/`, with a `plugin.ini` (for example `data/plugins/hello/plugin.ini` and `hello.dll`). The SDK's examples (`hello`, `greeter`, `travel_pack`) are ready to copy.
@@ -138,8 +138,8 @@ Each prefix is its plugin's id. Plugins call commands through the SDK's `invoke`
 | `build.place <object> <ahead>` | Places one buildable (`buildables.txt`) `<ahead>` m in front of you (0 is at your feet, up to 100) | |
 | `contracts.status` | How many contracts are known, offered and running, and your wallet balance | |
 | `mining.status` | Whether natural mining is on, and how many ecosystem cells it has seen and promoted | |
-| `loadout.equip <items>` | Equips items from `items.txt` (separated by spaces or commas, one per slot; other slots stay empty). Needs the loadout plugin. | |
-| `loadout.wear <outfit>` | Wears a Squadron 42 outfit from `outfits.txt`. Needs the loadout plugin. | |
+| `loadout.equip <items>` | Equips items from `items.txt` (separated by spaces or commas, one per slot; other slots stay empty). | |
+| `loadout.wear <outfit>` | Wears a Squadron 42 outfit from `outfits.txt`. Outfit slots are off in this build. | |
 
 Multiplayer commands (`multiplayer.status`, `multiplayer.leave`, `multiplayer.goto`) belong to [sc-mp](https://github.com/scuba-sc/sc-mp), which the release does not include.
 
