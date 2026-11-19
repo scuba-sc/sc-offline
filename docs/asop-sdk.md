@@ -1,80 +1,36 @@
-# ASOP host composition consumer
+# ASOP host composition
 
-ASOP compositions are unavailable: both `SCO_ASOP_HOST_COMPOSITION` and
-`SCO_ASOP_SELECTION_COMPOSITION` default to OFF, and CMake rejects either option until the
-product has a reviewed nonblocking stop request and ordered control-thread drain. This is
-separate from native startup, which is on with a Core that provides the process-retained
-composition ([host composition](host-composition.md)). The selected Core pin `4ba313d`
-still returns `Unavailable` from ASOP host `Start` before installing hooks, even when
-validation and admission pass; invalid or disabled configurations may return other results.
-Its `Stop` is synchronous. The direct legacy quit detour requests owner closure and then
-immediately forwards the original call on the same stack; it does not drain the owner. The
-separate `ForwardQuit` helper calls `BeforeQuit`, which invokes `Stop`. Neither path proves
-engine-object lifetime or a safe native drain. The pin's development SDK coordinate
-(`2.4.1-dev.6`) is in [SDK coordinates](sdk-candidate.md). Neither the pin nor this product
-enables ASOP gameplay.
+ASOP (the in-game ship terminals and hangars) is unavailable in 0.8.0. Not run in game; see [status.md](status.md).
 
-`src/asop_shell.*` consumes the game-specific public host-source
-`sco::game::asop_host` interface. It is not a plugin service. The published
-stable SDK 2.4.0 release (`sdk-v2.4.0`) carries G10 in
-`sco-sdk-host-source-sc-2.4.0.zip` (`include/sco/game/asop_host.h`). Having the header is not enough to enable this consumer; the missing lifecycle contract is the blocker.
+Both CMake options `SCO_ASOP_HOST_COMPOSITION` and `SCO_ASOP_SELECTION_COMPOSITION` default to `OFF`, and CMake rejects either one with an error. They stay rejected until the product has a reviewed, non-blocking stop request and an ordered control-thread drain. This is separate from native startup, which is on with a Core that provides the process-retained composition ([host composition](host-composition.md)).
 
-## Current configure status
+The Core at the `external/sco-core` gitlink still returns `Unavailable` from the ASOP host `Start` before it installs any hook, even when validation and admission pass. Invalid or disabled configurations can return other results. Its `Stop` is synchronous. The legacy quit detour requests owner closure and then forwards the original call on the same stack, without draining the owner. The separate `ForwardQuit` helper calls `BeforeQuit`, which runs `Stop`. Neither path shows engine-object lifetime or a safe native drain. See [SDK coordinates](sdk-candidate.md) for the Core version.
 
-There is no supported configure command for either ASOP composition. Setting
-`SCO_ASOP_HOST_COMPOSITION=ON` or `SCO_ASOP_SELECTION_COMPOSITION=ON` fails
-configuration with an explanatory error. The default build leaves both off.
-This keeps synchronous provider Stop callbacks out of the game message hook.
+`src/asop_shell.*` consumes the game-specific public host-source interface `sco::game::asop_host`. It is not a plugin service. The published SDK 2.4.0 carries it in `sco-sdk-host-source-sc-2.4.0.zip` (`include/sco/game/asop_host.h`). Having the header does not enable the consumer. The missing lifecycle contract is the blocker.
 
-Re-enabling the host composition requires a core-owned nonblocking close request,
-an owner report for taken callbacks/work, and a control-thread drain/finalization
-order that keeps providers live until ASOP teardown completes. Re-enabling the
-selection composition also requires preserving its game-thread finalization
-contract. See the lifecycle handoff before changing these gates. Do not install
-both hook owners.
+## Configure status
 
-The legacy path now encodes a never-reused session ID in each synthetic entitlement,
-not the current row position. IDs and immutable historical class names survive reorder,
-removal and re-addition; only currently issued IDs decode from terminal URNs. The 8192
-historical-class limit refuses new classes rather than recycling an ID. This is identity
-hardening only: the legacy catalogue still builds once, and no selection editor,
-live-rebuild trigger, buffer-retirement policy or SDK cutover is introduced.
-The pinned Core refuses native `Reconfigure` with `Unavailable`. Saving a selection is not evidence that a running terminal has
-changed. The optional source adapter is designed to report an unapplied selection
-and does not claim a live rebuild; the product's ASOP gate refuses before the
-adapter starts.
-`python3 tools/test_fleet_identity.py` compiles the actual legacy build/mapping/retrieve
-bodies under ASan/UBSan with synthetic engine reads and platform stand-ins. It does not
-exercise Windows locks/SEH, native hooks or game behavior.
+There is no supported configure command for either composition. Setting either option to `ON` fails configuration with an explanation. The default build leaves both off, which keeps synchronous provider Stop callbacks out of the game message hook.
 
-The optional selection-file adapter now keeps the newest committed selection
-notice pending until `Reconfigure` returns `Ok`; a parse failure, exception or
-non-`Ok` result leaves the notice available for retry and emits a deferred-apply
-message. An older in-flight apply cannot clear a newer notice. The pinned Core still returns `Unavailable`, and this product's ASOP gate refuses
-before the adapter starts. These changes protect future integration state; they
-do not activate ASOP or establish live-reconfiguration acceptance.
+To re-enable the host composition, Core needs a non-blocking close request, an owner report for taken callbacks and work, and a control-thread drain and finalization order that keeps providers live until ASOP teardown completes. The selection composition also needs its game-thread finalization contract kept. Do not install both hook owners.
 
-The shell preserves `SC_OFFLINE_ASOP` (unset/on versus off) and
-`SC_OFFLINE_ASOP_FLEET_LIST` (game versus ships). Invalid values refuse.
-`ShipsFilePath` remains product policy; the catalogue is read once, bounded and
-copied, with duplicate/invalid classes refused atomically. No session persistence
-claim is added. Readiness bits mean individual groups installed, not gameplay proof.
-Delivery/store/retrieve/claim, lift state and pad ownership belong to the game pack.
+## The shell
 
-The shell and provider sources remain scaffold material only. Do not call their
-synchronous `Stop` from a hook, runtime callback, or start-failure handler. A
-future ordered coordinator must close admission without waiting, keep callbacks
-and providers alive, then finalize on the required thread and drain accepted
-work. A refusal or exception is not evidence that partial installation can be
-unloaded. `AlreadyStarted` is not a new installation failure.
+`SC_OFFLINE_ASOP` (unset or on, versus off) and `SC_OFFLINE_ASOP_FLEET_LIST` (`game` or `ships`) are kept. Invalid values are refused. `ShipsFilePath` stays product policy. The catalogue is read once, bounded and copied, and duplicate or invalid classes refuse the whole read. Readiness bits mean individual groups installed, not that gameplay works. Delivery, store, retrieve, claim, lift state and pad ownership belong to the game pack.
 
-Portable compile-only target:
+The legacy path writes a never-reused session ID into each synthetic entitlement, not the current row position. IDs and immutable historical class names survive reorder, removal and re-addition. Only IDs currently issued decode from terminal URNs. A limit of 8192 historical classes refuses new classes rather than reusing an ID. This hardens identity only: the legacy catalogue still builds once, and there is no selection editor, live-rebuild trigger, buffer-retirement policy or SDK cutover.
+
+Core refuses native `Reconfigure` with `Unavailable`. A saved selection does not show that a running terminal changed. The optional selection-file adapter keeps the newest committed selection notice pending until `Reconfigure` returns `Ok`. A parse failure, an exception or a result that is not `Ok` leaves the notice for a retry and emits a deferred-apply message. An older in-flight apply cannot clear a newer notice. The product's ASOP option check refuses before the adapter starts, so none of this is active.
+
+`python3 tools/test_fleet_identity.py` compiles the legacy build, mapping and retrieve code under ASan and UBSan with synthetic engine reads and platform stand-ins. It does not exercise Windows locks, structured exceptions, native hooks or the game.
+
+The shell and provider sources are scaffolding. Do not call their synchronous `Stop` from a hook, a runtime callback or a start-failure handler. A future coordinator must close admission without waiting, keep callbacks and providers alive, then finalize on the required thread and drain accepted work. A refusal or an exception does not show that a partial installation can be unloaded. `AlreadyStarted` is not a new installation failure.
+
+## Portable compile target
 
 ```sh
 cmake -S tools/asop-shell -B build-asop -DSCO_HOST_SOURCE_DIR=/path/to/approved-host-source
 cmake --build build-asop --target sc-offline-asop-shell
 ```
 
-No G13 broker, network policy changes, anti-cheat manipulation or game data.
-Windows/MSVC, real SEH/caller lifetime, engine startup/shutdown and all gameplay
-acceptance NOT VERIFIED. Portable tests do not establish native behavior.
+This is a compile check only. There is no private-session broker, no network policy change, no anti-cheat manipulation and no game data. Windows and MSVC behavior, real structured exceptions, caller lifetime and engine startup and shutdown are not verified.

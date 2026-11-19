@@ -1,3 +1,5 @@
+Historical record: owning dependency inventory before activation, 2026-11-01.
+
 # Offline owning dependency inventory — pre-activation design
 
 Status: ownership inventory and synthetic qualification only. At this update,

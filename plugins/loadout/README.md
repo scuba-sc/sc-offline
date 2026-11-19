@@ -1,563 +1,113 @@
-# Loadout and Squadron 42 — external development plugin
+# Loadout: the Gear and Squadron 42 pages
 
-`loadout` 1.0.0 is a C++20 SDK consumer with three native exports, no product
-headers/ImGui globals, private engine calls, XML loader or gameplay fallback.
-It is **development work; not run in game**. Its G6/G7/content/widgets
-headers ship in the published `sdk-v2.4.0`;
-the release workflow does not yet stage loadout. Do not substitute this local build for a published-release proof.
+Loadout puts armour, weapons and tools on your character from the **Gear** page of the in-game menu. The **Squadron 42** page, behind a spoiler warning, wears Squadron 42 outfits and shows four game settings.
 
-## Candidate-only profile composition
+The 0.8.0 release package does not include this plugin. `tools/release-plugin-profiles.json` lists it as excluded, and the profile `player-offline-loadout-candidate` adds it. Build it yourself (see Developer notes) or stage it with that profile.
 
-A local, unpublished profile named `player-offline-loadout-candidate` combines the
-11 entries from the stable `player-offline` profile with enabled Loadout. It is an
-inspection candidate only. The stable release profile and release gate are
-unchanged; this local composition does not publish a package, approve runtime use,
-or establish Loadout parity. The profile leaves `discord` disabled;
-the other eleven entries, including Creative and Loadout, are enabled.
+## What the Gear page can equip
 
-For a real composition, supply real caller-built artifacts for all 12 entries; the
-tool does not build or substitute modules. It checks the selected manifests,
-modules, extra files and disabled markers, and reports module
-SHA-256 values. Those checks identify and validate the supplied bytes; they do not
-independently establish the build provenance of every binary. Synthetic peer
-artifacts are used only by disposable staging tests and are not release artifacts.
-The artifact root must include the real Loadout output at
-`built-loadout/loadout/loadout.dll` and the other entries described in
-[`tools/release-plugin-profiles.json`](../../tools/release-plugin-profiles.json).
+Equipping goes through Core's background route (`game.loadout` 1.2, capability `game.loadout.async`). The launcher switch `exp_loadout_async` turns that capability on, and it is on in the package.
 
-Run the local staging tool with an existing absolute staging parent under your
-control. Use an ACL that restricts access to the intended user accounts, and verify
-the parent and generated child are outside any game or launcher installation:
-
-```sh
-python -B tools/stage_loadout_candidate.py --artifact-root <absolute-artifact-root> --staging-parent <absolute-existing-non-install-directory>
-```
-
-The tool prints the path of a unique `sco-loadout-candidate-*` child under that
-parent. It snapshots the tracked product defaults and supplied inputs before
-writing. Candidate files use exclusive creation: occupied paths are refused and
-existing files are never replaced. It refuses redirected parents and parents
-that overlap the source, artifact or optional list inputs. The parent, its ancestors and supplied inputs
-must not be changed concurrently by another process. The path checks do not
-defend against a hostile Windows parent replacement, and the tool cannot identify
-all possible game installation directories; choose and inspect the staging parent
-accordingly. Quote paths containing spaces.
-
-The candidate also snapshots these tracked sources before output creation and
-places their exact bytes at the existing data-pack paths:
-
-| Tracked source | Candidate pack path |
+| Part | Available in 0.8.0 |
 | --- | --- |
-| `data/buildables.txt` | `data/plugins/build_catalog/lists/buildables.txt` |
-| `data/ships.txt` | `data/plugins/picker_catalog/lists/ships.txt` |
-| `data/npcs.txt` | `data/plugins/picker_catalog/lists/npcs.txt` |
+| Undersuit, helmet, torso, arms, legs, backpack | Yes, from the gear list (`items.txt`). |
+| Primary weapon and sidearm | Yes. |
+| Optic, barrel and underbarrel for each weapon; tool attachment, canister and battery for each multi-tool | Yes. The page picks the part. Core decides whether it fits the weapon you hold. |
+| Visor | Only through the command `loadout.visor`, which needs the synchronous route. That route is off, so it refuses. |
+| Clothing (torso layers, legs, feet, hands), hat, head accessory, head horn, jewellery | No. |
+| Hair, hair colour, eyebrow, teeth, eyes, head, body | No. Core has no slot for them. |
+| Ammo and grenades | No. The page does not offer items it cannot map to a slot. |
 
-It does not copy the legacy top-level `data/buildables.txt` into the candidate
-tree and does not add `buildables.txt` to the optional Loadout `loadout_lists`
-pack. Build therefore has one staged default source at `build_catalog`; the
-optional Loadout pack remains limited to caller-supplied items and outfits. If a
-catalogue source is missing, redirected, changes after snapshot, or conflicts
-with existing tracked pack data, composition refuses before output creation.
-The tool is repository-only and trusts committed `HEAD` as its baseline:
-product defaults come only from files tracked there. It refuses staged or
-working-tree changes, changes detected during verification, and any extra
-untracked or ignored path under `data/plugins`, checking an extra path without
-opening its contents. It stages checkout bytes after verifying them against the
-committed blobs with Git's path-aware clean filters; checkout line endings may
-therefore differ from the raw blob bytes.
+The clothing row needs a second Core capability. Core 2.4.1 defines outfit slots 22 to 31 in `sc_loadout.h`: clothing torso 0, 1 and 2, clothing legs, feet and hands, hat, head accessory, head horn and jewellery. They exist only on the background route, and the capability `game.loadout.outfit` is on only when `SCO_LOADOUT_ASYNC=1` and `SCO_LOADOUT_OUTFIT=1` are both set. The launcher does not set `SCO_LOADOUT_OUTFIT` and has no switch for it, so the capability stays off. The plugin checks it each time the page is drawn and each time a request is sent. With it off, no clothing slot is offered and Core would refuse the whole request anyway.
 
-Optional list staging is omitted by default. To include caller-supplied
-`items.txt` and `outfits.txt`, pass `--lists-source <absolute-list-directory>`;
-when that flag is present without `--lists-manifest`, the tracked Loadout list
-manifest is used. A custom manifest may be supplied with
-`--lists-manifest <absolute-file>`, which requires `--lists-source`. The pack is
-staged through the existing no-replace helper with buildables explicitly OFF.
-Conflicting files are refused, and a late list-stage failure can leave the
-items/outfits pack partially written after plugin composition. Inspect a reported
-partial tree before retrying; no rollback is promised. A candidate-file write
-failure can also leave the unique child incomplete; the reported path identifies
-that tree.
+The Squadron 42 page lists only outfits whose pieces all go into slots the page can set. With the capability off, those are outfits made of armour pieces only. Of the 35 outfits in `data/outfits.txt`, 8 qualify (four Navy pilot flight suits, two Navy pilot light armours, Navy pilot Fleet Week and Navy gunner). The page says how many outfits it leaves out. An outfit never goes on partly: one piece with no slot, two pieces in one slot, or more than 16 pieces keeps the whole outfit off the list.
 
-This creates a fresh inspection tree and makes no upgrade-preservation promise.
-It does not merge into an existing installation or establish what an upgrade
-would retain. Native startup needs a Core with the process-retained composition and has not been run in game. Full outfit/provider
-parity and game acceptance are pending; neither this tree nor synthetic peer
-fixtures are runtime or release evidence.
+## Gear page
 
-The Loadout consumer proof used a separate `legacy` SDK archive named
-`sco-sdk-2.4.1-dev.3.zip`, SHA-256
-`26fc210e9f236f9462a55a54375357abf27ace810c6896cf0b7548fbfaf50529`, whose
-metadata identifies Core source `c591513e194e9f3e0221cde62361a63a95453895`.
-All six consumer CTest cases passed and `sco-plugin-check` reported zero failures.
-That digest identifies this exact proof archive only; it is not a universal
-version hash or proof for the other 11 supplied binaries. See the
-[SDK candidate record](../../docs/sdk-candidate.md#loadout-profile-candidate-composition)
-for the evidence boundary.
-## Obtain, build, install
+Open **Gear** in the **Character** section of the menu (key **M**). The sections follow the order you use them:
 
-1. Obtain the published combined core+game SDK containing `sc_loadout.h`,
-   `sc_cvars.h`, `sco_content.h` and `sco_widgets.h`, plus `sco_api.h`. Use its extracted public `include/` directory and
-   checksum inventory, never the host checkout's headers.
-2. Build separately from the Windows host:
+- **Choose gear**: **Search gear**, the list of gear, page buttons, **Refresh gear list**, your current selection, **Equip selected gear** and **Clear selection**. Search ignores case and takes up to 63 printable ASCII characters.
+- **Weapons and tools**: one column for the primary weapon or tool and one for the sidearm or secondary tool. Each column has **Type**, **Find weapon** and **Find attachment** filters, then weapon, optic, barrel, underbarrel, tool attachment, canister and battery. Every choice starts at **Keep current**. Then **Equip chosen weapons**, **Clear choices** and **Refresh weapon list**. A selected item stays visible when the search does not match it. Changing the type so that it excludes the selected weapon clears that column. Choosing a different weapon clears that column's attachments. Replacing a weapon does not keep its attachments, and spawned defaults are up to the game.
+- **Progress**: the status of the equip request, **Check progress** and **Cancel equipping**. A finished request stays in Core until released, so the page releases it for you: after the last report says finished, the button reads **Clear result**, and pressing an equip button first releases the finished request and then starts the new one. A request still in progress is never released that way.
+- When the background route is off, the page says "Changing gear isn't turned on." and shows no equip button.
 
-   ```sh
-   cmake -S plugins/loadout -B <plugin-build> \
-     -DSCO_SDK_INCLUDE_DIR=<sdk>/include \
-     -DSCO_LOADOUT_BASE_LIST_DIR=<product-data-directory>
-   cmake --build <plugin-build> --config Release --target sc-offline-loadout
-   cmake --install <plugin-build> --config Release --prefix <stage> --component loadout
-   ```
+Equipping is not an undo. Cancelling stops pending parts, and parts already attached stay on. A batch can end partly applied. The page reports each part and never retries applied parts.
 
-   `SCO_LOADOUT_BASE_LIST_DIR` is optional; when supplied it stages existing
-   `items.txt` and `outfits.txt` unchanged into a separate `loadout_lists`
-   data pack. It does not grant runtime filesystem access. The independently
-   disableable `build_catalog` data pack supplies the shared
-   `lists/buildables.txt` for Build and Loadout's SQ42 shortcuts. The Build
-   picker requires exactly one enabled source and refuses duplicate sources.
+Names on the page are readable forms of the game's class names. The request carries the exact class. Search still matches the class name.
 
-   Standalone users without another enabled Build list can explicitly add
-   `-DSCO_LOADOUT_STAGE_BUILDABLES=ON`; this also requires `buildables.txt` in
-   the source directory and stages it unchanged in `loadout_lists`. Enable only
-   one pack supplying that list: disable `build_catalog` and any other such
-   pack when choosing this option. Disabling `loadout_lists` then also removes
-   that Build list. An install over an existing `loadout_lists` pack preserves
-   a previously staged `buildables.txt`, so upgrading alone does not remove a
-   duplicate. Before enabling packs, inspect the existing lists and choose
-   exactly one source; preserve any lists you want to keep and disable or move
-   the other pack out of discovery while the host is stopped. Staging does not
-   delete, overwrite, move or disable an existing buildables list in default mode.
-   Before writing the pack, installation checks all files it would stage. If an
-   existing destination differs, it stops with an error and leaves the pack
-   untouched; choose a fresh staging directory or preserve and reconcile the
-   existing pack yourself. Identical files are accepted. Do not change the pack
-   concurrently with installation: directory paths must remain trusted and
-   stable, and existing files must not be modified concurrently. Python 3 is
-   required when this optional list staging is configured. Complete files are
-   published using hard links without replacing destinations; a filesystem that
-   does not support hard links causes an error. A late conflict or write failure
-   may leave earlier new files installed, so inspect the pack before retrying.
-   Detected symlinks and reparse points are refused. This check covers the
-   list pack only: the Loadout module and its manifest are installed earlier and
-   follow ordinary CMake overwrite behavior, so use a fresh staging directory
-   when those destinations contain files you need to preserve.
-   A larger standalone `plugins/` build uses `SCO_LOADOUT_FEATURE=ON`; that switch
-defaults off until release staging is approved (the published sdk-v2.4.0 ships
-   the headers). Runtime folder metadata
-   itself is enabled, user-disableable, with no `disabled` marker.
-3. On Windows x64/MSVC, install the staged `data/plugins/loadout/` module and
-   manifest, and the optional `data/plugins/loadout_lists/` pack, while the host
-   is stopped; enable `plugins = on`. macOS/Linux modules are development
-   artifacts, not Windows-loadable game DLLs. No tag/release is authorized here.
+## Squadron 42 page
 
-Copied armor and outfit apply use `game.loadout` 1.0; copied primary/sidearm
-gear and explicit weapon/tool slots require 1.1 for synchronous apply. Jobs require
-1.2. Lists and shortcuts also use `game.cvars` 1.0 and `sco.content` 1.0. Missing/unready services leave commands available with explicit refusal.
-Optional `sco.widgets` 1.0 adds renderer-neutral Player/SQ42 panels; without it
-use commands. Actual product renderer integration remains a separate dependency.
-Native code is trusted, not sandboxed. Commands/tick/widget callbacks use only the
-public game-thread routes, reopen tables, and guard complete pointer extents/nulls.
+Press **Show spoilers** first. The page then offers:
 
-## What the pages show players
+- **Outfit**: search, list, page buttons, **Wear selected outfit** and progress, as above.
+- **Game settings**: four settings shown as on or off lines when the game lets them be read (`i_target_selector.targeting2_enabled`, `pl_lensdisplay.minimap_enabled`, `pl_lensdisplay.greebles_enabled`, `g_squadron_frontend`). Otherwise one line says they cannot be read yet. They cannot be changed from the menu, and the plugin never writes a console variable, runs a console command or edits `USER.cfg`.
+- **Ships** and **Objects**: **Spawn ship** and a place button that call the Ships & vehicles and Build plugins (`spawn.ship_options`, `build.place`). If that plugin is missing, the page shows one line instead of a button. SQ42 enemy wings are not spawned.
 
-Both pages follow the player-wording rules in `docs/plugin-ui.md` ("Writing a page for players"). The panel shows
-plain sentences; command replies and `mod.log` keep the detailed text. Raw class names, versions, capability and command
-names never appear on a page, and the plugin uses 1.0 widget nodes, so there are no tooltips.
+God mode, noclip and infinite ammo belong to the Creative page, not here.
 
-**Player** (shown as Gear), in the order a player uses it:
+## Commands
 
-- **Choose gear**: search, a list of gear that can be equipped (items this plugin cannot map to a slot are not offered),
-  page buttons, **Refresh gear list**, the current selection, **Equip selected gear** and **Clear selection**.
-- **Weapons and tools**: *Primary weapon or tool* and *Sidearm or secondary tool* columns (type, searches, weapon,
-  optic, barrel, underbarrel, tool attachment, canister, battery; the first choice is **Keep current**), then
-  **Equip chosen weapons**, **Clear choices** and **Refresh weapon list**.
-- **Progress**: the equip request's status, **Check progress** and **Cancel equipping**. Shown while a request exists or
-  when background equipping is available. Core keeps one request per owner, so a finished request (done or failed) stays
-  until it is released. The page does that for the player: once the last report says the request finished, the equip
-  buttons are enabled again, the button reads **Clear result**, and pressing an equip button releases the finished request
-  first and then starts the new one. A request still in progress is never released that way; an unreadable report does not
-  count as finished.
-- When background equipping is not available, the page says "Changing gear isn't turned on." and shows no picker or equip
-  button. There is no synchronous equip button: the only equip backend a published SDK describes is background equipping,
-  and a build without it can only refuse. Core ships `game.loadout.async` and `game.cvars.read` OFF; they are opt-in
-  switches in Core (`SCO_LOADOUT_ASYNC=1` and `SCO_CVARS_NATIVE=1`), set by the launcher, not by this plugin.
+| Command | What it does |
+| --- | --- |
+| `loadout.submit_gear <items>` | Equips gear from `items.txt`, separated by spaces or commas, at most one item per slot. The Gear page button uses this. |
+| `loadout.submit_outfit <outfit>` | Wears an outfit by its exact name, ignoring case. Needs the spoiler confirmation. |
+| `loadout.submit <slot=Class,...>` | Equips named weapon or tool slots, for example `primary=SomeWeaponClass,primary_optic=SomeOpticClass`. Up to 2047 bytes. The classes are yours to supply. |
+| `loadout.progress`, `loadout.cancel` | Show or cancel the one retained request. |
+| `loadout.spoilers <on:bool>` | Confirms Squadron 42 spoilers for this session. |
+| `loadout.items <filter>` | Lists the first 12 matching gear items. |
+| `loadout.reload_lists`, `loadout.reload_slots` | Re-read the startup copy of the lists. Changed files need a game restart. |
+| `loadout.cvars` | Reads the four settings above. |
+| `loadout.spawn <class> <height> <seat> <power>`, `loadout.build <object> <ahead>` | The Squadron 42 shortcuts. Need the spoiler confirmation. |
+| `loadout.equip`, `loadout.wear`, `loadout.slots`, `loadout.visor` | Synchronous equivalents. They need `game.loadout.apply` and `game.loadout.weapons`, which are off, so they refuse. |
+| `loadout.cvar_set`, `loadout.console` | Always refuse. |
 
-**Squadron 42**: behind the spoiler confirmation, **Outfit** (search, list, page buttons, **Wear selected outfit**,
-progress; only outfits whose every piece has a Core loadout slot are listed, and the page counts the ones it leaves out,
-because Core has no slot for body, head, eyes or teeth; with a Core 1.3 that reports `game.loadout.outfit`, clothing, hat, head accessory, horn and jewellery ports have a slot too, and hair, hair colour and eyebrow also need `game.loadout.appearance`; the Core capability is checked each time the page is drawn and each time an outfit is sent. Not run in game), **Game settings**, **Ships** and **Objects**. The settings cannot be changed from the menu; they appear as plain
-"on/off" lines when the game lets them be read, and otherwise as one line saying they can't be read or changed yet. Ships and
-objects forward to the Ships & vehicles and Build features; when the other feature's command is missing the section shows
-one plain line instead of a button. The visor control (synchronous only) is not on the page.
+Slot names for `loadout.submit`, case-sensitive: `primary`, `primary_optic`, `primary_barrel`, `primary_underbarrel`, `primary_tool_module`, `primary_tool_canister`, `primary_tool_battery`, and the same seven with `sidearm_`. A class is 1 to 95 characters of `A-Z a-z 0-9 _`. An unknown slot, a duplicate slot, an empty class or `None` refuses the whole batch before anything changes. Parents are applied before attachments. Omitting a parent targets the weapon you already hold. There is no remove operation.
 
-Removed from the pages, still available as commands: `loadout.equip`, `loadout.wear`, `loadout.slots`, `loadout.submit`,
-`loadout.visor`, `loadout.cvars`, `loadout.cvar_set`, `loadout.console`. The typed manual-slot field and its apply and
-submit buttons were developer plumbing.
+## Lists and settings
 
-## Commands and selections
+The plugin has no settings of its own. It reads these lists through `sco.content`, from enabled data packs, and never opens files itself. Each file is at most 1 MiB, and a change needs a game restart.
 
-| Command | Arguments / behavior |
-|---|---|
-| `loadout.equip` | Item-class string, separated by spaces/commas; resolve case-insensitively from copied `items.txt`, at most one item per logical slot |
-| `loadout.items` | Filter string; list first 12 matches with original slot labels and unsupported markers |
-| `loadout.reload_lists` | Re-read the public startup snapshot; no filesystem refresh; changed packs require host restart |
-| `loadout.reload_slots` | Re-read exactly one public `lists/loadout_slots.txt` startup snapshot; reset curated picks on success or refusal; no disk refresh |
-| `loadout.spoilers` | Bool; session-only SQ42 confirmation, reset on unload/reload |
-| `loadout.wear` | Exact outfit label, case-insensitive; requires spoiler confirmation |
-| `loadout.visor` | Explicit visor item-class string; typed logical VISOR request, no implicit face/lens/default replacement |
-| `loadout.slots` | Explicit comma-separated `slot=Class` assignments, at most one per named public weapon/tool slot; synchronous 1.1 apply |
-| `loadout.submit` | The same explicit assignments; submit one retained 1.2 job, without synchronous fallback |
-| `loadout.progress` | Inspect the retained job's completed prefix and per-slot results; does not advance it |
-| `loadout.cancel` | Cancel/release the retained job; confirmed equipment remains equipped |
-| `loadout.cvars` | Refresh and report four real public observations; failed/missing/invalid reads are `unknown/unavailable`, never silently off |
-| `loadout.cvar_set` | Name string, bool; **always refused** |
-| `loadout.console` | Command string; **always refused** |
-| `loadout.spawn` | Class string, height float, seat string, power bool; requires spoilers; invokes external `spawn.ship_options` |
-| `loadout.build` | Object string, ahead float; requires spoilers; invokes `build.place` |
+- `lists/items.txt`: `[slot]` sections (`undersuit`, `helmet`, `torso`, `arms`, `legs`, `backpack`, `primary`, `sidearm`) with one class per line. Up to 3000 items.
+- `lists/outfits.txt`: `[name]` sections with `port class` lines. Up to 256 outfits and 32 pieces per outfit.
+- `lists/buildables.txt`: only for the Squadron 42 Objects shortcut. The `build_catalog` pack supplies it.
 
-Game-thread external shortcuts preserve the provider result/reply. This is not
-proof of eventual gameplay/streaming completion. Missing,
-disabled or refusing spawn/build plugins have no private fallback.
-The Player panel has no creative controls: noclip, god mode, infinite ammo and
-noclip speed are on the Creative tab, which the separate creative plugin owns.
-SQ42 ship labels/reference classes are retained; enemy-wing orchestration remains
-deferred rather than silently spawning an ordinary ship as a substitute.
+Each list path may come from one enabled pack only. Two packs supplying the same path refuse the whole snapshot. A missing list leaves its feature empty with a plain message. A malformed list refuses entirely.
 
 ### Curated weapon and tool selectors
 
-The Player panel offers fourteen independent selectors using the same public
-logical slot names as the manual route below. Every selector starts at
-**Keep current**. Selecting a class adds only that explicit assignment.
-**Equip chosen weapons** uses `loadout.submit`'s 1.2 job path (the synchronous `loadout.slots`
-route has no button). It keeps the parent-first ordering, version/capability gates,
-per-slot partial results and retained-job/cancel policy. **Clear choices**
-changes only local picks; it does not clear equipment or cancel a retained job.
-The manual assignment route is a command only.
+The weapon and tool choices come from an optional `lists/loadout_slots.txt`. Without it the selectors stay empty and show only **Keep current**.
 
-The shared search field filters both the gear browser and curated selectors by
-class or friendly name, ignoring ASCII case (at most 63 printable ASCII characters).
-Every selector keeps **Keep current** first. A selected class stays
-visible even when it does not match the filter; changing the search never clears
-or rebinds it. Choices show a readable name (the seven display aliases below, otherwise the class split into words);
-the raw class is not shown, but search still matches it, and the request sends that exact class. Invalid filter input preserves
-the previous search and selections. Failed panel publication pauses old callbacks
-until a successful retry; it does not reinterpret an old filtered index.
+The source copy is `data/loadout_slots.txt`. It keeps its attribution for the attachment names and the primary and sidearm split, taken from a public GPL-3.0-only community change. It holds 344 choices: 101 primary weapons, 31 sidearms, and for each weapon 53 optics, 35 barrels, 10 underbarrel parts, 5 tool attachments, 2 canisters and 1 battery. They are requests only: the game decides whether a class exists and fits the weapon you hold. The plugin never guesses a slot from a class name and adds no default tool parts.
 
-Seven display aliases retain Alpha-Rome0's public GPL [PR #127](https://github.com/scuba-sc/sc-offline/pull/127) intent at
-[`7ea9731b693bb9042ccbb721099ca88acb80d6f4`](https://github.com/scuba-sc/sc-offline/blob/7ea9731b693bb9042ccbb721099ca88acb80d6f4/src/builtins/loadout_ui.cpp):
-OreBit Mining, OxyTorch Cutter, TruHold Tractor Beam, LifeGuard Medical and
-Cambio-Lite SRT attachments, plus empty/filled Cambio-Lite SRT canisters.
-These names are presentation only. They add no item compatibility, automatic
-battery, None/clear operation, XML fallback or default-SRT policy.
+To use the file, copy it with the game closed to `data/plugins/my_loadout/lists/loadout_slots.txt` and add `data/plugins/my_loadout/plugin.ini` holding `id = my_loadout`, `name = My loadout slots`, `version = 1.0.0`, `api = 1.1` and `kind = data`. Two packs supplying the file refuse as ambiguous. The release staging does not copy it.
 
-Install one ordinary `kind = data` pack containing `lists/loadout_slots.txt`.
-For example, while the host is stopped, explicitly copy the optional source
-`data/loadout_slots.txt` to `data/plugins/my_loadout/lists/loadout_slots.txt` and
-create `data/plugins/my_loadout/plugin.ini` with:
+The file has one section per slot, named exactly like the 14 slot names above (case-sensitive), with one class per line (1 to 95 characters of `A-Z a-z 0-9 _`). `#` starts a comment. Limits: 1 MiB, 255 bytes per line, 255 classes per section, 3000 in all. A duplicate section, an unknown section, a malformed line or `None` refuses the whole file. An empty file is valid.
 
-```ini
-id = my_loadout
-name = My curated logical slots
-version = 1.0.0
-api = 1.1
-kind = data
-```
+## What it needs
 
-Enable ordinary plugin loading and restart the host. This file is not staged by
-the Loadout install component, including when `SCO_LOADOUT_BASE_LIST_DIR` is set.
-There is no automatic top-level-file import. Content is copied at host startup;
-`loadout.reload_slots` re-reads that snapshot and cannot see disk edits until
-restart. More than one exact canonical List is ambiguous and refuses rather
-than choosing a pack. Missing, disabled or invalid packs expose no choices and
-an explicit unavailable message; the manual route remains independent.
+- Services: `game.loadout` 1.2, `sco.content` 1.0, `sco.widgets` 1.0, and `game.cvars` 1.0 for the settings readout.
+- Capabilities: `game.loadout.async` (needed for every equip button), `game.loadout.outfit` (optional, clothing slots) and `game.cvars.read` (optional, settings readout; the `exp_cvars_native` switch turns it on).
+- Missing services leave the commands in place and they refuse with a plain reason. There is no private fallback.
 
-The format has exact case-sensitive section names from the fourteen-slot table
-below, followed by ASCII `[A-Za-z0-9_]` classes, 1–95 bytes each. `#` introduces
-comments; blank lines and surrounding whitespace are ignored. Parsing is atomic:
-at most 1 MiB, 255 bytes per input line, fourteen distinct known sections,
-255 classes per section and 3000 classes total. Duplicate sections, duplicate
-case-insensitive classes in one section, unknown sections, malformed records,
-embedded NULs and `None` refuse the whole catalogue. Explicit choices of the
-same class in different target sections remain independent. An empty catalogue
-is valid. Each combo's first unchanged option plus its classes fits the public
-256-option limit. Reload success or failure clears previous curated selections;
-failed panel replacement pauses old Player actions, and publication cookies
-reject callbacks from older publications or loaded sessions.
+Seen in game (owner, build 4.10.200.58746): equipping gear on the Gear page attached the items. Not run in game. Everything else on this page, including weapon attachments, outfits and the Squadron 42 page. See [docs/status.md](../../docs/status.md).
 
-The optional source catalogue contains **344 target choices**: 101 primary,
-31 sidearm, and, for each parent, 53 optics, 35 barrels, 10 underbarrel choices,
-5 tool modules, 2 tool canisters and 1 tool battery. Primary/sidearm identifiers come unchanged from
-[the existing project list at `9b2b71f`](https://github.com/scuba-sc/sc-offline/blob/9b2b71f6916bd40129ed89965d1a2585c799e520/data/items.txt).
-The attachment/tool identifiers and their independent primary/sidearm selector
-classification come from Alpha-Rome0's public GPL-3.0-only
-[PR #127 at `7ea9731`](https://github.com/scuba-sc/sc-offline/pull/127/commits/7ea9731b693bb9042ccbb721099ca88acb80d6f4).
-The file retains source attribution. These are logical target requests, not a
-verified compatibility matrix: the native provider must decide whether a class
-exists and fits the currently equipped parent. No class spelling is used to
-infer a native port, no SRT defaults or battery are synthesized, and no installed
-game files or community-site data were copied for this catalogue.
+## Developer notes
 
-For manual research, searchable references include
-[Cornerstone's Universal Item Finder](https://finder.cstone.space/) and
-[Star Citizen Wiki's Pyro RYT Multi-Tool page](https://starcitizen.tools/Pyro_RYT_Multi-Tool).
-They are navigation references, not runtime inputs or proof for an installed
-build's compatibility. Historical game-acceptance statements on PR127 do not
-validate this SDK consumer.
-
-### Manual weapon and tool slots
-
-The Player panel no longer has the manual assignment field or its apply and submit buttons; the
-curated selectors above replace them. The commands accept up to 2047 bytes. For example,
-`primary=KnownWeaponClass,primary_optic=KnownOpticClass` selects a parent and optic;
-the names here are syntax examples, not an item catalogue. The caller must supply
-known classes; only the provider can report whether they exist or can be equipped.
-This route does not require copied lists or infer a class's slot from those lists.
-
-The case-sensitive slot names are the published logical vocabulary:
-
-| Parent | Weapon | Attachments | Multitool |
-|---|---|---|---|
-| Primary | `primary` | `primary_optic`, `primary_barrel`, `primary_underbarrel` | `primary_tool_module`, `primary_tool_canister`, `primary_tool_battery` |
-| Sidearm | `sidearm` | `sidearm_optic`, `sidearm_barrel`, `sidearm_underbarrel` | `sidearm_tool_module`, `sidearm_tool_canister`, `sidearm_tool_battery` |
-
-Classes require 1–95 ASCII `[A-Za-z0-9_]` bytes. Unknown slots, duplicate slots,
-empty classes, `None` (case-insensitive) and malformed assignments refuse the
-whole batch before mutation. Whitespace around names/classes is ignored. The
-consumer orders assignments by public slot number so both parent weapons precede
-attachments. Omitting a parent targets its currently equipped item. Replacing a
-parent does not preserve attachments; spawned defaults are engine-defined. There
-is no remove/clear operation and no promise to preserve an SRT tool's built-in
-configuration. Existing ambiguous legacy catalogue/outfit ports remain unsupported.
-
-Synchronous apply queries 1.1 and requires `game.loadout.apply` plus
-`game.loadout.weapons`. Job submission queries 1.2, checks complete non-null
-submit/status/cancel members and requires **`game.loadout.async`**, independently
-of those synchronous capabilities. No route falls back to a lower version or
-another mutation method. Table publication alone does not enable a backend.
-
-The Player and SQ42 panels display the latest copied status of a retained job, refreshed
-at most once per existing 200 ms tick. It is a provider job observation, not a
-live inventory check; it also marks async capability revocation. If the service is
-unavailable or refuses, the display
-shows that instead of the previous observation. An invalid report pauses
-automatic polling; use **Check progress** to request another observation. A valid manual
-check resumes polling. No polling submits, retries, cancels or adds a timeout.
-If the widget provider rejects a panel replacement, it may continue drawing its
-previous copied panel; the plugin disables that panel's callbacks until a later
-successful publication. The latest observation cannot be shown until then.
-
-The equip buttons are disabled when the public 1.2 lifecycle or async capability
-is unavailable, and the page says so in one plain line; callbacks recheck admission when invoked.
-`loadout.items` still marks primary and sidearm choices as requiring 1.1 for synchronous apply.
-
-One job is retained until explicit cancellation/release, including after terminal
-status. While retained, another submit or synchronous equip refuses. Progress
-reports only completed slots: pending is not equip confirmation, and complete
-does not mean every slot applied. Failed/partial results are displayed without
-retry or rollback. Status/cancel remain usable after mutation-capability revocation.
-Unload attempts cancellation while the owner is live, then clears local state;
-if the service has withdrawn or cancellation refuses, host owner-unload/stop is
-the remaining cleanup boundary. No confirmed equipment is removed on unload.
-
-## Copied list formats and refusal
-
-Read only `SCO_CONTENT_LIST` entries named `lists/items.txt`, `lists/outfits.txt`
-and optional `lists/buildables.txt`, in public discovery order. Legacy top-level
-base files are not read privately; stage them into data packs or supply an
-enabled data pack. Each copied source identity is the data-pack ID plus its
-pack-relative list path; the SDK's opaque item ID is kept only as the
-process-local read handle. Supply at most one enabled source for each exact
-list path. Duplicate `lists/items.txt`, `lists/outfits.txt` or
-`lists/buildables.txt` paths across packs refuse the whole snapshot, rather
-than merging by discovery order. The three paths can live in different packs.
-An absent path stays absent and its feature command reports that explicitly;
-there is no fallback to private files. Reload status names the copied source
-for each section. No item-existence guess is made while parsing; the typed
-provider reports missing items at apply time.
-
-- Items retain `[slot]` sections, comments introduced by `#`, and one ASCII
-  `[A-Za-z0-9_]` class per line, 1–95 bytes. Bounds: 3000 items.
-- Outfits retain `[name]` sections and `port class` lines, original labels and
-  all pieces (including unsupported ports). The historical preview holds at
-  most 256 outfits and 32 accepted pieces per section.
-- Build shortcuts retain the `[sq42]` group from the copied buildables list.
-- Reject malformed sections/classes, embedded NULs, oversized lines/records,
-  files over 1 MiB and snapshots over the public 16 MiB total limit. Each
-  candidate list is copied and parsed before one snapshot replacement. If any
-  source is ambiguous, unreadable, malformed or incomplete, the whole snapshot
-  is refused and no earlier section from that attempt is exposed.
-- Explicit reload invalidates prior selections and panel callbacks before it
-  reads. A successful reload publishes one new selection generation; a failed
-  reload leaves every copied picker empty. Old widget callbacks cannot select
-  or apply rows from a later generation. Changing files still requires a host
-  restart; `loadout.reload_lists` re-reads the startup content snapshot only.
-
-Consumer mappings select logical UNDERSUIT, HEAD (helmet), TORSO, ARMS, LEGS,
-BACKPACK and VISOR. These are **not certified engine port mappings**. Unknown
-legacy sections/ports remain visible; any selected unknown port refuses the
-whole request before mutation. Duplicate logical slots or more than 16 pieces
-also refuse before mutation; batches are never silently split. Other legacy weapon slots, ammo,
-grenades, clothing, body/head/eyes/hair/accessories/material variants, implicit
-magazine/default face/undersuit/medpen synthesis and old empty-slot clearing need
-separate consumer mappings, additional public contract coverage where absent,
-and validation. Synchronous copied armor/visor and outfit actions query 1.0.
-A copied gear selection containing primary or sidearm queries 1.1 and requires
-`game.loadout.apply` and `game.loadout.weapons`; it may also include armor. The Player and SQ42 panels also offer explicit 1.2 job submission
-for the selected copied gear and confirmed outfit, respectively. Commands
-`loadout.submit_gear` and `loadout.submit_outfit` use the same selections and
-one retained job; progress and cancel are available on both panels. The async
-gear routes map the copied `primary` and `sidearm` sections to the matching
-public logical weapon slots. Outfit ports Clothing_Torso_0/1/2, Clothing_Legs, Clothing_Feet, Clothing_Hands, Hat, Hair, Hair_Color, Eyebrow, Head_Accessory, Head_Horn and Jewellery map to Core 1.3 slots 22-34, only through the background route and only while `game.loadout.outfit` is on (29-31 also need `game.loadout.appearance`). Body, head, eyes and teeth ports stay unmapped.
-Unknown ports, duplicate slots, `None`/`Default`, and batches exceeding 16 items
-refuse before submission. The separate manual and curated-selector routes use the published
-1.1/1.2 contracts without assigning meanings to old catalogue ports. Public
-contract availability does not verify native equip or attachment behavior.
-Most legacy outfits therefore refuse; this is not full feature-parity acceptance.
-The inactive original sources remain
-under `legacy/loadout` for reference, not as a runtime escape hatch.
-
-A supported typed batch reports input-ordered applied/unsupported/item-missing/
-failed/unavailable results. Partial success is not rollback or whole-outfit
-success. Never retry applied slots automatically. Unspecified slots stay
-unchanged; successful equip remains player state on ordinary unload, not a
-plugin-owned spawned entity. Invalid/inconsistent reports leave state unknown
-and refuse further automatic work. Unload removes panels/subscription and
-clears loaded-session picker/spoiler state; host-owned command lifetime applies.
-
-## SQ42 policy and quantum boundary
-
-The exact four bool observations are:
-
-- `i_target_selector.targeting2_enabled`
-- `pl_lensdisplay.minimap_enabled`
-- `pl_lensdisplay.greebles_enabled`
-- `g_squadron_frontend`
-
-The page shows them as plain on/off lines when readable, never as controls, and one line saying so when none is
-readable. The module never opens
-`game.cvars_write`, invokes console, writes `USER.cfg`, or restores/mutates a
-cvar on unload. Forged write widget events also refuse. Failed reads clear prior
-values to unknown. Tick-driven observations are capped at 5 Hz; explicit refresh
-reads on request. The game's own values may change independently.
-
-Loadout does not own quantum control. This lane changes no Quantum commands,
-providers, startup/ticks or hook ownership; that consumer's source and native
-acceptance remain separate from the gear selectors.
-
-## Evidence and pending acceptance
-
-The internal outfit importer and recipe model preserve the reviewed 0.7.7
-file parsing and preparation semantics. Their two standalone synthetic tests
-run with `SCO_WORKFLOW_TESTS=ON`. This model is not connected to player actions,
-the product module, or a native SDK provider; passing these tests does not
-establish game behavior or native outfit support.
-
-The importer also keeps bounded source audit evidence beside that historical
-preview. Each encountered section retains its full parsed name, including
-empty and unknown-only sections. Inspected `port class` records retain their
-original role and class alongside the stored 63-byte preview prefixes, lookup
-state, and final recipe disposition (emitted, duplicate, unsupported, orphan,
-or overridden by defaults). Non-comment suffixes after the section close or
-class token are retained and counted as preview losses; `#` comments remain
-stripped. Unknown classes and dropped-section reasons remain attributed to
-their source section. The audit has a 128 detailed-event limit per section;
-exceeding it returns `audit_overflow` without changing the prior snapshot.
-
-After the preview accepts 32 records in a section, later non-comment lines are
-explicitly marked uninspected. The audit counts uninspected lines/candidates
-and preserves the first exact candidate role/class when present; it does not
-look up or label those tail candidates as known or accepted. The section bound
-is 256 encountered headers, including empty and unknown-only sections. A
-257th header returns `section_limit` transactionally. This raw-header refusal
-is a deliberate audit bound; it differs from the old preview's limit of 256
-retained outfits. Both audit-limit errors leave the caller's prior snapshot
-unchanged.
-
-`assess_source_integrity` reports whether source evidence is complete under
-this legacy parser and counts preview losses such as skipped unknowns,
-dropped sections, token-prefix truncation, and non-emitted recipe inputs. An
-intact source assessment can still report unresolved recipe directives such
-as synthesized defaults. It only says the audit retained the parser-visible
-source evidence. It does not certify a complete outfit graph or safe
-application: defaults, provider class/schema validation, revalidation and
-native semantics remain unresolved. This audit adds no submit or activation
-path.
-
-The consumer proof uses the checksum-verified published stable `sdk-v2.4.0` combined
-archive (`sco-sdk-2.4.0.zip`, SHA-256
-`0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc`).
-Enable the six development tests with `-DSCO_WORKFLOW_TESTS=ON`, then run:
+Build against the extracted SDK `include/` directory, which must hold `sc_loadout.h`, `sc_cvars.h`, `sco_content.h` and `sco_widgets.h`. The 0.8.0 line uses SDK 2.4.1.
 
 ```sh
-cmake --build <plugin-build> --config Release
-ctest --test-dir <plugin-build> -C Release --output-on-failure
+cmake -S plugins/loadout -B build-loadout -DSCO_SDK_INCLUDE_DIR=<sdk>/include -DSCO_WORKFLOW_TESTS=ON
+cmake --build build-loadout --config Release --target sc-offline-loadout
+ctest --test-dir build-loadout -C Release --output-on-failure
+cmake --install build-loadout --config Release --prefix <stage> --component loadout
 ```
 
-`loadout-widget-workflow` and `loadout-public-route` link the feature source to
-synthetic public services. They cover copied legacy lists, empty panels, all
-fourteen manual slots, ordering, version/capability/extent guards, partial and
-invalid reports, retained jobs and cleanup after capability revocation.
-`loadout-curated-catalogue` loads the actual native module and exercises the
-catalogue, copied selectors, existing apply/job paths, exact limits, ambiguity,
-failed publication, stale callbacks, unload/reload and the attributed seed file.
+`-DSCO_LOADOUT_BASE_LIST_DIR=<data folder>` also stages `items.txt` and `outfits.txt` unchanged as a `loadout_lists` data pack (Python 3 required). It refuses to overwrite a different existing file. `-DSCO_LOADOUT_STAGE_BUILDABLES=ON` adds `buildables.txt` to that pack; use it only when no other enabled pack supplies that list. The aggregate `plugins/` build compiles this plugin only with `SCO_LOADOUT_FEATURE=ON`.
 
-`tools/check_loadout_sdk.py` copies only public consumer/test inputs into an
-isolated directory, verifies the archive, builds/runs all three workflows,
-checks the installation inventory and full compiler dependencies, and on POSIX
-runs ASan/UBSan plus missing-selector and four private-dependency negatives.
-The published generic checker has a separate known limitation: it treats
-the existing argument-free `loadout.progress` and `loadout.cancel` no-job
-`NOT_FOUND` observations as failures. Its raw **FAILED: 2 failure(s)** result is
-retained. The helper narrowly recognizes those exact two messages and rejects
-other failures; it does not call that a clean checker pass or change the
-published checker or product return values.
+The tests are `loadout-widget-workflow`, `loadout-public-route`, `loadout-curated-catalogue`, `loadout-weapon-picker`, `loadout-outfit-recipe` and `loadout-outfit-import`. They run the real module against stand-in services. `python tools/check_loadout_sdk.py --archive <sdk zip> --sums <SHA256SUMS> --work <new folder outside the checkout>` runs them from a verified SDK archive; add `--candidate` and the digest options for an unpublished SDK (see [docs/sdk-candidate.md](../../docs/sdk-candidate.md)). Its raw result includes two `NOT_FOUND` observations from the SDK's generic checker for `loadout.progress` and `loadout.cancel` with no request. The helper accepts exactly those two.
 
-The build workflow defines separate `loadout-sdk-posix` and `loadout-sdk`
-validation jobs for this helper. They upload no artifacts and are outside the
-production release-folder matrix; validation does not add Loadout to releases.
+To stage a release-style folder with this plugin, run `python -B tools/stage_loadout_candidate.py --artifact-root <absolute artifact root> --staging-parent <absolute existing folder outside any game install>`. It creates a new `sco-loadout-candidate-*` folder, refuses to replace files and refuses a dirty checkout. Add `--lists-source <folder>` to include caller-supplied `items.txt` and `outfits.txt`.
 
-Separate source-review evidence records actual MSVC 19.44 x64 strict compilation
-of five translation units, linked workflow runs and actual-DLL catalogue tests.
-The same new fixture fails on the unchanged old DLL because selectors are
-absent, then passes on the new DLL. A separate verified RC1 host-content and
-headless widgets-renderer harness covers real discovery, copied panels and
-event admission with an authored synthetic typed equip backend. These are
-source, ABI and host integration evidence, **not run in game**.
+Known gap to close in `loadout.cpp`: it maps outfit ports to slots 22 to 34 and names hair, hair colour and eyebrow slots plus the capability `game.loadout.appearance`. Core 2.4.1 has slots 22 to 31 only, with head accessory 29, head horn 30 and jewellery 31, and no hair slots or `game.loadout.appearance`. Against that header the source does not compile (a `static_assert` names `SC_LOADOUT_SLOT_HAIR`). Even after it compiles, head accessory, head horn and jewellery would be sent as slots 32 to 34, which Core reports as unsupported. The product is not affected today because `game.loadout.outfit` stays off.
 
-Production G6/G7 adapters remain unverified/fail-closed. Native class/parent/port
-compatibility, actual async resource cleanup, game rendering, SRT parent-default
-behavior, outfits/head/visor mapping and duplication/corruption checks remain
-game acceptance work. Release staging, tagging/publication, backend defaults and
-SDK pin adoption are separate decisions.
-
-## Grouped weapon pickers
-
-The Player panel places primary and secondary weapon/tool selectors in separate
-columns, with their public attachment slots directly underneath. Each column has
-its own weapon type, weapon search and attachment search (up to 63 printable ASCII
-characters). These filters intersect the existing shared gear/curated search.
-Only types present in that column's copied catalogue are offered. Unknown model
-families stay under Other; classification uses the family after the manufacturer
-prefix, not words in a variant suffix. It is a UI grouping, not a native type probe.
-
-Searching keeps an already selected item visible. A type change that excludes the
-selected weapon clears that column's UI assignments, including its attachments;
-switching between two selected weapon classes also resets that column's attachment
-choices. Choosing the first parent or Keep current preserves independent attachment
-assignments. The other column is untouched. Reloading the slot catalogue resets
-types and per-column searches. Filtering never submits/applies equipment, cancels
-a retained job, or unequips anything in the game. Existing version/capability and
-publication-cookie guards remain in force.
-
-The grouped fields are logical slot groups, not a new compatibility resolver.
-Providers still validate native attachment compatibility. This change adds no
-localization service, images, extracted game data, engine calls or SDK contracts.
-
-`loadout-weapon-picker` runs the actual module with synthetic content/widgets and
-checks independent filters, layout preorder, selection reset, invalid/stale
-callbacks and absence of loadout effects. This candidate has not been run in game.
-
-The SQ42 ship picker filters reference labels case-insensitively using up to 63
-printable ASCII characters. The selected ship is retained when hidden; spawning is
-disabled until it is visible and selected. Deselecting also disables spawning.
-Filtering does not spawn a ship. A rejected panel replacement invalidates the old
-callbacks until a successful publication. These labels do not establish native
-class availability or gameplay behavior.
+`outfit_import.cpp` and `outfit_recipe.cpp` keep the 0.7.7 outfit file parser and recipe model with a source-audit trail. Nothing in the module calls them, and their two standalone tests do not show any game behavior.

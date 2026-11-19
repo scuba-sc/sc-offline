@@ -862,10 +862,13 @@ jobs:
           # external/sco-core is built into dinput8.dll.
           submodules: true
 
+      # Two game DLLs from one configure: dinput8.dll with SCO_HOST_MENU_CLIENT=OFF (the configuration every
+      # build run in game used; the default install) and dinput8-rust-menu.dll, the same sources with the menu
+      # client and the Rust menu hook (SCO_BUILD_RUST_MENU_HOST, never run in game).
       - name: Configure (x64)
         run: |
           cmake --version
-          cmake -S . -B build -G "Visual Studio 18 2026" -A x64
+          cmake -S . -B build -G "Visual Studio 18 2026" -A x64 -DSCO_HOST_MENU_CLIENT=OFF -DSCO_BUILD_RUST_MENU_HOST=ON
 
       - name: Build (Release)
         run: cmake --build build --config Release --parallel
@@ -900,7 +903,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $dir = 'build/bin/Release'
-          $dll = "$dir/dinput8.dll"; $exe = "$dir/sc-offline.exe"
+          $dll = "$dir/dinput8.dll"; $exe = "$dir/sc-offline.exe"; $rustDll = "$dir/dinput8-rust-menu.dll"
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $dumpbin = & $vswhere -latest -products * -find 'VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe' | Select-Object -First 1
           $mt = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\mt.exe" | Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
@@ -915,7 +918,11 @@ jobs:
           $exports | Select-String 'DirectInput8Create|number of functions|number of names' | ForEach-Object { $_.Line.Trim() }
           Check ([bool]($exports -match '^\s*1\s+\S+\s+DirectInput8Create \(forwarded to C:\\Windows\\System32\\dinput8\.DirectInput8Create\)')) 'dinput8.dll exports DirectInput8Create (ordinal 1), forwarded to System32 dinput8'
 
-          foreach ($f in $dll, $exe) {
+          '--- dinput8-rust-menu.dll exports'
+          $rustExports = & $dumpbin /nologo /exports $rustDll
+          Check ([bool]($rustExports -match '^\s*1\s+\S+\s+DirectInput8Create \(forwarded to C:\\Windows\\System32\\dinput8\.DirectInput8Create\)')) 'dinput8-rust-menu.dll exports DirectInput8Create (ordinal 1), forwarded to System32 dinput8'
+
+          foreach ($f in $dll, $rustDll, $exe) {
             $name = Split-Path $f -Leaf
             "--- $name"
             $machine = (& $dumpbin /nologo /headers $f | Select-String 'machine \(' | Select-Object -First 1).Line.Trim()
@@ -950,6 +957,24 @@ jobs:
             Check (-not $text.Contains($cmd)) "dinput8.dll has no $cmd built-in, linked fallback or legacy NPC tab"
           }
 
+          # The split: dinput8.dll is the SCO_HOST_MENU_CLIENT=OFF build and has no Rust menu hook; the Rust menu
+          # DLL has it. The hook loads sc_offline_menu.dll by name (a wide path and ASCII log text).
+          '--- the two game DLLs differ by the Rust menu hook'
+          $rustBytes = [IO.File]::ReadAllBytes($rustDll)
+          $classicBytes = [IO.File]::ReadAllBytes($dll)
+          function Names-Menu([byte[]]$bytes) {
+            $ascii = [Text.Encoding]::ASCII.GetString($bytes)
+            $wide = [Text.Encoding]::Unicode.GetString($bytes) + [Text.Encoding]::Unicode.GetString($bytes, 1, $bytes.Length - 1)
+            return $ascii.Contains('sc_offline_menu.dll') -or $wide.Contains('sc_offline_menu.dll')
+          }
+          Check (-not (Names-Menu $classicBytes)) 'dinput8.dll (SCO_HOST_MENU_CLIENT=OFF) does not name sc_offline_menu.dll'
+          Check (Names-Menu $rustBytes) 'dinput8-rust-menu.dll names sc_offline_menu.dll (Rust menu hook compiled in)'
+          Check ((Get-FileHash $dll).Hash -ne (Get-FileHash $rustDll).Hash) 'the two game DLLs are different builds'
+          $rustText = [Text.Encoding]::ASCII.GetString($rustBytes)
+          foreach ($needle in 'titanlink.pilot', 'voxel_bridge.toggle', 'multiplayer.host', 'inspector.read', 'npc.spawn', 'npc.observe') {
+            Check (-not $rustText.Contains($needle)) "dinput8-rust-menu.dll has no $needle (same exclusions as dinput8.dll)"
+          }
+
           '--- dinput8.dll manifest'
           & $mt -nologo "-inputresource:$dll;#2" -out:dll.manifest
           $d = Get-Content dll.manifest -Raw
@@ -975,6 +1000,7 @@ jobs:
           name: dinput8-release
           path: |
             build/bin/Release/dinput8.dll
+            build/bin/Release/dinput8-rust-menu.dll
             build/bin/Release/sc-offline.exe
           if-no-files-found: error
           retention-days: 30
@@ -1064,6 +1090,7 @@ jobs:
           python3 tools/package_release.py --tag "$TAG" --commit "$SHA" --out stage \
             --rust-exe built-rust/sc-offline.exe --classic-exe built/sc-offline.exe \
             --menu-dll built-rust/sc_offline_menu.dll --dinput8 built/dinput8.dll \
+            --dinput8-rust-menu built/dinput8-rust-menu.dll \
             --artifact-root . --profile player-offline --check-tree
           echo "ZIP=stage/sc-offline-$TAG.zip" >> "$GITHUB_ENV"
 

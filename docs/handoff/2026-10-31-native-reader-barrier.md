@@ -1,3 +1,5 @@
+Historical record: native reader barrier design and evidence gap, 2026-10-31.
+
 # Native reader barrier: integration design and evidence gap
 
 **Current coordinated consumer source:** offline `external/sco-core` targets development source `d06f9124d6d7d380295ada4bc2af8968b98a051c`; historical published package identities are in [sdk-candidate.md](../sdk-candidate.md). This 2026-10-31 design record's references to `44ffd129` and #304/#305 describe earlier baselines. Product startup remains unconditionally refused.

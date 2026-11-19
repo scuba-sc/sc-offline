@@ -138,6 +138,11 @@ pub fn self_checks(here: &str, cfg: &Config, g: &GamePaths, out: &mut dyn Write)
             "Installed: no; Bin64 has another mod's dinput8.dll (it is set aside while you play)"
         );
     }
+    // Which menu the installed DLL carries and when the next Play switches it. Silent for the default
+    // (classic DLL, menu = imgui), so a default install reads like the C++ launcher's.
+    for line in crate::moddll::status_lines(here, cfg.menu, &in_game) {
+        let _ = writeln!(out, "{line}");
+    }
     if (have_marker || in_game.ours) && in_game.present && !game_may_be_running_in(&g.bin, out) {
         let _ = writeln!(
             out,

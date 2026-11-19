@@ -1,74 +1,38 @@
 # sc-offline
 
-**An offline Star Citizen mod, built on [sco-core](https://github.com/scuba-sc/sco-core).**
+**An offline mode for Star Citizen: a launcher, a mod and an in-game menu.**
 
 [![Latest release](https://img.shields.io/github/v/release/scuba-sc/sc-offline?style=flat-square&label=release&color=2ec4d6)](https://github.com/scuba-sc/sc-offline/releases/latest)
 [![Build](https://img.shields.io/github/actions/workflow/status/scuba-sc/sc-offline/build.yml?branch=main&style=flat-square&label=build)](https://github.com/scuba-sc/sc-offline/actions/workflows/build.yml)
 [![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-f0851f?style=flat-square)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/NJKeVfYCCC)
 
-sc-offline is a launcher, an offline game session and a mod menu. It is also a reference consumer of the sco-core SDK: a product built on the same public contracts other plugin authors use.
+[**Download**](https://github.com/scuba-sc/sc-offline/releases/latest) · [**Discord**](https://discord.gg/NJKeVfYCCC) · [**Features and status**](docs/features.md) · [**Changelog**](CHANGELOG.md) · [**Issues**](https://github.com/scuba-sc/sc-offline/issues)
 
-[**Download**](https://github.com/scuba-sc/sc-offline/releases/latest) · [**Discord**](https://discord.gg/NJKeVfYCCC) · [**SDK documentation**](https://scuba-sc.github.io/sco-core/) · [**Changelog**](CHANGELOG.md) · [**Issues**](https://github.com/scuba-sc/sc-offline/issues)
+sc-offline starts Star Citizen offline with a mod loaded and takes the mod out again when the game closes. In game, press **M** for a menu with ships, NPCs, gear, saved positions and other single-player tools. It is built on [sco-core](https://github.com/scuba-sc/sco-core), and its plugins use the same public SDK that other plugin authors use.
 
 > [!WARNING]
-> Using this mod may breach the Star Citizen EULA and Terms of Service, and it may get your account banned. Use it only offline, never on Cloud Imperium Games' servers. You are responsible for your own account. Before returning online, close the game and [check cleanup](#go-back-online).
+> Using this mod may breach the Star Citizen EULA and Terms of Service, and it may get your account banned. Use it only offline, never on Cloud Imperium Games' servers. You are responsible for your own account. Before going online again, close the game and [check cleanup](#go-back-online).
 
-## Built with sco-core
+## What you need
 
-The project separates the **product**, the **framework** and its **extensions**:
+- Your own installed copy of Star Citizen. Version 0.8.0 is built for game build 4.10.200.58746.
+- 64-bit Windows. Linux through Wine is [experimental](docs/linux.md).
 
-| Layer | Responsibility |
-| --- | --- |
-| **sc-offline** | The launcher, `dinput8.dll` bootstrap, configuration and menu shell. It connects the game session to the framework and packages the product. |
-| **sco-core** | The shared runtime: plugin loading, commands, events, services, settings, storage and UI contracts. Its Star Citizen game pack owns the shared game-integration layer. |
-| **Feature plugins** | Independently built modules that use public SDK services rather than depending on the product's private internals. Most live in `plugins/`; the Creative plugin (noclip, god mode, infinite ammo) has its own repository, [`sc-creative`](https://github.com/scuba-sc/sc-creative), carried as the `external/sc-creative` submodule and shipped enabled. |
-
-Reusable infrastructure lives in sco-core and product behavior in sc-offline. When a plugin needs a capability the SDK lacks, add the contract and provider in sco-core, then consume it here; do not write a private copy in the plugin.
-
-**The migration is not finished.** External plugins follow this boundary; the host-side feature engines and exceptions that remain are listed in the [architecture](docs/architecture.md) and [verification status](docs/status.md).
-
-### From SDK contract to installed plugin
-
-The development loop follows the [sco-core SDK build/check/install guide](https://github.com/scuba-sc/sco-core/blob/main/sdk/README.md) and its [SDK → MCP → plugin tutorial](https://github.com/scuba-sc/sco-core/blob/main/docs/sdk-mcp-tutorial.md):
-
-1. **Discover the contract.** Read the API catalogue or query sco-core-mcp for service versions, capabilities, ownership and lifecycle requirements before writing a consumer.
-2. **Build against the SDK.** Verify a published SDK archive and compile external plugins against its public headers in an isolated build, without product-private include paths.
-3. **Check the module.** Run `sco-plugin-check` and the module's own fixtures for registration, missing services and cleanup. These are synthetic checks, not gameplay.
-4. **Install as a folder.** Package the module with its `plugin.ini` under `data/plugins/<id>/`, then enable and validate it in the matching Windows host.
-
-The **host and plugin builds are separate**: this repository builds the Windows host from the source revision pinned in `external/sco-core`; plugin SDK archives supply the external consumers. sco-core also publishes a separate [host-source kit](https://github.com/scuba-sc/sco-core/blob/main/docs/host-source-sc.md). Host, SDK package, plugin ABI and individual plugin versions are separate coordinates.
-
-For the actual commands and worked examples, start with [sc-offline's SDK workflows](docs/sdk-workflows.md). For a source build, follow [Build](docs/build.md).
-
-## Quick start
-
-You need your own installed copy of Star Citizen and **64-bit Windows**. Linux through Wine is [experimental](docs/linux.md).
+## Install and start
 
 1. Download **`sc-offline-<version>.zip`** from [Releases](https://github.com/scuba-sc/sc-offline/releases/latest), not GitHub's source-code zip.
-2. Extract it into its own folder and keep the files together. Do not copy the DLL into the game folder yourself.
-3. Close the game, open **`sc-offline.exe`** normally and click **Play**. Approve the setup helper's administrator prompt. `sc-offline.exe` is the Rust launcher. The C++ launcher is in the same folder as `sc-offline-classic.exe`, the fallback if the Rust launcher fails on your PC ([how](docs/launcher.md#the-classic-launcher)).
-4. Let initialization finish. The launcher holds the game at its first instruction while the mod starts (up to 3 minutes by design), so a pause of roughly 15 seconds before the game window appears is expected. Then **M** is meant to open the menu in game; opening the menu has **not been confirmed in game** on a current release ([Status](docs/status.md)).
+2. Extract it into its own folder and keep the files together. Do not copy the DLLs into the game folder yourself.
+3. Close the game, open **`sc-offline.exe`** and click **Play**. Windows asks for administrator rights once, for the [PC changes](docs/launcher.md#pc-changes) that cut the game's network while you play.
+4. Wait for startup. The launcher holds the game while the mod starts, so about 15 seconds pass before the game window appears (up to 3 minutes at most). In game, press **M**.
 
-Coming from 0.7.x? Extract 0.8.0 into the old folder or let `sc-offline.exe update` do it: your `sc-offline.ini` and data files are kept and the updater swaps the exe. See [Updating from 0.7.x](docs/launcher.md#updating-from-07x).
+If `sc-offline.exe` does not start or fails on your PC, run **`sc-offline-classic.exe`** from the same folder instead. It is the older launcher and takes the same commands ([details](docs/launcher.md#the-classic-launcher)).
 
-Use the launcher's **Plugins** page to manage extensions. What works depends on the release, the game build and the enabled services (see [Features](docs/features.md) and [Status](docs/status.md)); `main` and a downloaded release can differ.
-
-## What has actually been run
-
-Read this before relying on any feature description. Only the owner runs the game; a green build, a synthetic check or a resolved signature is never a game result.
-
-- **Observed in game by the owner (game build 4.10.200.58746, one or two sessions each):** equipping gear through `game.loadout.async` attaches the items (`AttachmentReceived` in `Game.log`); placing a prefab through `game.prefabs` places an Outposts item; ship spawn, boarding and Flight Ready work; character spawn works; a saved-spot move really moves the player, but Core did not confirm the arrival (the product now also checks the player's own position); the seat probe logged Enter and Exit. Earlier: v0.7.8.1 offline startup on two Windows PCs.
-- **Not run in game:** the Rust launcher's play path and its elevated helper, the Rust in-game menu, the update swap, the catalogue network path, and every other feature. [Status](docs/status.md) has the full list.
-- **Checked on a development machine only:** the external plugins build against published SDK archives and pass the SDK's plugin checker with no game services. That is a build and contract check, not gameplay.
-- **Historical Linux report:** sc-offline 0.7.0 was reported played offline with game 4.10.193 on one Bazzite/LUG Helper Wine setup. [The exact tuple and limits](docs/linux.md#historical-observation) are recorded separately; the current stable SDK 2.4.0 host and plugins have no Wine game run.
-- **This release's SDK:** 0.8.0 is built for sco-core SDK 2.4.1, game pack 0.8.1, game build 4.10.200.58746. The Core with the process-retained composition starts the host natively ([host composition](docs/host-composition.md)). CI's external plugin proofs use the published SDK 2.4.0 archive until 2.4.1 is published; the 2.4.1 proofs were run on a development machine, with synthetic services. See [SDK coordinates](docs/sdk-candidate.md).
-
-Details and the list of owed in-game checks: [Status](docs/status.md).
+Coming from 0.7.x? Extract 0.8.0 into the old folder or run `sc-offline.exe update`. Your `sc-offline.ini` and data files are kept ([how](docs/launcher.md#updating-from-07x)).
 
 ## Go back online
 
-The launcher records its session changes and arranges cleanup when the game exits. After a crash or power loss, **close the game**; the launcher window then shows a **Repair** banner (also under Settings as **Repair: undo PC changes**). Press it, or run `uninstall`, if anything remains. Check again before returning online.
+The launcher undoes its changes when the game closes. After a crash or power loss, close the game, then press **Repair** in the launcher window, or run:
 
 ```powershell
 .\sc-offline.exe status
@@ -76,32 +40,56 @@ The launcher records its session changes and arranges cleanup when the game exit
 .\sc-offline.exe status
 ```
 
-If the Rust launcher cannot do it, `.\sc-offline-classic.exe uninstall` reads the same `pc-changes.txt` record and undoes the same changes.
+If the Rust launcher cannot do it, `.\sc-offline-classic.exe uninstall` reads the same `%ProgramData%\sc-offline\pc-changes.txt` record and undoes the same changes.
 
-**Green** means the mod is out of the game folder and the launcher's recorded PC changes are undone. It describes tracked local state, not account safety or unrelated manual changes. Keep the default protections enabled; [the launcher guide](docs/launcher.md#pc-changes) explains firewall/EAC handling and restoration.
+**Green** means the mod is out of the game folder and the recorded PC changes are undone. It does not speak for your account or for changes you made by hand. [PC changes](docs/launcher.md#pc-changes) lists each one.
+
+## Which menu
+
+The game menu you get by default is the **classic** menu. A **new** menu (written in Rust) is opt-in: choose **New** under **Settings > In-game menu** in the launcher window, or set `menu = rust` in `sc-offline.ini`. It works only with `sc-offline.exe`. The release folder holds two game DLLs for this reason ([why](docs/decisions.md#2026-11-18-two-game-dlls)):
+
+| File | What it is |
+| --- | --- |
+| `dinput8.dll` | The mod with the classic menu. Installed by default, and by the classic launcher always. |
+| `dinput8-rust-menu.dll` | The same mod with the new menu hook. `sc-offline.exe` installs it as `dinput8.dll` only when the ini says `menu = rust`. |
+
+The new menu has not been seen in game. Not run in game. The change takes effect on the next **Play**.
+
+## What works
+
+[Features](docs/features.md) lists what each part is for. [Status](docs/status.md) is the one page that says what was seen in game and what was not. Read it before you rely on a feature.
 
 ## Troubleshooting
 
-Start through `sc-offline.exe`, and turn **NVIDIA Smooth Motion off** for Star Citizen if you use an NVIDIA GPU. For a bug report, include the mod version, game build and matching `data/launcher.log`, `data/mod.log` and `Game.log`; review logs for personal information before posting. See [launcher guidance](docs/launcher.md) or [open an issue](https://github.com/scuba-sc/sc-offline/issues/new/choose).
+Start through `sc-offline.exe`. If you use an NVIDIA GPU, turn **NVIDIA Smooth Motion off** for Star Citizen. For a bug report, include the mod version, the game build, and `data/launcher.log`, `data/mod.log` and `Game.log`. Read the logs for personal information before you post them. [Open an issue](https://github.com/scuba-sc/sc-offline/issues/new/choose) or see the [launcher guide](docs/launcher.md).
 
 ## Documentation
 
-| Start here | Covers |
+| Page | Covers |
 | --- | --- |
-| [SDK guide](https://github.com/scuba-sc/sco-core/blob/main/sdk/README.md) · [SDK reference](https://scuba-sc.github.io/sco-core/) | Public contracts, tools, examples and plugin development |
-| [SDK workflows](docs/sdk-workflows.md) · [Build](docs/build.md) | Build, check and install consumers; build the Windows host |
-| [Architecture](docs/architecture.md) · [Status](docs/status.md) | Layer boundaries, migration progress and verification limits |
-| [Launcher](docs/launcher.md) · [Linux](docs/linux.md) | Setup, configuration, updates, recovery and experimental Wine support |
-| [Features](docs/features.md) · [Data files](docs/data-files.md) | User-facing capabilities, catalogs and saves |
-| [AI agents](docs/ai-agents.md) | Connect Claude, Codex, Cursor or VS Code to your install (`sc-offline.exe mcp`) and to the SDK and sandbox MCP servers |
+| [Launcher](docs/launcher.md) · [Linux](docs/linux.md) | Commands, settings, updates, recovery, Wine |
+| [Features](docs/features.md) · [Status](docs/status.md) | What each feature does, and what has been run |
+| [Data files](docs/data-files.md) · [Capabilities](docs/capabilities.md) | Lists, saves, environment variables, capability switches |
+| [Plugin UI](docs/plugin-ui.md) · [Pickers](docs/pickers.md) · [Localization](docs/localization.md) | Menu pages, hotkeys, catalogs, launcher language |
+| [AI agents](docs/ai-agents.md) | Connect Claude, Codex, Cursor or VS Code to your install (`sc-offline.exe mcp`) |
+| [Architecture](docs/architecture.md) · [Decisions](docs/decisions.md) | How the layers fit, and why |
 
-Offline play is the scope: no connection to CIG servers or online services, no anti-cheat bypass, no telemetry and no account or entitlement changes (see [CONTRIBUTING](CONTRIBUTING.md) and [SECURITY](SECURITY.md)). Optional co-presence lives separately in [sc-mp](https://github.com/scuba-sc/sc-mp); it and the optional [cross-game bridges](docs/bridges.md) are excluded from the standard release.
+## For plugin developers
+
+sc-offline is the reference consumer of the sco-core SDK. Reusable infrastructure lives in sco-core and product behavior here. When a plugin needs something the SDK lacks, add the contract and provider in sco-core and consume it here.
+
+- Start with the [SDK guide](https://github.com/scuba-sc/sco-core/blob/main/sdk/README.md), the [SDK reference](https://scuba-sc.github.io/sco-core/) and the [SDK to plugin tutorial](https://github.com/scuba-sc/sco-core/blob/main/docs/sdk-mcp-tutorial.md).
+- [SDK workflows](docs/sdk-workflows.md) has the commands. [Build](docs/build.md) builds the Windows host from the source revision pinned in `external/sco-core`.
+- A plugin is a folder, `data/plugins/<id>/`, with a `plugin.ini`. The host, the SDK archive, the plugin ABI and each plugin have separate versions.
+- The Creative plugin lives in its own repository, [`sc-creative`](https://github.com/scuba-sc/sc-creative), carried as the `external/sc-creative` submodule.
+
+Offline play is the scope. There is no connection to CIG servers, no anti-cheat bypass, no telemetry and no account or entitlement changes ([CONTRIBUTING](CONTRIBUTING.md), [SECURITY](SECURITY.md)). Co-presence lives in [sc-mp](https://github.com/scuba-sc/sc-mp), and the optional [bridges](docs/bridges.md) are separate. Neither is in the release.
 
 ## Credits and license
 
 Based on **ChrisWareOffline 0.9.0-rc1** by **Chris Ware and cloudyyrust**. Maintained independently by **scubamount**, without endorsement from the original authors. Dated modifications: [CHANGELOG.md](CHANGELOG.md).
 
-sc-offline's own code is **GPL-3.0-only** ([LICENSE](LICENSE)); third-party code retains its own licenses ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). Contributions: [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md).
+sc-offline's own code is **GPL-3.0-only** ([LICENSE](LICENSE)). Third-party code keeps its own licenses ([THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)). Contributions: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 AI was used in a limited way to make this project.
 

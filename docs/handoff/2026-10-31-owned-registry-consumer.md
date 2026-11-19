@@ -1,3 +1,5 @@
+Historical record: owned-registry consumer migration draft, 2026-10-31.
+
 # Owned-registry consumer migration — local draft
 
 Historical snapshot from 2026-10-31: offline base

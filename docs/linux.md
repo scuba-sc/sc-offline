@@ -1,13 +1,13 @@
 # Linux (experimental)
 
 > [!WARNING]
-> **Experimental.** A historical Linux run with sc-offline 0.7.0 was reported in October 2026. The current published stable SDK 2.4.0 host and plugins have not been run under Wine in this review. The older report does not establish current Wine support.
+> **Experimental.** One report of sc-offline 0.7.0 on Linux exists, from October 2026. Nothing newer has run under Wine, so that report does not establish current Wine support.
 
-`sc-offline.sh` starts `sc-offline.exe` inside your Star Citizen Wine prefix. From 0.8.0 that exe is the Rust launcher, which has **not been run under Wine**; the historical report below used the C++ launcher. The C++ launcher ships as `sc-offline-classic.exe`: if the Rust one fails under Wine, run `wine sc-offline-classic.exe <command>` instead (`sc-offline.sh` always starts `sc-offline.exe`). The Windows launcher handles mod installation and removal in that prefix; its Wine path differs from Windows PC setup ([launcher.md](launcher.md)).
+`sc-offline.sh` starts `sc-offline.exe` inside your Star Citizen Wine prefix. From 0.8.0 that exe is the Rust launcher, which has not run under Wine. The report below used the C++ launcher, which now ships as `sc-offline-classic.exe`. If the Rust launcher fails under Wine, run `wine sc-offline-classic.exe <command>` yourself, because `sc-offline.sh` always starts `sc-offline.exe`. Leave `menu` at its default `imgui`: the new menu has not run anywhere ([Which menu](../README.md#which-menu)). The launcher's behavior under Wine differs from Windows ([launcher.md](launcher.md)). Not run in game. That covers 0.8.0 under Wine.
 
 ## Historical observation
 
-[PR #105](https://github.com/scuba-sc/sc-offline/pull/105) reports about 90 minutes of offline play with this specific setup:
+[PR #105](https://github.com/scuba-sc/sc-offline/pull/105) reports about 90 minutes of offline play on this setup:
 
 | Component | Reported value |
 | --- | --- |
@@ -17,25 +17,23 @@
 | Wine setup | LUG Helper; `lug-wine-tkg-git-11.17-1` |
 | GPU | NVIDIA RTX 3080 Ti with an AMD integrated GPU |
 
-The report describes spawning ships, crew, build mode, outfits/gear, a hauling contract, wallet changes and teleporting to Levski. It reports a clean quit and launcher status `Installed: no` afterward. It also reports that launching Wine directly worked and DXVK selected the discrete GPU on that setup. These are attributed observations from that older product/game tuple, not a repeated test, current hybrid-GPU acceptance or proof of every cleanup step. Its original logs were not revalidated for this documentation change.
-
-There is no current test tuple recorded here for the published stable SDK 2.4.0 host, later game builds, other distributions/GPUs, or Lutris/Steam/Proton detection. Keep those separate from the historical LUG Helper result.
+It describes spawning ships, crew, build mode, outfits and gear, a hauling contract, wallet changes and teleporting to Levski, then a clean quit and launcher status `Installed: no`. It also says launching Wine directly worked and DXVK selected the discrete GPU. These are attributed observations of an older product and game build. They are not a repeated test, hybrid-GPU acceptance or proof of every cleanup step, and the original logs were not rechecked. No test is recorded for the current host, later game builds, other distributions or GPUs, or Lutris and Steam/Proton detection.
 
 ## Setup
 
-1. Install the game in a Wine prefix. The script expects the layout that the [LUG Helper](https://github.com/starcitizen-lug/lug-helper) creates.
-2. Turn off Easy Anti-Cheat, the Linux way:
+1. Install the game in a Wine prefix. The script expects the layout the [LUG Helper](https://github.com/starcitizen-lug/lug-helper) creates.
+2. Turn off Easy Anti-Cheat the Linux way:
    - add `127.0.0.1 modules-cdn.eac-prod.on.epicgames.com` to `/etc/hosts`;
    - if `EasyAntiCheat_EOS.exe` exists under `drive_c/Program Files (x86)/EasyAntiCheat_EOS/` in your prefix, rename it.
-3. Extract the release zip anywhere, then run:
+3. Extract the release zip anywhere and run:
 
    ```bash
    ./sc-offline.sh
    ```
 
-   It takes the same commands and options as `sc-offline.exe` (`status`, `uninstall`, `--dry-run`, ...;
-   see [launcher.md](launcher.md)), plus `--prefix <dir>` and `--wine <path>` to override what it finds.
-   `./sc-offline.sh --dry-run` prints the prefix, Wine and the exact command, and starts nothing.
+   It takes the same commands and options as `sc-offline.exe` (`status`, `uninstall`, `--dry-run` and so on; see [launcher.md](launcher.md)), plus `--prefix <dir>` and `--wine <path>` to override what it finds. `./sc-offline.sh --dry-run` prints the prefix, Wine and the exact command, and starts nothing.
+
+The script checks that `/etc/hosts` blocks the EAC download server and prints the line to add if it does not. It sets `WINEDLLOVERRIDES=dinput8=n,b` so Wine loads the mod's `dinput8.dll` instead of its own. It starts Wine directly and never runs the LUG Helper's `sc-launch.sh`; it only reads that file to pick a Wine runner.
 
 ## How it finds things
 
@@ -44,24 +42,18 @@ There is no current test tuple recorded here for the published stable SDK 2.4.0 
 | Prefix | `--prefix` or `$WINEPREFIX`; the LUG Helper's `~/.config/starcitizen-lug/winedir.conf`; a Lutris game whose name mentions Star Citizen (its `prefix:`); a Steam/Proton `compatdata/*/pfx` that contains `Roberts Space Industries` (native and Flatpak Steam); `~/Games/star-citizen` |
 | Wine | `--wine` or `$WINE`; `wine_path=` in the prefix's `sc-launch.sh`; the Lutris game's Wine runner; for a Proton prefix, the newest Proton's `wine`; `wine` on `PATH` |
 
-It prints which source it used for each. The historical report used the LUG Helper layout. Lutris and Steam/Proton detection follow those tools' file layouts; no current acceptance run is recorded here for either path.
+It prints which source it used for each. The report used the LUG Helper layout. The Lutris and Steam/Proton paths follow those tools' file layouts and have no recorded run. When you report a difference between launch paths, include the `--dry-run` output.
 
-The Windows launcher compares the physical channel and Bin64 directories to combine duplicate install paths, preserving the first discovered spelling and priority. If the filesystem cannot supply directory identity, it retains the existing case-insensitive path comparison. Separate channels or install roots remain separate, including when they share executable files or a Bin64 junction. Whether a Wine runner supplies matching identity for C: and Z: aliases still requires a named Wine fixture; Windows filesystem tests do not establish that behavior.
+**Duplicate install paths.** The Windows launcher compares the physical channel and `Bin64` directories to combine duplicate paths for one install, keeping the first spelling and priority. If the filesystem gives no directory identity, it falls back to a case-insensitive path comparison. Separate channels or roots stay separate, including when they share executables or a `Bin64` junction. Whether a Wine runner gives matching identity for `C:` and `Z:` aliases needs a named Wine fixture. The CI job `install-aliases-wine` (`tools/check_install_discovery_wine.py`) runs Ubuntu's Wine in a fresh prefix. It checks the identity helper against a `C:` symlink and its `Z:` path, and that separate roots, PTU and a shared `Bin64` stay separate. It creates no game install and tests only that Wine runner.
 
-The synthetic `install-aliases-wine` CI job runs `tools/check_install_discovery_wine.py` with Ubuntu's Wine in a fresh temporary prefix. It checks the production identity helper against a C: symlink and its Z: host path, then verifies separate roots, PTU and a shared Bin64 remain separate. Its log records the Wine version and returned directory identities. It creates no game installation and executes only the fixture program. This job tests that named Wine runner; game and launcher acceptance remain separate.
+## What the launcher skips under Wine
 
-It also checks that `/etc/hosts` blocks the EAC download server and prints the line to add if not.
-
-The script sets `WINEDLLOVERRIDES=dinput8=n,b`, so Wine loads the mod's `dinput8.dll` instead of its own.
-
-It launches Wine directly and does not execute the LUG Helper's `sc-launch.sh`. Reading that file to select a Wine runner is separate from running its setup. Use `--dry-run` to record the selected prefix, runner and command when reporting a difference between the two launch paths; this wrapper behavior does not by itself establish which graphics/runtime setup works on the current game build.
-
-The launcher's `OnWine()` path skips its Windows firewall, hosts-file and EAC-rename operations (`NeedsPcChanges` in `launcher/launcher.cpp`). The wrapper's existing checks and manually made Linux changes are separate. `Installed: no` does not certify that a manual Linux change was undone; follow the existing cleanup instructions before returning online.
+The launcher skips its firewall, hosts-file and EAC-rename steps under Wine (`NeedsPcChanges` in `launcher/launcher.cpp`). The checks in `sc-offline.sh` and any Linux changes you made by hand are separate. `Installed: no` does not show that a manual change was undone.
 
 ## Cleanup before returning online
 
-Close the game and follow [the launcher's cleanup checks](../README.md#go-back-online). Restore any files you manually renamed and remove only the hosts entries you added, using your saved record of the original state. The launcher cannot certify those manual Linux changes were restored. Verify cleanup and the normal anti-cheat state before using the official online game.
+Close the game and follow [the launcher's cleanup checks](../README.md#go-back-online). Restore any file you renamed and remove only the hosts entries you added, using your saved record of the original state. The launcher cannot confirm those manual changes. Check cleanup and the normal anti-cheat state before you use the official online game.
 
 ## Reporting
 
-Include the exact product, SDK/host, game, distribution, Wine, GPU and driver versions with the script's output, `data/mod.log`, and the game's `Game.log`. State what ran and what cleanup you observed. Remove account names, user paths and tokens before posting logs, as required by [CONTRIBUTING.md](../CONTRIBUTING.md).
+Include the exact sc-offline, SDK, game, distribution, Wine, GPU and driver versions with the script's output, `data/mod.log` and the game's `Game.log`. Say what ran and what cleanup you saw. Remove account names, user paths and tokens before posting logs ([CONTRIBUTING.md](../CONTRIBUTING.md)).

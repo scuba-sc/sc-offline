@@ -32,11 +32,11 @@ establish that it works.
 | `late_code` | 0 |
 | `slot` | 7 |
 | `per_request` | 2 |
-| `os_hook` | 2 |
+| `os_hook` | 3 |
 | `core_registration` | 8 |
 | `entry_gate` | 3 |
 | `unreachable` | 4 |
-| total | 86 |
+| total | 87 |
 
 A table-driven site counts once: `InstallHooks` has one `Detour` call over the five-row `kHooks`
 table (the census records and the test checks the row count), and two patch functions make one

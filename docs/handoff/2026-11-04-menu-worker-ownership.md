@@ -1,3 +1,5 @@
+Historical record: menu worker ownership checkpoint, 2026-11-04.
+
 # Menu worker ownership checkpoint
 
 This is a historical checkpoint. Its pin, implementation and test-status statements

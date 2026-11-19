@@ -1,123 +1,73 @@
-# SDK migration decisions
+# Decisions
 
-Owner: **scubamount**. Decisions recorded **2026-10-12**. These are product
-policy and migration acceptance, not a claim that every stage is implemented.
-No tag, publication or in-game certification follows from this record.
+Owner: **scubamount**. This page records product decisions with their dates. A decision here is policy, not a claim that the work is finished or that anything was seen in game; [Status](status.md) records that. Nothing here tags, publishes or certifies a release.
 
-The implementation column retains the historical SDK 2.4.0 consumer integration
-and tracks the development Core pin (`2.4.1-dev.6`) separately from the release recipe. Exact source and archive identities are recorded in
-[SDK coordinates](sdk-candidate.md); this table records neither new owner
-approval nor gameplay evidence. The owner decision column remains the policy
-record dated 2026-10-12.
+## 2026-11-18: Two game DLLs
 
-## Approved direction and current boundary
+The 0.8.0 package ships two game DLLs. Every build the owner ran in game used the CMake option `SCO_HOST_MENU_CLIENT=OFF`. Turning it on, which the new menu needs, changes how the classic menu gets its pages at about a dozen places in the source, and that configuration has never run in game. So the package carries the configuration that has run as the default `dinput8.dll`, and the new-menu configuration as a separate file the player must choose.
 
-| Topic | Owner decision | Implementation boundary |
-| --- | --- | --- |
-| Feature preservation | Gold-standard target is **13 baseline feature units**: teleport, spawn, crew, loadout, npc, inspector, quantum, build, contracts, mining, multiplayer, creative and discord. **2 optional bridges** (titanlink, voxel_bridge) are counted separately and stay outside the normal release. No silent feature retirement or denominator reduction. | The host registers no feature built-ins. The [release recipe](../.github/workflows/build.yml) stages **11 external native feature folders**: spawn, crew, build, mining, npc, inspector, teleport, quantum, creative, discord and contracts. Loadout has an external implementation pending release staging; multiplayer is not registered or staged at this revision. These slices retain 13 baseline IDs, not 13/13 completion. Contracts is an external consumer with no duplicate built-in; sco-core has the missions/economy service and provider implementation, while production mutations remain unavailable by default until admitted-backend readiness passes. Supporting data packs are separate from native feature counts. |
-| Host and plugin dependencies | The Windows host uses an exact sco-core source pin. Standalone plugins use verified published SDK archives, never a source-checkout include tree. | The earlier SDK 2.4.0 stable integration pinned embedded host source `6106fa3639cbcc28f78a1ded8de2707de019f4d3`, uses the published `sdk-v2.4.0` combined archive (SHA-256 `0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc`) for standalone plugins, and recorded the distinct host-source archive digest. The development host instead pins Core `4ba313da3ac76c887cda03772d6106452f33a5d4` (development SDK coordinate `2.4.1-dev.6`, unpublished); no archive digests are recorded for it yet and earlier runs do not qualify it. Stable package identity was verified; mixed host/plugin Windows execution, native activation and gameplay remain unverified. See [coordinates and limits](sdk-candidate.md). |
-| Enable/disable semantics | Eventually every feature has explicit per-folder enable/disable semantics, with no hidden built-in fallback. First-party feature folders are enabled by default and user-disableable. | Ten staged native feature folders (creative included) are enabled without `disabled` markers and require `plugins = on`; discord ships with a `disabled` marker. Folder disable and `plugins = off` gate the external modules, and the host registers no feature built-in fallback. NPC and inspector have no host feature fallback. Remaining legacy host paths are not certified by this record. Discord's disabled metadata is included in shared release wiring; transport/field review and Windows acceptance remain pending. |
-| UI | Invest in SDK renderer-neutral widgets ([sco-core #139](https://github.com/scuba-sc/sco-core/issues/139)). Command-first examples meanwhile; no new ImGui coupling. | The external spawn, crew and npc modules own Vehicles, Crew and NPCs retained panels through public `sco.widgets`. Inspector also offers the optional `inspector.main` panel with Diagnostics, Inventory, Actions and Parameters; its commands remain usable without widgets. Crew and NPC share SDK-only catalog parsing, not actor ownership. The host renders copied panels with its own ImGui adapter. The pinned published SDK 2.4.0 (`sdk-v2.4.0`) ships the widgets/content headers these consumers use; SDK 2.0.0 lacked them. Windows rendering/game acceptance is NOT RUN. |
-| Persistent build ownership | Retained build placements need scoped removable handles that survive plugin reload. No arbitrary entity deletion or private-pointer fallback. | The external build consumer uses public owner-scoped retained removal while loaded and requests removal on ordinary unload. Across-reload placement persistence is not implemented; `keep()` alone does not grant persistent removal authority. Provider cleanup and streamed disappearance remain separate acceptance work. |
-| Crew ownership | Crew may remove only NPCs it spawned itself, not foreign seat occupants or another plugin's NPCs. | The external Crew consumer is implemented. This policy still applies to every seat/removal path and remaining legacy caller; this record does not certify that all such paths implement it or that provider cleanup has passed in-game acceptance. |
-| Quantum G8 | Fully approved for R1: bounded game-thread-only, offline/EAC-admitted, owner-scoped controls; no raw engine access. | The external `quantum` plugin consumes `game.quantum` and keeps Travel/storage compatibility. Core activation requires a grounded backend plus installed owner cleanup; the default engine adapter, NAV forwarding and charge/audio/effects parity remain pending. G7 global cvar writes are not authorized by G8 approval. |
-| Console and cvars | Scoped game-cvar reads and reversible writes only. No arbitrary console execution exposed to plugins, MCP or peers. A local host debug console needs separate review and explicit opt-in. | No new console/cvar API is added by step 1C; legacy UI behavior is not silently certified. |
-| Discord | Off until transport and transmitted fields receive privacy/security review. | The source and release recipe include disabled folder metadata and the diagnostic module without custom transport/game reads. Manually enabling it exposes only `discord.status`, returning unavailable; no approved transport or transmitted field set exists. Presence remains blocked, not retired. Shared release/CI wiring is present; real disabled-folder discovery, Windows and privacy/transport acceptance remain owed; see [Discord review](../plugins/discord/README.md). |
-| Multiplayer | Opt-in private co-presence; session control is host-only. Narrow user-consented LAN/VPN access; no stored peer secrets by default. | No official game servers, remote console, widened plugin session/socket authority or broad network exception. Network policy acceptance remains separate from synthetic transport tests. |
-| Launcher, EAC and online safety | Keep launcher behavior unchanged in this step. Refuse mutation when EAC is present or offline status is unknown/online; no detection suppression or bypass. Owner security review of existing launcher/system policy is required **before step 6A** bootstrap extraction. | Plugins/MCP cannot change system/network policy. This record neither authorizes new EAC manipulation nor certifies current launcher behavior in game. |
-| Runtime MCP | Minimal game-pack-owned snapshots plus optional diagnostic consumers; diagnostics explicitly opt-in. Track placement/implementation in [sco-core #141](https://github.com/scuba-sc/sco-core/issues/141). | Independently reviewed, local read-only observations with freshness/session validity and redaction. No gameplay invocation, mutation, raw memory/addresses, peer secrets or runtime reload. Static SDK discovery is not runtime connectivity. The launcher's own `sc-offline.exe mcp` ([AI agents](ai-agents.md)) is separate: it reads files and logs, never game memory, and exposes four read-only tools. |
-| Merge and gameplay evidence | PR merge is gated by CI; users test official releases. Owner-run Windows/in-game acceptance is **NOT RUN**. | Keep compile/check/synthetic evidence separate from gameplay, rendering and native Windows load evidence. NPC native faults are restart-required, not safe reload/recovery. No full migration completion or game-support claim until exact-build acceptance is recorded. |
-| Updates and saves — open implementation policy | Step 1C changes no launcher updater or storage format; keep feature IDs and state stable during migration. | Atomic first-party updates, preservation/reset of explicit enable choices and legacy save/default contradictions remain to be resolved in their own work. No new updater behavior is approved or claimed here. |
+- **`dinput8.dll`** is built with `SCO_HOST_MENU_CLIENT=OFF`. It is installed by default.
+- **`dinput8-rust-menu.dll`** is the same sources built with `SCO_HOST_MENU_CLIENT=ON` and the Rust menu hook. It has never run in game.
+- **`sc-offline.exe`** (the Rust launcher) installs `dinput8-rust-menu.dll` into the game folder under the name `dinput8.dll` only when the ini says `menu = rust` and that file is beside the launcher. In every other case it installs `dinput8.dll`.
+- **`sc-offline-classic.exe`** always installs `dinput8.dll`. With `menu = rust` it shows the classic menu, and the mod writes one `mod.log` line saying the new menu needs the Rust launcher.
+- **Changing the `menu` key** takes effect on the next Play. The launcher replaces the installed DLL when its bytes differ from the chosen source, as it already does for a new version.
 
-## SDK work dependencies
-
-The public SDK/game-pack gaps are tracked in **sco-core #122–135**. They cover
-host composition/lifecycle, guarded player relocation, full-pose/spatial discovery,
-owned prefabs, filtered rays/free camera, loadout, scoped cvars, quantum controls,
-persistent/seat ownership, ASOP/hangar/ATC, contracts/missions, local economy,
-host-only private sessions and content access reconciliation. These are dependencies,
-not promises that the pinned SDK already exposes them.
-
-- [#122](https://github.com/scuba-sc/sco-core/issues/122), [#123](https://github.com/scuba-sc/sco-core/issues/123), [#124](https://github.com/scuba-sc/sco-core/issues/124), [#125](https://github.com/scuba-sc/sco-core/issues/125), [#126](https://github.com/scuba-sc/sco-core/issues/126), [#127](https://github.com/scuba-sc/sco-core/issues/127), [#128](https://github.com/scuba-sc/sco-core/issues/128)
-- [#129](https://github.com/scuba-sc/sco-core/issues/129), [#130](https://github.com/scuba-sc/sco-core/issues/130), [#131](https://github.com/scuba-sc/sco-core/issues/131), [#132](https://github.com/scuba-sc/sco-core/issues/132), [#133](https://github.com/scuba-sc/sco-core/issues/133), [#134](https://github.com/scuba-sc/sco-core/issues/134), [#135](https://github.com/scuba-sc/sco-core/issues/135)
-- UI [#139](https://github.com/scuba-sc/sco-core/issues/139), host-source packaging [#140](https://github.com/scuba-sc/sco-core/issues/140), runtime snapshots/diagnostics [#141](https://github.com/scuba-sc/sco-core/issues/141)
-
-Game-neutral kernel APIs stay neutral; engine signatures, offsets, hooks and guarded
-mechanics belong to the game pack. Product plugins own feature policy, commands,
-state and content through public contracts. Missing capabilities mean unavailable,
-not a private engine fallback. Contracts land upstream before consumers move their
-pin. See [architecture](architecture.md), [NPC and inspector tutorials](sdk-workflows.md)
-and the [pending acceptance ledger](status.md).
-
-## 2026-11-13: run on the process-retained composition
-
-Product-owner decision: sc-offline runs on the Core's opt-in process-retained host
-composition, with the bar "loads and works in game like the last shipped version".
-The product then relies on retain-until-exit (no unload, stop is closure) instead of a
-reader/worker drain proof. Install quiescence is attested only while the entry gate is
-held, plus the game thread's own service start, which is a known deviation to revisit
-after in-game evidence. A Core without the composition keeps the native-startup refusal.
-No in-game result supports this yet; see [host composition](host-composition.md) and the
-[pending acceptance ledger](status.md).
-
-## 2026-11-17: Rust launcher and in-game menu
-
-Product-owner decisions for the Rust launcher plan, recorded in full in
-[Rust launcher design](rust-launcher.md):
-
-1. Rust scope is the launcher and the in-game menu. The in-game host (dinput8.dll, hooks,
-   Core host kit) stays C++. The Rust menu reads `sco.widgets` panels through a new versioned C
-   interface to be added in sco-core.
-2. sco-core 2.4.1 is held until the Rust launcher, Rust menu, catalogue and reference launcher
-   are in it.
-3. Catalogue: signed index. First-party and reviewed native plugins are allowed. Every pulled
-   plugin lands disabled with a native-code warning. Local plugins are always allowed.
-4. Capability switches are on by default in all release packages. Each is a visible setting the
-   player can turn off, and its text says it has not been run in game.
-
-The remaining items of the design's decision list are still pending owner answers. Only the P0
-skeleton exists (`launcher-rs/`). No in-game result supports any of this.
+See [Which game DLL](launcher.md#which-game-dll), [The new menu](plugin-ui.md#the-new-menu-opt-in) and [Build](build.md#cmake-options-that-change-the-menu).
 
 ## 2026-11-18: sc-offline 0.8.0 release decisions
 
-Product-owner decisions for the 0.8.0 release. The owner will do no more testing before it, so these
-close the questions that were still open. Each says what it changes and what it does not prove.
+The owner will do no more testing before 0.8.0, so these close the questions that were still open.
 
-1. **Launcher names.** The Rust launcher becomes `sc-offline.exe` in the release package. The C++
-   launcher ships beside it as `sc-offline-classic.exe`, documented as the fallback. It can undo PC
-   changes from the same `%ProgramData%\sc-offline\pc-changes.txt` record. See
-   [the classic launcher](launcher.md#the-classic-launcher).
-2. **In-game menu.** The Rust menu ships opt-in: ini key `menu = rust`, default `imgui`. It has never
-   run in a game. See [The Rust menu](plugin-ui.md#the-rust-menu-opt-in).
-3. **Capability switches.** `exp_loadout_async`, `exp_inventory_read`, `exp_actor_stats_write`,
-   `exp_cvars_native` and `exp_audio_native` default **on**; `exp_entities_diag` (log-only
-   diagnostics) defaults **off**. Only the loadout switch has been seen working in game.
-4. **Travel.** Travel to other planets (a zone lookup beyond the player's own chain) is **not** in
-   2.4.1. It is a documented gap: [features.md](features.md#travel-between-places).
-5. **Core defaults.** Core capability defaults are unchanged. What the owner saw in game is recorded
-   as evidence text in [status.md](status.md), not as a changed default.
-6. **Plugin catalogue.** A signed index. First-party and reviewed native plugins are allowed, and
-   everything lands disabled. No production signing key exists yet, so the shipped trust root is
-   empty and the catalogue works from a local folder (`plugins catalogue ... --source <folder>`).
-   Adding a key is a release-time owner act, not something an agent or a player does.
-7. **Versions.** sc-offline **0.8.0**; sco-core SDK **2.4.1**; game pack **0.8.1**; game build
-   **4.10.200.58746**.
+1. **Launcher names.** The Rust launcher is `sc-offline.exe` in the package. The C++ launcher ships beside it as `sc-offline-classic.exe`, the documented fallback. It can undo PC changes from the same `%ProgramData%\sc-offline\pc-changes.txt` record ([the classic launcher](launcher.md#the-classic-launcher)).
+2. **In-game menu.** The new (Rust) menu ships opt-in: ini key `menu = rust`, default `imgui`. It has never run in game. How the package carries it: [Two game DLLs](#2026-11-18-two-game-dlls).
+3. **Capability switches.** `exp_loadout_async`, `exp_inventory_read`, `exp_actor_stats_write`, `exp_cvars_native` and `exp_audio_native` default **on**. `exp_entities_diag` (log-only diagnostics) defaults **off**. Only the loadout switch has been seen working in game.
+4. **Travel.** Travel to another planet, which needs a zone lookup beyond the player's own chain, is **not** in 0.8.0. It is a documented gap ([Features](features.md#travel-between-places)).
+5. **Core defaults.** sco-core's capability defaults are unchanged. What the owner saw in game is recorded as evidence text in [Status](status.md), not as a changed default.
+6. **Plugin catalogue.** A signed index. First-party and reviewed native plugins are allowed, and everything lands disabled. No production signing key exists yet, so the shipped trust root is empty and the catalogue works from a local folder (`plugins catalogue ... --source <folder>`). Adding a key is a release-time act of the owner.
+7. **Versions.** sc-offline **0.8.0**, sco-core SDK **2.4.1**, game pack **0.8.1**, game build **4.10.200.58746**.
 8. **Publishing.** Nothing is pushed, tagged or published by an agent. The owner tags the release.
 
-Decisions made while preparing the release, under the owner's instruction to decide:
+Decisions made while preparing the release:
 
-- **Travel places list.** The release ships `data/plugins/locations_catalog` (a copy of
-  `data/locations.txt`) as an ordinary data pack. The quantum plugin requires one enabled
-  `lists/locations.txt` and `tools/check_package_tree.py` fails a package without it. Same-chain
-  destinations are what that list can serve; the gap in decision 4 stays.
-- **Rust menu hook is a build option.** `menu = rust` works only in a `dinput8.dll` configured with
-  `-DSCO_HOST_MENU_CLIENT=ON`, which also changes how the ImGui menu gets its panels. The default
-  build and CI keep it `OFF`: switching the default menu to a path never run in game is a bigger risk
-  than a menu key that does nothing. Enabling it for a release is an owner act
-  ([build.md](build.md#cmake-options-that-change-the-menu)).
-- **Release script.** The release job runs `tools/package_release.py`, which also builds a package by
-  hand ([build.md](build.md#build-a-release-package-without-ci)). The release manifest stays format 1.
-- **Release job guard.** The first step of the `release` job still refuses to package an unpublished
-  development Core. It is removed when the owner publishes SDK 2.4.1 and the pin matches it.
-- **Updating from 0.7.x.** The ini and data files are kept; the updater swaps the exe
-  ([launcher.md](launcher.md#updating-from-07x)).
+- **Travel places list.** The package ships `data/plugins/locations_catalog`, a copy of `data/locations.txt`, as an ordinary data pack. The quantum plugin requires one enabled `lists/locations.txt`, and `tools/check_package_tree.py` fails a package without it. The list serves same-chain destinations only; decision 4 stands.
+- **Release script.** The release job runs `tools/package_release.py`, which also builds a package by hand ([Build](build.md#build-a-release-package-without-ci)). The release manifest stays format 1.
+- **Release job guard.** The first step of the `release` job still refuses to package an unpublished development Core. It goes when the owner publishes SDK 2.4.1 and the pin matches it.
+- **Updating from 0.7.x.** The ini and data files are kept, and the updater swaps the exe ([launcher.md](launcher.md#updating-from-07x)).
+
+## 2026-11-17: Rust launcher and in-game menu
+
+The decisions for the Rust launcher plan are recorded in full in [Rust launcher design](rust-launcher.md):
+
+1. Rust covers the launcher and the in-game menu. The in-game host (`dinput8.dll`, hooks, Core host kit) stays C++. The Rust menu reads `sco.widgets` pages through a new versioned C interface in sco-core.
+2. sco-core 2.4.1 is held until the Rust launcher, the Rust menu, the catalogue and the reference launcher are in it.
+3. Catalogue: a signed index. First-party and reviewed native plugins are allowed. Every pulled plugin lands disabled with a native-code warning. Local plugins are always allowed.
+4. Capability switches are on by default in all release packages. Each is a visible setting the player can turn off, and its text says it has not been run in game.
+
+## 2026-11-13: run on the process-retained composition
+
+sc-offline runs on the Core's opt-in process-retained host composition, with the bar "loads and works in game like the last shipped version". The product relies on retain-until-exit (no unload; stop is closure) instead of a proof that readers and workers drain. Install quiescence is attested only while the entry gate is held, plus the game thread's own service start. That is a known deviation to revisit after in-game evidence. A Core without the composition keeps the native-startup refusal. See [host composition](host-composition.md) and [Status](status.md#process-retained-startup).
+
+## 2026-10-12: SDK migration decisions
+
+These set the product policy for the move to external plugins on the sco-core SDK. Current exact source and archive identities are in [SDK coordinates](sdk-candidate.md).
+
+| Topic | Decision | Where it stands |
+| --- | --- | --- |
+| Feature preservation | The target is **13 baseline feature units**: teleport, spawn, crew, loadout, npc, inspector, quantum, build, contracts, mining, multiplayer, creative and discord. **Two optional bridges** (titanlink, voxel_bridge) are counted separately and stay outside the normal release. No silent retirement of a feature. | The host registers no feature built-ins. The release stages **11 native plugins**: spawn, crew, build, mining, npc, inspector, teleport, quantum, creative, discord and contracts. `loadout` has an implementation that is not staged. Multiplayer is not registered or staged. These are 13 baseline IDs, not 13 of 13 complete. Supporting data packs are not counted as features. |
+| Host and plugin dependencies | The Windows host uses an exact sco-core source pin. Standalone plugins use verified published SDK archives, never a source-checkout include tree. | See [SDK coordinates](sdk-candidate.md). |
+| Enable and disable | Every feature has an explicit per-folder enable and disable, with no hidden built-in fallback. First-party folders are on by default and the user can disable them. | Ten native plugin folders (creative included) ship enabled and need `plugins = on`. Discord ships with a `disabled` marker. |
+| UI | Invest in renderer-neutral SDK widgets ([sco-core #139](https://github.com/scuba-sc/sco-core/issues/139)). Command-first examples meanwhile, and no new ImGui coupling. | The spawn, crew and npc plugins own the Vehicles, Crew and NPCs pages through public `sco.widgets`. The host draws them with its own ImGui adapter. |
+| Persistent build ownership | Retained placements need scoped, removable handles that survive a plugin reload. No arbitrary entity deletion and no private-pointer fallback. | The build plugin removes its placements on unload. Persistence across a reload is not implemented. |
+| Crew ownership | Crew may remove only NPCs it spawned itself, not other seat occupants or another plugin's NPCs. | Applies to every seat and removal path. |
+| Quantum | Approved: bounded, game-thread-only, offline-admitted, owner-scoped controls, with no raw engine access. | The quantum plugin consumes `game.quantum`. Core needs a grounded backend and installed cleanup before it activates; the default engine adapter, NAV input and charge, audio and effects parity are pending. Global cvar writes are not authorized by this approval. |
+| Console and cvars | Scoped game-cvar reads and reversible writes only. No arbitrary console execution for plugins, MCP or peers. A local debug console needs its own review and an explicit opt-in. | No new console or cvar API has been added. |
+| Discord | Off until its transport and transmitted fields get a privacy and security review. | The plugin ships disabled and exposes only `discord.status`, which answers "unavailable" ([review](../plugins/discord/README.md)). Presence is blocked, not retired. |
+| Multiplayer | Opt-in private co-presence. Session control is host-only. Narrow, user-consented LAN or VPN access, and no stored peer secrets by default. | No official game servers, no remote console, no wider plugin session or socket authority, no broad network exception. |
+| Launcher, EAC and online safety | Refuse to change anything when EAC is present or the offline status is unknown or online. No detection suppression or bypass. | Plugins and MCP cannot change system or network policy. |
+| Runtime MCP | Minimal game-pack-owned snapshots plus optional diagnostic consumers, opt-in ([sco-core #141](https://github.com/scuba-sc/sco-core/issues/141)). | Local, read-only, with freshness and redaction. No gameplay calls, mutation, raw memory or addresses, peer secrets or runtime reload. The launcher's own `sc-offline.exe mcp` ([AI agents](ai-agents.md)) is separate: it reads files and logs, never game memory. |
+| Merge and evidence | CI gates every PR merge, and users test official releases. Compile, check and synthetic evidence stay separate from gameplay evidence. | A native plugin fault needs a restart, not a reload. No claim of full migration or game support without a recorded run on the exact build. |
+| Updates and saves | Keep feature IDs and state stable during the migration. | Atomic first-party updates, preservation or reset of enable choices, and the legacy save and default contradictions are still open. |
+
+**SDK dependencies.** The public SDK and game-pack gaps are tracked in sco-core issues [#122](https://github.com/scuba-sc/sco-core/issues/122) to [#135](https://github.com/scuba-sc/sco-core/issues/135): host composition and lifecycle, guarded relocation, spatial discovery, owned prefabs, filtered rays and free camera, loadout, scoped cvars, quantum controls, seat and persistence ownership, ASOP, hangars and ATC, contracts and missions, local economy, private sessions and content access. Also [#139](https://github.com/scuba-sc/sco-core/issues/139) (UI), [#140](https://github.com/scuba-sc/sco-core/issues/140) (host-source packaging) and [#141](https://github.com/scuba-sc/sco-core/issues/141) (runtime snapshots). They are dependencies, not promises that the pinned SDK exposes them.
+
+Game-neutral kernel APIs stay neutral. Engine signatures, offsets, hooks and guarded mechanics belong to the game pack. Product plugins own feature policy, commands, state and content through public contracts. A missing capability means "unavailable", never a private engine fallback. Contracts land in sco-core before consumers move their pin. See [architecture](architecture.md) and [SDK workflows](sdk-workflows.md).

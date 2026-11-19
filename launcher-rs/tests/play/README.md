@@ -45,4 +45,4 @@ The in-process tests with the fake host are `crates/scol-play/tests/flow.rs` (th
 `crates/scol-cli/tests/{cli,stop_and_plugins}.rs`. The folder dialog itself (`IFileOpenDialog`) is never opened by a
 test: the host trait scripts the answer, and the real dialog is only checked for its v-table layout.
 
-Source, build and synthetic evidence only. Not run in game.
+Source, build and synthetic evidence only. Not run in game. See [docs/status.md](../../../docs/status.md).

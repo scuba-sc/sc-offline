@@ -1,8 +1,8 @@
 # scol-catalogue
 
-The plugin catalogue client of the sc-offline Rust launcher (design: `docs/rust-launcher.md`,
-section 5 and phase P7). No network code, no UI, no file writes, and it never loads plugin code.
-Nothing here was run in game; the tests are synthetic.
+The plugin catalogue client of the sc-offline Rust launcher ([docs/rust-launcher.md](../../../docs/rust-launcher.md#plugins-and-the-catalogue)). No network code, no UI, no file writes, and it never loads plugin code. The network is `scol-update`'s WinHTTP code behind the `Fetcher` trait, and the file writes are `scol-plugin-manager`'s.
+
+Not run in game. See [docs/status.md](../../../docs/status.md). The tests are synthetic.
 
 ## Pipeline
 
@@ -19,15 +19,14 @@ Nothing here was run in game; the tests are synthetic.
 5. `install::plan_install`: where the files go under `data/plugins/<id>/`, the empty `disabled`
    marker, the new `data/launcher/installed.json` text, a native-code warning for native plugins.
    Local folders are not replaced without a confirm, downgrades need a confirm. The plan is data;
-   the installer that stages, journals and swaps is a later step.
+   `scol-plugin-manager` stages, journals and swaps.
 
 `cli::run_with(args, io, trust)` and `cli::run(args, io)` are the command entries (`list`, `plan`);
 they read files you name and print.
 
 ## Trust root
 
-`trust::PRODUCTION_KEYS` is empty until the owner generates the signing key offline and adds its
-public half. With no key every index is refused (`no-trust-keys`). The TEST key under
+`trust::PRODUCTION_KEYS` is `scol_contract::product::CATALOGUE_TRUST_KEYS`. It is empty until the owner generates the signing key offline and adds its public half. With no key every index is refused (`no-trust-keys`). The TEST key under
 `launcher-rs/tests/catalogue/golden/` is for tests only and must never be added there.
 
 ## Signature format

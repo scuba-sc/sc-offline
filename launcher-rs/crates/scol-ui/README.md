@@ -1,10 +1,11 @@
 # scol-ui
 
 The sc-offline launcher window in Rust: eframe 0.37 / egui 0.37, glow renderer, no bundled fonts.
-Design: `docs/rust-launcher.md`, `docs/rust-menu.md`. The C++ window (`launcher/launcher.cpp`
-`RunGui`, `docs/launcher.md` "The window") is the behaviour to match; the colours are its `kUi*`
+Reference: [docs/rust-launcher.md](../../../docs/rust-launcher.md#window). The C++ window (`launcher/launcher.cpp`
+`RunGui`, [docs/launcher.md](../../../docs/launcher.md)) is the behaviour to match; the colours are its `kUi*`
 constants (dark grey panels, a light main button with dark text, green for good status).
-Nothing here was run in game.
+
+Not run in game. See [docs/status.md](../../../docs/status.md).
 
 ## Pages
 
@@ -14,7 +15,7 @@ Nothing here was run in game.
 | Output | Streamed command output with Copy. |
 | Plugins | Installed: list from `data\plugins`; On/Off toggle, Settings, Remove (asks once; settings are kept); "Add a plugin" from a folder or zip. All changes go through `scol-plugin-manager`, which verifies, stages transactionally, lands the plugin switched off and records it in `data\launcher\installed.json`. Native plugins show a native-code warning. Per-plugin settings page. Catalogue: see below. |
 | Capabilities | Plain-words page, see below. |
-| Settings | Repair, `clean_logs`, `language`, `menu` (Classic = `imgui`, New = `rust`, not tested in game yet), global `plugins`, `check_updates`, path of `sc-offline.ini` with Open. |
+| Settings | Repair, `clean_logs`, `language`, `menu` (Classic = `imgui`, New = `rust`), global `plugins`, `check_updates`, path of `sc-offline.ini` with Open. |
 
 Keyboard: Tab walks the side list and then the page in reading order; Ctrl+1 to Ctrl+5 jump to a page;
 F5 reads the status again. Toggles are reachable with Tab and switch with Space or Enter.
@@ -61,13 +62,11 @@ redistributed (eframe default features are off; `cargo deny check` of the worksp
   `scol_update::run_with` (the button is the consent), open folder or file through `ShellExecuteW`. It sets
   `SC_OFFLINE_GUI=1` so nothing waits for Enter. The `scol-cli` crate has its own `WindowBackend` that
   runs the exe as a child; both work.
-* `trait Backend` (`src/backend.rs`) keeps every earlier method (`run`, `game_running`, `fetcher`,
-  `allowed_hosts`, `trust`, `open`) and adds `game_probe()`, `pick_folder(title)` and
-  `save_plugin_setting(here, plugin, name, value)`. The last two are TEMPORARY: their defaults answer
-  "... is not connected yet" and the window shows a plain sentence ("The folder picker is not in this
-  build yet. Paste the path ..." and "Saving plugin settings from this window is not in this build
-  yet."). `RealBackend` leaves them at the default until the folder dialog (`scol_play::pick`) and the
-  plugin settings writer land.
+* `trait Backend` (`src/backend.rs`): `run`, `game_running`, `game_probe`, `fetcher`, `allowed_hosts`,
+  `trust`, `open`, `pick_folder(title)` and `save_plugin_setting(here, plugin, name, value)`. The last two
+  have defaults that answer "not connected yet" (a plain sentence in the window) for a backend that does
+  not implement them. `RealBackend` implements them: `pick_folder` through `scol_play::pick`, and
+  `save_plugin_setting` through the plugin settings writer in `scol-plugin-manager`.
 * Cargo feature `fixtures` compiles in the golden index and the TEST key. For the self test and
   screenshots only; never enable it in a release build.
 
@@ -87,6 +86,6 @@ redistributed (eframe default features are off; `cargo deny check` of the worksp
 
 ## Not done
 
-Plugin settings cannot be saved yet (temporary message). No folder picker yet (type or paste the
-path). The window does not restart itself after an Update. Capability names of rows without a switch
-are not translated into Russian. Not run in game.
+The window's restart after an Update has not been exercised (it would open a window). Capability
+names of rows without a switch are not translated into Russian. The renderer needs OpenGL 3.3 and
+has not been tried without a GPU driver.

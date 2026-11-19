@@ -13,14 +13,19 @@ PLUGINS = ['build', 'contracts', 'creative', 'crew', 'discord', 'inspector', 'lo
            'npc', 'quantum', 'spawn', 'teleport']
 
 
+# What the Rust menu hook leaves in a DLL: it loads sc_offline_menu.dll by name (log text, ASCII).
+RUST_MENU_HOST = 'MZ host with the menu client; rust menu: sc_offline_menu.dll not found beside the launcher or the host'
+
+
 def write(path, text=''):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding='utf-8')
 
 
 def make_tree(base, disabled=('creative', 'discord'), packs=None, plugins_in_tree=PLUGINS):
-    for name in ('dinput8.dll', 'sc-offline.exe', 'sc-offline-classic.exe', 'sc_offline_menu.dll'):
-        write(base / name)
+    for name in ('dinput8.dll', 'dinput8-rust-menu.dll', 'sc-offline.exe', 'sc-offline-classic.exe',
+                 'sc_offline_menu.dll'):
+        write(base / name, RUST_MENU_HOST if name == 'dinput8-rust-menu.dll' else '')
     plugins = base / 'data' / 'plugins'
     for plugin in plugins_in_tree:
         write(plugins / plugin / 'plugin.ini',
@@ -127,13 +132,31 @@ def main():
         # 7. Missing package files are reported.
         tree = make_tree(work / 'missing', disabled=('discord',), packs=FULL_PACKS)
         (tree / 'dinput8.dll').unlink()
+        (tree / 'dinput8-rust-menu.dll').unlink()
         (tree / 'sc-offline-classic.exe').unlink()
         (tree / 'sc_offline_menu.dll').unlink()
         (tree / 'data' / 'plugins' / 'spawn' / 'spawn.dll').unlink()
         code, out = run(tree)
         expect(code == 1 and 'dinput8.dll is missing' in out and 'spawn: entry file spawn.dll is missing' in out
+               and 'dinput8-rust-menu.dll is missing' in out
                and 'sc-offline-classic.exe is missing' in out and 'sc_offline_menu.dll is missing' in out,
                'missing package files must fail', out)
+
+        # 7b. The two game DLLs must be two different builds: the default one has no Rust menu hook.
+        tree = make_tree(work / 'same-dlls', disabled=('discord',), packs=FULL_PACKS)
+        (tree / 'dinput8.dll').write_text(RUST_MENU_HOST, encoding='utf-8')
+        code, out = run(tree)
+        expect(code == 1 and 'are the same bytes' in out and 'dinput8.dll names sc_offline_menu.dll' in out,
+               'a default DLL built with the Rust menu hook must fail', out)
+        tree = make_tree(work / 'no-hook', disabled=('discord',), packs=FULL_PACKS)
+        (tree / 'dinput8-rust-menu.dll').write_text('MZ host without the hook', encoding='utf-8')
+        code, out = run(tree)
+        expect(code == 1 and 'dinput8-rust-menu.dll does not name sc_offline_menu.dll' in out,
+               'a Rust menu DLL built without the hook must fail', out)
+        tree = make_tree(work / 'wide-name', disabled=('discord',), packs=FULL_PACKS)
+        (tree / 'dinput8-rust-menu.dll').write_bytes(b'MZ ' + 'sc_offline_menu.dll'.encode('utf-16-le'))
+        code, out = run(tree)
+        expect(code == 0, 'the UTF-16 spelling of the name counts', out)
 
         # 8. Usage error.
         code, _ = run(work / 'does-not-exist')

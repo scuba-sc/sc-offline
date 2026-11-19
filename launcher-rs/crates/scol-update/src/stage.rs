@@ -108,9 +108,15 @@ pub fn stage_zip(
     std::fs::write(staged.join("manifest.json"), &mbytes)
         .map_err(|e| format!("couldn't stage manifest.json ({e})"))?;
     manifest::verify_against(staged, &man).map_err(|why| format!("staging failed ({why})"))?;
-    if man.find("sc-offline.exe").is_none() || man.find("dinput8.dll").is_none() {
+    // Both game DLLs travel together: dinput8.dll (the classic menu) and dinput8-rust-menu.dll (the
+    // Rust menu hook). A release without either is not a release this launcher can install.
+    if man.find("sc-offline.exe").is_none()
+        || man.find("dinput8.dll").is_none()
+        || man.find("dinput8-rust-menu.dll").is_none()
+    {
         return Err(
-            "the release doesn't hold sc-offline.exe and dinput8.dll; nothing changed".into(),
+            "the release doesn't hold sc-offline.exe, dinput8.dll and dinput8-rust-menu.dll; nothing changed"
+                .into(),
         );
     }
     let _ = writeln!(

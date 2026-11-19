@@ -93,7 +93,13 @@ def render(version, tag, commit, entries):
     return "\n".join(lines)
 
 
-def write(folder, tag, commit, version_file):
+# What the Rust launcher's update needs in every release: it stages and swaps whatever the manifest lists,
+# and refuses a release without these. The two game DLLs travel together (see launcher-rs scol-install,
+# moddll.rs): dinput8.dll is the default install, dinput8-rust-menu.dll is installed for `menu = rust`.
+LAUNCHER_REQUIRED = ("sc-offline.exe", "dinput8.dll", "dinput8-rust-menu.dll")
+
+
+def write(folder, tag, commit, version_file, require=()):
     m = TAG_RE.match(tag)
     if not m:
         raise ValueError(f"tag {tag!r} isn't v<major>.<minor>.<patch>[.<build>][-pre]")
@@ -113,6 +119,10 @@ def write(folder, tag, commit, version_file):
         entries.append({"path": rel, "sha256": sha256(full), "size": os.path.getsize(full)})
     if not entries:
         raise ValueError(f"{folder} has no files")
+    listed = {e["path"] for e in entries}
+    absent = [r for r in require if r not in listed]
+    if absent:
+        raise ValueError(f"{folder} lacks {', '.join(absent)}; the launcher's update would refuse this release")
     text = render(version, tag, commit, entries)
     json.loads(text)  # the hand-rolled JSON must stay valid JSON
     with open(os.path.join(folder, NAME), "w", encoding="utf-8", newline="\n") as f:
@@ -163,12 +173,18 @@ def main(argv=None):
     w.add_argument("--tag", required=True)
     w.add_argument("--commit", default="")
     w.add_argument("--version-h", default=None, help="src/version.h; its SCO_VERSION must equal the tag")
+    w.add_argument("--require", action="append", default=[], metavar="PATH",
+                   help="refuse to write unless this file is in the folder (repeatable); "
+                        "--require-launcher-files is the Rust launcher's set")
+    w.add_argument("--require-launcher-files", action="store_true",
+                   help="require " + ", ".join(LAUNCHER_REQUIRED))
     c = sub.add_parser("check", help="check <folder> against its manifest.json")
     c.add_argument("folder")
     a = ap.parse_args(argv)
     try:
         if a.cmd == "write":
-            version, n = write(a.folder, a.tag, a.commit, a.version_h)
+            need = list(a.require) + (list(LAUNCHER_REQUIRED) if a.require_launcher_files else [])
+            version, n = write(a.folder, a.tag, a.commit, a.version_h, need)
             print(f"manifest.json: {a.tag} (version {version}), {n} files")
             return 0
         man, problems = check(a.folder)

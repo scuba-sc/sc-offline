@@ -832,6 +832,15 @@ static DWORD WINAPI MenuThread(LPVOID) {
     // A stop may overlap the reserved start before its HANDLE is published.
     // Menu_Drain cannot report completion while Menu_Start holds control.
     if (g_workerStop.load(std::memory_order_acquire)) return 0;
+#ifndef SCO_HOST_MENU_CLIENT
+    {
+        // This DLL has no Rust menu hook. The Rust launcher installs the other game DLL for menu = rust;
+        // the classic launcher always installs this one, so say why the classic menu is what shows.
+        char menuKey[16]{};
+        if (GetEnvironmentVariableA("SC_OFFLINE_MENU", menuKey, sizeof(menuKey)) && _stricmp(menuKey, "rust") == 0)
+            Log("[menu] menu = rust needs the Rust launcher and its game DLL; using the classic menu");
+    }
+#endif
     if (ModLogSibling(g_menuSizePath, sizeof(g_menuSizePath), "menu-window.ini"))
         g_menuSize = Window::Load(g_menuSizePath);
     else {

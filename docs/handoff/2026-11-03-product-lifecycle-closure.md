@@ -1,3 +1,5 @@
+Historical record: product lifecycle closure inventory, 2026-11-03.
+
 # Product lifecycle closure inventory
 
 Follow-up: the local [menu worker ownership checkpoint](2026-11-04-menu-worker-ownership.md)
@@ -126,7 +128,7 @@ unlisted files are not part of this DLL's current callback/address closure.
 `tools/offline-host` already exercises the pinned core `HostCapsule` with
 synthetic image bytes, resolver tokens, owner/read leases, failure injection,
 reports and workers (`tools/offline-host/CMakeLists.txt:15-75`; details in
-[`README.md`](../../tools/offline-host/README.md#L1)). Those fixtures do not
+[`README.md`](../../tools/offline-host/README.md)). Those fixtures do not
 wire product callbacks or plugins, map the real executable, enumerate actual
 game readers/workers, establish a native execution barrier, test Windows/MSVC
 failure behavior, or prove successful game-host retirement. The refusal and

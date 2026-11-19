@@ -1,3 +1,5 @@
+Historical record: SDK and MCP validation receipt for the 2.4.0 release-candidate 2 snapshot, recorded 2026-10-28.
+
 # SDK/MCP RC2 validation receipt
 
 Recorded 2026-10-28 against sc-offline base `7335c9bbbc36f6d82c6cc3958cccbfada9b8f222` and [published SDK RC2](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0-rc.2). The release metadata identifies source `844e136ccb280ad8cb43f73bc43c9447e8f6799d` and builder run `40655327650`, attempt 1. The release is marked `prerelease=false`; this is not gameplay or final acceptance evidence. The product host and plugin archive are distinct inputs.

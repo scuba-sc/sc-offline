@@ -20,6 +20,7 @@ pub mod discovery;
 pub mod fsops;
 pub mod identity;
 pub mod install;
+pub mod moddll;
 pub mod paths;
 pub mod status;
 pub mod version;

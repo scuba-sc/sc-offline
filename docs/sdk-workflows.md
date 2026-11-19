@@ -1,119 +1,46 @@
-# Published-SDK inspector and owned NPC workflows
+# Build plugins against the published SDK: inspector and NPC
 
-For distinct author-owned IDs rather than replacing release features, use the
-[copyable SDK/MCP tutorial](../examples/sdk-mcp/README.md). It supplies
-`tutorial_npc` and `tutorial_inspector` copies and keeps static discovery separate
-from optional default-off runtime MCP. Against the published stable SDK 2.4.0
-archive (`sco-sdk-2.4.0.zip`, SHA-256 `0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc`),
-`tools/check_sdk_tutorial.py` passed the copied NPC and inspector module workflows,
-two full compiler dependency traces per module, staged checker runs, and private-
-header/symbol and transitive-header negative controls. The stable Teleport,
-Quantum, Creative, Discord, Crew, Spawn, Build, Mining, NPC, Inspector, Loadout
-and Contracts read-slice SDK proofs also pass their Linux module, trace,
-refusal and boundary checks. These use synthetic or absent providers; they are
-not Windows or game acceptance. The earlier MCP discovery transcript in the
-[RC2 receipt](../examples/sdk-mcp/rc2-validation.md) is historical; runtime MCP
-and in-game acceptance remain **NOT RUN**.
+This page walks through building, checking and installing two plugins, `inspector` and `npc`, from their sources in `plugins/`, using only a verified SDK archive. Use it as a pattern for your own plugin. Every check here uses synthetic or absent providers. Not run in game; see [status.md](status.md).
 
-The tutorial copier reads and writes source as UTF-8 explicitly. A Windows
-prepare-only regression with Python UTF-8 mode disabled passed and checked that
-transformed non-ASCII content survived; it did not build an SDK archive or
-exercise the game.
+For plugins of your own with distinct IDs, copy the [SDK and MCP tutorial sources](../examples/sdk-mcp/README.md) instead. They supply `tutorial_npc` and `tutorial_inspector`.
 
-The newer [loadout/SQ42 consumer](../plugins/loadout/README.md) uses G6 typed
-equip, G7 **read-only** cvars, public copied content and optional widgets. Their
-headers ship in the published SDK 2.4.0. Its build
-is separate from the published tutorial below; release staging is pending.
-No loadout built-in or legacy host fallback remains; quantum control is deferred.
+## Where plugins come from
 
-The creative plugin, an external plugin with its own repository [`sc-creative`](https://github.com/scuba-sc/sc-creative) (the
-`external/sc-creative` submodule, shipped enabled), has its own
-[published-SDK build/check/install and settings/lifecycle guide](https://github.com/scuba-sc/sc-creative/blob/main/plugins/creative/README.md).
-The product CI runs that repository's `tools/check_creative_sdk.py` from the submodule before staging.
-Its focused `creative-module-workflow` tests the actual module; reversible cleanup
-uses a synthetic provider release-hook stand-in, not Windows/game certification.
+The host registers no built-in features. The release stages 11 external plugin folders under `data/plugins/`. Inspector and NPC are two of them, enabled and not linked into the host. `plugins = off` or a `disabled` marker does not bring a hidden implementation back. Discord ships disabled and refuses presence pending a review; see its [README](../plugins/discord/README.md).
 
-Inspector and NPC ship as enabled external native plugins under
-`data/plugins/{inspector,npc}/`, not as built-ins, with no host linkage,
-registration or fallback. The same holds for the other staged features: the host
-registers no built-in, and neither `plugins = off` nor a disabled folder brings a
-hidden implementation back. Discord ships with its folder disabled and refuses
-presence pending privacy and transport approval; see
-[Discord review and proof](../plugins/discord/README.md).
+- Creative lives in its own repository, [`sc-creative`](https://github.com/scuba-sc/sc-creative) (the `external/sc-creative` submodule). It has its own [build, check and install guide](https://github.com/scuba-sc/sc-creative/blob/main/plugins/creative/README.md), and CI runs its `tools/check_creative_sdk.py` before staging.
+- The [loadout plugin](../plugins/loadout/README.md) uses typed equip, read-only cvars, copied content and optional widgets. It is a development consumer and is not staged.
+- Modules use their own sources and public SDK headers only. They use no private host registration, product version, host include path or new ImGui input. The old NPC tab is gone until renderer-neutral widgets cover it ([sco-core #139](https://github.com/scuba-sc/sco-core/issues/139)). Crew and ordinary spawn are command-first plugins and have no product picker tabs.
 
-The external modules use their feature sources and public SDK headers only, not
-private host registration, product version, host include trees or new ImGui inputs.
-The old NPC tab is removed pending renderer-neutral widgets ([sco-core #139](https://github.com/scuba-sc/sco-core/issues/139)); Crew and ordinary spawn are also external command-first consumers; their
-legacy product picker tabs are removed. Legacy `src/npc.cpp` is untouched. `src/workflow_adapters.cpp` is removed.
+## Which SDK
 
-Use the published stable SDK 2.4.0 release, tag **`sdk-v2.4.0`**, combined
-**`sco-sdk-2.4.0.zip`**, verified against release **`SHA256SUMS`**. SDK 2.4.0,
-plugin ABI 1.1 and Star Citizen game pack 0.8.0 are distinct versions. The
-published release manifest binds the archive to source
-`6106fa3639cbcc28f78a1ded8de2707de019f4d3`; its exact profile hashes are in
-[SDK coordinates](sdk-candidate.md). The host instead builds from Core
-`4ba313da3ac76c887cda03772d6106452f33a5d4` (development SDK `2.4.1-dev.6`,
-unpublished); the stable archive and its recorded checks do not certify that pairing.
-No development archive digests are recorded for it yet. To run a proof against a
-development archive, pass the explicit candidate arguments below; the stable defaults
-do not change. Synthetic checks stay separate from gameplay acceptance.
+Use the published SDK 2.4.0: tag `sdk-v2.4.0`, combined archive `sco-sdk-2.4.0.zip`, checked against the release's `SHA256SUMS`. SDK 2.4.0, plugin ABI 1.1 and game pack 0.8.0 are different version numbers. The release binds the archive to Core source `6106fa3639cbcc28f78a1ded8de2707de019f4d3`. [SDK coordinates](sdk-candidate.md) lists every archive hash.
 
-The expanded inspector uses that same published stable SDK by default; no older unpublished candidate
-lock is needed. The proof validates the archive and full extracted inventory before building.
-`plugins/CMakeLists.txt` also checks all inspector contract headers at configure time. An explicitly
-selected non-default version/hash requires the matching archive, rather than accepting host headers.
-The inspector, NPC, loadout, creative, Discord, crew, mining, spawn, build, contracts,
-teleport and quantum proof CLIs accept an explicit unpublished preflight with `--candidate`,
-`--sdk-version`, `--sdk-sha256`, `--archive-sha256`, the full Core commit in `--sdk-source`,
-and `--sdk-profile legacy`. The two digests must agree with the archive bytes and supplied
-checksum inventory. The extracted inventory, compatibility profile and component source
-commits, and catalogue, guides and workflow source identities must match before use.
-These checks bind the supplied identity to archive contents; they do not independently
-verify source rights or grant upstream release authorization. A development preflight
-does not turn an unpublished archive into a published candidate or make an installed-host
-capability claim. Run the matching connected quantum, build and contracts fixtures
-documented by those consumers when a matching host-source build is available.
+The host itself builds from the Core at the `external/sco-core` gitlink, a development revision of the 2.4.1 line. The 2.4.0 archive and its checks do not certify that pairing.
 
-Windows inspector, NPC, build, teleport and quantum proof scripts accept `--generator` for a locally
-installed toolchain
-(for example `--generator "Visual Studio 17 2022"`). Their default remains **Visual Studio 18 2026**,
-matching hosted CI. Teleport and quantum accept only Visual Studio generators (2019, 2022 or 2026):
-their Windows dependency traces require MSBuild; Ninja is not supported. POSIX proofs use Unix Makefiles.
-This changes toolchain selection, never the
-SDK source/archive identity or dependency-isolation rules.
+To prove a plugin against an unpublished development archive, pass these options to the proof script. The published defaults do not change.
 
-Standalone modules/manifests stage under `<plugin-build>/test-plugins/{npc,inspector}/`.
-Windows emits `npc.dll` and `inspector.dll`; macOS/Linux emit development-only
-native modules, not Windows game-loadable files. Release installation contains
-only each native module and manifest, enabled without a `disabled` marker. Lua is
-a non-default inspector example, not another release feature. See [decisions](decisions.md).
+| Option | Meaning |
+| --- | --- |
+| `--candidate` | Allow an unpublished archive |
+| `--sdk-version` | The version label |
+| `--sdk-sha256`, `--archive-sha256` | Both must match the archive bytes and the checksum list |
+| `--sdk-source` | The full Core commit |
+| `--sdk-profile legacy` | The archive profile |
+
+Most proof scripts accept them: inspector, npc, loadout, creative, discord, crew, mining, spawn, build, contracts, teleport and quantum. The script checks the extracted inventory, the compatibility profile, the component source commits, and the catalogue, guide and workflow source identities before it uses the archive. These checks tie the archive you give to its contents. They do not check source rights or grant release authority. `plugins/CMakeLists.txt` also checks the inspector's contract headers at configure time.
+
+The Windows proofs for inspector, npc, build, teleport and quantum take `--generator` for a local toolchain, for example `--generator "Visual Studio 17 2022"`. The default is Visual Studio 18 2026, as in CI. Teleport and quantum accept Visual Studio generators only (2019, 2022 or 2026), because their Windows dependency traces need MSBuild. POSIX proofs use Unix Makefiles. The generator changes the toolchain, never the SDK identity or the dependency rules.
 
 ## Worked tutorial: standalone native inspector
 
-### Layout and manifest
+The copyable source is `plugins/inspector/`. `inspector.cpp` and `inspector.h` do the reads, `external.cpp` provides the three native exports, and `plugin.ini` says `id = inspector`, `version = 1.0.0`, `api = 1.1`, `kind = native`, `entry = inspector.dll`. The manifest requires no game capability on purpose: the plugin loads without providers, so `inspector.read` can explain what is missing. It needs no private host adapter, product version or ImGui header. `inspector.lua`, `lua-plugin.ini` and `inspector_test.lua` are an optional Lua example, not part of the native install.
 
-Copyable source is `plugins/inspector/`: `inspector.cpp`/`inspector.h` implement
-reads, `external.cpp` provides the three native exports, and `plugin.ini`
-declares `id = inspector`, `version = 1.0.0`, `api = 1.1`, `kind = native`,
-`entry = inspector.dll`. There are no required game capabilities in the manifest:
-loading without providers is deliberate, so the read command can explain missing
-capabilities. No private host adapter, product version or ImGui headers are needed.
-`inspector.lua`, `lua-plugin.ini` and `inspector_test.lua` are the optional Lua
-alternative and its synthetic test, not files required by the native install.
+You need CMake 3.20 or newer, Python 3 and a C and C++20 compiler. The game DLL needs Windows x64 with MSVC. On macOS and Linux the result is a development artifact only.
 
-The tutorial needs CMake 3.20+, Python 3 and a C/C++20 compiler. Use Windows x64
-MSVC for the game DLL; macOS/Linux builds are development/checker artifacts only.
-Obtain sc-offline source containing this step separately and set `SOURCE` below
-to that checkout. Plugin build output lives outside the checkout; the host still
-uses its tagged submodule independently.
+### 1. Get and verify the SDK
 
-### Stage 1 — Obtain and verify the published SDK
-
-Download **`sco-sdk-2.4.0.zip`** (the combined legacy core+Star Citizen SDK) and
-**`SHA256SUMS`** from the
-[published stable SDK 2.4.0 release](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0).
-Its SHA-256 is `0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc`.
-Use an empty work directory. In Developer PowerShell for Visual Studio:
+Download `sco-sdk-2.4.0.zip` and `SHA256SUMS` from the [2.4.0 release](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0). The archive's SHA-256 is `0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc`. Use an empty work folder. In a Developer PowerShell:
 
 ```powershell
 $Work = Join-Path $PWD "inspector-dev"
@@ -128,16 +55,11 @@ python -m zipfile -e sco-sdk-2.4.0.zip sdk
 $SDK = Join-Path $Work "sdk/sco-sdk-2.4.0"
 ```
 
-Check the archive's `VERSIONS.txt` and `COMPATIBILITY.json`: SDK 2.4.0,
-plugin ABI 1.1, game pack 0.8.0. The archive root is `sco-sdk-2.4.0/`, with
-`include/`, `CMakeLists.txt` and `tools/sco-plugin-check.c`. Hash verification
-identifies the downloaded artifact; it is not a gameplay or trust guarantee.
-Do **not** replace `include/` with `external/sco-core/include` or locally
-repackage the dependency to stand in for the published asset.
+Check `VERSIONS.txt` and `COMPATIBILITY.json` in the archive: SDK 2.4.0, plugin ABI 1.1, game pack 0.8.0. The archive root `sco-sdk-2.4.0/` holds `include/`, `CMakeLists.txt` and `tools/sco-plugin-check.c`. A matching hash identifies the file you downloaded. It is not a trust guarantee. Do not replace `include/` with `external/sco-core/include`, and do not repackage the SDK yourself.
 
-### Stage 2 — Build and check in isolation
+### 2. Build and check in isolation
 
-Set the checkout path explicitly. The plugin and checker are independent builds:
+Set `$SOURCE` to your sc-offline checkout. The plugin and the checker are separate builds, and their output goes outside the checkout.
 
 ```powershell
 $SOURCE = "C:/src/sc-offline"
@@ -151,20 +73,13 @@ ctest --test-dir "$PluginBuild" -C Release -R '^inspector-module-workflow$' --ou
 & "$CheckerBuild/Release/sco-plugin-check.exe" "$PluginBuild/test-plugins/inspector" --invoke inspector.read
 ```
 
-Stop on any nonzero command exit; do not install a failed build/check. The
-checker executable is built from **the published zip's tool**, not the host's
-private source. Its default fixture has no capabilities or game services:
-`inspector.read` must give bounded unavailable/unknown readings, without mutation.
-A successful checker exit means its checks passed, not that health or transforms
-were obtained from the game. The named module test dynamically loads the actual
-module against synthetic public providers, including successful reads, truncated
-or null methods, absent services/player and unknown maximum health.
+Stop on any failing command. Do not install a failed build. The checker is built from the archive's own tool, not from host source. Its default fixture offers no capabilities and no game services, so `inspector.read` must return bounded unavailable or unknown readings and change nothing. A passing checker means its checks passed. It does not mean health or positions came from a game. The named module test loads the real module against synthetic public providers, including good reads, truncated or null methods, missing services or player, and an unknown maximum health.
 
-macOS/Linux equivalent after the same release/hash verification and extraction:
+On macOS or Linux, after the same download and hash check:
 
 ```sh
 set -eu
-# Absolute paths; WORK is outside SOURCE and SDK is the extracted archive root.
+# WORK is outside SOURCE. SDK is the extracted archive root. Use absolute paths.
 cmake -S "$SOURCE/plugins" -B "$WORK/plugin-build" \
   -DSCO_SDK_INCLUDE_DIR="$SDK/include" -DSCO_WORKFLOW_TESTS=ON
 cmake --build "$WORK/plugin-build" --target sc-offline-inspector inspector-module-test
@@ -177,15 +92,11 @@ python3 -c 'import pathlib,re,sys; p=pathlib.Path(sys.argv[1]); modules=[x for x
 "$WORK/checker-build/sco-plugin-check" "$WORK/check-plugins/inspector" --invoke inspector.read
 ```
 
-These platforms emit their own module suffix, not `inspector.dll`. The separate
-checker copy above changes `entry` to the actual emitted filename; never rename
-a development module to `.dll` and call it a Windows build.
-The module test already takes the actual native path. Native plugins run trusted
-code; a stand-in checker is not a sandbox or a real-host fault-containment test.
+These platforms emit their own module suffix, not `inspector.dll`. The checker copy changes `entry` to the file name that was built. Never rename a development module to `.dll`. A native plugin runs trusted code, so the checker is neither a sandbox nor a test of fault containment in a real host.
 
-### Stage 3 — Install, enable and exercise Inspector
+### 3. Install and use
 
-Use only the **Windows x64** output for installation. With the game closed:
+Install only the Windows x64 output, with the game closed:
 
 ```powershell
 $Product = "C:/mods/sc-offline"
@@ -196,49 +107,19 @@ Copy-Item "$PluginBuild/test-plugins/inspector/plugin.ini" $Destination
 Copy-Item "$PluginBuild/test-plugins/inspector/inspector.dll" $Destination
 ```
 
-Keep `plugins = on` in `sc-offline.ini`; enable Inspector in the launcher's
-Plugins page if a preserved `disabled` marker exists. Fresh release folders have
-no marker. Start only through the existing offline launcher and inspect
-`data/mod.log` for native inspector load or the precise refusal. Invoke
-`inspector.read` through the host command registry on the game thread for a fresh
-player read. When the host offers `sco.widgets`, the optional `inspector.main`
-panel exposes Diagnostics, Inventory, Actions and Parameters. Use **Refresh** or
-`inspector.refresh` to capture diagnostics and inventory explicitly; drawing,
-tab selection and cached paging do not poll providers. Commands remain usable
-without widgets. See [read and snapshot behavior](#read-only-inspector). Before
-player spawn, dependent fields must remain unknown.
+Keep `plugins = on` in `sc-offline.ini`. If a `disabled` marker is left over, enable Inspector on the launcher's Plugins page. A fresh release folder has no marker. Start the game through the launcher and read `data/mod.log` for the load line or the exact refusal. Run `inspector.read` through the host command registry on the game thread to read the player fresh. Before the player spawns, dependent fields stay unknown.
 
-For this external consumer, `sco.reload inspector` is the running-host reload
-route: unload removes its optional panel and clears captured state; the host
-withdraws its owner-scoped commands. A fresh load registers commands and, when
-available, the panel starts **Not sampled**. Rebuild while the module is unloaded
-or with the game closed, not by overwriting a loaded Windows DLL. Disabling the folder
-applies at next game start; `plugins = off` prevents the external inspector from
-loading. Neither mode resurrects a built-in inspector. Queried native service
-providers can be session-lifetime/restart-only; this consumer example does not
-promise provider hot reload or recovery after native corruption.
+When the host offers `sco.widgets`, the optional `inspector.main` panel shows Diagnostics, Inventory, Actions and Parameters. **Refresh** or `inspector.refresh` captures diagnostics and inventory. Drawing, switching tabs and paging cached rows do not query the providers. The commands work without widgets.
 
-**Owner Windows/in-game acceptance is NOT RUN.** Record the exact game build,
-host and plugin versions and the checks in [status.md](status.md) before claiming
-engine behavior or in-game reload safety. CI/checker/synthetic proof does not
-replace that run; releases remain human decisions.
+`sco.reload inspector` reloads it in the running host. Unloading removes the panel and clears captured state, and the host withdraws the plugin's commands. A fresh load registers the commands again, and the panel starts as **Not sampled**. Rebuild with the module unloaded or the game closed. Never overwrite a loaded DLL. A disabled folder applies at the next game start, and `plugins = off` stops the plugin from loading. Neither brings back a built-in inspector. Service providers it queries can last for the whole session or need a restart, so the plugin promises no provider reload and no recovery after a native fault.
+
+Record the game build, host and plugin versions, and the checks you ran in [status.md](status.md) before you claim in-game behavior. A synthetic check does not replace that run.
 
 ## Worked tutorial: standalone native NPC
 
-### Stage 1 — Obtain and verify
+The sources are `plugins/npc/{npc.cpp,npc.h,external.cpp,plugin.ini}`. The manifest is `id = npc`, `version = 1.1.0`, `api = 1.1`, `kind = native`, `entry = npc.dll`. No required capability blocks loading. Each command reports the services it lacks.
 
-Follow inspector Stage 1 above in a fresh `npc-dev` work directory. Download the
-same `sdk-v2.4.0` combined `sco-sdk-2.4.0.zip` and release `SHA256SUMS`,
-verify the archive **before extraction**, and use only the extracted SDK `include/`.
-CMake 3.20+, Python 3 and C/C++20 are required; the game module requires Windows
-x64/MSVC. `plugins/npc/{npc.cpp,npc.h,external.cpp,plugin.ini}` are the copyable
-feature sources. Manifest: `id = npc`, independent version `1.1.0`, `api = 1.1`,
-`kind = native`, `entry = npc.dll`. No required game capabilities prevent load;
-individual commands report missing services/capabilities.
-
-### Stage 2 — Isolated build and checker
-
-With `$Work`, `$SDK` and `$SOURCE` set as in Stage 1, in Developer PowerShell:
+Follow inspector step 1 in a fresh `npc-dev` folder with the same archive. With `$Work`, `$SDK` and `$SOURCE` set, in a Developer PowerShell:
 
 ```powershell
 $PluginBuild = Join-Path $Work "plugin-build"
@@ -251,154 +132,47 @@ ctest --test-dir "$PluginBuild" -C Release -R '^npc-module-workflow$' --output-o
 & "$CheckerBuild/Release/sco-plugin-check.exe" "$PluginBuild/test-plugins/npc" --invoke npc.observe
 ```
 
-Stop on any nonzero exit. The checker is compiled from the published zip's
-`tools/sco-plugin-check.c`; its missing-service fixture must report unavailable,
-not manufacture visibility. The named module test loads the actual native module
-against synthetic public providers, not the game or a native safety sandbox.
+The checker comes from the archive's `tools/sco-plugin-check.c`. With services missing it must report unavailable and must not invent visibility. On macOS and Linux, use the inspector commands with targets `sc-offline-npc npc-module-test`, CTest pattern `^npc-module-workflow$`, folder `npc` and invocation `npc.observe`, and change `entry` in a separate checker copy.
 
-On macOS/Linux use inspector Stage 2's POSIX commands with targets
-`sc-offline-npc npc-module-test`, CTest regex `^npc-module-workflow$`, folder `npc`
-and invocation `npc.observe`. Rewrite `entry` **in a separate checker copy** to
-the actual emitted `.so`/`.dylib`, exactly as that example does. Never rename a
-non-Windows development module to `.dll` or install it into the game.
+Install the Windows x64 output into `data/plugins/npc` as above, with the game closed and any existing folder backed up. Run `npc.spawn`, `npc.observe`, `npc.remove` and `npc.clear` through the host command registry on the game thread. The plugin installs no tab, hotkey, console transport or ImGui code. A disabled folder applies at the next start, and `plugins = off` blocks the plugin. There is no built-in fallback.
 
-### Stage 3 — Install, enable and invoke
+`sco.reload npc` reloads it in the running host. It does not promise provider reload or safe gameplay. Native faults need a restart.
 
-With the game closed, install only the Windows x64 output:
+## Inspector commands
 
-```powershell
-$Product = "C:/mods/sc-offline"
-$Destination = Join-Path $Product "data/plugins/npc"
-# Back up any existing NPC folder before replacing it.
-New-Item -ItemType Directory -Force -Path $Destination | Out-Null
-Copy-Item "$PluginBuild/test-plugins/npc/plugin.ini" $Destination
-Copy-Item "$PluginBuild/test-plugins/npc/npc.dll" $Destination
-```
+`inspector.read` shows the player's actor and entity IDs, current and maximum health, zone-local position and quaternion rotation. It re-queries the public actor and entity services on each call and keeps no provider table or session ID. It changes nothing and needs no UI.
 
-Keep `plugins = on` in `sc-offline.ini`; enable NPC in the launcher's Plugins page
-if a preserved `disabled` marker exists. Fresh release folders have none. Start
-only through the existing offline launcher and read `data/mod.log` for the load
-or exact refusal. Invoke `npc.spawn`, `npc.observe`, `npc.remove` and `npc.clear`
-through the host command registry on the game thread. No NPC tab, hotkey, console
-transport or new ImGui integration is installed. Folder disable applies at next
-start; `plugins = off` blocks the external module. There is no built-in fallback.
-
-Normal `sco.reload npc` is the running-host external-consumer route, not a promise
-of provider hot reload or safe gameplay. Rebuild only with the module unloaded or
-the game closed; never overwrite a loaded Windows DLL. **Native faults are
-restart-required, not safe reload/recovery. In-game acceptance: NOT RUN.** Record
-exact build/archetype and the [pending checks](status.md) before certifying behavior.
-
-## Read-only inspector
-
-Run `inspector.read` through the host command registry. The reply and plugin log
-show the current player actor/entity IDs, health current/maximum, zone-local
-position and quaternion rotation. Each `inspector.read` re-queries the public
-actor/entity services and retains no provider table or session ID across these
-calls. There is no mutation or required UI.
-
-`inspector.refresh` captures copied diagnostics and inventory on request and
-advances the snapshot generation. `inspector.status`, `inspector.stats`,
-`inspector.gamerules` and `inspector.inventory` read those captured sections;
-they do not refresh them. An unrefreshed snapshot is historical, not live. A
-failed or unavailable section replaces its previous captured values instead of
-presenting them as current. Action lookups/counts and parameter definitions are
-acquired explicitly through their commands or the optional panel controls;
-parameter definitions are metadata, not live GameRules values. See the
-[Inspector command reference](../plugins/inspector/README.md#snapshot-commands-and-optional-panel)
-for arguments, paging and refusal results.
+`inspector.refresh` captures copied diagnostics and inventory and advances the snapshot generation. `inspector.status`, `inspector.stats`, `inspector.gamerules` and `inspector.inventory` read the captured sections and do not refresh them. A snapshot you have not refreshed is old, not live. A section that fails or is unavailable replaces its earlier values; it never shows them as current. Action lookups, counts and parameter definitions are fetched on request through their commands or the panel controls. Parameter definitions are metadata, not live GameRules values. Arguments, paging and refusal results are in the [Inspector command reference](../plugins/inspector/README.md#commands).
 
 - Before the player spawns, IDs and dependent readings are unknown.
-- Missing providers, capabilities, null methods or incomplete method extents
-  are reported as unavailable, not as zero-valued readings.
-- A health maximum of zero is **unknown**, per the game contract. It is not a
-  zero-sized health pool and is never used as a denominator.
-- Failed calls, non-finite values, zero zones and invalid rotations are not
-  promoted to valid data. These are observations, not new engine fields.
-- Unload removes the optional widget panel and clears copied snapshots and
-  borrowed widget/API/owner state; the host withdraws owner-scoped commands.
-  There is no background polling or worker.
+- A missing provider or capability, a null method or an incomplete method extent shows as unavailable, never as zero.
+- A health maximum of zero means unknown, as the game contract says. It is not a zero-size pool and is never a denominator.
+- A failed call, a non-finite value, a zero zone or an invalid rotation is not shown as data.
+- Unload removes the panel and clears copied snapshots and borrowed widget, API and owner state. There is no background polling or worker.
 
-The restricted Lua counterpart is `plugins/inspector/inspector.lua`, a
-**non-default companion example** with the existing `inspector_lua` ID and
-`inspector_lua.read` command. With the game closed, copy the script to
-`data/plugins/inspector_lua/inspector.lua` and rename `lua-plugin.ini` to
-`plugin.ini` in that folder. This language example is not an additional baseline
-feature or a release default. It uses only the
-existing `sco.game.actors` and
-`sco.game.entities` read routes. An absent optional game adapter is handled;
-Lua mutation and a spatial binding are not added. The standalone Lua test uses
-synthetic sandbox functions, not the bundled sco-lua runtime.
+The Lua version, `plugins/inspector/inspector.lua`, is an optional example with the ID `inspector_lua` and the command `inspector_lua.read`. With the game closed, copy the script to `data/plugins/inspector_lua/inspector.lua` and rename `lua-plugin.ini` to `plugin.ini` in that folder. It is not a release default. It reads through `sco.game.actors` and `sco.game.entities` only, handles an absent optional adapter, and adds no mutation or spatial binding. Its test uses synthetic sandbox functions, not the bundled sco-lua runtime.
 
-## Owned NPC lifecycle
+## NPC commands
 
-All commands run on the game thread, through the host command registry:
+All commands run on the game thread through the host command registry.
 
 | Command | Result |
 | --- | --- |
-| `npc.spawn <archetype> <count>` | 1 to 10 NPCs near a fresh player pose; returned IDs are logged immediately as pending streaming |
-| `npc.observe` | Read-only counts of pending, visible, removing and unknown, plus current transforms of visible owned IDs in the log |
-| `npc.remove <id>` | Request removal of one ID still owned by this plugin |
-| `npc.clear` | Request removal of all NPCs still owned by this plugin; no crew-wide or foreign-entity removal |
+| `npc.spawn <archetype> <count>` | 1 to 10 NPCs near a fresh player pose. The returned IDs are logged at once as pending streaming. |
+| `npc.observe` | Read-only counts of pending, visible, removing and unknown NPCs, plus the transforms of visible owned IDs, in the log |
+| `npc.remove <id>` | Requests removal of one ID this plugin still owns |
+| `npc.clear` | Requests removal of every NPC this plugin still owns. It never removes crew-wide or foreign entities. |
 
-Supply an archetype appropriate to the actual game build at invocation time.
-Public tests use `synthetic_actor`, an artificial fixture, not a game archetype.
-The feature uses `game.actors` for both spawn and removal; it never removes an
-actors-owned NPC through `game.entities.despawn`. Pose data must be finite, have
-a valid nonzero quaternion and name a nonzero streamed zone. Position/zone data
-are used immediately, not retained across commands. Partial batches report the
-number already spawned and return the failing result; those IDs remain owned
-and are cleaned up normally.
+Give an archetype that fits the game build when you call it. The public tests use `synthetic_actor`, an artificial fixture. The plugin spawns and removes through `game.actors` and never removes an actors-owned NPC through `game.entities.despawn`. A pose must be finite, have a valid nonzero quaternion and name a nonzero streamed zone. Position and zone are used at once and not kept between commands. A partial batch reports how many were spawned and returns the failing result. Those IDs stay owned and are cleaned up normally.
 
-`SCO_OK` from removal means **removal started**, not that the NPC disappeared.
-Removal can be requested before the NPC streams in. The feature relinquishes
-local ownership after the provider accepts removal, and does not remove it
-twice. `alive=0` is ambiguous (not streamed, unavailable or wrong thread), so it
-never certifies disappearance or recycles a removal ticket. At most
-`SC_ACTORS_MAX_NPCS` session tickets are retained during one feature load;
-accepted-removal tickets still count against that conservative local bound
-until unload. This is distinct from the provider's global live-NPC quota.
-Foreign IDs are rejected without making a mutation call. Failed removal retains
-ownership for retry; a provider `NOT_FOUND` relinquishes the local claim.
+`SCO_OK` from a removal means removal started, not that the NPC is gone. Removal can be requested before the NPC streams in. After the provider accepts it, the plugin gives up local ownership and does not remove it twice. `alive=0` is ambiguous (not streamed, unavailable, or the wrong thread), so it never confirms disappearance and never recycles a removal ticket. At most `SC_ACTORS_MAX_NPCS` session tickets are kept during one load, and accepted-removal tickets count against that local bound until unload. This is separate from the provider's global live-NPC quota. A foreign ID is refused without a change call. A failed removal keeps ownership for a retry, and a provider `NOT_FOUND` releases the local claim.
 
-Unload requests removal of remaining owned IDs once, then forgets local state.
-If a capability/provider is unavailable, the log says that host owner-release
-cleanup is still required. Repeated unload is a no-op. The host's crash/unload
-cleanup remains authoritative; this feature does not promise provider hot
-reload, arbitrary retained-table safety or survival after process termination.
-Seat workflows and the separate NPC-seat-removal regression are not covered.
+Unload requests removal of the remaining owned IDs once, then forgets local state. If a capability or provider is unavailable, the log says host owner-release cleanup is still needed. A repeated unload does nothing. The host's crash and unload cleanup stays authoritative. The plugin does not promise provider hot reload, safety of retained tables, or survival after the process ends. Seat workflows and the separate NPC-seat-removal regression are not covered.
 
-## Targeted development proof
+## What CI runs
 
-Use only the checksum-verified published combined SDK, not host source headers
-or a locally repackaged checkout. The tutorial's named module workflows provide
-host-independent synthetic proof. No host-only built-in adapter harness remains in this migration.
+CI runs `tools/check_npc_sdk.py` and `tools/check_inspector_sdk.py`, each with `--archive <published.zip> --sums <release-SHA256SUMS> --work <new-folder-outside-the-checkout>`. They verify the archive and extracted checksums, copy the plugin and test sources into an isolated root, build and install the module and the published checker, run only the named module workflow, and call `npc.observe` or `inspector.read` with services absent. Compiler dependency traces check the exact published header destinations, including system-marked includes. MSVC traces include the evaluated toolchain include path. On POSIX, negative controls reject private host and product headers, unresolved private symbols and transitive foreign headers. Strict Mach-O and ELF links reject private symbols, and Windows links enforce this normally. The install folder holds only the manifest and the native module, with no `disabled` marker and no example or test files.
 
-CI invokes `tools/check_npc_sdk.py` and `tools/check_inspector_sdk.py`, each with
-`--archive <published.zip> --sums <release-SHA256SUMS> --work <new-directory-outside-checkout>`.
-The player-plugin SDK checkers also accept `--generator`, `--toolset`, and
-`--try-compile-config` for Windows. Their default remains the hosted Visual
-Studio 18 2026 generator; an explicit local VS 2022 proof can use
-`--generator "Visual Studio 17 2022" --toolset "v143,host=x64" --try-compile-config Release`.
-The toolset and try-compile option are applied to both the consumer and SDK
-checker configurations; build, test and install still use Release. The optional
-TitanLink proof retains its published stable SDK pin and is not a candidate proof.
-They verify archive and extracted checksums, copy feature/test sources into an
-isolated root, build/install the module and published checker, run only the named
-module workflow and invoke `npc.observe` / `inspector.read` with services absent.
-Compiler dependency traces check exact published header destinations, including
-system-marked includes; MSVC traces include evaluated toolchain IncludePath.
-POSIX negative controls reject private host/product headers, unresolved private
-symbols and transitive foreign headers. Strict Mach-O/ELF links reject private
-symbols; Windows links enforce this normally. The install inventory contains
-only the manifest and native module, with no disabled marker or example/test files.
+On Windows the player-plugin checkers also take `--generator`, `--toolset` and `--try-compile-config`. A local Visual Studio 2022 proof can use `--generator "Visual Studio 17 2022" --toolset "v143,host=x64" --try-compile-config Release`. The toolset and try-compile option apply to both the plugin and the SDK checker configurations. Build, test and install still use Release. The TitanLink proof keeps its published SDK pin.
 
-NPC synthetic cases cover exported entrypoints and actual dynamic loading,
-truncated/null methods, absent capabilities/provider/player, delayed visibility,
-foreign IDs, pre-stream removal, invalid pose, partial batches, bounded capacity,
-high-bit IDs, failed registration and repeated unload. Inspector covers valid
-reads and explicit unavailable/unknown fields. These are not actual game-provider,
-Windows rendering, real-host fault-containment or gameplay checks. **In-game
-acceptance: NOT RUN.** Native faults require restart; synthetic success cannot
-establish safe reload/recovery, seat-regression closure or game support. See
-[status](status.md) for the owed exact-build checks.
+The NPC cases cover the exported entry points and real dynamic loading, truncated or null methods, absent capabilities, provider or player, delayed visibility, foreign IDs, removal before streaming, invalid pose, partial batches, bounded capacity, high-bit IDs, failed registration and repeated unload. The inspector cases cover good reads and explicit unavailable or unknown fields. None of this uses a game provider, Windows rendering, real-host fault containment or gameplay. Native faults need a restart, and a passing synthetic check does not show safe reload, recovery or game support.

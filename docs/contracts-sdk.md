@@ -1,54 +1,48 @@
-# Contracts SDK migration — charter 6C
+# Contracts module
 
-The separately loadable `contracts` module is a command-first SDK consumer,
-not a replacement certification of the retained legacy feature. The public
-service contracts and sco-core provider implementation exist, but production
-G11/G12 mutations remain gated on a positively admitted, ready backend; requests
-fail closed until then, with no private fallback. No engine pointers, detours,
-account/online balances or G13 session controls.
+The `contracts` module is a separately loadable plugin that you drive with commands. It does not replace the retained legacy contracts feature. The public service contracts and sco-core's provider exist, but changes to missions and the player's balance stay gated on a backend that is admitted and ready. Until then every request fails closed, with no private fallback. The module uses no engine pointers, detours, account or online balances, or private-session controls.
 
-## Build / check / install
+Not run in game; see [status.md](status.md).
 
-1. Obtain a checksum-verified SDK archive containing `sc_missions.h` (the pinned
-   published stable `sco-sdk-2.4.0.zip` from `sdk-v2.4.0` contains it).
-2. Run `python3 tools/contracts_sdk_check.py --archive <local-or-published.zip>
-   --sums <adjacent-SHA256SUMS> --work <new-outside-root> --slice <read|accept|progress|script|economy|metadata>`.
-   This verifies hashes, extracts into an isolated root, builds/loads the actual
-   module, checks its exact public dependencies, installs its two-file folder,
-   and runs the SDK checker with absent services. POSIX `--boundary` adds
-   private/transitive-header and unresolved-symbol negative controls;
-   `--sanitizers` adds a development-only physical-pointer red/green arm.
-   Or configure `plugins/contracts` with `SCO_SDK_INCLUDE_DIR=<extracted>/include`
-   and `SCO_WORKFLOW_TESTS=ON`; build `contracts-module-test`; run only the named slice.
-3. Install component `contracts` into a separate staging root. The host
-   registers no `contracts` built-in, so the folder is the only provider.
+## Build, check and install
 
-The published stable SDK 2.4.0 read-slice proof passed locally against the
-official combined archive and its release checksum inventory. It builds and
-loads the module, checks its public dependencies, stages it and confirms
-provider-absent refusal. This was a Linux synthetic check; the other slices,
-Windows/MSVC and gameplay are not established by it.
+1. Get a checksum-verified SDK archive that contains `sc_missions.h`. The published SDK 2.4.0 archive (`sco-sdk-2.4.0.zip`, tag `sdk-v2.4.0`) does. See [SDK coordinates](sdk-candidate.md).
+2. Run the check:
 
-`contracts.accept <offer-index> <key>` reads the current copied offer and submits
-its broker/generation unchanged. Replays retain the explicit nonzero key; the
-provider owns bounded once-only owner/session receipts. Altered replay refuses.
-No automatic retry, key generation, reward payment or durable receipt claim.
+   ```sh
+   python3 tools/contracts_sdk_check.py --archive <local-or-published.zip> \
+     --sums <adjacent-SHA256SUMS> --work <new-folder-outside-the-checkout> \
+     --slice <read|accept|progress|script|economy|metadata>
+   ```
 
-`contracts.objective <id> <expected-phase> <expected-objective>` and
-`contracts.advance <id> <expected-phase>` use explicit zero-based expected state.
-The provider checks ownership/session and ordered progression; no consumer-side
-optimistic increment, retry loop, objective inference or automatic payout occurs.
+   It verifies hashes, extracts into an isolated folder, builds and loads the module, checks its exact public dependencies, installs its two-file folder, and runs the SDK checker with the services absent. On POSIX, `--boundary` adds negative controls for private and transitive headers and unresolved symbols. `--sanitizers` adds a development-only physical-pointer arm.
 
-`contracts.abandon <id>` requests owned once-only abandonment explicitly.
-`contracts.cancel` blocks further consumer accept/progression/ingestion (not reads,
-receipt lookup or explicit abandon); `contracts.resume` reopens only this local gate.
-These commands never erase provider receipts or retry uncertain effects. Operations
-are synchronous, so cancellation cannot roll back an already committed operation.
+   Or configure `plugins/contracts` with `SCO_SDK_INCLUDE_DIR=<extracted>/include` and `SCO_WORKFLOW_TESTS=ON`, build `contracts-module-test`, and run one slice.
+3. Install the `contracts` component into a separate staging folder. The host registers no `contracts` built-in, so this folder is the only provider.
 
-`contracts.ingest <script-ordinal>` obtains copied script bytes through public
-`sco.content` 1.0, never filesystem paths or direct file opens. The public content
-broker enforces declared-root/link containment. Consumer size/path/declaration checks
-admit only `missions/<lowercase-id>.scom`, at most 4096 bytes, exact LF grammar:
+The read-slice check passed against the published 2.4.0 archive on Linux with synthetic providers. It builds and loads the module, checks its public dependencies, stages it and confirms the refusal when no provider is present. It does not cover the other slices, Windows or gameplay.
+
+## Commands
+
+Read commands: `contracts.status`, `contracts.offer <index>`, `contracts.mission <id>`. Each call reopens the public table and checks every callback extent and that no method is null. Unload clears the module's admission. No worker or queued tick exists, and the host releases the registrations.
+
+| Command | What it does |
+| --- | --- |
+| `contracts.accept <offer-index> <key>` | Reads the current copied offer and submits its broker and generation unchanged. A replay keeps the same nonzero key, and the provider keeps bounded once-only owner and session receipts. An altered replay is refused. There is no automatic retry, no key generation, no reward payment and no durable receipt. |
+| `contracts.objective <id> <expected-phase> <expected-objective>` | Moves progress, using explicit zero-based expected state. |
+| `contracts.advance <id> <expected-phase>` | Advances the phase the same way. The provider checks ownership, session and order. The module does no optimistic increment, retry, objective inference or automatic payout. |
+| `contracts.abandon <id>` | Requests once-only abandonment of an owned contract. |
+| `contracts.cancel` | Blocks further accept, progress and ingest from this module. Reads, receipt lookup and explicit abandon still work. |
+| `contracts.resume` | Reopens only that local block. |
+| `contracts.ingest <script-ordinal>` | Gets copied script bytes through the public `sco.content` 1.0. See below. |
+| `contracts.balance`, `contracts.apply <key> <expected-balance> <signed-delta>`, `contracts.receipt <key>` | Use `game.economy` 1.0. See below. |
+| `contracts.references <list-ordinal> <row-index>`, `contracts.reference <list-ordinal> <row-index> <reference-index>` | Read script-reference metadata. See below. |
+
+`cancel` and `resume` never erase provider receipts or retry an uncertain effect. Operations are synchronous, so cancelling cannot roll back one that already committed.
+
+### Mission scripts
+
+`contracts.ingest` never reads a file path. The content broker enforces the declared root and link containment. The module admits only `missions/<lowercase-id>.scom`, at most 4096 bytes, in exactly this LF-separated form:
 
 ```text
 sco-mission 1
@@ -56,48 +50,17 @@ phases 2
 objectives 1
 ```
 
-Canonical counts 1..64 only, no XML/Lua/includes/network or extra bytes. The provider
-also validates; registrations are session-lifetime. The legacy XML script library is
-retained but unsupported here, not silently converted or bundled. Owner approval of
-this narrower format remains pending. Pack snapshots require host restart to change.
+Counts run from 1 to 64. No XML, Lua, includes, network or extra bytes are allowed. The provider validates too. Registrations last for the session, and a changed script pack needs a host restart. The legacy XML script library is kept but not supported here. It is not converted or bundled. The owner has not yet approved this narrower format.
 
-`contracts.balance`, `contracts.apply <key> <expected-balance> <signed-delta>`
-and `contracts.receipt <key>` use `game.economy` 1.0. Balance/range preflight never
-creates payment authority; the provider atomically checks expected balance and
-owns non-evicting owner/session receipts. Replays submit the same explicit request,
-not a fresh key. Uncertain effects return refusal and are never automatically
-retried. Receipt flags (including dropped advisory notification) remain visible;
-receipt polling is authoritative, not signals. No payout on mission completion.
+### Economy
 
-## Storage policy — PENDING, not implemented
+`contracts.apply` checks the balance and range before it asks. That check grants no payment authority. The provider atomically checks the expected balance and keeps non-evicting owner and session receipts. A replay sends the same request, not a new key. An uncertain effect returns a refusal and is never retried automatically. Receipt flags stay visible, including a dropped advisory notification. Poll the receipt; do not rely on signals. Completing a mission pays nothing.
 
-No `wallet.txt` import, default-wallet restore, timestamp precedence, DB migration,
-reward-once persistence or save is implemented. No direct filesystem fallback is
-permitted. The existing contracts database/IDs and legacy wallet/script code are
-retained unchanged. An owner-approved, versioned `sco.storage` migration and atomic
-payment/save coordination are required before flipping the default feature.
-Owner/session receipts are NOT durable exactly-once across reload or restart.
-The synthetic fixture uses stand-in public providers, not the game-pack provider
-or real owner-release dispatcher; loader/engine acceptance remains separate.
+### Script-reference metadata
 
-Read commands: `contracts.status`, `contracts.offer <index>`,
-`contracts.mission <id>`. Every invocation reopens the public table and validates
-complete callback extents and non-null methods. Unload clears consumer admission;
-no unload mutation or worker/queued tick exists. The host releases registrations.
+`contracts.references` reads one metadata row from `lists/contract_scripts.txt` in an enabled data pack that you supplied. The list ordinal counts within the public `sco.content` List kind, including other list names, so choosing a different name is refused. Ordinals and indices are zero-based and last for the session. Duplicate pack files and duplicate GUID rows stay separate, in provider and file order. There is no pack precedence and no GUID merge. A reply that does not fit returns `TOO_MANY`, never a cut-off success.
 
-## Copied script-reference metadata
-
-`contracts.references <list-ordinal> <row-index>` reads one metadata row from an
-explicit enabled data pack's `lists/contract_scripts.txt`. The ordinal is within
-the public `sco.content` **List** kind, including other List names; selecting a
-different name refuses. Ordinals and row/reference indices are zero-based and
-startup-scoped. Duplicate pack files and duplicate GUID rows remain independently
-addressable, in provider/file order; no pack precedence or GUID merge is inferred.
-`contracts.reference <list-ordinal> <row-index> <reference-index>` reads one
-reference, avoiding truncation of a long list. Replies that do not fit return
-`TOO_MANY`, never truncated success.
-
-The supported text format preserves the legacy reference layout:
+The row format keeps the legacy layout:
 
 ```text
 # Synthetic metadata; these are not game mission IDs or installed scripts.
@@ -105,54 +68,26 @@ The supported text format preserves the legacy reference layout:
 abcdef0123456789abcdef0123456789 NoReferences -
 ```
 
-A row has exactly 32 hexadecimal GUID characters, a space, a nonempty name token,
-a space and nonempty pipe-separated reference tokens. `-` contributes no
-reference; other tokens and duplicates retain their byte order and are display
-metadata only. LF/CRLF and a final line without LF are supported. Empty lines and
-lines beginning `#` do not count as rows. NULs, control bytes in metadata tokens,
-empty reference tokens or malformed noncomment rows refuse the whole file, even when an earlier
-selected row is valid. Limits are 1 MiB/file, 16,384 rows, 8191 bytes/line, 255
-bytes/name, 32 non-dash references/row and 255 bytes/reference. These are bounded
-consumer parsing rules, not a new native mission format or ABI.
+A row is exactly 32 hexadecimal GUID characters, a space, a nonempty name, a space, and nonempty pipe-separated reference tokens. A `-` adds no reference. Other tokens and duplicates keep their byte order and are display text only. LF and CRLF both work, and the last line may lack a line feed. Empty lines and lines that start with `#` are not rows. A NUL, a control byte in a token, an empty reference token or a malformed row refuses the whole file, even when the row you asked for is valid. Limits: 1 MiB per file, 16,384 rows, 8191 bytes per line, 255 bytes per name, 32 references per row, 255 bytes per reference.
 
-The reply identifies the source GUID as metadata, **not a public mission offer
-ID**, and reports native installation **UNKNOWN/UNAVAILABLE**. The published
-mission table has no legacy XML installation query or source-GUID-to-offer
-mapping. Copied bytes and `-` do not establish successful script installation,
-eligibility, offering, acceptance or execution. These commands never call
-mission/economy providers, ingest, `HaveScript` or private host functions. They
-remain available while consumer mutations are cancelled and require the normal
-public game-thread/live-owner content admission. Each invocation reopens and
-copies the selected item; unload retains no metadata/table/ID.
+The reply names the GUID as metadata, not a public mission offer ID, and reports native installation as unknown. The published mission table has no query for legacy XML installation and no mapping from GUID to offer. Copied bytes do not show that a script was installed, offered, accepted or run. These commands never call the mission or economy providers, ingest, `HaveScript` or private host functions. They work while changes are cancelled and need the normal game-thread, live-owner content admission. Each call reopens and copies the item, and unload keeps nothing.
 
-There is no base-file import or new pack staging. Supply an ordinary user-authored
-data pack explicitly while the host is stopped, then restart. The retained host
-`ReadContractScripts` and its successfully-added XML availability checks remain
-unchanged. This diagnostic source slice does not migrate the retained engine or
-its native mission, wallet, offering and persistence behavior.
+There is no import of base files and no new pack staging. Supply an ordinary data pack with the host stopped, then restart. The host's `ReadContractScripts` and its XML availability checks are unchanged.
 
-**Pending:** production adapter, full retained mobiGlas/UI/mission-kind parity,
-15-second automatic offering, actor-death orchestration, wallet precedence/import/
-save/payout policy and reload persistence. Legacy host sources remain untouched,
-not counted as migrated. Historical RC1 evidence: strict MSVC 19.44 builds and
-all six synthetic workflow checks passed against published RC1 headers, including
-loading the production DLL. The metadata fixture failed against the prior accepted
-module as expected. The RC1 content provider also passed a separate
-synthetic-pack/module check. The `contracts-sdk` job in [CI run 40760241329](https://github.com/scuba-sc/sc-offline/actions/runs/40760241329/job/123069886868),
-on sc-offline commit `7335c9bbbc36f6d82c6cc3958cccbfada9b8f222`, passed against
-published RC2: an isolated MSVC build, the read-slice module workflow, dependency
-traces and the SDK checker. This RC2 evidence does not extend the historical
-six-slice or content-provider results to RC2.
-Actual game loader fault guards and gameplay acceptance remain unverified.
-**Not run in game.** These checks do not establish native XML installation or
-durable exactly-once persistence.
+## Storage is not implemented
 
-For a connected no-game preflight, build the actual contracts module against an
-extracted checksum-verified SDK and build the matching Core source's
-`sco_offline_missions`, `sco_host`, `sco_runtime` and `sco_core` libraries. On
-POSIX, `tools/test_contracts_core_integration.sh <core-source> <core-build>
-<contracts-module>` exercises Core's real missions/economy tables with a
-synthetic backend. It checks owner scoping, withdrawal, a failed uncertain
-balance adjustment and release cleanup. Mission completion does not trigger a
-payment; the fixture does not implement partial reward accounting, durable
-settlement, native adapters or game acceptance.
+No `wallet.txt` import, default-wallet restore, timestamp precedence, database migration, reward-once persistence or save exists. No direct filesystem fallback is allowed. The existing contracts database, IDs and legacy wallet and script code are unchanged. Before the feature can be turned on by default it needs an owner-approved, versioned `sco.storage` migration and atomic payment and save coordination. Owner and session receipts are not durable across a reload or restart.
+
+The synthetic fixture uses stand-in public providers. It does not use the game-pack provider or the real owner-release dispatcher.
+
+Pending: a production adapter; full mobiGlas, UI and mission-kind parity; the 15-second automatic offering; actor-death orchestration; wallet precedence, import, save and payout policy; and persistence across reload.
+
+## Preflight against Core
+
+To check against a real Core without a game, build the contracts module against an extracted, verified SDK, and build the matching Core source's `sco_offline_missions`, `sco_host`, `sco_runtime` and `sco_core` libraries. On POSIX, run:
+
+```sh
+tools/test_contracts_core_integration.sh <core-source> <core-build> <contracts-module>
+```
+
+It exercises Core's real missions and economy tables with a synthetic backend. It checks owner scoping, withdrawal, a failed uncertain balance change and release cleanup. It does not implement partial rewards, durable settlement or native adapters.

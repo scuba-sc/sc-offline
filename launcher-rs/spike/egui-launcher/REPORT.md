@@ -1,3 +1,5 @@
+Historical record: the measurements that chose the glow renderer for the launcher window, taken on one machine on 2026-11-17. Not updated since.
+
 # P4 UI spike: egui launcher, glow vs wgpu
 
 Status: measured on one machine. Nothing here was run in game. The window shows static fake data.

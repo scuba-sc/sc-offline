@@ -8,6 +8,8 @@
 # Layout:
 #   imgui       static   src/third_party/imgui (vendored, its own warnings off)
 #   dinput8     shared   src/*.cpp, src/builtins/*.cpp -> dinput8.dll
+#   dinput8_rust_menu shared  the same sources with the menu client + Rust menu hook -> dinput8-rust-menu.dll
+#                        (only with -DSCO_BUILD_RUST_MENU_HOST=ON)
 #   sc-offline  exe      launcher/launcher.cpp -> sc-offline.exe (links imgui and sco-core's sco_sqlite)
 #   sco-core    static   external/sco-core (submodule): scanners, signatures, host kit, plugin
 #                        loader and sco-lua; dinput8 links sco_app, sco_lua, sco_hook,
@@ -56,6 +58,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # Added after CMAKE_MSVC_RUNTIME_LIBRARY above, so its libraries get the static CRT too: they link
 # into dinput8.dll, and CI's verify step checks the DLL imports no dynamic CRT.
 option(SCO_HOST_MENU_CLIENT "Use the development host menu client" OFF)
+option(SCO_BUILD_RUST_MENU_HOST "Also build dinput8-rust-menu.dll: the host with the menu client and the Rust menu hook" OFF)
 option(SCO_ASOP_HOST_COMPOSITION "Use the G10 host-source ASOP owner (requires coordinated stop/drain contract)" OFF)
 option(SCO_ASOP_SELECTION_COMPOSITION "Use the ASOP selection file service (requires coordinated stop/drain contract)" OFF)
 if(SCO_ASOP_HOST_COMPOSITION OR SCO_ASOP_SELECTION_COMPOSITION)
@@ -137,7 +140,12 @@ target_compile_options(imgui PRIVATE ${SCO_DLL_OPTIONS} /W0)
 # What imgui's own #pragma comment(lib) lines pull in.
 target_link_libraries(imgui INTERFACE d3d11 d3dcompiler dwmapi imm32)
 
-add_library(dinput8 SHARED
+# One host DLL from one source list, so the two game DLLs cannot drift apart: every source,
+# definition, include, link library and link option below applies to both. Only the menu client
+# differs. dinput8 follows SCO_HOST_MENU_CLIENT (OFF in every build run in game).
+# dinput8_rust_menu (SCO_BUILD_RUST_MENU_HOST) is the same sources with the menu client and the Rust
+# menu hook, written as dinput8-rust-menu.dll; the Rust launcher installs it as dinput8.dll for menu = rust.
+set(SCO_HOST_DLL_SOURCES
   src/dinput8_version.rc
   src/dllmain.cpp
   src/common.cpp
@@ -161,40 +169,10 @@ add_library(dinput8 SHARED
   # Manifest EnableSegmentHeap.
   src/dinput8.manifest
 )
-if(SCO_ASOP_SELECTION_COMPOSITION)
-  enable_testing()
-  if(NOT TARGET sco_asop_selection OR NOT EXISTS "${SCO_CORE_SOURCE_DIR}/include/sco/game/asop_selection.h")
-    message(FATAL_ERROR "ASOP selection composition requires the matching development host kit")
-  endif()
-  target_sources(dinput8 PRIVATE src/asop_selection_file.cpp)
-  target_link_libraries(dinput8 PRIVATE sco_asop_selection)
-  target_compile_definitions(dinput8 PRIVATE SCO_ASOP_SELECTION_COMPOSITION)
-  add_executable(asop_offline_host_test EXCLUDE_FROM_ALL tools/asop_offline_host_test.cpp src/offline_host.cpp src/asop_selection_file.cpp src/asop_shell.cpp src/asop_platform.cpp)
-  target_include_directories(asop_offline_host_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-  target_compile_definitions(asop_offline_host_test PRIVATE SCO_ASOP_SELECTION_COMPOSITION)
-  target_link_libraries(asop_offline_host_test PRIVATE sco_app sco_asop_host sco_asop_selection)
-  add_test(NAME asop_offline_host_refusal COMMAND asop_offline_host_test)
-endif()
-if(SCO_ASOP_HOST_COMPOSITION)
-  target_sources(dinput8 PRIVATE src/asop_shell.cpp src/asop_platform.cpp)
-  target_compile_definitions(dinput8 PRIVATE SCO_ASOP_HOST_COMPOSITION)
-  target_link_libraries(dinput8 PRIVATE sco_asop_host)
-else()
-  target_sources(dinput8 PRIVATE src/services.cpp src/fleet.cpp)
-endif()
-# TargetName dinput8. No dinput8_EXPORTS define: the .vcxproj had none, and the only export is
-# the DirectInput8Create forwarder in dllmain.cpp (#pragma comment(linker, "/export:...")).
-set_target_properties(dinput8 PROPERTIES OUTPUT_NAME dinput8 DEFINE_SYMBOL "")
-target_compile_definitions(dinput8 PRIVATE ${SCO_DLL_DEFINES})
-target_compile_options(dinput8 PRIVATE ${SCO_DLL_OPTIONS} /W3)
-# SubSystem Windows; Release: OptimizeReferences, EnableCOMDATFolding.
-target_link_options(dinput8 PRIVATE /SUBSYSTEM:WINDOWS "$<$<CONFIG:Release>:/OPT:REF;/OPT:ICF>")
-# Also named by #pragma comment(lib) in dllmain.cpp and menu.cpp.
-target_link_libraries(dinput8 PRIVATE imgui d3d11 shlwapi advapi32 windowscodecs ole32 iphlpapi oleaut32)
-# The host kit (sco/app.h, with sco/scan.h, signatures, caps, the plugin loader), sco-lua with its
-# Star Citizen adapter (sco_lua_game: sco.datacore and sco.game for scripts), the detour engine, the zone tree (sco/engine/zone.h) and the CryPak adapter (sco/game/pak.h, with sco_vfs).
-target_link_libraries(dinput8 PRIVATE sco_app sco_lua sco_lua_game sco_hook sco_engine sco_pak)
-if(SCO_HOST_MENU_CLIENT)
+
+# The host menu client needs the host menu header and widgets 1.3 in the Core in use; checked once
+# for whichever target asks for it.
+if(SCO_HOST_MENU_CLIENT OR SCO_BUILD_RUST_MENU_HOST)
   if(NOT TARGET sco_widgets_imgui OR NOT EXISTS "${SCO_CORE_SOURCE_DIR}/include/sco/host_menu.h")
     message(FATAL_ERROR "Host menu client requires host menu and widgets renderer support")
   endif()
@@ -204,62 +182,112 @@ if(SCO_HOST_MENU_CLIENT)
     message(FATAL_ERROR "Host menu client requires widgets 1.3")
   endif()
 endif()
-if(TARGET sco_widgets_imgui)
-  target_link_libraries(dinput8 PRIVATE sco_widgets_imgui)
-  target_compile_definitions(dinput8 PRIVATE SCO_WIDGETS_HOST_RENDERER)
-  if(SCO_HOST_MENU_CLIENT AND EXISTS "${SCO_CORE_SOURCE_DIR}/include/sco/host_menu.h")
-    if(SCO_WIDGETS_13_DECL)
-      target_sources(dinput8 PRIVATE src/menu_widgets.cpp src/menu_rust.cpp)
-      target_compile_definitions(dinput8 PRIVATE SCO_HOST_MENU_CLIENT)
-      # Explicit synthetic target; this test uses no graphics backend or game process.
-      add_executable(menu_imgui_numeric_test EXCLUDE_FROM_ALL tools/menu_imgui_numeric_test.cpp)
-      target_include_directories(menu_imgui_numeric_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/imgui")
-      target_link_libraries(menu_imgui_numeric_test PRIVATE sco_widgets_imgui imgui)
-      add_executable(menu_frame_windows_test EXCLUDE_FROM_ALL tools/menu_frame_windows_test.cpp)
-      target_include_directories(menu_frame_windows_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-      target_link_libraries(menu_frame_windows_test PRIVATE sco_plugins)
+
+function(sco_add_host_dll tgt out_name menu_client)
+  add_library(${tgt} SHARED ${SCO_HOST_DLL_SOURCES})
+  if(SCO_ASOP_SELECTION_COMPOSITION)
+    enable_testing()
+    if(NOT TARGET sco_asop_selection OR NOT EXISTS "${SCO_CORE_SOURCE_DIR}/include/sco/game/asop_selection.h")
+      message(FATAL_ERROR "ASOP selection composition requires the matching development host kit")
+    endif()
+    target_sources(${tgt} PRIVATE src/asop_selection_file.cpp)
+    target_link_libraries(${tgt} PRIVATE sco_asop_selection)
+    target_compile_definitions(${tgt} PRIVATE SCO_ASOP_SELECTION_COMPOSITION)
+    if(NOT TARGET asop_offline_host_test)
+      add_executable(asop_offline_host_test EXCLUDE_FROM_ALL tools/asop_offline_host_test.cpp src/offline_host.cpp src/asop_selection_file.cpp src/asop_shell.cpp src/asop_platform.cpp)
+      target_include_directories(asop_offline_host_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+      target_compile_definitions(asop_offline_host_test PRIVATE SCO_ASOP_SELECTION_COMPOSITION)
+      target_link_libraries(asop_offline_host_test PRIVATE sco_app sco_asop_host sco_asop_selection)
+      add_test(NAME asop_offline_host_refusal COMMAND asop_offline_host_test)
     endif()
   endif()
-endif()
-if(EXISTS "${SCO_CORE_SOURCE_DIR}/include/sc_private_session.h")
-  target_compile_definitions(dinput8 PRIVATE SCO_OFFLINE_G13_HOST)
-endif()
-# Check the SDK declaration before compiling the optional relocation policy call. This does not
-# enable product movement: the native-startup safety preflight still refuses activation.
-file(READ "${SCO_CORE_SOURCE_DIR}/include/sco/game/services.h" SCO_GAME_SERVICES_H)
-if(SCO_GAME_SERVICES_H MATCHES "void[ \t]+SetRelocationEnabled[ \t]*\\(")
-  target_compile_definitions(dinput8 PRIVATE SCO_OFFLINE_RELOCATION_SWITCH)
-else()
-  message(STATUS "Host pin lacks SetRelocationEnabled: relocation = on|off is logged, not applied")
-endif()
-if(TARGET sco_game_host)
-  target_sources(dinput8 PRIVATE src/offline_host.cpp)
-  target_link_libraries(dinput8 PRIVATE sco_game_host)
-  target_compile_definitions(dinput8 PRIVATE SCO_OFFLINE_G1_HOST)
-  # Control-thread stop is only safe when the selected core source exposes
-  # both halves of the same-owner non-draining request/drain contract.
-  file(READ "${SCO_CORE_SOURCE_DIR}/include/sco/game/host.h" SCO_GAME_HOST_H)
-  file(READ "${SCO_CORE_SOURCE_DIR}/include/sco/owned_shutdown.h" SCO_OWNED_SHUTDOWN_H)
-  if(SCO_GAME_HOST_H MATCHES "HostReport[ \t]+RequestStopDetailed[ \t]*\\([ \t]*\\)[ \t]*noexcept" AND
-     SCO_OWNED_SHUTDOWN_H MATCHES "void[ \t]+request_stop[ \t]*\\([ \t]*\\)([ \t]*noexcept)?" AND
-     SCO_OWNED_SHUTDOWN_H MATCHES "bool[ \t]+drain_until[ \t]*\\(")
-    target_compile_definitions(dinput8 PRIVATE SCO_CORE_NON_DRAINING_STOP_API)
+  if(SCO_ASOP_HOST_COMPOSITION)
+    target_sources(${tgt} PRIVATE src/asop_shell.cpp src/asop_platform.cpp)
+    target_compile_definitions(${tgt} PRIVATE SCO_ASOP_HOST_COMPOSITION)
+    target_link_libraries(${tgt} PRIVATE sco_asop_host)
   else()
-    message(STATUS "Core lacks request_stop/RequestStopDetailed: product host remains fail-closed")
+    target_sources(${tgt} PRIVATE src/services.cpp src/fleet.cpp)
   endif()
-  # Native startup runs only on a Core that offers the opt-in process-retained composition: module
-  # and dependencies retained until exit, a truthful install-quiescence callback, stop as closure.
-  # Without it the product keeps refusing native startup (native_activation_policy.h).
-  if(SCO_GAME_HOST_H MATCHES "enum[ \t]+class[ \t]+Composition[^;{]*\{[^}]*ProcessRetained" AND
-     SCO_GAME_HOST_H MATCHES "Composition[ \t]+composition[ \t]*=")
-    target_compile_definitions(dinput8 PRIVATE SCO_CORE_PROCESS_RETAINED_COMPOSITION)
+  # TargetName per out_name. No dinput8_EXPORTS define: the .vcxproj had none, and the only export is
+  # the DirectInput8Create forwarder in dllmain.cpp (#pragma comment(linker, "/export:...")).
+  set_target_properties(${tgt} PROPERTIES OUTPUT_NAME ${out_name} DEFINE_SYMBOL "")
+  target_compile_definitions(${tgt} PRIVATE ${SCO_DLL_DEFINES})
+  target_compile_options(${tgt} PRIVATE ${SCO_DLL_OPTIONS} /W3)
+  # SubSystem Windows; Release: OptimizeReferences, EnableCOMDATFolding.
+  target_link_options(${tgt} PRIVATE /SUBSYSTEM:WINDOWS "$<$<CONFIG:Release>:/OPT:REF;/OPT:ICF>")
+  # Also named by #pragma comment(lib) in dllmain.cpp and menu.cpp.
+  target_link_libraries(${tgt} PRIVATE imgui d3d11 shlwapi advapi32 windowscodecs ole32 iphlpapi oleaut32)
+  # The host kit (sco/app.h, with sco/scan.h, signatures, caps, the plugin loader), sco-lua with its
+  # Star Citizen adapter (sco_lua_game: sco.datacore and sco.game for scripts), the detour engine, the zone tree (sco/engine/zone.h) and the CryPak adapter (sco/game/pak.h, with sco_vfs).
+  target_link_libraries(${tgt} PRIVATE sco_app sco_lua sco_lua_game sco_hook sco_engine sco_pak)
+  if(TARGET sco_widgets_imgui)
+    target_link_libraries(${tgt} PRIVATE sco_widgets_imgui)
+    target_compile_definitions(${tgt} PRIVATE SCO_WIDGETS_HOST_RENDERER)
+    if(menu_client AND EXISTS "${SCO_CORE_SOURCE_DIR}/include/sco/host_menu.h")
+      if(SCO_WIDGETS_13_DECL)
+        target_sources(${tgt} PRIVATE src/menu_widgets.cpp src/menu_rust.cpp)
+        target_compile_definitions(${tgt} PRIVATE SCO_HOST_MENU_CLIENT)
+      endif()
+    endif()
+  endif()
+  if(EXISTS "${SCO_CORE_SOURCE_DIR}/include/sc_private_session.h")
+    target_compile_definitions(${tgt} PRIVATE SCO_OFFLINE_G13_HOST)
+  endif()
+  # Check the SDK declaration before compiling the optional relocation policy call. This does not
+  # enable product movement: the native-startup safety preflight still refuses activation.
+  file(READ "${SCO_CORE_SOURCE_DIR}/include/sco/game/services.h" SCO_GAME_SERVICES_H)
+  if(SCO_GAME_SERVICES_H MATCHES "void[ \t]+SetRelocationEnabled[ \t]*\\(")
+    target_compile_definitions(${tgt} PRIVATE SCO_OFFLINE_RELOCATION_SWITCH)
   else()
-    message(STATUS "Core lacks the process-retained host composition: native startup remains refused with this Core")
+    message(STATUS "Host pin lacks SetRelocationEnabled: relocation = on|off is logged, not applied")
   endif()
-elseif(SCO_HOST_SOURCE_DIR)
-  message(FATAL_ERROR "SCO_HOST_SOURCE_DIR lacks the required sco_game_host composition target")
-else()
-  message(STATUS "Published host pin lacks G1: offline startup refuses (no private fallback)")
+  if(TARGET sco_game_host)
+    target_sources(${tgt} PRIVATE src/offline_host.cpp)
+    target_link_libraries(${tgt} PRIVATE sco_game_host)
+    target_compile_definitions(${tgt} PRIVATE SCO_OFFLINE_G1_HOST)
+    # Control-thread stop is only safe when the selected core source exposes
+    # both halves of the same-owner non-draining request/drain contract.
+    file(READ "${SCO_CORE_SOURCE_DIR}/include/sco/game/host.h" SCO_GAME_HOST_H)
+    file(READ "${SCO_CORE_SOURCE_DIR}/include/sco/owned_shutdown.h" SCO_OWNED_SHUTDOWN_H)
+    if(SCO_GAME_HOST_H MATCHES "HostReport[ \t]+RequestStopDetailed[ \t]*\\([ \t]*\\)[ \t]*noexcept" AND
+       SCO_OWNED_SHUTDOWN_H MATCHES "void[ \t]+request_stop[ \t]*\\([ \t]*\\)([ \t]*noexcept)?" AND
+       SCO_OWNED_SHUTDOWN_H MATCHES "bool[ \t]+drain_until[ \t]*\\(")
+      target_compile_definitions(${tgt} PRIVATE SCO_CORE_NON_DRAINING_STOP_API)
+    else()
+      message(STATUS "Core lacks request_stop/RequestStopDetailed: product host remains fail-closed")
+    endif()
+    # Native startup runs only on a Core that offers the opt-in process-retained composition: module
+    # and dependencies retained until exit, a truthful install-quiescence callback, stop as closure.
+    # Without it the product keeps refusing native startup (native_activation_policy.h).
+    if(SCO_GAME_HOST_H MATCHES "enum[ \t]+class[ \t]+Composition[^;{]*\{[^}]*ProcessRetained" AND
+       SCO_GAME_HOST_H MATCHES "Composition[ \t]+composition[ \t]*=")
+      target_compile_definitions(${tgt} PRIVATE SCO_CORE_PROCESS_RETAINED_COMPOSITION)
+    else()
+      message(STATUS "Core lacks the process-retained host composition: native startup remains refused with this Core")
+    endif()
+  elseif(SCO_HOST_SOURCE_DIR)
+    message(FATAL_ERROR "SCO_HOST_SOURCE_DIR lacks the required sco_game_host composition target")
+  else()
+    message(STATUS "Published host pin lacks G1: offline startup refuses (no private fallback)")
+  endif()
+  # WholeProgramOptimization + LinkTimeCodeGeneration in Release (/GL, /LTCG).
+  set_target_properties(${tgt} PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+endfunction()
+
+sco_add_host_dll(dinput8 dinput8 ${SCO_HOST_MENU_CLIENT})
+if(SCO_BUILD_RUST_MENU_HOST)
+  sco_add_host_dll(dinput8_rust_menu dinput8-rust-menu ON)
+endif()
+
+# Explicit synthetic targets (not built by default); these tests use no graphics backend or game process.
+if((SCO_HOST_MENU_CLIENT OR SCO_BUILD_RUST_MENU_HOST) AND TARGET sco_widgets_imgui AND SCO_WIDGETS_13_DECL
+   AND EXISTS "${SCO_CORE_SOURCE_DIR}/include/sco/host_menu.h")
+  add_executable(menu_imgui_numeric_test EXCLUDE_FROM_ALL tools/menu_imgui_numeric_test.cpp)
+  target_include_directories(menu_imgui_numeric_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/third_party/imgui")
+  target_link_libraries(menu_imgui_numeric_test PRIVATE sco_widgets_imgui imgui)
+  add_executable(menu_frame_windows_test EXCLUDE_FROM_ALL tools/menu_frame_windows_test.cpp)
+  target_include_directories(menu_frame_windows_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+  target_link_libraries(menu_frame_windows_test PRIVATE sco_plugins)
 endif()
 
 # NPC, inspector, crew, spawn and loadout are external modules; no host feature fallback.
@@ -278,8 +306,8 @@ if(SCO_MULTIPLAYER)
   message(FATAL_ERROR "This module is external and maintained in scuba-sc/sc-mp")
 endif()
 
-# WholeProgramOptimization + LinkTimeCodeGeneration in Release (/GL, /LTCG).
-set_target_properties(imgui dinput8 PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+# imgui: WholeProgramOptimization + LinkTimeCodeGeneration in Release (/GL, /LTCG); the host DLLs get it in sco_add_host_dll.
+set_target_properties(imgui PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
 
 # --- sc-offline.exe -----------------------------------------------------------------------------
 # Console subsystem (CMake's default for an executable). No UAC setting: the manifest keeps the

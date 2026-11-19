@@ -222,6 +222,11 @@ pub mod files {
     pub const BACKUP_SUFFIX: &str = ".sc-offline-backup";
     /// The mod DLL name placed in Bin64. `launcher/launcher.cpp:1808`.
     pub const MOD_DLL: &str = "dinput8.dll";
+    /// The second game DLL, shipped beside the launcher: the same sources built with the Rust menu hook
+    /// (CMake `SCO_BUILD_RUST_MENU_HOST`). It is never placed in Bin64 under this name: the launcher installs
+    /// it as [`MOD_DLL`] when `menu = rust` and this file is present beside the launcher (not in the C++
+    /// launcher, which always installs `dinput8.dll`). Not run in game.
+    pub const MOD_DLL_RUST_MENU: &str = "dinput8-rust-menu.dll";
     /// Settings file next to the launcher. `launcher/launcher.cpp:292` (parser messages) and
     /// `launcher/launcher.cpp:5210` (path build).
     pub const INI: &str = "sc-offline.ini";
@@ -578,6 +583,7 @@ mod tests {
             format!("{}{}", files::MOD_DLL, files::BACKUP_SUFFIX),
             "dinput8.dll.sc-offline-backup"
         );
+        assert_eq!(files::MOD_DLL_RUST_MENU, "dinput8-rust-menu.dll");
         assert_eq!(files::INI, "sc-offline.ini");
         assert_eq!(files::PC_CHANGES, "pc-changes.txt");
     }

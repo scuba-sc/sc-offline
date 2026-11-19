@@ -1,24 +1,12 @@
-# Independent MIT-wire peer fixture
+# Bridge peer fixture
 
-Configure/build this directory separately with `SCO_WIRE_INCLUDE_DIR` pointing at
-`sc_ipc.h`, `sc_titanlink.h`, `sc_voxel_bridge.h` from an identified SDK. These three
-headers alone are sufficient; no sco-core library, `sco_api.h`, product include path,
-host submodule, plugin loader or game is required. It is never installed or released.
+A stand-in for the other game, used to test the TitanLink and voxel_bridge plugins ([bridges](../../docs/bridges.md)). It builds on its own with only three MIT wire headers from an identified SDK: `sc_ipc.h`, `sc_titanlink.h` and `sc_voxel_bridge.h`. It needs no sco-core library, `sco_api.h`, product include path, host submodule, plugin loader or game. It is never installed or released.
 
 ```text
 cmake -S tools/bridge-peer -B peer-build -DSCO_WIRE_INCLUDE_DIR=<wire-headers>
 cmake --build peer-build --target bridge-peer
 ```
 
-On Windows: `bridge-peer titanlink [seconds]` / `bridge-peer voxel [seconds]`.
-The owner must enable/start the separately built optional plugin. The fixture opens,
-never creates, the channel, validates version/directions, exchanges bounded messages,
-beats and refuses stale owners. Ctrl+C stops it; owner timeout observes peer loss.
-On development platforms only the independent wire endpoint compiles; `--wire-info`
-reports versions. Native transport otherwise refuses explicitly, never emulates game
-or cross-process results. Windows runtime and paired-game behavior are NOT VERIFIED.
+On Windows, run `bridge-peer titanlink [seconds]` or `bridge-peer voxel [seconds]` after you enable and start the matching plugin. The fixture opens the channel and never creates it. It checks the version and directions, exchanges bounded messages, beats, and refuses stale owners. Ctrl+C stops it, and the plugin then sees the peer leave after its timeout. `--wire-info` prints the wire versions. On other platforms only the wire endpoint compiles, and the native transport refuses. The fixture never fakes game or cross-process results.
 
-The fixture remains project GPL-3.0-only. Its dependency boundary is the independently
-MIT-licensed wire, **not a relicensing of project code**. Preserve the MIT notices in
-the three published headers. This fixture does not include any game data or second
-peer game's code; synthetic wall/match responses are not gameplay acceptance.
+The fixture is GPL-3.0-only. Only the wire headers are MIT, and they do not relicense project code. Keep the MIT notices in the three headers. The fixture contains no game data and no code from the other game. Its synthetic wall and match replies are not gameplay results. Windows runtime and paired-game behavior are not verified.

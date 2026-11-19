@@ -1,42 +1,34 @@
 # launcher-rs
 
-Rust workspace for the sc-offline launcher. Status: P0 skeleton. It holds the toolchain
-pins, the dependency gate, one contract crate and a hello binary that proves the build.
-It does not replace the C++ launcher in `launcher/`. Nothing here is run in game.
+Rust workspace of the sc-offline launcher and the in-game Rust menu. It builds `sc-offline.exe`, the launcher of the 0.8.0 package, and `sc_offline_menu.dll`. The C++ launcher in `launcher/` ships beside it as `sc-offline-classic.exe`. The crates, the commands and how they work are in [docs/rust-launcher.md](../docs/rust-launcher.md). The menu is in [docs/rust-menu.md](../docs/rust-menu.md).
 
-The design is in `docs/rust-launcher.md`.
+Not run in game. See [docs/status.md](../docs/status.md).
 
 ## Build
 
-Needs rustup and cargo on PATH. The toolchain version is pinned in `rust-toolchain.toml`
-(1.99.0, target x86_64-pc-windows-msvc). On Windows the MSVC linker must be reachable
-(Visual Studio 2022 or newer Build Tools).
+Needs rustup and cargo on `PATH`. The toolchain is pinned in `rust-toolchain.toml` (1.99.0, target `x86_64-pc-windows-msvc`). On Windows the MSVC linker must be reachable (Visual Studio 2022 or newer Build Tools). `cargo deny` is a separate tool: `cargo install cargo-deny --locked`.
 
 ```
 cd launcher-rs
-cargo build --locked --release
-cargo test --locked
+cargo build --release --workspace --locked
+cargo test --workspace --locked
+cargo clippy --workspace --all-targets -- -D warnings
 cargo deny check
 ```
 
-`cargo deny` is a separate tool: `cargo install cargo-deny --locked`.
+Outputs in `target\release\`: `sc-offline.exe`, `scol.exe` (the same code under the name the parity scripts use), `scol-pm.exe`, `scol-ui.exe`, `scol-hello.exe`, `scol-play-standin.exe` (a stand-in game for tests) and `sc_offline_menu.dll`.
 
-Release settings: `panic = "abort"`, LTO, `opt-level = "s"`, stripped. The static CRT is
-set in `.cargo/config.toml`, so the exe imports no vcruntime or ucrt DLL. Check it with
-`dumpbin /dependents target\release\scol-hello.exe`.
+Release settings: LTO, `opt-level = "s"`, stripped, `panic = "unwind"` (the menu DLL catches panics at its exports). `.cargo/config.toml` sets the static CRT, so no exe imports a vcruntime or ucrt DLL. Check it with `dumpbin /dependents target\release\sc-offline.exe`.
 
 ## Layout
 
-- `crates/scol-contract`: frozen constants (environment names, stop event names, marker file,
-  backup suffix, exit codes, ini keys). Each item cites its C++ source line.
-- `crates/scol-cli`: P0 hello binary only.
-
-Add a crate by creating `crates/<name>/`. The root `Cargo.toml` uses `members = ["crates/*"]`.
-`Cargo.lock` is committed.
+- `crates/`: `scol-contract`, `scol-config`, `scol-install`, `scol-pcchanges`, `scol-play`, `scol-update`, `scol-plugins`, `scol-catalogue`, `scol-plugin-manager`, `scol-redact`, `scol-mcp`, `scol-ui`, `scol-cli`, `scol-menu`. Add a crate by creating `crates/<name>/`; the root `Cargo.toml` takes `crates/*`. `Cargo.lock` is committed.
+- `tests/`: parity scripts, golden files and test vectors. Each folder has a README.
+- `spike/`: a throwaway UI experiment, outside the workspace (see `spike/egui-launcher/REPORT.md`).
 
 ## Rules
 
-- Public GPL-3.0-only repo. New source files start with `SPDX-License-Identifier: GPL-3.0-only`.
-- No personal names, e-mails, private paths or private repo names in any file.
-- Capability switches default ON in release packages, each one a visible setting the player
-  can turn off, each one's text says "not run in game".
+- Public GPL-3.0-only repository. New source files start with `SPDX-License-Identifier: GPL-3.0-only`.
+- No personal names, e-mails, private paths or private repository names in any file.
+- No test starts the game, asks for administrator rights or changes the firewall, the hosts file or the EAC exe. `scol-play` and `scol-pcchanges` compile their real implementations only with the features `real` and `real-system`, which only `scol-cli` turns on.
+- Capability switches default on in release packages (`exp_entities_diag` off). Each is a visible setting the player can turn off, and its text says it has not been run in game.

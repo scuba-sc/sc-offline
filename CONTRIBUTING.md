@@ -24,14 +24,15 @@ Questions and ideas: open an issue or ask in the [Discord](https://discord.gg/NJ
 1. For anything bigger than a small fix, open an issue first so we can agree on the approach.
 2. Fork the repo and branch from `main`.
 3. Build and check as described in [docs/build.md](docs/build.md):
-   - Windows: build **Release** x64 with CMake (Visual Studio opens the folder, or `cmake` from the command line).
+   - Windows: build **Release** x64 with CMake. The mod has two DLLs: `dinput8.dll` (`SCO_HOST_MENU_CLIENT=OFF`, the build that has run in game) and `dinput8-rust-menu.dll` (target `dinput8_rust_menu`, option `SCO_BUILD_RUST_MENU_HOST=ON`). Both build from one configure. The commands are in the [build guide](docs/build.md#build-the-two-game-dlls-windows-x64-msvc).
    - macOS or Linux: `tools/check.sh` must report `0 new` diagnostics. It isn't a build; CI's MSVC build is the real check.
    - `python3 tools/sdk-headers.py` must pass if you touched `src/builtins/` or `plugins/`: it checks public SDK dependencies and recorded legacy exceptions (see [docs/build.md](docs/build.md#include-and-scan-gates)). Do not add an exception for a new feature.
    - Touching the self-update: run `tools/update-test/run.sh` under Wine (see [docs/build.md](docs/build.md#self-update-tests-under-wine)).
    - Touching `launcher/mcp_server.h`, `launcher-rs/crates/scol-mcp` or the `mcp` command: `python tools/check_launcher_mcp.py` must pass, and `--exe <built sc-offline.exe>` for the exe you changed (see [docs/ai-agents.md](docs/ai-agents.md#for-developers)).
    - Touching `launcher-rs/`: `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` must pass (see [docs/build.md](docs/build.md#build-the-rust-launcher-and-menu)). The launcher players run is the Rust one; keep the C++ launcher in `launcher/` working as `sc-offline-classic.exe`.
    - Touching the release recipe: `python tools/test_package_release.py` and `python tools/test_release_manifest.py` must pass.
-4. Test in game if you can, and say in the PR what you tested and what you didn't.
+   - Touching menu text players see: `python tools/check_menu_wording.py` must pass.
+4. Test in game if you can. Say in the PR what you tested and what you did not, and use the phrase "Not run in game." for the rest.
 5. Update the docs your change affects (`README.md`, `docs/`, `sc-offline.ini` comments) in the same PR.
 6. Add a line under the top section of [CHANGELOG.md](CHANGELOG.md) for anything a player would notice.
 7. Open the PR against `main` and fill in the template. Run the applicable jobs in the [current CI workflow](.github/workflows/build.yml), including the host and published-SDK consumer checks affected by the change. A skipped release job is not release acceptance.

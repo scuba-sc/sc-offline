@@ -26,12 +26,13 @@ use crate::fsops::{
     can_write_to, copy_file, create_dir, create_dir_all, delete_file, local_time, move_file,
     write_all, ERROR_FILE_NOT_FOUND,
 };
+use crate::moddll::{installed_carries, installed_is_ours, menu_from_ini, select_source};
 use crate::paths::{parent_dir, GamePaths, GAME_EXE};
 use crate::status::{fail, fail_code, find_game, self_checks};
 use crate::version::SCO_VERSION;
 use crate::win::{is_file, read_all};
 use scol_config::ini_edit::drop_ini_key;
-use scol_config::{read_config, Config};
+use scol_config::{read_config, Config, MenuChoice};
 use scol_contract::exit_code;
 use scol_contract::files;
 use scol_contract::record::{marker_text, marker_time};
@@ -60,9 +61,26 @@ fn step(dry: bool, out: &mut dyn Write, text: &str) -> bool {
 
 /// `PutMod`: copies the mod in, backing up what it replaces, and writes the marker. 0 ok, 2 failed.
 /// After a crash the marker is still there: the backups were made then, so they are kept as they are.
-/// `here` is the folder of the launcher (`dinput8.dll` and `data\OfflineDB\default_1.xml` are in it).
+/// `here` is the folder of the launcher (`dinput8.dll`, `dinput8-rust-menu.dll` and
+/// `data\OfflineDB\default_1.xml` are in it). The `menu` key is read from `sc-offline.ini` there (the
+/// elevated helper has no other way to know it); see [`put_mod_with_menu`].
 pub fn put_mod(here: &str, g: &GamePaths, mode: &str, dry: bool, out: &mut dyn Write) -> i32 {
-    let dll_src = format!("{here}\\{}", files::MOD_DLL);
+    put_mod_with_menu(here, g, mode, menu_from_ini(here), dry, out)
+}
+
+/// [`put_mod`] with the menu choice given. The source DLL is `dinput8-rust-menu.dll` when `menu` is Rust and
+/// that file is beside the launcher, else `dinput8.dll`; either one is written to Bin64 as `dinput8.dll`.
+/// An installed DLL that is the other shipped DLL is ours and is replaced; the output says so.
+pub fn put_mod_with_menu(
+    here: &str,
+    g: &GamePaths,
+    mode: &str,
+    menu: MenuChoice,
+    dry: bool,
+    out: &mut dyn Write,
+) -> i32 {
+    let source = select_source(here, menu);
+    let dll_src = source.path.clone();
     let xml_src = format!("{here}\\data\\OfflineDB\\{}", files::DEFAULT_XML);
     let prev = read_all(&g.marker);
     let leftover = prev.is_some();
@@ -113,7 +131,25 @@ pub fn put_mod(here: &str, g: &GamePaths, mode: &str, dry: bool, out: &mut dyn W
         }
     }
 
-    if is_file(&g.dll) && !leftover && !identify(&g.dll).ours {
+    let installed = identify(&g.dll);
+    let installed_ours = installed_is_ours(here, &installed);
+    if let Some(note) = source.note(menu) {
+        let _ = writeln!(out, "{note}");
+    }
+    if let Some(have) = installed_carries(here, &installed) {
+        if have != source.carries {
+            let _ = writeln!(
+                out,
+                "[i] the installed {} carries {}; this {} replaces it with {} ({})",
+                files::MOD_DLL,
+                have.words(),
+                if mode == "play" { "Play" } else { "install" },
+                source.carries.words(),
+                source.file
+            );
+        }
+    }
+    if is_file(&g.dll) && !leftover && !installed_ours {
         if is_file(&g.dll_backup) {
             let _ = writeln!(
                 out,
@@ -133,12 +169,12 @@ pub fn put_mod(here: &str, g: &GamePaths, mode: &str, dry: bool, out: &mut dyn W
             }
         }
     }
-    if step(dry, out, &format!("copy dinput8.dll to {}", g.dll)) {
+    if step(dry, out, &format!("copy {} to {}", source.file, g.dll)) {
         if let Err(e) = copy_file(&dll_src, &g.dll, false) {
             let _ = writeln!(
                 out,
-                "[!] couldn't copy dinput8.dll to {} (error {e})",
-                g.dll
+                "[!] couldn't copy {} to {} (error {e})",
+                source.file, g.dll
             );
             return EXIT_COPY_FAILED;
         }
@@ -528,7 +564,7 @@ pub fn run(args: &[String], io: &mut Io) -> i32 {
 
     // 4. Change the game folder.
     if dry {
-        if put_mod(&here, &g, "install", true, &mut out) != 0 {
+        if put_mod_with_menu(&here, &g, "install", cfg.menu, true, &mut out) != 0 {
             return exit_code::ERROR;
         }
         return exit_code::OK;
@@ -555,7 +591,7 @@ pub fn run(args: &[String], io: &mut Io) -> i32 {
             b
         }
     } else {
-        put_mod(&here, &g, "install", false, helper_out)
+        put_mod_with_menu(&here, &g, "install", cfg.menu, false, helper_out)
     };
     if code != 0 {
         return fail(

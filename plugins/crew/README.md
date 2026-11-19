@@ -1,133 +1,57 @@
-# Crew — public SDK Crew and archetype pickers
+# Crew: AI crew for your ship
 
-Current picker/copy-list installation and the one targeted module fixture:
-[Public pickers](../../docs/pickers.md). **These sources use `sco_widgets.h` and
-`sco_content.h`, which the published `sdk-v2.4.0` ships**. The obtain/proof recipes below use that archive.
+Crew fills your ship's seats with AI characters and seats you. You manage them from the **Crew** page of the in-game menu.
 
-External native consumer of **sdk-v2.4.0** (SDK 2.4.0, plugin ABI 1.1,
-Star Citizen game pack 0.8.0). GPL-3.0-only project code. Native plugins are
-trusted process code, not a security sandbox.
+## Crew page
 
-## Public widget boundary
+Open **Crew** in the **People** section of the menu (key **M**). The sections follow the order you use them:
 
-The external Crew panel uses public `sco.widgets`, in sections: **Your ship**
-(**Use my current ship**, **Get ship ready to fly**, **Update seat list**, a seat
-choice and a table of who is in each seat, 32 seats a page), **Choose a character to
-add** (search, paged list, a typed character name), **Add crew** (**Fill all empty
-seats**, **Add to selected seat**), **You and your crew** (**Sit in selected seat**,
-**Stand up person in seat**, **Remove crew in seat**, **Stand everyone up**,
-**Remove all my crew**) and **Last result**. The seat buttons wait for a seat choice.
-Each action rereads public providers; per-seat removal
-refuses foreign/player/NPC-plugin occupants. The panel has no free-text seat box;
-`crew.sit` still accepts seat words from the command line, and selected-seat actions
-use the fresh copied index, not ambiguous names.
-Crew and NPC share SDK-only catalog parsing/filtering/paging, not session IDs.
-Widgets/content ship in the published SDK 2.4.0. No Windows rendering/gameplay result is claimed.
-There is no private ImGui/menu, spawner engine, built-in registration or fallback
-in this module. The command IDs remain available through the host's typed
-`sco_api.invoke` route; this is not a new console or command transport.
+- **Your ship**: **Use my current ship**, **Get ship ready to fly**, **Update seat list**, a seat choice and a table of who sits where (32 seats a page).
+- **Choose a character to add**: a search box, a paged list and a field for a typed character name.
+- **Add crew**: **Fill all empty seats** and **Add to selected seat**.
+- **You and your crew**: **Sit in selected seat**, **Stand up person in seat**, **Remove crew in seat**, **Stand everyone up** and **Remove all my crew**.
+- **Last result**.
 
-## Obtain, build/check, install
+The seat buttons wait until you choose a seat. Removing one seat's crew refuses if someone else sits there: you, a character from another plugin or a character you did not add. When the plugin cannot add more characters this session, the add buttons are disabled and the page says a game restart is needed. The plugin has no hotkey.
 
-1. Obtain the published combined `sco-sdk-2.4.0.zip` and its adjacent release
-`SHA256SUMS` from [stable SDK 2.4.0](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0).
-   The proof verifies both the archive checksum and every extracted inventory
-   entry. It never initializes the host submodule or includes host sources.
-2. From the product source, run the focused archive proof (new directory outside
-   the checkout):
+## Commands
 
-   ```sh
-   python3 tools/check_crew_sdk.py --archive <sco-sdk-2.4.0.zip> \
-     --sums <release-SHA256SUMS> --work <new-outside-checkout-directory>
-   ```
-
-   POSIX developers can add `--sanitizers` for a separate ASan/UBSan loaded-module
-   build and the partial-function-pointer guard negative control. Release
-   dependency traces remain uninstrumented and strict; no sanitizer metadata
-   exemptions are added. Windows uses Visual Studio 2026 x64; `/W4 /WX`, full
-   dependency traces and strict linking are configured but not locally verified.
-
-   To build independently after verifying/extracting the archive:
-
-   ```sh
-   cmake -S plugins/crew -B <build> -DSCO_SDK_INCLUDE_DIR=<sdk>/include
-   cmake --build <build> --config Release --target sc-offline-crew
-   cmake --install <build> --config Release --prefix <stage> --component crew
-   ```
-
-3. On Windows, install the staged **`data/plugins/crew/{plugin.ini,crew.dll}`**
-   into the host's data root. Requires `plugins = on`; the folder is enabled by
-   default, user-disableable with a `disabled` marker. Remove the old host Crew
-   built-in registration/link inputs before installing: duplicate `crew` IDs
-   are refused. An absent/disabled external folder must not restore a legacy
-   feature tick. POSIX `.so` outputs and rewritten checker manifests are
-   development evidence, not Windows game-loadable artifacts.
-
-## Preserved commands
-
-| Command | Behavior |
+| Command | What it does |
 | --- | --- |
-| `crew.target` | Pin the ship currently aboard; session-only, never persisted. |
-| `crew.sit <seat>` | Case-insensitive words from seat name, at most 47 bytes. Seat the local player only; foreign/unknown occupants and pending crew reservations are refused. Selecting the player's current seat cancels an older queued player move. A seated NPC spawned by this plugin may be removed before the player seat job starts. |
-| `crew.stand_all` | Cancel target-ship seating jobs, then eject the local player and this plugin's owned crew only. Foreign/unknown occupants are counted, not moved. |
-| `crew.fill <npc>` | Caller-supplied archetype, at most 127 bytes. Spawn owned NPCs beside the current player pose and queue empty, known-usable seats. Report copied-batch truncation, skipped seats and partial spawn failure. |
-| `crew.clear` | Start actors-specific removal of every NPC spawned by this plugin, from its own records: it needs no ship, so it works after the player leaves the ship. Refused removals retain retry authority; accepted removal is not confirmed world disappearance. Never delete player, foreign occupants or another plugin's NPCs. |
-| `crew.power_on` | Request Flight Ready for the target ship. The provider validates ship authority; a dashboard not yet streamed may refuse. Retry the command later; no private power-on fallback. |
+| `crew.target` | Pins the ship you are in. Kept for this session only. |
+| `crew.sit <seat>` | Seats you. The words you give must all appear in the seat name (up to 47 bytes, ignoring case). Refuses seats held by others and seats with a pending crew reservation. |
+| `crew.stand_all` | Stops seating, then stands up you and the crew this plugin added. Others are counted, not moved. |
+| `crew.fill <npc>` | Adds characters of the archetype you name (up to 127 bytes) and seats them in empty, usable seats. Reports skipped seats and partial failures. |
+| `crew.clear` | Removes every character this plugin added. It needs no ship, so it works after you leave. A removal that was refused is retried. |
+| `crew.power_on` | Asks for Flight Ready on the pinned ship. A dashboard that has not streamed in yet may refuse; try again later. |
 
-Only `game.vehicles` 1.0 (`player_ship`, `seats`, `seat_occupant`, `seat`,
-`eject`, `power_on`), `game.actors` 1.0 (`local_player`, `spawn_npc`,
-`despawn`) and `teleport.spatial` 1.0 (`player_pose`) are used. Public vehicle
-1.0 explicitly permits local-player seating/ejection and owned actor actions.
-Services are reopened on each command/tick; complete member extents and null
-callbacks are checked before use, alongside capabilities and provider results.
-Missing service/capability means unavailable. No tables are cached across calls.
-Provider wrong-thread results are propagated by commands; all mutations belong
-on the public command/tick game-thread path. No workers, raw pointers, entity
-removal service, network transport, new SDK contract or persistent storage.
+Characters come from `lists/npcs.txt` in the `picker_catalog` data pack (a copy of `data/npcs.txt`). To use your own list, copy it over that pack's `lists/npcs.txt` with the game closed and keep a backup. A change needs a game restart. See [docs/pickers.md](../../docs/pickers.md).
 
-## Bounded jobs, removal and reload
+Limits. The plugin reads at most 128 seats per ship and keeps 64 records per session, and removal records count too. After 64 you must restart the game before adding more crew. A new character waits 750 ms before its first seating attempt, retries every 1500 ms, and gives up after five accepted attempts or 30 s. On timeout only this plugin's characters are removed. Nobody else is ever moved out of a seat, and you are never removed. Unloading the plugin releases its characters through the game; Core removes any that remain.
 
-- At most 128 copied seats and 64 session tickets shared with local-player jobs.
-  `out_more` is reported; vehicle 1.0 has no pagination cursor, so seats beyond
-  the copied batch are not silently claimed as processed.
-- NPC first attempt is delayed 750 ms; retry interval 1500 ms; at most five
-  accepted link attempts or a 30 s seating deadline. Confirmation is checked
-  before abandoning the fifth link. Jobs queued before the first tick anchor
-  to that tick, not to an assumed process uptime of zero.
-- Unknown/foreign occupants are never evicted. Timeout cleans only this
-  plugin's NPCs; the player is never despawned. Refused removal retries remain
-  bounded per tick. Accepted/not-owned removal retains a ticket until unload;
-  streaming absence cannot prove disappearance, and no `alive=0` recycling is
-  used. The 64-ticket lifetime budget can therefore require normal unload/reload
-  before more crew are spawned; repeated `clear` never repeats accepted removal. At the limit the panel disables the add buttons and says, in plain words, that a game restart is needed; `crew.fill` and `crew.sit` give the same sentence, and an unknown class name or unloaded zone (`SCO_NOT_FOUND`) is reported as such.
-- `Unload` withdraws the tick subscription and resets local state, idempotently.
-  It performs no game mutation during shutdown. The host withdraws commands and
-  the actors provider releases remaining owned NPCs, as required by the published
-  actors contract. Synthetic tests label that owner-release step a **stand-in**;
-  it is not actual host/game cleanup evidence.
-- Normal load/invoke/unload/load is exercised. Native faults are not certified
-  safe reload/recovery; real fault cleanup and restart-required behavior remain
-  owner acceptance. No unconditional reload or process-termination cleanup claim.
+## Settings
 
-## Evidence and owed acceptance
+None.
 
-The one named `crew-module-workflow` dynamically loads the actual independently
-compiled module. Eight focused groups cover missing/null/physically truncated
-methods, failed service reopen, typed invalid input/capability refusal, target,
-Flight Ready, player sit/eject, owned fill/clear, partial seat/spawn batches,
-unusable/unknown seats, no player, foreign NPCs, pending reservations, cancellation
-of an older player move when already seated, fifth-link
-confirmation, timeout/refused removal retry, retained ticket quota, reload and
-unload twice; the same fixture also checks pre-first-tick absolute clock handling.
-The archive proof checks exact enabled install inventory, two full compiler
-dependency traces, published `sco-plugin-check` with absent services, and four
-POSIX private-header/symbol/transitive dependency controls. Optional sanitizers
-prove the old offset-only function-pointer guard fails and the restored module
-passes. These are synthetic public providers, not private engine simulations.
+## What it needs
 
-**NOT RUN IN GAME.** Owed: actual Windows x64/MSVC exports/module loading,
-small/large real seat lists, NPC streaming/removal, local-player boarding/eject,
-ship-authority and Flight Ready, real host owner-release/command withdrawal,
-normal disable/rebuild/reload, fault handling, offline/EAC refusal. Rendering/DPI
-acceptance is still NOT RUN despite the restored public widget UI. CI, release staging in the
-product, game execution and runtime networking are not performed by this change.
+- Services: `game.vehicles` 1.0, `game.actors` 1.0, `teleport.spatial` 1.0, `sco.widgets` 1.0, `sco.content` 1.0.
+- Capabilities: `game.vehicles.seats`, `game.vehicles.seat`, `game.vehicles.flight_ready`, `game.actors.local_player`, `game.actors.spawn_npc`, `game.actors.despawn`.
+- A missing service or capability makes the action refuse with a reason.
+
+Not run in game. See [docs/status.md](../../docs/status.md).
+
+## Developer notes
+
+Build against the extracted SDK 2.4.1 `include/` directory, which must hold `sco_widgets.h` and `sco_content.h`.
+
+```sh
+cmake -S plugins/crew -B build-crew -DSCO_SDK_INCLUDE_DIR=<sdk>/include -DSCO_WORKFLOW_TESTS=ON
+cmake --build build-crew --config Release --target sc-offline-crew
+ctest --test-dir build-crew -C Release --output-on-failure
+cmake --install build-crew --config Release --prefix <stage> --component crew
+```
+
+The test is `crew-module-workflow`. `python tools/check_crew_sdk.py --archive <sdk zip> --sums <SHA256SUMS> --work <new folder outside the checkout>` runs it from a verified SDK archive. Add `--sanitizers` on POSIX, and `--candidate` with the digest options for an unpublished SDK (see [docs/sdk-candidate.md](../../docs/sdk-candidate.md)).
+
+Services are reopened on every command and tick, and complete table extents and null members are checked first. All mutations run on the game thread. A native fault means a restart, not a reload.

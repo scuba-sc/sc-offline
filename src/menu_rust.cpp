@@ -176,9 +176,17 @@ void TryStart(const sco::app::HostMenuContext& ctx) {
         Log("[menu] rust menu: widgets view table has an unexpected size or version; the ImGui menu stays");
         return;
     }
-    const std::wstring dir = ModuleDir();
-    HMODULE dll = dir.empty() ? nullptr : LoadLibraryExW((dir + L"sc_offline_menu.dll").c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
-    if (!dll) { Log("[menu] rust menu: sc_offline_menu.dll not found next to the host (%lu); the ImGui menu stays", GetLastError()); return; }
+    // The launcher installs only the host DLL into the game folder, so the menu DLL is looked for beside the
+    // launcher first (the mod log is in the launcher's data folder), then next to the host DLL.
+    HMODULE dll = nullptr;
+    char viaLog[MAX_PATH]{};
+    if (ModLogSibling(viaLog, MAX_PATH, "..\\sc_offline_menu.dll"))
+        dll = LoadLibraryExA(viaLog, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+    if (!dll) {
+        const std::wstring dir = ModuleDir();
+        dll = dir.empty() ? nullptr : LoadLibraryExW((dir + L"sc_offline_menu.dll").c_str(), nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+    }
+    if (!dll) { Log("[menu] rust menu: sc_offline_menu.dll not found beside the launcher or the host (%lu); the ImGui menu stays", GetLastError()); return; }
     // The DLL is never freed: its thread may outlive the client's stop.
     s.module.start = reinterpret_cast<decltype(s.module.start)>(GetProcAddress(dll, "scol_menu_start"));
     s.module.requestStop = reinterpret_cast<decltype(s.module.requestStop)>(GetProcAddress(dll, "scol_menu_request_stop"));

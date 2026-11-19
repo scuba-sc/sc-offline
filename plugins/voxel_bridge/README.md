@@ -1,127 +1,54 @@
-# Optional voxel bridge (SDK consumer)
+# Voxel bridge: link to a local voxel game (optional)
 
-Independent native plugin ID/version: `voxel_bridge` / `1.0.0`; ABI 1.1.
-GPL-3.0-only project code. The `sc_ipc.h` / `sc_voxel_bridge.h` wire remains
-SDK-provided MIT code; no wire/header or peer-game copy is vendored here.
+The voxel bridge links the game to a voxel-building game running on the same PC. Blocks placed there appear in Star Citizen as crates around an anchor point you set, and the ground around the anchor is sent back.
 
-**Disabled by default and outside normal release.** Configure this directory
-alone; it refuses being added to a host/default-plugin build. Its optional
-install component always carries `disabled`. Host built-in removal and release
-composition are separate integration work. Do not
-install alongside a built-in with the same ID.
+This plugin is off by default and is not in the 0.8.0 release package. The folder `data/plugins/voxel_bridge/` holds an empty `disabled` file, so it does not load until you remove that file. Native plugins run with the game's rights and are not sandboxed.
 
-## Build, check, install
+## Voxel link page
 
-1. Obtain a checksum-verified combined core/game SDK archive containing
-   `sc_game_spatial.h` (`game.spatial` full-pose conversion). Do not use a host
-   checkout as an include path. This development consumer needs the new public
-   contract; the published SDK 2.4.0 contains it.
-2. Run the focused archive proof (outside the host checkout):
-   ```sh
-   python3 tools/check_voxel_bridge_sdk.py --archive /path/to/sdk.zip \
-     --sums /path/to/SHA256SUMS --work /path/to/new-proof-directory
-   ```
-   It copies only this plugin and its fixture outside the checkout, builds and
-   dynamically loads the actual module, validates compiler dependencies and
-   private-header/symbol/transitive-SYSTEM negative controls on POSIX, installs
-   the disabled folder, and enables **only a checker copy** for missing-provider
-   checking. This is not game execution or Windows transport evidence.
-3. Install only the optional component:
-   ```sh
-   cmake -S plugins/voxel_bridge -B /path/to/build \
-     -DSCO_SDK_INCLUDE_DIR=/path/to/verified-sdk/include
-   cmake --build /path/to/build --config Release --target sc-offline-voxel_bridge
-   cmake --install /path/to/build --config Release --prefix /path/to/stage \
-     --component voxel_bridge
-   ```
-   Keep the folder disabled until an owner deliberately enables it in an
-   admitted offline host. Windows modules are built with MSVC; development
-   `.so`/`.dylib` modules are not Windows game-loadable artifacts. Do not bundle
-   either bridge or a paired game in a default release.
+When the plugin is enabled, the page **Voxel link** appears under **More plugins** in the menu (key **M**). It has **Open the bridge** or **Close the bridge** (**Ctrl+F9**) and **Move the area here**, and shows the peer's world and age, status, area and feet position, counts, block settings and refusal text. Without a complete widgets service the page says it is unavailable and the commands still work.
 
-## Preserved commands and policy
+## Commands
 
-- `voxel_bridge.toggle`: open host-owned local `sco.ipc` channel `link`, or close
-  it and initiate owned-crate cleanup. `Ctrl+F9` uses optional public `sco.ui`.
-- `voxel_bridge.anchor`: set one building area at the observed player feet and
-  orientation, remove old crates, increment its epoch and send `AREA`.
-- `voxel_bridge.status`: link/area, counts, pending cleanup, provider refusal and
-  explicit unavailable feature reasons.
+| Command | What it does |
+| --- | --- |
+| `voxel_bridge.toggle` (**Ctrl+F9**) | Opens the local link channel, or closes it and starts removing the crates. |
+| `voxel_bridge.anchor` | Sets the building area at your feet and facing, removes the old crates and sends the area to the other game. |
+| `voxel_bridge.status` | Reports the link, the area, the counts, pending removals and any refusal. |
 
-The wire layout is unchanged (`VXB1`, version 1; 8 MiB). Block `(0,64,0)` is at
-anchor feet, x right, y up, -z forward. Up to eight owned `game.entities` crates
-spawn per tick; at most 4096 solid keys (including pending cleanup) are retained.
-The **provider's global quota (currently 1024 owned entities) can refuse earlier**;
-refusals are counted/not hidden behind private spawn. A replaced section removes
-cleared blocks; zero-ID unspawned tickets are cancelled, not endlessly queued.
-One 8x8 ground region is scanned per tick with public zone-local
-`game.world.raycast`; outbound ground positions are converted back into the
-same voxel frame. The cache refreshes after three seconds. Cross-zone player
-position **and quaternion** use `game.spatial.pose_to_zone`, never the old
-position-only/direction approximation. Absent full-pose conversion pauses that
-cross-zone observation explicitly. Body orientation remains the retained pose
-source, not a guessed camera view.
+Block (0, 64, 0) sits at your feet at the anchor, with x to the right, y up and -z forward. Up to eight crates are spawned per tick for solid blocks, and at most 4096 blocks are kept, pending removals included. Core's own limit on owned entities (1024 now) can refuse earlier, and refusals are counted. One 8x8 ground region is scanned per tick with `game.world.raycast`, and the cache refreshes every three seconds. The link counts the other side as alive up to 7999 ms after its last heartbeat, and 8000 ms closes it and cleans up the crates. A malformed or wrong-sized record is skipped, and a damaged ring or state closes the channel. The other game can request bounded crate placement and never command execution or moving you.
 
-`SOLIDS` epochs, section bounds, payload lengths and finite peer coordinates are
-checked. Unknown/wrong-sized records are skipped; malformed raw ring/state
-closes the channel. A heartbeat age of 7999 ms is live; 8000 ms closes and cleans
-owned crates. Initial no-peer state remains waiting, without crate mutations.
-Closed-channel/provider failures close safely. Local peers are trusted to request
-bounded crate placement, **never command execution or player relocation**.
+Crates are owned by this plugin and removed through the entities service. A removal that was accepted may not be visible yet. Refused removals are retried, and a new link refuses while any remain. Unloading stops the tick and the key, closes the channel and asks for cleanup.
 
-Ownership is from `game.entities.spawn` to its matching `despawn`, never legacy
-NPC deletion or `spawn_as` ownership. Successful despawn means initiation, not
-observed disappearance; no `alive=0` inference or ID reuse is made. Refused
-cleanup IDs remain bounded retry tickets; opening a new link refuses while they
-remain. Unload stops the tick/hotkey, closes the channel and requests cleanup;
-the public provider's owner-release contract handles anything still pending.
-No entity is `keep`-released. No actor or foreign entity removal is introduced.
+Not available: following the voxel player or moving you, input takeover, hiding your body, per-frame callbacks, NPC mirroring and hits, textured voxel overlay, light matching, console commands from the other game, and several areas at once. Focus and view size are sent as unknown.
 
-## Settings and explicit unavailable features
+## Settings
 
-The retained keys `block`, `size`, `pivot`, `radius` are manifest settings read
-through `sco.settings` when opening. Defaults/ranges match the old config;
-`block=none` disables crate spawning. **Automatic import of old
-`data/voxel_bridge.txt` is unavailable**: there is no public arbitrary host-path
-reader. Copy those four values deliberately into declared settings; the old
-file is never modified or deleted. Without `sco.settings`, declared defaults
-are used. This limitation is not a claim of automatic migration.
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `block` | `CargoBox_050x050x050_Metal` | Crate class. `none` turns crates off. |
+| `size` | 0.5 | Metres per block, 0.1 to 4. |
+| `pivot` | 0 | Crate origin inside the block, -1 to 1. |
+| `radius` | 2 | Ground scan radius in 8x8 regions, 1 to 4. |
 
-- **Follow the voxel player / local-player relocation: unavailable. G2 mutation
-  is not approved.** No relocation service is opened and no private fallback
-  exists. The peer receives the Star Citizen player's pose instead.
-- The retained **Voxel** controls/status are a renderer-neutral public
-  `sco.widgets` panel (`voxel_bridge.voxel`), not a private ImGui tab. Open/close
-  and re-anchor buttons call the same command implementations. Peer world/age,
-  sanitized status/log, area/feet, counts, block settings and refusal replies
-  remain visible. Without complete `sco.widgets` methods, the panel is explicitly
-  unavailable; commands still work. Actual Windows rendering is NOT VERIFIED.
-- Focus and view dimensions are explicitly unknown (wire focus flag and width/
-  height stay zero); no private product/window helper is used.
-- Input takeover, hiding the body, per-frame callbacks, NPC mirroring/hits,
-  textured voxel overlay, light matching, peer game console commands and multiple
-  simultaneous areas remain the prior unported/unavailable feature inventory.
-  There is no new private implementation or peer-game dependency.
+The old `data/voxel_bridge.txt` is not imported: copy its four values into the settings (`sc-offline.exe plugins settings voxel_bridge ...`) and keep the old file. Without `sco.settings` the defaults apply.
 
-Native plugins are trusted code, not a sandbox. The host/game pack must enforce
-admitted offline/EAC/session/thread/ownership state. Synthetic fixture readiness
-never overrides those checks.
+## What it needs
 
-## Evidence boundary
+- Services: `sco.ipc` 1.0, `game.entities` 1.0, `game.world`, `game.spatial` 1.0 (full-pose conversion), `teleport.spatial` 1.0, `sco.settings`, `sco.widgets` 1.0, `sco.ui` (Ctrl+F9).
+- Without the full-pose conversion, the cross-zone observation pauses and says so.
 
-`voxel-bridge-module-workflow` dynamically loads the real module using only
-extracted SDK headers and synthetic public providers. IPC provider stand-ins
-execute the real MIT wire's seqlock/ring/heartbeat checks on an aligned in-process
-mapping. It covers absent providers and reload/unload twice; handshake/version
-refusal; area, exact crate pose and decoded 64-column ground; quaternion frame
-conversion and unavailable conversion; cancelled pending keys while paused;
-sanitized peer logs; public panel buttons and hotkey cleanup; malformed
-payloads/coordinates/epochs/raw ring; heartbeat
-boundary; closed peer; pending owned cleanup; and physically partial/full-sized
-null callbacks. POSIX archive checking proves module link/dependency boundaries,
-not production loader crash guards or game provider behavior.
+Not run in game. See [docs/status.md](../../docs/status.md).
 
-**NOT VERIFIED:** MSVC/Windows loader and dependency traces; actual cross-process
-Windows mapping/ACLs; host/game owner-release hook with rejected cleanup;
-renderer/panel/focus/view behavior; owner-run gameplay on an exact build; physical
-crate disappearance after initiation. These are not certified by synthetic green.
+## Developer notes
+
+Build in its own tree; it refuses to be added to a host build. Use an extracted SDK 2.4.1 `include/` directory that holds `sc_game_spatial.h` and `sco_ipc.h`. The wire header `sc_voxel_bridge.h` (`VXB1`, version 1, 8 MiB) is MIT-licensed SDK code, and this plugin is GPL-3.0-only. See [docs/bridges.md](../../docs/bridges.md) for the wire and the peer fixture.
+
+```sh
+cmake -S plugins/voxel_bridge -B build-voxel -DSCO_SDK_INCLUDE_DIR=<sdk>/include -DSCO_WORKFLOW_TESTS=ON
+cmake --build build-voxel --config Release --target sc-offline-voxel_bridge voxel-bridge-module-test
+ctest --test-dir build-voxel -C Release --output-on-failure
+cmake --install build-voxel --config Release --prefix <stage> --component voxel_bridge
+```
+
+The install holds the module, `plugin.ini` and `disabled`. The test is `voxel-bridge-module-workflow`. `python tools/check_voxel_bridge_sdk.py --archive <sdk zip> --sums <SHA256SUMS> --work <new folder outside the checkout>` runs it from a verified SDK archive, checks the compiler dependencies and, on POSIX, the private-header negatives, and loads an enabled copy only inside the checker. Services are queried afresh on every use, and a native fault needs a restart.

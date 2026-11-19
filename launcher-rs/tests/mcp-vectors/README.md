@@ -2,7 +2,7 @@
 # MCP and redactor vectors
 
 Shared test vectors for `scol-redact` and `scol-mcp`. The C++ code wrote the expected results. The Rust tests
-must give the same bytes. Synthetic data only: made-up names, ids and paths. Nothing here was run in game.
+must give the same bytes. Synthetic data only: made-up names, ids and paths. Not run in game. See [docs/status.md](../../../docs/status.md).
 
 | File | Written by | Holds |
 |---|---|---|
@@ -96,4 +96,4 @@ copy, with the reason.
 8. **Unset platform functions.** In C++ an unset `std::function` reads as "nothing there"; the Rust trait gives each
    function a default that returns the empty value, with the same effect.
 
-Not claimed: any behaviour in game, any Windows firewall, registry or process check beyond what `scol-install` already does.
+Not covered: any Windows firewall, registry or process check beyond what `scol-install` already does.

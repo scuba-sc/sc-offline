@@ -195,7 +195,7 @@ static void TestMergeIniKeepsNotes(const fs::path& root) {
     CHECK(merged.find("# exp_loadout_async = on") != std::string::npos);
     const size_t note = merged.find("# exp_loadout_async: ");
     CHECK(note != std::string::npos && note < merged.find("# exp_loadout_async = on"));
-    CHECK(merged.find("Not run in game.", note) < merged.find("# exp_loadout_async = on"));
+    CHECK(merged.find("Seen working in game", note) < merged.find("# exp_loadout_async = on"));   // the one switch seen working; the others say "Not run in game."
     Config c;
     CHECK(ReadConfig((dir / "sc-offline.ini").wstring(), c) && c.experimental[ExperimentalIndex(L"exp_loadout_async")]);
 }

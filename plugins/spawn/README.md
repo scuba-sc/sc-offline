@@ -1,145 +1,62 @@
-# Ordinary spawn — public SDK Vehicles picker
+# Spawn: ships and vehicles
 
-Current picker/copy-list installation and the one targeted module fixture:
-[Public pickers](../../docs/pickers.md). **These sources use `sco_widgets.h` and
-`sco_content.h`, which the published `sdk-v2.4.0` ships**. The obtain/proof recipes below use that archive.
+Spawn puts a ship or ground vehicle next to you and can seat you in the pilot seat and start it. You pick from a list on the **Ships & vehicles** page of the in-game menu.
 
-Trusted native code, **GPL-3.0-only**. SDK **2.4.0**, frozen plugin ABI **1.1**,
-Star Citizen game pack **0.8.0**. This source builds independently of the host.
-No private headers, engine memory, custom spawner, network or ImGui dependency.
-The Vehicles panel uses public `sco.widgets`, in sections a player follows top to
-bottom: **Choose a ship** (search, paged list, **Reload ship list**, a typed ship name),
-**Spawn it** (**Height above you**, **After spawning**: *Get in as pilot* or *Stay outside*,
-**Start ready to fly**, **Spawn ship**), **Ships you spawned** (**Get in**, **Remove ship**,
-**Remove all my ships**, **Check status**) and **Last result**. There is no start-place
-button: `spawn.startup` can only refuse, so the panel leaves it out.
-Infinite ship ammo is on the Creative tab, owned by the creative plugin; this panel
-has no creative control and invokes no `creative.*` command.
-Picker actions use the same command handlers/jobs, not legacy engine helpers.
-Keep `data/ships.txt` as the existing caller-supplied class list;
-`spawn.pack_list` additionally reads enabled `lists/ships.txt` through G14's
-public `sco.content` service. This addition requires `sco_content.h`, which the
-published SDK 2.4.0 ships.
-There is no private-index or filesystem fallback.
+## Ships & vehicles page
 
-## Build, check, install (three stages)
+Open **Ships & vehicles** in the section of the same name (key **M**). The sections follow the order you use them:
 
-1. Obtain published `sdk-v2.4.0` **`sco-sdk-2.4.0.zip`** and its release
-   **`SHA256SUMS`**. The combined archive supplies core and game public headers.
-   Do not point the plugin at `external/sco-core/include` or host `src/`.
-2. Run the isolated proof from the product checkout, with a new work directory
-   **outside** it:
+- **Choose a ship**: a search box, a paged list, **Reload ship list** and a field for a typed ship name.
+- **Spawn it**: **Height above you**, **After spawning** (*Get in as pilot* or *Stay outside*), **Start ready to fly** and **Spawn ship**. **Start ready to fly** is greyed out unless you choose *Get in as pilot*.
+- **Ships you spawned**: **Get in**, **Remove ship**, **Remove all my ships** and **Check status**.
+- **Last result**.
 
-   ```sh
-   python3 tools/check_spawn_sdk.py --archive /path/to/sco-sdk-2.4.0.zip \
-     --sums /path/to/SHA256SUMS --work /path/to/new-spawn-proof
-   ```
+There is no start-place button, because `spawn.startup` can only refuse. The page has no hotkey and no creative controls; infinite ship ammo is on the Creative page.
 
-   POSIX developers can append `--sanitizers` for the same dynamically loaded
-   workflow under ASan/UBSan and a deliberately broken partial-pointer guard.
-   The ordinary module is dependency-traced, installed and checked before this
-   development-only instrumentation. The proof reuses the inspector's exact
-   public-header inventory, compiler traces and checksum verification; it does
-   not add a private-header exception. POSIX negative controls reject private
-   host/product headers, unresolved host symbols and a transitive `SYSTEM` header.
+The list comes from `lists/ships.txt` in the `picker_catalog` data pack (a copy of `data/ships.txt`), at most 63 bytes per class. To use your own list, copy it over that pack's `lists/ships.txt` with the game closed and keep a backup. A change needs a game restart. Optional `lists/ships.aliases.txt` files give readable labels. See [docs/pickers.md](../../docs/pickers.md).
 
-   For a manual Windows build after verifying/extracting the SDK:
-
-   ```powershell
-   cmake -S plugins/spawn -B spawn-build -A x64 `
-     -DSCO_SDK_INCLUDE_DIR=C:/verified-sdk/include -DSCO_WORKFLOW_TESTS=ON
-   cmake --build spawn-build --config Release --target spawn-module-test
-   ctest --test-dir spawn-build -C Release -R '^spawn-module-workflow$' --output-on-failure
-   cmake --install spawn-build --config Release --prefix spawn-stage --component spawn
-   ```
-
-3. On Windows install `stage/data/plugins/spawn/{plugin.ini,spawn.dll}` into
-   `data/plugins/spawn/`. The folder/manifest/export ID is `spawn`, independently
-   versioned **1.0.0**, enabled without a `disabled` marker. Require `plugins = on`;
-   the launcher may disable the folder. **Host integration must remove the old
-   `spawn` built-in registration and ordinary-spawn tick fallback before installing
-   this matching ID.** A missing/disabled plugin must not trigger the private path.
-   POSIX `.so` development modules and rewritten checker manifests are not
-   Windows release artifacts. Never copy them into a game installation.
+An ASOP page, **Your own ships**, appears under Ships & vehicles only when Core's capability `game.asop.selection.file` is on. The 0.8.0 product never composes that provider, so the page is left out.
 
 ## Commands
 
-All commands and the owner-scoped `tick` subscription execute on the documented
-SDK game-thread path. No workers or private thread handoff are created.
-
-| Command | Typed arguments / behavior |
+| Command | What it does |
 | --- | --- |
-| `spawn.pack_list <ordinal:int>` | Copies one enabled `lists/ships.txt` startup snapshot; zero-based matching-pack ordinal. Discovery order and duplicate names are retained, not merged or silently overwritten. Empty lists succeed; binary lists, insufficient output capacity, missing/short/null service methods and provider failures refuse. Does not spawn a class; the public Vehicles picker consumes the same catalog snapshots. |
-| `spawn.ship <class:string> <height:float>` | Existing ID, argument names/types/count preserved. Class length 1–63; finite height 0–10000 m along the player's current zone Z axis. Returns the final owned session ID before it streams in. No automatic boarding: the Vehicles panel's **Spawn ship** button runs `spawn.ship_options` with its **After spawning** choice (default *Get in as pilot*, sent as `pilot`; *Stay outside* is sent as `none`) and **Start ready to fly** toggle (default on; greyed out and sent off unless the choice is *Get in as pilot*), which is the spawn-and-board behaviour. |
-| `spawn.ship_options <class:string> <height:float> <seat:string> <power:bool>` | `none` means no boarding; `pilot` selects the known usable pilot seat; another string requires **every word**, case-insensitively, in the copied seat name. Power is accepted only with `pilot`. Boarding providers/capabilities are preflighted before spawn. |
-| `spawn.board <id:int> <seat:string> <power:bool>` | Choose a seat later on an ID this plugin still owns. Uses the same boarding workflow; refuses foreign/retrieved/crew IDs. `none` is not a board target. |
-| `spawn.status` | Reports workflow pending/ready/boarding/removing counts. Ready means workflow completed, not guaranteed ongoing visibility. Missing observation provider is unavailable, never absence. |
-| `spawn.cancel <id:int>` | Stops seat/power retries immediately, then requests owned removal, even before streaming. Cleanup refusal retains a cancelling ticket for retry. |
-| `spawn.remove <id:int>` / `spawn.clear` | Removes only ordinary entities this plugin spawned, never NPCs or foreign vehicles. Accepted removal remains a bounded pending-removal ticket; disappearance is not certified. |
-| `spawn.startup` | Explicitly unavailable: destination-specific startup requires **G2/G3** player relocation/full-pose discovery, which this plugin does not use. No Daymar/start-ship/private fallback. |
+| `spawn.ship <class> <height>` | Spawns a ship `height` metres (0 to 10000) above you along your zone's up axis and returns its id before it streams in. It does not board. Class is 1 to 63 characters. |
+| `spawn.ship_options <class> <height> <seat> <power>` | Spawns, then seats you. `none` means no boarding, `pilot` the pilot seat, and any other text must appear, every word, in the seat name. `power` works only with `pilot`. |
+| `spawn.board <id> <seat> <power>` | Seats you in a ship this plugin spawned. Refuses ships it did not spawn. |
+| `spawn.status` | Counts ships pending, ready, boarding and being removed. |
+| `spawn.cancel <id>` | Stops boarding and requests removal, even before the ship streams in. |
+| `spawn.remove <id>`, `spawn.clear` | Remove one ship, or all ships, this plugin spawned. Never NPCs or ships it did not spawn. |
+| `spawn.pack_list <ordinal>` | Reads one `lists/ships.txt` from a data pack, by zero-based pack number. |
+| `spawn.startup` | Always unavailable. |
 
-Example shape: `spawn.ship_options synthetic_ship 30 pilot true`. The fixture's
-`synthetic_ship` is not a promised class in any game build; use a class from your
-locally held list. Volatile IDs preserve all 64 bits in the signed integer wire
-argument; do not persist them or volatile zone handles.
+The **Spawn ship** button runs `spawn.ship_options` with your choices; *Get in as pilot* is sent as `pilot`, *Stay outside* as `none`. The old `start_ship` and `start` keys in `sc-offline.ini` do not select a spawn.
 
-## Ownership and failure policy
+Ships stay owned by this plugin until you remove them, cancel, or the plugin unloads. They are removed on unload. A removal that was accepted may not be visible yet. Flight Ready waits until you sit in the pilot seat. One boarding job runs at a time, and the plugin keeps at most 64 records per session, removals included. A seat or power request retries at most once per second. Automatic boarding gives up 60 s after its first game tick. A ship that already streamed in is then kept, because you may be inside it, and a ship that never streamed in is removed. Seats are read as a complete batch of at most 64. An incomplete list, an unknown seat or an unknown occupant waits and never evicts anyone.
 
-**Intentional retained ownership:** ordinary ships are spawned by
-`game.entities.spawn(self, ...)`, after `spawn.entities.class_exists`, using one
-fresh `teleport.spatial.player_pose` in the same zone. They remain owned through
-streaming absence and successful boarding, and are removed on cancel/clear/unload.
-There is no `keep` call, arbitrary delete or owner transfer. This changes the old
-unowned spawn's unload lifetime deliberately so cleanup is available.
+## Settings
 
-`spawn.entities.spawn_as` does **not** grant `game.entities.despawn` ownership in
-the pinned provider. This plugin therefore never spawns via `spawn_as` and then
-cross-deletes its ID. Likewise `game.entities` ownership alone is not the pinned
-vehicle provider's `spawn_as` power authority: Flight Ready waits for confirmed
-local-player occupancy of the pilot seat **and a fresh `player_ship == owned ID`**.
-Power-only requests on a retrieved/foreign/unboarded vehicle are not offered.
-Existing fleet registration and retrieved-vehicle movement authority remain the
-host/game pack's responsibility, not a plugin registration or ownership shortcut.
+None.
 
-One player boarding job at a time; **64 tickets per loaded session**, including
-pending removal. A bounded copied batch of at most **64 seats** must be complete:
-partial/oversized lists, unusable/unknown seats, unknown/foreign occupants and
-missing player/provider state wait, never evict. Seating acceptance is not
-completion; later ticks confirm occupancy. Seat/power mutations retry at most once
-per 1000 ms, so an accepted asynchronous link is not reset every frame. Stream/seat/power work expires after
-**60000 ms from its first game tick**, with wrap-safe 32-bit tick arithmetic.
-Timeout gives up the automatic boarding only: a ship that has streamed in is kept
-(ticket Ready, still owned, removed on unload or `spawn.remove`), because the player
-may already be inside; only a ship that never streamed in is removed. Provider reopen failure/null/partial
-callbacks do not authorize mutation. Provider cleanup refusal remains pending
-until retry or host owner release; it is logged on unload.
+## What it needs
 
-Each callback checks the full `offsetof + sizeof(member)` extent, its non-null
-pointer, service query result and required capability. Borrowed provider pointers
-are reopened and validated; no table/zone/player actor is persisted between ticks.
-Unload twice is inert. The real host must withdraw commands/subscriptions and
-release outstanding entity ownership after unload. Native faults are
-**restart-required**, not safely recoverable/reloadable corruption.
+- Services: `game.entities` 1.0, `spawn.entities`, `game.vehicles` 1.0, `game.actors` 1.0, `teleport.spatial` 1.0, `sco.content` 1.0, `sco.widgets` 1.0.
+- Capabilities: `spawn.ship`, `game.entities.spawn`, `game.entities.transform`, `game.actors.local_player`, `game.vehicles.seats`, `game.vehicles.seat`, `game.vehicles.flight_ready`.
+- A missing service or capability makes the action refuse with a reason. Boarding services are checked before the ship is spawned.
 
-## Evidence boundary
+Seen in game (owner, build 4.10.200.58746): a ship spawned, the owner boarded it and Flight Ready worked. Not run in game. Removal, several ship classes and the ASOP page. See [docs/status.md](../../docs/status.md).
 
-`spawn-module-workflow` independently loads the real native module with synthetic
-public providers. It covers delayed visibility and links, class refusal, owner
-attribution/foreign rejection, pilot/named/choose-later boarding, dashboard retry,
-timeout across tick wrap, cancellation during cleanup refusal, quotas,
-missing/full-null/physically truncated tables, failed reopen, registration failures,
-unload twice and close/reopen/reload. Host registration/release is a fixture
-stand-in, **not** actual runtime guard/release-hook proof.
+## Developer notes
 
-Published checker with absent providers must report unavailable and **0 failures**.
-The staged folder must contain exactly its manifest and one enabled module.
-Windows/MSVC exports/loading, real host fault containment/cleanup, renderer widgets,
-several real vehicle classes, streaming/seat/power behavior and owner-run offline
-Windows acceptance are **NOT VERIFIED / not run in game**. Do not claim this
-standalone change by itself removes the legacy host spawner or closes G2/G3.
+Build against the extracted SDK 2.4.1 `include/` directory, which must hold `sco_widgets.h` and `sco_content.h`.
 
-### ASOP selection candidate
+```sh
+cmake -S plugins/spawn -B build-spawn -DSCO_SDK_INCLUDE_DIR=<sdk>/include -DSCO_WORKFLOW_TESTS=ON
+cmake --build build-spawn --config Release --target sc-offline-spawn spawn-module-test
+ctest --test-dir build-spawn -C Release --output-on-failure
+cmake --install build-spawn --config Release --prefix <stage> --component spawn
+```
 
-With a development SDK that includes `sc_asop_selection.h`, the external spawn module offers an ASOP selection panel when `game.asop.selection` is provided. SC Offline groups this panel as a subsection of Vehicles when both spawn-owned panels are present; otherwise it stays a standalone panel. It reads copied host catalogue and file rows, offers per-class toggles, Select all available classes, and Select none. Bulk selection is additive, skips busy rows, preserves unresolved saved names, and refuses atomically if the class limit would be exceeded. Select none removes available classes while preserving busy classes and unresolved saved names; busy rows cannot be manually deselected. Refresh of a dirty draft is labelled as discarding the draft. The current product composition gate refuses before this service starts, so the panel reports unavailable and saved selections do not change the terminal list.
+The test is `spawn-module-workflow`; `asop-selection-workflow` runs too when the SDK has `sc_asop_selection.h`. `python tools/check_spawn_sdk.py --archive <sdk zip> --sums <SHA256SUMS> --work <new folder outside the checkout>` runs them from a verified SDK archive. Add `--sanitizers` on POSIX, and `--candidate` with the digest options for an unpublished SDK (see [docs/sdk-candidate.md](../../docs/sdk-candidate.md)). On Windows pass `-A x64` to the configure step.
 
-A save is an accepted request until its receipt reports a committed file. A stale selection token, conflict, or unknown outcome retains the draft and requires explicit refresh/reconciliation. The panel uses fresh widget IDs for each revision and ignores stale events. It never accesses a filesystem path or publishes a native terminal list. On an older SDK or an unavailable service, ASOP editing is unavailable; the existing Vehicles and spawn commands remain independent. The candidate is not included in the currently pinned SDK and requires a matching candidate host and SDK for evaluation.
+Ships are spawned with `game.entities.spawn` after `spawn.entities.class_exists`, from one fresh `teleport.spatial` player pose. The plugin never uses `spawn_as`: that call does not give it the right to despawn, and it does not give the power authority Flight Ready needs. Flight Ready therefore waits for you to sit in the pilot seat and for `player_ship` to equal the plugin's ship id. Ids are 64-bit and must not be saved. Each callback checks the full table extent and null members, and services are reopened on every tick. Native faults need a restart.

@@ -1,8 +1,6 @@
 # Connect an AI agent
 
-AI agents such as Claude Code, Claude Desktop, Codex, Cursor or GitHub Copilot in VS Code can
-talk to sc-offline over [MCP](https://modelcontextprotocol.io) (Model Context Protocol). Three
-servers cover three jobs:
+AI agents such as Claude Code, Claude Desktop, Codex, Cursor or GitHub Copilot in VS Code can talk to sc-offline over [MCP](https://modelcontextprotocol.io) (Model Context Protocol). Three servers cover three jobs:
 
 | Server | Use it to | Start it with |
 | --- | --- | --- |
@@ -12,24 +10,25 @@ servers cover three jobs:
 
 ## What the sc-offline server does
 
-`sc-offline.exe mcp` runs a read-only MCP server on stdin/stdout. Your agent client starts it
-when it needs it; nothing listens on a port and nothing goes over the network. From 0.8.0 the
-server is part of the Rust launcher (crate `scol-mcp`); `sc-offline-classic.exe mcp`, the C++
-launcher that ships beside it, answers the same protocol with the same four tools. Both write
-nothing and make no network request. The plugin commands (`sc-offline.exe plugins ...`) are not
-exposed: the server cannot change a plugin, a setting or a file.
+`sc-offline.exe mcp` runs a read-only MCP server on stdin/stdout. Your agent client starts it when it needs it. Nothing listens on a port, and nothing goes over the network.
+
+| Launcher | Command | Notes |
+| --- | --- | --- |
+| Rust (default, `sc-offline.exe`) | `sc-offline.exe mcp` | Crate `scol-mcp` |
+| C++ (fallback, `sc-offline-classic.exe`) | `sc-offline-classic.exe mcp` | Same protocol, same four tools |
+
+Both servers write nothing and make no network request. They do not expose the plugin commands (`sc-offline.exe plugins ...`): the server cannot change a plugin, a setting or a file.
+
+The four tools:
 
 | Tool | Returns |
 | --- | --- |
 | `get_status` | The same checks as `sc-offline.exe status`: launcher version, game folder and build, whether the mod is installed, anti-cheat state, the network-block, EAC-rename and plugin settings, plugin counts, PC changes left to undo, Wine, and whether this install's game is running |
 | `list_plugins` | Plugin folders under `data\plugins` with a `plugin.ini` (the first 256 by name, flagged when there are more): enabled or not, and its id, name, version, author, API, kind, entry and description, with warnings such as an id that does not match the folder |
 | `read_log` | The last lines (up to 500) of `data\mod.log`, `data\launcher.log` or the previous `launcher.log.1`, or, only when the server runs with `--game-log`, the game's `Game.log`; optionally only lines containing some text. Paths, your Windows account name, e-mail addresses, handles, nicknames and account and player identifiers are redacted (details below) |
-| `get_settings` | The settings in `sc-offline.ini`, in file order |
+| `get_settings` | The settings in `sc-offline.ini`, in file order (at most 1000 entries, each value cut at 1 KiB, profile paths redacted) |
 
-It cannot start, stop or install the game, change settings, enable or disable plugins, or run
-any command in the game. Those stay with you, through the launcher window or its commands
-([Launcher](launcher.md)). The server also does not read game memory: with the game running, it
-sees what the logs and files show.
+It cannot start, stop or install the game, change settings, enable or disable plugins, or run any command in the game. Those stay with you, through the launcher window or its commands ([Launcher](launcher.md)). It does not read game memory: with the game running, it sees what the logs and files show.
 
 `read_log` removes this from every line of every log it serves (`mod`, `launcher`, `launcher_previous`, and `game` when
 you allow it, see [Game.log is off unless you ask for it](#gamelog-is-off-unless-you-ask-for-it)) before it filters and returns it:
@@ -175,7 +174,7 @@ Read the lines before pasting them anywhere public or sharing a crash report (se
 
 ## Set it up
 
-Use the full path of your `sc-offline.exe`. The examples use `C:\Games\sc-offline`.
+Use the full path of your `sc-offline.exe`. The examples use `C:\Games\sc-offline`. To use the C++ launcher instead, put `sc-offline-classic.exe` in the path.
 
 **Claude Code**
 
@@ -239,8 +238,7 @@ The server reads one JSON-RPC message per line. This sends an `initialize` and l
 ```
 
 Two JSON lines come back: the server's name and version, then the four tools. A one-line note on
-stderr says the server started. If you see the launcher's usage text instead, the
-`sc-offline.exe` is older than this feature (the `mcp` command came with 0.7.8.x).
+stderr says the server started. If you see the launcher's usage text instead, the launcher is older than this feature (the `mcp` command came with 0.7.8.x).
 
 ## Live in-game data
 
@@ -263,4 +261,4 @@ tested on any platform) with `RunMcp` in `launcher/launcher.cpp`, and `launcher/
 `tools/launcher_redact_diff_test.cpp`);
 `python tools/check_launcher_mcp.py --exe <built sc-offline.exe>` (the Rust exe or the C++ one) also runs real stdio sessions
 against a scratch install, with and without `--game-log`, checks that no file or folder changed, and times a log
-larger than 64 MiB with hostile lines. None of this ran in game.
+larger than 64 MiB with hostile lines. Not run in game; see [status.md](status.md).

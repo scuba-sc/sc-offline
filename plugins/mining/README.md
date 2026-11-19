@@ -1,60 +1,47 @@
-# Natural mining — external SDK consumer
+# Mining: natural mining switch and status
 
-`mining` 1.0.0 owns `mining.status` and two declared bool settings: `enabled`
-(requested natural mining) and `debug` (copied trace counters), both **false**.
-The module is discoverable by default so off/unavailable diagnostics remain usable;
-`plugins = off` prevents loading. No built-in, raw hook/signature read, environment
-switch, private admission check or fallback remains in the product.
+Mining asks the game pack to turn on natural mining and reports whether it is on. In 0.8.0 it cannot mine: the game pack's mining adapter is not available, so asking changes nothing.
 
-The public `game.mining` 1.0 table belongs to the game pack. It accepts owner-scoped
-intent, copies counters/refusal state and withdraws each owner's request on unload.
-A successful request is **not** proof the hook installed or mining is active. The
-provider alone owns `mining.cell`, eligibility and fresh offline/EAC/network/target
-admission. Faults latch restart-required; process-retained hooks pass through after
-stop/unload. This conversion's native adapter is **unavailable** until Windows
-engine behavior and admission collectors are verified. Earlier third-party gameplay
-does not verify this implementation. No engine mutation is enabled by import.
+## What it does
 
-## Deliberate legacy settings import
+The plugin adds one command, `mining.status`, which reports whether mining is requested, whether it is active, why not if it is blocked, and the game pack's counters (ecosystem cells seen, cells promoted and read faults). It has no menu page and no key.
 
-Host ini `mining`/`mining_debug` and `SC_OFFLINE_MINING`/`SC_OFFLINE_MINING_DEBUG` no
-longer control mining. An old ini produces a launcher warning, not implicit import.
-Use the launcher Plugins page to set values, or deliberately import old preferences
-with Python 3 while **both launcher and game are closed**:
+A successful request is not proof that mining runs. The game pack decides whether mining is allowed, and it re-checks offline, anti-cheat, network and target admission itself. A fault latches until the game restarts. The plugin withdraws its request when it unloads.
+
+## Settings
+
+Both default to off. Change them on the launcher's Plugins page or with `sc-offline.exe plugins settings mining enabled=true`.
+
+| Setting | Meaning |
+| --- | --- |
+| `enabled` | Request natural mining. |
+| `debug` | Write a trace line with the counters to `mod.log` when the cell count changes, at most once per second. |
+
+The old `mining` and `mining_debug` keys in `sc-offline.ini` and the `SC_OFFLINE_MINING` and `SC_OFFLINE_MINING_DEBUG` variables no longer do anything. An old ini produces a launcher warning and is not imported. To carry old values over, close the launcher and the game, then run:
 
 ```sh
 python data/plugins/mining/import_settings.py --ini sc-offline.ini --data-root data
 python data/plugins/mining/import_settings.py --ini sc-offline.ini --data-root data --apply
 ```
 
-The first command is a no-write preview. `--environment` instead of `--ini` explicitly
-chooses the current process's two legacy variables. Invalid or duplicate keys refuse
-before opening the DB. `--apply` stores typed `bool:true`/`bool:false` values in
-`data/storage/mining.db`, matching the host's `sco.settings.enabled` and
-`sco.settings.debug` format. Missing source keys are not imported. Existing settings
-are **preserved** on repeated imports; only explicit `--replace` overwrites those two
-keys. Unrelated keys and legacy source files are untouched. Symlinked storage/DBs
-refuse. The importer never runs at startup and is not a plugin-side write service.
+The first command is a preview and writes nothing. `--environment` instead of `--ini` reads the two variables from your current shell. `--apply` stores the values in `data/storage/mining.db`. Existing settings are kept unless you add `--replace`. The importer refuses an invalid or duplicate key and a symlinked database, and it never runs at startup.
 
-## Build and distribution
+## What it needs
 
-Configure this folder alone against an extracted core + game SDK that publishes
-`sc_mining.h` (the published sdk-v2.4.0 does):
+- Services: `game.mining` 1.0 and `sco.settings`.
+- The game pack's mining adapter is not available in 0.8.0, so `mining.status` reports "unavailable: native engine bridge not verified" when mining is requested. With `enabled` off it reports "off". Without `game.mining` it reports the service as unavailable.
+
+Not run in game. See [docs/status.md](../../docs/status.md).
+
+## Developer notes
+
+Build against the extracted SDK 2.4.1 `include/` directory, which must hold `sc_mining.h`.
 
 ```sh
-cmake -S plugins/mining -B mining-build -DSCO_SDK_INCLUDE_DIR=/path/to/sdk/include -DSCO_WORKFLOW_TESTS=ON
-cmake --build mining-build --target sc-offline-mining mining-module-test
-ctest --test-dir mining-build -R '^mining-workflow$' --output-on-failure
-cmake --install mining-build --prefix stage --component mining
+cmake -S plugins/mining -B build-mining -DSCO_SDK_INCLUDE_DIR=<sdk>/include -DSCO_WORKFLOW_TESTS=ON
+cmake --build build-mining --config Release --target sc-offline-mining mining-module-test
+ctest --test-dir build-mining -C Release -R "^mining-workflow$" --output-on-failure
+cmake --install build-mining --config Release --prefix <stage> --component mining
 ```
 
-The aggregate plugins build opts in with `SCO_MINING_FEATURE=ON`; the module, manifest
-and standalone importer install under `data/plugins/mining`. CI/release staging names
-mining explicitly: the `external-sdk` matrix job runs `tools/check_mining_sdk.py` against
-the published `sco-sdk-2.4.0.zip`, which contains `sc_mining.h`. No CI result is recorded here.
-
-`tools/check_mining_sdk.py` builds a separate copied consumer against a checksum-
-verified archive and runs one synthetic workflow. The fixture loads the actual module
-and tests settings, absent/short/null/refused services, lifecycle, off/unavailable
-status, throttled trace and deliberate import. Portable fixture success is not
-Windows/MSVC/SEH, native hook, launcher UI or in-game acceptance.
+The install puts the module, `plugin.ini`, `import_settings.py` and this file in `data/plugins/mining/`. The aggregate `plugins/` build compiles the plugin only with `SCO_MINING_FEATURE=ON`. `python tools/check_mining_sdk.py --archive <sdk zip> --sums <SHA256SUMS> --work <new folder outside the checkout>` runs the workflow from a verified SDK archive. Add `--candidate` and the digest options for an unpublished SDK (see [docs/sdk-candidate.md](../../docs/sdk-candidate.md)). The workflow loads the real module and covers the settings, missing or refusing services, the lifecycle, the status text, the throttled trace and the import.

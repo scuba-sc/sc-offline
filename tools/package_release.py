@@ -5,6 +5,7 @@
     python tools/package_release.py --tag v0.8.0 --out dist \\
         --rust-exe <sc-offline.exe of launcher-rs> --classic-exe <C++ sc-offline.exe> \\
         --menu-dll <sc_offline_menu.dll> --dinput8 <dinput8.dll> \\
+        --dinput8-rust-menu <dinput8-rust-menu.dll> \\
         [--artifact-root <folder with built-external/, built-inspector/, ...>]
 
 The release job of .github/workflows/build.yml runs this script, so a package built by hand has the
@@ -13,7 +14,10 @@ same layout as the CI package. The folder `<out>/sc-offline-<tag>/` holds:
     sc-offline.exe          the Rust launcher (launcher-rs, crate scol-cli)
     sc-offline-classic.exe  the C++ launcher, kept as the fallback (can undo PC changes too)
     sc_offline_menu.dll     the Rust in-game menu (opt-in: `menu = rust` in sc-offline.ini)
-    dinput8.dll             the mod
+    dinput8.dll             the game DLL the launcher installs by default (built with SCO_HOST_MENU_CLIENT=OFF,
+                            the configuration run in game; classic menu)
+    dinput8-rust-menu.dll   the same sources built with SCO_HOST_MENU_CLIENT=ON and the Rust menu hook (never run in
+                            game). The Rust launcher installs it as dinput8.dll only for `menu = rust`
     sc-offline.ini, sc-offline.sh, README.md, CHANGELOG.md, LICENSE, THIRD_PARTY_NOTICES.md
     docs/, data/            tracked files (data/buildables.txt moves into the build_catalog pack)
     data/plugins/<pack>/    data packs: build_catalog, picker_catalog and locations_catalog (copies of base lists)
@@ -70,6 +74,7 @@ BINARIES = (
     ("classic_exe", "sc-offline-classic.exe"),
     ("menu_dll", "sc_offline_menu.dll"),
     ("dinput8", "dinput8.dll"),
+    ("dinput8_rust_menu", "dinput8-rust-menu.dll"),
 )
 LEGACY_BUILDABLES = "data/buildables.txt"
 
@@ -178,7 +183,8 @@ def build(args: argparse.Namespace) -> tuple[Path, Path]:
                                             capture_output=True, text=True).stdout.strip()
                 except (OSError, subprocess.CalledProcessError):
                     commit = ""
-        version, count = manifest_tool.write(str(pkg), tag, commit, version_h)
+        version, count = manifest_tool.write(str(pkg), tag, commit, version_h,
+                                             require=manifest_tool.LAUNCHER_REQUIRED)
         print(f"manifest.json: {tag} (version {version}), {count} files")
         archive = out / f"{pkg.name}.zip"
         if not args.no_zip:
@@ -218,7 +224,10 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--rust-exe", required=True, help="the Rust sc-offline.exe (launcher-rs, release build)")
     ap.add_argument("--classic-exe", required=True, help="the C++ sc-offline.exe; shipped as sc-offline-classic.exe")
     ap.add_argument("--menu-dll", required=True, help="sc_offline_menu.dll (launcher-rs, release build)")
-    ap.add_argument("--dinput8", required=True, help="dinput8.dll of the mod")
+    ap.add_argument("--dinput8", required=True,
+                    help="dinput8.dll of the mod, built with SCO_HOST_MENU_CLIENT=OFF (the default install)")
+    ap.add_argument("--dinput8-rust-menu", required=True,
+                    help="dinput8-rust-menu.dll: the same sources built with the Rust menu hook (SCO_BUILD_RUST_MENU_HOST)")
     ap.add_argument("--artifact-root", default=".", help="folder that holds the plugin build folders named in the profile")
     ap.add_argument("--profile", default="player-offline", help="plugin profile in tools/release-plugin-profiles.json")
     ap.add_argument("--profile-file", default=str(HERE / "release-plugin-profiles.json"))

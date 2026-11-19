@@ -54,4 +54,4 @@ the DLL copy fails) must change both launchers together, so it is an owner decis
 
 Line endings are normalised, the world path is replaced by `@W` and times by `<T>`.
 
-Source and synthetic evidence only. Not run in game.
+Source and synthetic evidence only. Not run in game. See [docs/status.md](../../../docs/status.md).

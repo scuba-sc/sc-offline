@@ -5,7 +5,9 @@
     python tools/check_package_tree.py --tree <staged package root> [--source <repo root>]
                                        [--allow-command NAME ...]
 
-The tree is the layout the release job assembles: dinput8.dll, sc-offline.exe (the Rust launcher),
+The tree is the layout the release job assembles: dinput8.dll (the game DLL installed by default, built
+with SCO_HOST_MENU_CLIENT=OFF), dinput8-rust-menu.dll (the same sources with the Rust menu hook, installed
+as dinput8.dll only for `menu = rust`), sc-offline.exe (the Rust launcher),
 sc-offline-classic.exe (the C++ launcher, the fallback), sc_offline_menu.dll (the Rust in-game menu)
 and data/plugins/<folder>/plugin.ini, where a plugin is DISABLED by a file named `disabled` in its
 folder, and a data pack (kind = data) carries lists/*.txt. The first in-game run shipped menu
@@ -29,7 +31,9 @@ c. Capabilities. A `requires =` name in an enabled plugin's plugin.ini must be a
 d. A summary is printed: enabled and disabled plugins, data packs, every cross-plugin command
    with its provider, every list with its pack, warnings.
 
-Also reported: a missing dinput8.dll / sc-offline.exe / sc-offline-classic.exe / sc_offline_menu.dll, an enabled native plugin without its entry
+Also reported: a missing dinput8.dll / dinput8-rust-menu.dll / sc-offline.exe / sc-offline-classic.exe / sc_offline_menu.dll,
+the two game DLLs being the same bytes, dinput8.dll naming sc_offline_menu.dll (it has no Rust menu hook) or
+dinput8-rust-menu.dll not naming it (it should), an enabled native plugin without its entry
 file, an unreadable plugin.ini.
 
 How commands are found (patterns; comments are stripped first, string contents kept)
@@ -256,12 +260,40 @@ def parse_manifest(path):
     return values
 
 
+MENU_DLL_NAME = 'sc_offline_menu.dll'
+
+
+def names_menu_dll(data):
+    """True when the bytes hold the Rust menu DLL's file name, as ASCII (log text) or UTF-16 (a path)."""
+    return MENU_DLL_NAME.encode('ascii') in data or MENU_DLL_NAME.encode('utf-16-le') in data
+
+
+def check_game_dlls(tree, problems):
+    """The two game DLLs are built from the same sources; only the menu client differs, and it shows in the
+    bytes: the Rust menu hook loads sc_offline_menu.dll by name, the default DLL has no such code."""
+    classic, rust = tree / 'dinput8.dll', tree / 'dinput8-rust-menu.dll'
+    if not (classic.is_file() and rust.is_file()):
+        return
+    a, b = classic.read_bytes(), rust.read_bytes()
+    if a == b:
+        problems.error('package: dinput8.dll and dinput8-rust-menu.dll are the same bytes; '
+                       'they must be two builds (SCO_HOST_MENU_CLIENT=OFF and the Rust menu host)')
+    if names_menu_dll(a):
+        problems.error(f'package: dinput8.dll names {MENU_DLL_NAME}: it was built with the Rust menu hook; '
+                       'the default DLL must be the SCO_HOST_MENU_CLIENT=OFF build run in game')
+    if not names_menu_dll(b):
+        problems.error(f'package: dinput8-rust-menu.dll does not name {MENU_DLL_NAME}: '
+                       'it was built without the Rust menu hook')
+
+
 def load_tree(tree, problems):
     plugins, packs = [], []
     root = tree / 'data' / 'plugins'
-    for name in ('dinput8.dll', 'sc-offline.exe', 'sc-offline-classic.exe', 'sc_offline_menu.dll'):
+    for name in ('dinput8.dll', 'dinput8-rust-menu.dll', 'sc-offline.exe', 'sc-offline-classic.exe',
+                 'sc_offline_menu.dll'):
         if not (tree / name).is_file():
             problems.error(f'package: {name} is missing from {tree.name}')
+    check_game_dlls(tree, problems)
     if not root.is_dir():
         problems.error('package: data/plugins is missing')
         return plugins, packs

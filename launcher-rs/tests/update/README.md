@@ -39,4 +39,5 @@ Build that C++ exe: `cmake -S <sc-offline> -B <dir> -DSCO_HOST_SOURCE_DIR=<core 
 then `cmake --build <dir> --config Release --target sc-offline`.
 
 `--features test-hooks` adds `--apply-zip` to the Rust command, like the C++ test build. Never in a release build.
-Nothing here ran in game.
+
+Not run in game. See [docs/status.md](../../../docs/status.md).

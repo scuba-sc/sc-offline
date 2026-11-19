@@ -79,6 +79,7 @@ class PackageRelease(unittest.TestCase):
         put(self.bin / "classic.exe", b"MZ classic launcher")
         put(self.bin / "menu.dll", b"MZ rust menu")
         put(self.bin / "dinput8.dll", b"MZ mod")
+        put(self.bin / "dinput8-rust-menu.dll", b"MZ mod with the rust menu hook")
         self.profile = base / "profiles.json"
         self.profile.write_text(json.dumps(PROFILE), encoding="utf-8")
 
@@ -89,6 +90,7 @@ class PackageRelease(unittest.TestCase):
         return ["--tag", tag, "--out", str(self.out), "--source", str(self.src),
                 "--rust-exe", str(self.bin / "rust.exe"), "--classic-exe", str(self.bin / "classic.exe"),
                 "--menu-dll", str(self.bin / "menu.dll"), "--dinput8", str(self.bin / "dinput8.dll"),
+                "--dinput8-rust-menu", str(self.bin / "dinput8-rust-menu.dll"),
                 "--artifact-root", str(self.art), "--profile", "synthetic", "--profile-file", str(self.profile),
                 "--commit", COMMIT, *extra]
 
@@ -102,6 +104,7 @@ class PackageRelease(unittest.TestCase):
         self.assertEqual((pkg / "sc-offline-classic.exe").read_bytes(), b"MZ classic launcher")
         self.assertEqual((pkg / "sc_offline_menu.dll").read_bytes(), b"MZ rust menu")
         self.assertEqual((pkg / "dinput8.dll").read_bytes(), b"MZ mod")
+        self.assertEqual((pkg / "dinput8-rust-menu.dll").read_bytes(), b"MZ mod with the rust menu hook")
         for name in ("sc-offline.ini", "sc-offline.sh", "README.md", "CHANGELOG.md", "LICENSE",
                      "THIRD_PARTY_NOTICES.md", "docs/launcher.md", "data/items.txt", "manifest.json"):
             self.assertTrue((pkg / name).is_file(), name)
@@ -119,7 +122,8 @@ class PackageRelease(unittest.TestCase):
         self.assertEqual((manifest["format"], manifest["version"], manifest["tag"], manifest["commit"]),
                          (1, "0.8.0", "v0.8.0", COMMIT))
         listed = {entry["path"] for entry in manifest["files"]}
-        for name in ("sc-offline.exe", "sc-offline-classic.exe", "sc_offline_menu.dll", "dinput8.dll"):
+        for name in ("sc-offline.exe", "sc-offline-classic.exe", "sc_offline_menu.dll", "dinput8.dll",
+                     "dinput8-rust-menu.dll"):
             self.assertIn(name, listed)
         self.assertNotIn("manifest.json", listed)
         archive = self.out / "sc-offline-v0.8.0.zip"
@@ -147,6 +151,19 @@ class PackageRelease(unittest.TestCase):
         self.assertEqual(pr.main(self.argv()), 0)
         self.assertEqual(pr.main(self.argv()), 1)  # the folder exists now
 
+    def test_second_game_dll_is_required_and_must_not_be_empty(self):
+        (self.bin / "dinput8-rust-menu.dll").unlink()
+        self.assertEqual(pr.main(self.argv()), 1)
+        self.assertFalse(self.pkg().exists())
+        put(self.bin / "dinput8-rust-menu.dll", b"")
+        self.assertEqual(pr.main(self.argv()), 1)
+        self.assertFalse(self.pkg().exists())
+        argv = self.argv()
+        at = argv.index("--dinput8-rust-menu")
+        del argv[at:at + 2]
+        with self.assertRaises(SystemExit):  # argparse: the option is required
+            pr.main(argv)
+
     def test_empty_binary_is_refused(self):
         put(self.bin / "menu.dll", b"")
         self.assertEqual(pr.main(self.argv()), 1)
@@ -170,11 +187,12 @@ class PackageRelease(unittest.TestCase):
     def test_release_job_uses_the_script_with_the_same_file_set(self):
         workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
         step = workflow.split("name: Package sc-offline-<tag>.zip", 1)[1].split("name: Create Release", 1)[0]
-        for token in ("tools/package_release.py", "--rust-exe", "--classic-exe", "--menu-dll", "--dinput8",
+        for token in ("tools/package_release.py", "--rust-exe", "--classic-exe", "--menu-dll", "--dinput8", "--dinput8-rust-menu",
                       "--check-tree", "rust-launcher-release"):
             self.assertTrue(token in step or token in workflow, token)
         self.assertEqual([name for _, name in pr.BINARIES],
-                         ["sc-offline.exe", "sc-offline-classic.exe", "sc_offline_menu.dll", "dinput8.dll"])
+                         ["sc-offline.exe", "sc-offline-classic.exe", "sc_offline_menu.dll", "dinput8.dll",
+                          "dinput8-rust-menu.dll"])
 
     def test_repository_has_every_top_level_file_the_package_copies(self):
         for src, _ in pr.TOP_FILES:

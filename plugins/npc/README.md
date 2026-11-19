@@ -1,101 +1,54 @@
-# NPC: external owned-lifecycle SDK reference plugin
+# NPCs: characters from the game
 
-Current picker/copy-list installation and the one targeted module fixture:
-[Public pickers](../../docs/pickers.md). **These sources use `sco_widgets.h` and
-`sco_content.h`, which the published `sdk-v2.4.0` ships**. The obtain/proof recipes below use that archive.
+NPCs puts a character from the game next to you and removes the ones you added. You pick from a list on the **Characters** page of the in-game menu.
 
-Step 1C ships NPC as an **enabled external native plugin**, following inspector
-in step 1B. Release layout is `data/plugins/npc/plugin.ini` plus `npc.dll`, with
-no `disabled` marker. It requires `plugins = on`; the launcher's Plugins page can
-disable its folder for the next game start. No host linkage, built-in registration
-or hidden fallback remains. Current registry/release counts are reconciled in
-[status](../../docs/status.md): 13 baseline units plus two optional external
-bridges, not the superseded nine/four split. Creative ships enabled and launcher
-behavior is unchanged. Step 1D separately
-sets Discord folder metadata off and refuses presence pending privacy/transport
-approval ([review](../discord/README.md)).
+## Characters page
 
-## Source and published contract
+Open **Characters** in the **People** section of the menu (key **M**). The sections follow the order you use them:
 
-- `npc.cpp` / `npc.h`: public-service command and owned-lifecycle logic.
-- `external.cpp`: `sco_plugin_query`, `sco_plugin_load`, `sco_plugin_unload`.
-- `plugin.ini`: `id = npc`, independent version `1.1.0`, plugin ABI `1.1`,
-  native entry `npc.dll`. Commands handle optional/missing game capabilities.
+- **Choose a character**: a search box, a paged list, **Reload character list** and a field for a typed character name.
+- **Spawn them**: **How many** (1 to 10) and **Spawn characters**.
+- **Characters you spawned**: a choice, **Remove character**, **Remove all my characters** and **Check on them**.
+- **Last result**.
 
-Build against published **`sdk-v2.4.0`**, combined **`sco-sdk-2.4.0.zip`**, after
-verifying release **`SHA256SUMS`**. SDK 2.4.0, plugin ABI 1.1 and Star Citizen game
-pack 0.8.0 are separate versions. Use only the extracted SDK's `include/`, not
-private host headers, the dependency's source include tree or new ImGui inputs.
-The Windows host independently builds from its tagged submodule.
+The plugin has no hotkey.
 
-The [worked tutorial](../../docs/sdk-workflows.md#worked-tutorial-standalone-native-npc)
-separates **obtain/verify**, **isolated build/check** and **install/enable**. It
-builds `sc-offline-npc` outside the checkout, builds the checker from the published
-zip's `tools/sco-plugin-check.c`, invokes `npc.observe` with services absent and
-runs only `npc-module-workflow` against synthetic public providers. Windows
-x64/MSVC produces the game DLL; macOS/Linux modules are development-only.
+## Commands
 
-## Commands and ownership
-
-Invoke through the host command registry **on the game thread**:
-
-| Command | Result |
+| Command | What it does |
 | --- | --- |
-| `npc.spawn <archetype> <count>` | Requests 1 to 10 owned NPCs near a fresh player pose; returned session IDs are immediately logged as pending streaming |
-| `npc.observe` | Read-only pending/visible/removing/unknown counts and visible transforms in the log |
-| `npc.remove <id>` | Requests removal of one ID still owned by this plugin |
-| `npc.clear` | Requests removal of its remaining owned NPCs, never crew-wide or foreign deletion |
+| `npc.spawn <archetype> <count>` | Adds 1 to 10 characters near you. The ids are logged at once as "pending", because the characters stream in later. |
+| `npc.observe` | Logs how many are pending, visible, being removed and unknown, and the position of each visible one. Read-only. |
+| `npc.remove <id>` | Asks for removal of one character this plugin added. |
+| `npc.clear` | Asks for removal of all characters this plugin added. It never touches crew or characters from other plugins. |
 
-Choose an archetype for the actual game build; `synthetic_actor` in tests is not
-a real-game recipe. Spawn/removal use `game.actors`, pose uses `teleport.spatial`
-and observation uses `game.entities`. Borrowed service tables are reopened on
-each command, not retained. Finite pose, a nonzero valid quaternion and a nonzero
-streamed zone are required. Position/zone are used immediately; there is no ground
-ray. Partial success reports how many IDs are already owned and returns the
-failing result without losing those IDs.
+Use an archetype name that exists in your game build. Spawning needs a valid player position in a streamed zone, and the characters appear at that position with no ground check. A batch that fails partway reports how many were added and keeps those.
 
-`SCO_OK` from removal means **removal started**, not confirmed disappearance.
-Removal may precede stream-in. Accepted removal relinquishes local ownership;
-foreign IDs are rejected without mutation. Failed removal retains ownership for
-retry; provider `NOT_FOUND` relinquishes the local claim. `alive=0` is ambiguous,
-not proof of disappearance and not permission to recycle a removal ticket.
-The local session-ticket bound is `SC_ACTORS_MAX_NPCS` per load, including
-accepted-removal tickets until unload; it is distinct from the provider's global
-live-NPC quota. Never persist session IDs, poses or zone IDs across loads.
+Removal "accepted" means removal started, not that the character is gone. After the game accepts it, the plugin forgets the character and does not ask twice. A refused removal is retried later. The plugin keeps at most 1024 records per session, and records of characters being removed count until the plugin unloads, so after very many spawns you may have to restart the game. Unloading the plugin asks for removal of the rest once, and Core removes any that remain. Nothing is saved between sessions.
 
-Normal unload requests remaining cleanup once, then clears local state; repeated
-unload is inert. The host withdraws owner-scoped commands and releases remaining
-actor ownership. If cleanup is unavailable, the log explicitly requires host
-owner-release cleanup. Process termination is not a successful unload.
+Characters come from `lists/npcs.txt` in the `picker_catalog` data pack (a copy of `data/npcs.txt`), up to 127 bytes per name. To use your own list, copy it over that pack's `lists/npcs.txt` with the game closed and keep a backup. A change needs a game restart. See [docs/pickers.md](../../docs/pickers.md).
 
-## UI and native lifecycle boundary
+## Settings
 
-The external NPCs panel uses public `sco.widgets`, in sections: **Choose a character**
-(search, paged list, **Reload character list**, a typed character name), **Spawn them**
-(**How many**, 1–10, **Spawn characters**), **Characters you spawned** (a choice,
-**Remove character**, **Remove all my characters**, **Check on them**) and **Last result**.
-Crew uses the same SDK-only parser, with independent selection/ownership state.
-No NPC hotkey was previously registered; none is invented here. Legacy
-`src/npc.cpp` stays untouched and is never a fallback. No plugin ImGui coupling
-is added. Widgets/content ship in the published SDK 2.4.0; Windows rendering remains NOT VERIFIED.
+None.
 
-Normal `sco.reload npc` is a running-host external-consumer route, not provider
-hot-reload support or proven gameplay safety. Rebuild with the game closed or the
-module unloaded; never overwrite a loaded Windows DLL. **Native faults are
-restart-required, not safe reload/recovery after corruption.** Native plugins
-execute trusted code, not sandboxed code; install only plugins you trust.
+## What it needs
 
-## Evidence and policy
+- Services: `game.actors` 1.0, `game.entities` 1.0, `teleport.spatial` 1.0, `sco.widgets` 1.0, `sco.content` 1.0.
+- Capabilities: `game.actors.spawn_npc`, `game.actors.despawn`, `game.entities.transform`.
 
-**Windows/in-game acceptance: NOT RUN.** Checker acceptance and synthetic dynamic
-loading do not prove game-provider behavior, rendering, owner-release cleanup or
-real-host fault containment. Exact-build spawn/observe/remove/clear, missing-service,
-disable, unload, ownership and fault checks remain in [status](../../docs/status.md).
-Crew seat ownership and its separate regression are not certified here.
+Seen in game (owner, build 4.10.200.58746): spawning a character worked. Not run in game. Removal, observe and the page. See [docs/status.md](../../docs/status.md).
 
-[Migration decisions](../../docs/decisions.md) retain policy boundaries, the
-13-feature denominator and separately counted optional bridges. Launcher/EAC and
-online refusal are unchanged; no bypass, remote console or runtime MCP gameplay
-control is added. Licensing/provenance is unchanged: use the root
-[LICENSE](../../LICENSE) and upstream SDK notices, not an assumption that the MIT
-wire headers license the entire SDK or this plugin as MIT.
+## Developer notes
+
+Build against the extracted SDK 2.4.1 `include/` directory, which must hold `sco_widgets.h` and `sco_content.h`. The plugin is a worked example in [docs/sdk-workflows.md](../../docs/sdk-workflows.md).
+
+```sh
+cmake -S plugins -B build-plugins -DSCO_SDK_INCLUDE_DIR=<sdk>/include -DSCO_WORKFLOW_TESTS=ON
+cmake --build build-plugins --config Release --target sc-offline-npc
+ctest --test-dir build-plugins -C Release -R npc --output-on-failure
+```
+
+The test is `npc-module-workflow`. `python tools/check_npc_sdk.py --archive <sdk zip> --sums <SHA256SUMS> --work <new folder outside the checkout>` runs it from a verified SDK archive and invokes `npc.observe` with no services. Add `--candidate` and the digest options for an unpublished SDK (see [docs/sdk-candidate.md](../../docs/sdk-candidate.md)). The picker fixture is described in [docs/pickers.md](../../docs/pickers.md).
+
+Files: `npc.cpp` and `npc.h` hold the commands, `picker.inc` the page, `external.cpp` the three native exports, `plugin.ini` the manifest (`id = npc`, version 1.1.0, plugin ABI 1.1). Services are reopened on every command. Use `sco.reload npc` to reload in a running host, never overwrite a loaded DLL, and restart after a native fault.

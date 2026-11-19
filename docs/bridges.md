@@ -1,17 +1,11 @@
 # Bridges: Titanfall 2 and a voxel game
 
-TitanLink and voxel_bridge are independent optional native SDK plugins in
-[`plugins/titanlink`](../plugins/titanlink/README.md) and
-[`plugins/voxel_bridge`](../plugins/voxel_bridge/README.md). Both install with a
-`disabled` marker. Neither bridge, peer fixture nor bridge data belongs to normal
-release packaging. `dinput8.dll` no longer links or registers either bridge.
+TitanLink and voxel_bridge are independent, optional native plugins: [`plugins/titanlink`](../plugins/titanlink/README.md) and [`plugins/voxel_bridge`](../plugins/voxel_bridge/README.md). Both install with a `disabled` marker. Neither bridge, the peer fixture nor bridge data is part of the release package, and `dinput8.dll` links and registers neither. The retired host options `SCO_BRIDGE_*` refuse to configure instead of creating a hidden fallback. Not run in game; see [status.md](status.md).
 
-## Build, install, enable (explicit opt-in)
+## Build, install and enable
 
-1. Obtain an identified SDK containing IPC/spatial reads and G3 full-pose conversion.
-   The published `sco-sdk-2.4.0.zip` (`sdk-v2.4.0`) contains them (`sco_ipc.h`,
-   `sc_game_spatial.h`). No private host headers.
-2. Configure each independently:
+1. Get an identified SDK that contains the IPC and spatial reads and full-pose conversion. The published SDK 2.4.0 archive (`sco-sdk-2.4.0.zip`, tag `sdk-v2.4.0`) does (`sco_ipc.h`, `sc_game_spatial.h`). Use no private host headers.
+2. Configure each bridge on its own:
 
    ```text
    cmake -S plugins/titanlink -B titan-build -DSCO_SDK_INCLUDE_DIR=<sdk>/include
@@ -21,42 +15,26 @@ release packaging. `dinput8.dll` no longer links or registers either bridge.
    cmake --build voxel-build --target sc-offline-voxel_bridge
    cmake --install voxel-build --prefix bridge-stage --component voxel_bridge
    ```
-3. Copy ONLY the chosen disabled folder from `bridge-stage/data/plugins/` into
-   the configured host plugin root. Enable deliberately by removing its marker;
-   plugin loading must be on. Keep disabled pending owner Windows/offline acceptance.
-   Retired host `SCO_BRIDGE_*` options refuse instead of creating hidden fallback.
+3. Copy only the folder you want from `bridge-stage/data/plugins/` into the host's plugin folder. Remove its `disabled` marker to enable it. `plugins = on` must be set. Keep it disabled until the owner has accepted it on Windows, offline.
 
-TitanLink retains `titanlink.pilot`, `.titan`, `.embark`, `.unlink`, `.status`, F9,
-its renderer-neutral panel and owned Windows overlay/local launcher. Voxel retains
-`voxel_bridge.toggle`, `.anchor`, `.status`, Ctrl+F9, its public panel, owned crate
-placement and bounded `game.world` ground scans. See each plugin README for settings,
-transport/cleanup behavior and retained unavailable functionality.
+TitanLink has the commands `titanlink.pilot`, `titanlink.titan`, `titanlink.embark`, `titanlink.unlink` and `titanlink.status`, the key F9 (opens the link), a panel, and an owned Windows overlay and local launcher. The voxel bridge has `voxel_bridge.toggle`, `voxel_bridge.anchor` and `voxel_bridge.status`, the key Ctrl+F9, a panel, owned crate placement and bounded `game.world` ground scans. Each plugin's README covers settings, transport and cleanup, and what is unavailable.
 
-G2 relocation and G7 writes are NOT approved: follow/movement/camera-cvar mutation
-refuses, no private fallback. G3 uses full pose conversion. G9 crate cleanup uses
-`game.entities.spawn/despawn` ownership, never private NPC deletion. Missing services
-refuse their operation. Legacy `titanlink.txt`/`voxel_bridge.txt` automatic import
-is unavailable without a public root/content route: back up files and manually
-transfer the preserved setting names. No legacy files are overwritten/deleted.
+What the bridges do not do:
 
-5A multiplayer/G13 is NOT approved: retain legacy source but remove it from host
-sources/registration. `SCO_MULTIPLAYER=ON` refuses; core G13 stays disabled. This
-local IPC extraction never authorizes hosting/joining/private networking.
+- Relocation, follow, movement and camera-cvar changes are refused, with no private fallback.
+- Poses use full pose conversion.
+- Crate cleanup uses `game.entities.spawn` and `despawn` ownership, never private NPC deletion.
+- A missing service refuses its operation.
+- `titanlink.txt` and `voxel_bridge.txt` are not imported automatically, because no public root or content route exists. Back the files up and copy the setting names over by hand. No legacy file is overwritten or deleted.
+- Multiplayer is not part of the bridges. `SCO_MULTIPLAYER=ON` refuses, and Core's private-session support stays off. This local IPC work never allows hosting, joining or private networking.
 
-## Independent peer fixture and evidence
+## Peer fixture
 
-[`tools/bridge-peer`](../tools/bridge-peer/README.md) configures independently with
-only `sc_ipc.h`, `sc_titanlink.h`, `sc_voxel_bridge.h` (MIT); no host, `sco_api.h` or
-runtime library. Windows CLI: `bridge-peer titanlink|voxel [seconds]`. Development
-platform `--wire-info` reports versions; native transport otherwise refuses.
-Project fixture stays GPL-3.0-only: MIT wire dependency does not relicense project
-code. No paired-game code/assets are shipped. The obsolete host-embedded bridges
-CI job is removed; future optional CI needs an approved SDK containing G3.
+[`tools/bridge-peer`](../tools/bridge-peer/README.md) builds on its own with only `sc_ipc.h`, `sc_titanlink.h` and `sc_voxel_bridge.h` (MIT). It needs no host, `sco_api.h` or runtime library. It stays GPL-3.0-only; the MIT wire headers do not relicense project code. It ships no game code or assets.
 
-Windows/MSVC, native cross-process IPC, GPU/renderer/shared handles, late peer exit,
-local launcher/overlay cleanup and gameplay are NOT VERIFIED. Synthetic fixtures
-exist; post-steering integration was configure/compile only, tests NOT RUN.
-No network/game/EAC operation was performed.
+On Windows, start `bridge-peer titanlink [seconds]` or `bridge-peer voxel [seconds]` after you enable the plugin. It sends synthetic match and wall replies, not gameplay results. Ctrl+C stops its heartbeat. `--wire-info` prints the wire versions. On other platforms the native transport refuses.
+
+Not verified: Windows and MSVC builds, cross-process IPC, GPU and shared handles, a late peer exit, launcher and overlay cleanup, and gameplay. The fixtures are synthetic. No game, network or anti-cheat step was run.
 
 ## The wire
 
@@ -111,24 +89,17 @@ sc-offline checks everything you write in the same way: flags are masked, every 
 
 **Voxel -> sc-offline:** 1 `SOLIDS` `{int32 sx, sy, sz; uint32 epoch; uint64 bits[64];}` (528 bytes), the solid blocks of the 16^3 section at (sx, sy, sz). Bit `i` (`bits[i / 64] >> (i % 64)`) is block x = `i & 15`, z = `(i >> 4) & 15`, y = `i >> 8` within it, and a section replaces what you sent for it before. Sections of another epoch, or outside x and z +-30,000 and y -64 to 320, are ignored. 2 `CLEAR` `{uint32 epoch; uint32 reserved;}` removes every crate of that epoch. 3 `LOG`, 1 to 200 bytes of text.
 
-## Using `bridge-peer`
+## Not included
 
-Build the independent [fixture](../tools/bridge-peer/README.md). On Windows start
-`bridge-peer titanlink` or `bridge-peer voxel` after deliberately enabling/opening
-the chosen module. It sends synthetic match/wall responses, not gameplay results.
-Ctrl+C stops its heartbeat. Native transport and cleanup remain NOT VERIFIED.
+These parts of the original bridges need game access that has no signature row or service yet, or a sco-core feature that does not exist, so they are left out:
 
-## Not ported (follow-ups)
-
-These parts of the fork's bridges need game access that has no signature row or service yet, or a sco-core facility that doesn't exist yet, so they are left out:
-
-- **Taking over the keyboard and mouse** while a bridge is active. The fork patched the game's import of `GetRawInputData` / `GetRawInputBuffer`, a game hook with no row. Star Citizen still sees your keys in pilot mode, and the voxel game can't be controlled from Star Citizen. Candidate: an input-capture mode in a later `sco.ui` minor (design section 4.4).
+- **Taking over the keyboard and mouse** while a bridge is active. The original patched the game's import of `GetRawInputData` / `GetRawInputBuffer`, a game hook with no row. Star Citizen still sees your keys in pilot mode, and the voxel game can't be controlled from Star Citizen. It would need an input-capture mode in a later `sco.ui` release.
 - **Hiding your Star Citizen body** (and turning breathing off with it): vtable slots `0x360` / `0x370` with a byte check and no row.
 - **Titanfall-style movement** (wallrunning, double jump, slide, Titan walking) that moved your Star Citizen character: it wrote your position through raw entity slots (`0x2B0`, `0x2C8`) and cast rays every frame. The match follows Star Citizen's own movement instead. The same goes for the voxel bridge's "follow the voxel player" mode.
-- **Per-frame updates:** poses go out at the host tick's 10 Hz, and the other side interpolates. A per-frame callback waits for the `frame` event (design section 3.4).
+- **Per-frame updates:** poses go out at the host tick's 10 Hz, and the other side interpolates. Per-frame updates wait for a `frame` event in sco-core.
 - **Your camera** (third person, aiming pitch): sc-offline's camera read isn't a service, so poses use your body's facing and a fixed 1.62 m eye height.
 - **Shots hitting Star Citizen NPCs** (TitanLink) and NPCs mirrored into the voxel game, with Minecraft hits removing them: these need the camera, ray casts against entities, and entity reads by raw slot.
 - **Drawing the voxel world** (textured meshes, avatars, block hiding behind walls) in an overlay with Star Citizen's camera. Without it the crates are the voxel world's only picture in Star Citizen.
 - **Light matching** (tinting Titanfall's picture with Star Citizen's light through desktop duplication), the Titan landing shake and the zoom-to-`cl_fov` handover.
-- **Typing commands into the voxel game** (`/gamemode`, `/give`, `/summon` for zombies and horses): the voxel side can set itself up.
+- **Typing commands into the voxel game** (`/gamemode`, `/give`, `/summon` for zombies and horses). The voxel side can set itself up.
 - **Several building areas** at once: there is one, moved with `voxel_bridge.anchor`.

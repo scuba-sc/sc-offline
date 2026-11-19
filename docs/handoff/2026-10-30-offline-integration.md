@@ -1,3 +1,5 @@
+Historical record: sc-offline integration handoff, 2026-10-30.
+
 # Historical sc-offline handoff — 2026-10-30
 
 This handoff records the state at the time. Current offline RC3 source and artifact coordinates are maintained in [sdk-candidate.md](../sdk-candidate.md). The earlier registry-migration draft used offline base `772129e09e7838d56165bd3613f43ac49d373bb8` and development core #305 source `a5101d406a9ddbff14e437408686ffb04266be18`. Native startup remained refused; no published SDK or gameplay claim followed.

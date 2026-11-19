@@ -1,40 +1,68 @@
-# Saved spots (teleport): quick-save and return
+# Teleport: save a spot and go back to it
 
-## The Saved spots page
+Teleport saves where you stand and takes you back to it. Press **F7** to save, **F8** to go back.
 
-The menu page is titled **Saved spots** and has three sections, in the order a player uses them: **Save where you stand** (`Save this spot`, F7), **Go back to it** (`Go to saved spot`, F8; disabled until a spot is saved) and **Status**, which says in plain words what happened. The key hints show only when the plugin could bind F7/F8. The page keeps one quick-save slot, so there is no list or delete button; named saved spots live on the Travel page (quantum plugin). The old "inspect" button is gone from the page (it only printed internals); `teleport.inspect` remains as a command. Command replies and `mod.log` keep their technical wording; the page shows separate plain sentences.
+## Saved spots page
 
-**Where F8 can go.** The game's `game.spatial` service resolves only the place the player is inside and the larger places around it, with no lookup by name for other zones. Each saved zone is stored with its game zone id as well as its name; going back tries the id first (accepted only if the game still streams that zone under the same name), then the name. So F8 works while the saved zone is still streamed, and otherwise refuses with a plain sentence. Core proposal: a name or id route for sibling zones.
+Open **Saved spots** in the **Travel** section of the menu (key **M**). It has three sections, in the order you use them:
 
-`teleport.save` (F7) is designed to capture where you are, read-only: the full pose and its observed zone ancestry through `game.spatial`. The external consumer uses sco-core's public **`game.relocation` 1.0** (`sc_relocation.h`) for return moves, and on a Core with the process-retained composition the product starts natively, loads this plugin and a move reports its own result; any other Core keeps the native-startup refusal. No move has been run in game. The consumer's synthetic SDK workflows remain useful for contract checks and do not establish game behavior. `teleport.inspect` reads the saved exact/partial restoration candidate without moving; root-only and stale matches refuse. `teleport.status` reports the saved state, the move switch, whether `game.relocation` is on and any move in progress when the module is run in a suitable test host.
+- **Save where you stand**: **Save this spot** (**F7**).
+- **Go back to it**: **Go to saved spot** (**F8**). It is disabled until a spot is saved.
+- **Status**: what happened, in plain words.
+
+The key hints show only when the plugin could bind F7 and F8. The page keeps one quick-save slot, with no list and no delete button. Named spots are on the Travel page of the [quantum plugin](../quantum/README.md).
+
+## Commands
+
+| Command | Key | What it does |
+| --- | --- | --- |
+| `teleport.save` | F7 | Saves your position, rotation and zone ancestry. It only reads. |
+| `teleport.go` | F8 | Moves you to the saved spot. |
+| `teleport.inspect` | | Checks whether the saved spot can be reached, without moving. A spot that is stale or matches only the root zone is refused. |
+| `teleport.status` | | Says whether a spot is saved, whether moving is allowed and whether a move is running. |
 
 ## How a move works
 
-1. The plugin's `relocation` setting must be on, then the capability `game.relocation` is checked fresh, before anything else.
-2. The saved spot is resolved to a live zone id and a pose local to that zone; unloaded, expired or root-only matches refuse.
-3. One request (zone id, local position, rotation, 30 s timeout) goes to `game.relocation`. One move at a time; the ticket is never persisted.
-4. On every tick the plugin also reads the player's pose through the public spatial service. As soon as the player is within 2 m of the target it reports success once ("You are at your saved spot."), treats the move as finished (the next F8 is accepted) and cancels the Core request to free Core's single slot; `sc_relocation.h` states that cancellation cannot undo a movement that already started. A later timeout or failure for that request is logged at info ("confirmation not received; you had arrived") and does not change the message. If the player never comes within 2 m, Core's own result is reported as before. Moving while seated in a ship is not blocked and has not been tested in game. Not run in game.
-5. The plugin follows the ticket every game tick and reports the end once: arrived, or failed/cancelled with the provider's reason (timeout; session, player or system changed; offline admission or switch withdrawn; different star system; the game did not start the move; provider fault).
+1. The plugin setting `relocation` must be on. The capability `game.relocation` is checked fresh.
+2. The saved spot is matched to a live zone and a position inside that zone. An unloaded, expired or root-only match refuses.
+3. One request (zone id, local position, rotation, 30 s timeout) goes to `game.relocation`. One move runs at a time.
+4. Every tick the plugin reads your position. When you are within 2 m of the target it says "You are at your saved spot.", counts the move as finished and cancels the Core request. Cancelling cannot undo a move that already started. A later timeout of that request is logged and does not change the message. If you never come within 2 m, Core's own result is reported: arrived, or failed or cancelled with a reason (timeout, session or player changed, offline admission withdrawn, different star system, the game did not start the move, provider fault).
+5. A new F8 while you are already within 2 m of the spot answers that you are there.
 
-When active in an explicitly qualified host, `game.relocation` only moves within the current star system and requires certified offline admission, a verified engine backend, a live player and a known star system. The product host reaches this path only on a Core with the process-retained composition (any other Core keeps the native-startup refusal); F8 then goes through `game.relocation` and reports its own result, and the plugin has no private fallback. Not run in game.
+Moving works only inside your current star system, offline, with a live player and a known star system. Moving while seated in a ship is not blocked and has not been tried.
 
-## Switches
+F8 can go only to a zone the game still streams. The game resolves your own zone and the larger places around it, and has no lookup by name for other zones. A saved zone is stored with its id and its name; going back tries the id first (accepted only if the game still streams that zone under the same name), then the name. Otherwise F8 refuses with a plain sentence.
 
-- Plugin setting `relocation` (bool, default true, "Allow moving the player (offline only)"): off makes `teleport.go` answer unavailable with that reason. Saving and inspecting keep working.
-- Host: `relocation = on|off` in `sc-offline.ini` (default on) is the host policy switch for all plugins when a host is active. It cannot bypass offline admission, and moves still report their own result. Neither switch bypasses offline admission.
+## Settings
 
-## Storage
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `relocation` | on | Allow moving you (offline only). Off makes `teleport.go` refuse. Saving and checking still work. |
+| `data_root` | empty | Folder for the saved spot. Empty means the folder of the launcher's `SC_OFFLINE_SPAWN_FILE`, else `data`. It is created when needed. |
+| `spawn_file` | empty | Where the spot is kept when there is no database. Empty means `SC_OFFLINE_SPAWN_FILE`, else `<data_root>/spawn.txt`. |
 
-Retains owner ID/database `teleport`, key `spot`, import marker `spawn.txt.time` and original `spot x y z zone` syntax (plus additive `pose x y z w` lines). Existing `spawn.txt` imports transactionally once per changed Windows FILETIME. `spawn_file` overrides its path; empty inherits launcher `SC_OFFLINE_SPAWN_FILE`, otherwise `data_root/spawn.txt`. `data_root` left empty (the default) is the folder of `SC_OFFLINE_SPAWN_FILE`, else `data`; the folder is created before a file is written. Without `sco.storage`, F7 writes the spawn file instead.
+The host setting `relocation = on|off` in `sc-offline.ini` applies to all plugins and cannot bypass offline admission.
 
-## Build and install
+The spot is saved in `data/storage/teleport.db`. An existing `spawn.txt` (lines `spot x y z zone`, plus `pose x y z w`) is imported once each time its file time changes. Without `sco.storage`, F7 writes the spawn file instead.
 
-1. Extract the published `sdk-v2.4.0` archive (it contains `sc_relocation.h` and `sc_game_spatial.h`) and verify it against the release `SHA256SUMS`.
-2. `cmake -S plugins/teleport -B build-teleport -DSCO_SDK_INCLUDE_DIR=/path/to/extracted/include [-DSCO_TRAVEL_TEST=ON]`, then build `sc-offline-teleport` (and `travel-model-test`).
-3. `cmake --install build-teleport --prefix /path/to/product --component teleport` gives `data/plugins/teleport/` with the native module and its enabled manifest.
+## What it needs
 
-`tools/check_teleport_sdk.py --archive sco-sdk-2.4.0.zip --sums SHA256SUMS --work <new dir>` does all of this outside the checkout, runs the synthetic travel model test, traces compiler dependencies, runs boundary negatives and a relocation red arm (POSIX), and runs the SDK's `sco-plugin-check`.
+- Services: `game.relocation` 1.0, `game.spatial` 1.0, `teleport.spatial` 1.0, `sco.storage`, `sco.settings`, `sco.ui` (the keys), `sco.widgets` 1.0 (the page; without it the commands still work).
+- Capability: `game.relocation` (on in Core).
 
-Native modules are trusted code. GPL-3.0-only. Calls run on the game thread; copied metadata is never treated as valid across commands/ticks. Optional `sco.widgets` panel; an absent renderer leaves command-only operation. Unload removes panels, hotkeys and its tick subscription; `game.relocation` cancels and forgets the plugin's tickets on unload.
+Seen in game (owner, build 4.10.200.58746): F7 then F8 really moved the player to the spot, but Core did not confirm the arrival. The 2 m arrival message is new. Not run in game. See [docs/status.md](../../docs/status.md).
 
-**Evidence: development machine only.** Built against the published SDK 2.4.0 with synthetic providers and the SDK checker with no game services. Windows/MSVC, the real renderer, storage import twice, and every in-game move: **NOT VERIFIED; not run in game.**
+## Developer notes
+
+Build against the extracted SDK 2.4.1 `include/` directory, which must hold `sc_relocation.h` and `sc_game_spatial.h`.
+
+```sh
+cmake -S plugins/teleport -B build-teleport -DSCO_SDK_INCLUDE_DIR=<sdk>/include -DSCO_TRAVEL_TEST=ON
+cmake --build build-teleport --config Release
+ctest --test-dir build-teleport -C Release --output-on-failure
+cmake --install build-teleport --config Release --prefix <stage> --component teleport
+```
+
+The test is `travel-model`. `python tools/check_teleport_sdk.py --archive <sdk zip> --sums <SHA256SUMS> --work <new folder outside the checkout>` runs it from a verified SDK archive, traces compiler dependencies and runs the SDK's `sco-plugin-check` with no game services. Add `--candidate` and the digest options for an unpublished SDK (see [docs/sdk-candidate.md](../../docs/sdk-candidate.md)).
+
+The module shares its travel code with the quantum plugin (`plugins/spatial/`). Calls run on the game thread, and metadata copied from the game is never reused across commands or ticks. Unload removes the page, the keys and the tick subscription, and `game.relocation` cancels and forgets this plugin's requests.

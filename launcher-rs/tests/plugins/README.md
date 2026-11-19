@@ -5,8 +5,8 @@
 install: zip with the SDK layout, index built and signed with the sc-plugins tools (TEST key),
 then `catalogue list`, `catalogue install`, `enable`, `list`, a replayed older index, `remove`,
 with a file-tree diff after every step. `creative-proof.transcript.txt` is the output of the last
-run. The creative files were taken from an existing build (read only), not built here. Nothing was
-run in game and creative.dll was never loaded.
+run. The creative files were taken from an existing build (read only), not built here. `creative.dll` was never loaded.
+Not run in game. See [docs/status.md](../../../docs/status.md).
 
 ```text
 cargo build -p scol-plugin-manager --features test-trust

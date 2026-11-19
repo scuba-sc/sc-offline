@@ -11,6 +11,13 @@ pub const SCO_BASED_ON: &str = "based on ChrisWareOffline 0.9.0-rc1";
 mod tests {
     use super::*;
 
+    /// The Rust workspace version is the product version, so the Rust menu DLL (`scol_menu_version`) and
+    /// the launcher report the same number as the game DLL.
+    #[test]
+    fn workspace_version_is_the_product_version() {
+        assert_eq!(env!("CARGO_PKG_VERSION"), SCO_VERSION);
+    }
+
     #[test]
     fn matches_version_h() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../src/version.h");

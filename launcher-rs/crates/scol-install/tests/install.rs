@@ -364,3 +364,153 @@ fn run_refuses_while_a_stand_in_game_process_runs() {
     assert!(out_u.contains("[!] StarCitizen.exe is running. Close it first."));
     assert!(!f.bin().join("dinput8.dll").exists());
 }
+
+// ---- the two game DLLs: dinput8.dll (classic menu) and dinput8-rust-menu.dll (Rust menu hook) ----
+
+const CLASSIC: &[u8] = b"MZ classic host, no marker text";
+const RUST_MENU: &[u8] = b"MZ rust-menu host, no marker text";
+
+impl Fixture {
+    /// Ships both DLLs beside the launcher, as a 0.8.0 package does, and sets the ini's `menu` key.
+    fn ship_both(&self, menu: Option<&str>) {
+        std::fs::write(self.here().join("dinput8.dll"), CLASSIC).unwrap();
+        std::fs::write(self.here().join("dinput8-rust-menu.dll"), RUST_MENU).unwrap();
+        self.set_menu(menu);
+    }
+    fn set_menu(&self, menu: Option<&str>) {
+        let ini = self.here().join("sc-offline.ini");
+        match menu {
+            Some(m) => std::fs::write(ini, format!("menu = {m}\n")).unwrap(),
+            None => {
+                let _ = std::fs::remove_file(ini);
+            }
+        }
+    }
+    fn installed(&self) -> Vec<u8> {
+        read(&self.bin().join("dinput8.dll"))
+    }
+}
+
+#[test]
+fn default_menu_installs_dinput8_dll_even_when_the_rust_menu_dll_is_there() {
+    let f = Fixture::new("two-default");
+    f.ship_both(None);
+    let (rc, out) = f.put("install", false);
+    assert_eq!(rc, 0);
+    assert_eq!(f.installed(), CLASSIC);
+    assert!(out.contains("[+] copy dinput8.dll to "));
+    assert!(!out.contains("rust"), "{out}");
+    // An explicit imgui is the same.
+    let (rc, _) = f.take(false);
+    assert_eq!(rc, 0);
+    f.set_menu(Some("imgui"));
+    assert_eq!(f.put("install", false).0, 0);
+    assert_eq!(f.installed(), CLASSIC);
+}
+
+#[test]
+fn menu_rust_with_the_file_installs_the_rust_menu_dll_under_the_game_side_name() {
+    let f = Fixture::new("two-rust");
+    f.ship_both(Some("rust"));
+    let (rc, out) = f.put("install", false);
+    assert_eq!(rc, 0);
+    assert_eq!(f.installed(), RUST_MENU);
+    assert!(
+        out.contains("[+] copy dinput8-rust-menu.dll to ") && out.contains("Bin64\\dinput8.dll"),
+        "{out}"
+    );
+    assert!(
+        out.contains("menu = rust:") && out.contains("not been run in game"),
+        "{out}"
+    );
+    assert!(!f.bin().join("dinput8-rust-menu.dll").exists());
+    // The marker records the DLL that went in, in the usual format.
+    let marker = String::from_utf8(read(&f.bin().join("sc-offline.installed"))).unwrap();
+    assert!(marker.contains(&format!(
+        "sha256={}\n",
+        scol_plugins::sha256::hex_digest(RUST_MENU)
+    )));
+    // Uninstall takes it out like any other.
+    let (rc, _) = f.take(false);
+    assert_eq!(rc, 0);
+    assert!(!f.bin().join("dinput8.dll").exists());
+}
+
+#[test]
+fn menu_rust_without_the_file_installs_dinput8_dll_and_says_why() {
+    let f = Fixture::new("two-rust-missing");
+    f.ship_both(Some("rust"));
+    std::fs::remove_file(f.here().join("dinput8-rust-menu.dll")).unwrap();
+    let (rc, out) = f.put("play", false);
+    assert_eq!(rc, 0);
+    assert_eq!(f.installed(), CLASSIC);
+    assert!(
+        out.contains("menu = rust, but dinput8-rust-menu.dll is not beside sc-offline.exe")
+            && out.contains("shows the classic menu"),
+        "{out}"
+    );
+    assert!(out.contains("[+] copy dinput8.dll to "), "{out}");
+}
+
+#[test]
+fn switching_the_menu_key_replaces_the_installed_dll_on_the_next_put() {
+    let f = Fixture::new("two-switch");
+    f.ship_both(Some("rust"));
+    assert_eq!(f.put("install", false).0, 0);
+    assert_eq!(f.installed(), RUST_MENU);
+
+    // Back to imgui: the installed bytes equal a shipped DLL, so it is ours (no .sc-offline-backup),
+    // and it is replaced because it is not the selected one.
+    f.set_menu(Some("imgui"));
+    let (rc, out) = f.put("play", true);
+    assert_eq!(rc, 0);
+    assert!(
+        out.contains("the installed dinput8.dll carries the new Rust menu; this Play replaces it with the classic menu (dinput8.dll)"),
+        "{out}"
+    );
+    assert_eq!(f.installed(), RUST_MENU, "a dry run changes nothing");
+    let (rc, _) = f.put("play", false);
+    assert_eq!(rc, 0);
+    assert_eq!(f.installed(), CLASSIC);
+    assert!(!f.bin().join("dinput8.dll.sc-offline-backup").exists());
+
+    // And forward again.
+    f.set_menu(Some("rust"));
+    let (rc, out) = f.put("play", false);
+    assert_eq!(rc, 0);
+    assert!(
+        out.contains("carries the classic menu; this Play replaces it with the new Rust menu"),
+        "{out}"
+    );
+    assert_eq!(f.installed(), RUST_MENU);
+}
+
+#[test]
+fn an_installed_copy_of_either_shipped_dll_is_ours_even_without_the_version_text() {
+    let f = Fixture::new("two-ours");
+    f.ship_both(Some("imgui"));
+    // Another mod's DLL is still set aside ...
+    std::fs::write(f.bin().join("dinput8.dll"), OTHER).unwrap();
+    assert_eq!(f.put("install", false).0, 0);
+    assert_eq!(read(&f.bin().join("dinput8.dll.sc-offline-backup")), OTHER);
+    // ... but a leftover copy of the Rust menu DLL (no marker) is replaced without a backup.
+    let _ = std::fs::remove_file(f.bin().join("sc-offline.installed"));
+    let _ = std::fs::remove_file(f.bin().join("dinput8.dll.sc-offline-backup"));
+    std::fs::write(f.bin().join("dinput8.dll"), RUST_MENU).unwrap();
+    assert_eq!(f.put("install", false).0, 0);
+    assert_eq!(f.installed(), CLASSIC);
+    assert!(!f.bin().join("dinput8.dll.sc-offline-backup").exists());
+}
+
+#[test]
+fn dry_run_names_the_selected_dll_and_changes_nothing() {
+    let f = Fixture::new("two-dry");
+    f.ship_both(Some("rust"));
+    let (rc, out) = f.put("install", true);
+    assert_eq!(rc, 0);
+    assert!(
+        out.contains("[dry-run] would copy dinput8-rust-menu.dll to "),
+        "{out}"
+    );
+    assert!(!f.bin().join("dinput8.dll").exists());
+}

@@ -1,17 +1,27 @@
-# Plugin UI: menu tabs, overlays and hotkeys
+# Plugin UI: menu pages, overlays and hotkeys
 
-sc-offline's menu (**M**) is a shell over sco-core's `sco.ui` service ([sco-core docs/ui.md](https://github.com/scuba-sc/sco-core/blob/main/docs/ui.md)). The host registers no feature tabs. Feature panels (Vehicles, Crew, NPCs, Player, Squadron 42, Build and the inspector) come from the external plugins through `sco.widgets` and are drawn by the host's ImGui adapter. A plugin can also add its own tab, overlay and hotkeys through `sco.ui`. This page covers what sc-offline adds to sco-core's `sco.ui` contract.
+The in-game menu (**M**) is a shell over sco-core's `sco.ui` service ([sco-core docs/ui.md](https://github.com/scuba-sc/sco-core/blob/main/docs/ui.md)). The host registers no feature pages. Vehicles, Crew, NPCs, Player, Squadron 42, Build and the inspector come from plugins through `sco.widgets`, and the host's ImGui adapter draws them. A plugin can also add its own page, overlay and hotkeys through `sco.ui`. This page covers what sc-offline adds to the `sco.ui` contract.
 
-## The Rust menu (opt-in)
+## The new menu (opt-in)
 
-From 0.8.0 the mod can show a second menu, built in Rust (`sc_offline_menu.dll`, crate `scol-menu`, drawn with egui). It is **opt-in**: set `menu = rust` in `sc-offline.ini` (or choose **New (not tested in game yet)** under **Settings > In-game menu** in the launcher). The default is `menu = imgui`, the menu this page describes. The Rust menu has never run in a game; it is checked only against a stand-in widgets view and Core's own view in synthetic tests.
+From 0.8.0 the mod can show a second menu, written in Rust (`sc_offline_menu.dll`, crate `scol-menu`, drawn with egui). The classic menu, drawn with ImGui and described on the rest of this page, is the default (`menu = imgui`).
 
-- **What it shows.** `sco.widgets` panels only, read through Core's widgets view interface (`sco/widgets_view.h`) and answered with the same events. Every shipped plugin page is a `sco.widgets` panel, so these appear. A plugin page that is only a `sco.ui` ImGui tab (a draw callback) does **not** appear in the Rust menu; it stays in the ImGui menu.
-- **Which key.** The Rust menu opens on **M**, the key of the ImGui menu. While the Rust menu is selected and healthy, M does not open the ImGui window; if the Rust menu reports itself broken, M goes back to the ImGui menu. To use another key (for example next to the ImGui menu while testing), set the Windows environment variable `SC_OFFLINE_MENU_KEY` to a letter or `F1` to `F12` before you start the launcher. The M handoff has not been run in game.
-- **If it cannot start.** A missing `sc_offline_menu.dll`, a wrong ABI, or a Core with no widgets view leaves the ImGui menu in place and logs one `[menu]` line to `mod.log`. A `dinput8.dll` built without `-DSCO_HOST_MENU_CLIENT=ON` has no Rust hook and ignores `menu = rust` ([build.md](build.md#cmake-options-that-change-the-menu)).
-- **Not done yet:** a Settings page in the Rust menu, window size and position memory (`menu-window.ini`, `menu-view.ini`), a cursor clip, and a background image. Design and status: [rust-menu.md](rust-menu.md).
+**Turn it on.** Choose **New (not tested in game yet)** under **Settings > In-game menu** in the launcher window, or set `menu = rust` in `sc-offline.ini`. The change takes effect on the next Play. It needs two things:
 
-Plugin authors: nothing changes. Keep drawing pages with `sco.widgets`; give a tag to every control that must survive a republish.
+- the Rust launcher, `sc-offline.exe`;
+- `dinput8-rust-menu.dll` beside the launcher. It is the same mod built with `SCO_HOST_MENU_CLIENT=ON`, which adds the menu hook. With `menu = rust` the launcher installs it into the game folder under the name `dinput8.dll`. In every other case it installs the default `dinput8.dll`, built with `SCO_HOST_MENU_CLIENT=OFF`.
+
+The classic launcher always installs the default `dinput8.dll`. With `menu = rust` it shows the classic menu, and `mod.log` gets one line saying the new menu needs the Rust launcher. [The decision](decisions.md#2026-11-18-two-game-dlls) says why there are two DLLs.
+
+**What it shows.** `sco.widgets` pages only, read through Core's widgets view (`sco/widgets_view.h`) and answered with the same events. Every shipped plugin page is a `sco.widgets` page, so they all appear. A page that is only a `sco.ui` ImGui tab (a draw callback) does not appear; it opens through the menu's "Classic pages" entry.
+
+**Which key.** The new menu opens on **M**, the classic menu's key. While it is selected and healthy, M does not open the classic window. If the new menu reports itself broken, M goes back to the classic menu. To use another key, set the Windows environment variable `SC_OFFLINE_MENU_KEY` to a letter or `F1` to `F12` before you start the launcher.
+
+**If it cannot start.** A missing `sc_offline_menu.dll`, a wrong ABI or a Core with no widgets view leaves the classic menu in place and writes one `[menu]` line to `mod.log` (`rust menu started` when it worked).
+
+**Not done yet:** a Settings page in the new menu, memory of window size and position (`menu-window.ini`, `menu-view.ini`), a cursor clip, and a background image. Design and status: [rust-menu.md](rust-menu.md). Not run in game. That covers the new menu, its hook and the M-key handoff; [Status](status.md#080-what-was-and-was-not-run-in-game) has the rest.
+
+Plugin authors: nothing changes. Keep drawing pages with `sco.widgets`, and give a tag to every control that must survive a republish.
 
 ## Pages and the sidebar
 
@@ -37,7 +47,7 @@ The menu is a sidebar of pages on the left and the open page on the right, with 
 | Settings | Menu settings | (the menu's own) |
 | Developer | Inspector, UI probe (test plugin) | `inspector.main`, `ui_probe.main` |
 
-Pages in **Developer** appear only when **Menu settings > Show developer pages** is on. The open page and that switch are remembered in `menu-view.ini`, next to `mod.log`. A badge appears after a page's name, as in `UI probe (3)`. A page sc-offline doesn't know goes under **More plugins**, after the known ones; its header line says which plugin added it. Unknown pages keep the order the host lists them in: `sco.ui` tabs by their `order`, then widget panels. Known pages always take the place the table above gives them, whatever their `order`.
+Gear, Saved outfits and Squadron 42 belong to the `loadout` and `gear_presets` plugins, which the standard package does not stage. Pages in **Developer** appear only when **Menu settings > Show developer pages** is on. The open page and that switch are remembered in `menu-view.ini`, next to `mod.log`. A badge appears after a page's name, as in `UI probe (3)`. A page sc-offline doesn't know goes under **More plugins**, after the known ones; its header line says which plugin added it. Unknown pages keep the order the host lists them in: `sco.ui` tabs by their `order`, then widget panels. Known pages always take the place the table above gives them, whatever their `order`.
 
 `teleport` (F7/F8), `contracts` and `mining` run mostly from keys and commands. `inspector` is read-only and for developers.
 
@@ -86,9 +96,9 @@ static void DrawMyTab(void* frame, void*) {
 
 [`tools/test-plugins/ui_probe`](../tools/test-plugins/ui_probe/ui_probe.cpp) is a complete example; `CMakeLists.txt` builds it against the `imgui` library target. A different ImGui version or `imconfig.h` is undefined behaviour.
 
-We chose direct ImGui calls rather than a C drawing shim, so a plugin draws with the same widgets as the host. This is a deliberately version-locked product contract: Dear ImGui does not guarantee backward or forward ABI compatibility. Context/allocator binding does not negotiate versions, detect incompatible layouts or make arbitrary DLL builds safe. Rebuild drawing plugins when the host's ImGui snapshot, configuration or ABI-affecting build settings change; do not rely on crash guards to recover from corrupted native state.
+Drawing with direct ImGui calls is a version-locked product contract. Dear ImGui does not promise ABI compatibility, and binding the context and allocator neither negotiates versions nor makes an arbitrary DLL build safe. Rebuild drawing plugins when the host's ImGui snapshot, configuration or ABI-affecting build settings change, and do not rely on crash guards to recover from corrupted native state.
 
-The immutable host source pin is `1ee0727cc63866a95e709ae61dd5dd355b511253`. [`tools/imgui-pin.py`](../tools/imgui-pin.py) pins SHA-256 for all 15 vendored implementation, backend, configuration, header and licence inputs, and separately compares the three public SDK files with the pinned sco-core submodule. The exact bytes—not just **1.92.8 WIP** / **19277**—must match. CI runs the pin gate and [`tools/test_imgui_pin.py`](../tools/test_imgui_pin.py), which rejects same-label source drift, matching drift on both sides, SDK-only drift and missing inputs. Intentional upgrades must hand-edit the pin and provenance together; there is no auto-update mode. The implementation/private headers are not added to the public SDK. These source checks are not game-runtime or compiler-configuration certification.
+The host pins its vendored ImGui to source `1ee0727cc63866a95e709ae61dd5dd355b511253`. [`tools/imgui-pin.py`](../tools/imgui-pin.py) pins the SHA-256 of all 15 vendored implementation, backend, configuration, header and licence files, and compares the three public SDK files with the pinned sco-core submodule. The exact bytes must match, not just **1.92.8 WIP** / **19277**. CI runs the pin gate and [`tools/test_imgui_pin.py`](../tools/test_imgui_pin.py). An intentional upgrade edits the pin and its provenance by hand; there is no auto-update. These are source checks, not compiler-configuration or runtime checks.
 
 **Crashes.** Each draw runs as a callout of its plugin under sco-core's crash guard. When a draw faults, sco-core disables that plugin and removes its tabs, badges, overlays and hotkeys. Around every draw, the menu stores ImGui's stack state and restores it afterwards (`ErrorRecoveryStoreState`), so a draw that faulted half-way, or forgot an `End*()`, doesn't break the rest of the frame. `mod.log` records `[menu] tab <id> (<title>) crashed; plugin '<id>' is disabled`, with sco-core's own crash line next to it.
 

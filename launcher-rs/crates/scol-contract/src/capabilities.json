@@ -2,8 +2,8 @@
   "schema": 1,
   "generated_by": "tools/capabilities.py",
   "registry_schema_version": 2,
-  "registry_sha256": "ae60104759ca76009e371a395d28e20bb4c43c62d58f9298041531af6136c1a5",
-  "release_policy": "Every capability switch is on by default in every release package and is a visible setting the player can turn off. The diagnostic switch is not a feature and is off by default. Nothing here was run in game.",
+  "registry_sha256": "317607bdfa836b3eea6ebe27c085027f99186acf7a5ae7ba80766708ed285282",
+  "release_policy": "Every capability switch is on by default in every release package and is a visible setting the player can turn off. The diagnostic switch is not a feature and is off by default. Only game.loadout.async was seen once in game; nothing else here was run in game.",
   "switches": [
     {
       "name": "SCO_ACTOR_STATS_WRITE",
@@ -74,7 +74,7 @@
       "source": [
         "src/game/services/loadout_engine.cpp"
       ],
-      "note": "On by default in every release package; a visible setting the player can turn off. Not run in game."
+      "note": "On by default in every release package; a visible setting the player can turn off. Seen once in game: gear was attached through the Gear page. See docs/status.md."
     }
   ],
   "diagnostics": [
@@ -89,6 +89,9 @@
       "note": "Installs hooks that patch game functions (the entity streaming functions) only to write log lines, and runs one diagnostic walk that writes to mod.log. Not a capability and no gameplay change. Off by default; turn it on only when asked for a bug report. Not run in game."
     }
   ],
+  "not_set_by_launcher": {
+    "SCO_LOADOUT_OUTFIT": "Opens the outfit slots (clothing, hat, head accessory, head horn, jewellery) of game.loadout.outfit on the asynchronous route. The launcher never sets it, so that capability stays off."
+  },
   "capabilities": [
     {
       "capability": "game.asop.selection.file",
@@ -96,7 +99,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Unpublished candidate fixed-document coordinator with synthetic adapter tests. Product file adapter and native terminal integration are not admitted or game verified.",
+      "evidence": "Fixed-document coordinator with synthetic adapter tests. Product file adapter and native terminal integration are not admitted. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -105,7 +108,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": "SCO_AUDIO_NATIVE",
-      "evidence": "Owner-bound trigger/playback tokens, actual host release cleanup and bounded synthetic provider tests. No native or audible output verification; not run in game."
+      "evidence": "Owner-bound trigger and playback tokens, host release cleanup and bounded synthetic provider tests. No native adapter. Not run in game."
     },
     {
       "capability": "game.audio.play_once",
@@ -121,7 +124,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Copied bounded container-item read provider with real-host consumer and ABI fixtures; no native adapter, not run in game.",
+      "evidence": "Copied bounded container-item read provider with real-host consumer and ABI fixtures; no native adapter. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -130,7 +133,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Default-OFF native counted read adapter with validated lifecycle locators, serialized text-blob bytes and inherited record metadata. Requires shell-enforced pre-engine quiescence, lifecycle exclusion and fresh admission. Native writes unavailable; synthetic service/hook/fault tests, not run in game.",
+      "evidence": "Default-OFF native counted read adapter with validated lifecycle locators, serialized text-blob bytes and inherited record metadata. Requires shell-enforced pre-engine quiescence, lifecycle exclusion and fresh admission. Native writes unavailable. Synthetic service, hook and fault tests. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -139,7 +142,7 @@
       "registry_default": "ON",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Static metadata lookups only. The C++20 header-only consumer wrapper is available; synthetic checks do not establish live production-provider availability. 1,297 actions, ids 1..1297, re-derived statically from the 4.10.197.2878 action registry (F-4.10.197.2878-050). No input dispatch; not run in game.",
+      "evidence": "Static metadata lookups only. The C++20 header-only consumer wrapper is available; synthetic checks do not establish live production-provider availability. 1,297 actions, ids 1..1297, re-derived statically from the 4.10.197.2878 action registry. No input dispatch. Not run in game.",
       "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
     },
     {
@@ -211,7 +214,7 @@
       "registry_default": "ON",
       "evidence_level": "sigcheck_resolved",
       "switch": null,
-      "evidence": "row resolved on 4.10.197.2878 (sigcheck); actor.stat_names keeps each named stat on its game index (F-4.10.197.2878-006); stat units, range and direction not run in game",
+      "evidence": "row resolved on 4.10.197.2878 (sigcheck); actor.stat_names keeps each named stat on its game index; stat units, range and direction are unconfirmed. Not run in game.",
       "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
     },
     {
@@ -255,7 +258,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Bounded scoped multi-hit policy and lifecycle tests; no native grid/hit adapter, not run in game",
+      "evidence": "Bounded scoped multi-hit policy and lifecycle tests; no native grid or hit adapter. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -264,7 +267,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Synthetic policy only; no verified offline engine adapter: the native single-hit seam installs nothing without the resolved zone/world/grid and a skip-request lifetime; no Windows/game proof",
+      "evidence": "Synthetic policy only; no verified offline engine adapter: the native single-hit seam installs nothing without the resolved zone/world/grid and a skip-request lifetime. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -273,7 +276,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Synthetic policy only; no verified offline engine adapter, no Windows/game proof",
+      "evidence": "Synthetic policy only; no verified offline engine adapter. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -309,7 +312,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Copied registry/name/typed-presence provider policy and ABI tests; the native point-lookup seam installs nothing without the registry receiver lifetime, so no native adapter binds; not run in game",
+      "evidence": "Copied registry/name/typed-presence provider policy and ABI tests; the native point-lookup seam installs nothing without the registry receiver lifetime, so no native adapter binds. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -408,7 +411,7 @@
       "registry_default": "ON",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "ON by owner ruling (2026-10-16): a product default, not a verified claim. No rows; published once a bound, admitted game.missions backend reports active missions. Synthetic only: backend adapters are synthetic today, so it does not fire; not run in game",
+      "evidence": "On as a product default. No rows; published once a bound, admitted game.missions backend reports active missions. Synthetic tests only: backend adapters are synthetic today, so it does not fire. Not run in game.",
       "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
     },
     {
@@ -417,7 +420,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Verified offline host producer seam only; native hook signature/site unresolved (F-INTAKE-004, T-3); not run in game.",
+      "evidence": "Host-side producer seam only; the native hook site and calling convention are unresolved. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -525,7 +528,7 @@
       "registry_default": "ON",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "ON by owner approval for R1; synthetic admission/ABI fixtures only; Windows/MSVC, native SEH and gameplay NOT VERIFIED",
+      "evidence": "On by default; synthetic admission and ABI fixtures. Observed once in game by the maintainer on build 4.10.200.58746: a prefab placement placed an Outposts item. One or two sessions, recorded as observation text only; not a verification. Windows/MSVC, native SEH and wider gameplay are not verified.",
       "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
     },
     {
@@ -534,7 +537,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Synthetic/native-boundary checks only; typed engine methods unverified; not run in game",
+      "evidence": "Synthetic and native-boundary checks only; typed engine methods unverified. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -543,7 +546,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Synthetic policy only; no verified engine backend, no in-game proof",
+      "evidence": "Synthetic policy only; no verified engine backend. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -552,7 +555,16 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": "SCO_LOADOUT_ASYNC",
-      "evidence": "Opt-in native spawn/attach/readback adapter, Windows synthetic-object fixture and current-build locator checks; not run in game"
+      "evidence": "Opt-in native spawn/attach/readback adapter, Windows synthetic-object fixture and current-build locator checks. Observed once in game by the maintainer on build 4.10.200.58746: a gear equip through the async route attached items (Game.log AttachmentReceived). One or two sessions, recorded as observation text only; not a verification, and the default is unchanged"
+    },
+    {
+      "capability": "game.loadout.outfit",
+      "service": "game.loadout",
+      "registry_default": "OFF",
+      "evidence_level": "synthetic_only",
+      "switch": null,
+      "evidence": "On only with the async route and the explicit product switch SCO_LOADOUT_OUTFIT=1 (the product host decides its own default); item-port names are consumer-side data, not verified engine rows; hair, hair colour, eyebrow, head, body, eyes and teeth have no slot because this version cannot undo them. Synthetic fixture only. Not run in game.",
+      "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
       "capability": "game.quantum.control",
@@ -560,7 +572,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Default production adapter ported from v0.7.7 under the maintainer's 2026-10-15 amended rule: writes four int quantum cvars and one shared drive parameter cell only while holding, after fresh offline admission, first prior saved, restored on every release path; ON only when its rows resolve and admission is positive at start; synthetic fake-engine tests only; Windows/MSVC and gameplay NOT VERIFIED",
+      "evidence": "Production adapter configures at start only when its rows resolve and fresh offline admission is positive; otherwise OFF. It writes four int quantum cvars and one shared drive parameter cell only while holding, saves the prior value first and restores it on every release path. Synthetic fake-engine tests only; not verified on Windows/MSVC. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -569,7 +581,7 @@
       "registry_default": "ON",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "No rows: reads TimeDateStamp/SizeOfImage from the running module header and the pack's own verified-build pin; starts only when the numeric mirrors agree with the strings; host-side compile and layout pins verified, not run in game",
+      "evidence": "No rows: reads TimeDateStamp/SizeOfImage from the running module header and the pack's own verified-build pin; starts only when the numeric mirrors agree with the strings; host-side compile and layout pins checked. Not run in game.",
       "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
     },
     {
@@ -578,7 +590,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Read-only snapshot of server GameRules parameters; rows gamerules.params_label/params_sync resolve on 4.10.196.36804 and 4.10.197.2878 in local sco-sigcheck runs (F-4.10.196.36804-007/-008); default production backend binds nothing (read returns UNAVAILABLE) and the native read seam installs nothing without a read-only accessor; Windows/MSVC and gameplay NOT VERIFIED",
+      "evidence": "Read-only snapshot of server GameRules parameters; rows gamerules.params_label/params_sync resolve on 4.10.196.36804 and 4.10.197.2878 in local sco-sigcheck runs; default production backend binds nothing (read returns UNAVAILABLE) and the native read seam installs nothing without a read-only accessor; not verified on Windows/MSVC. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -587,7 +599,7 @@
       "registry_default": "ON",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Static definitions of the 15 GameRules parameter names verified on 4.10.197.2878 (F-4.10.197.2878-054); types not verified; no values; not run in game.",
+      "evidence": "Static definitions of the 15 GameRules parameter names, checked statically on 4.10.197.2878; types not verified; no values. Not run in game.",
       "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
     },
     {
@@ -596,7 +608,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": "SCO_INVENTORY_READ",
-      "evidence": "Read-only item-port snapshot of the local player (whole attached tree, depth first, 128 ports max with TRUNCATED and total_seen); adapter grounded on the private corpus (F-4.10.197.2878-011..-016, static analysis only) and bound in production behind fail-closed guards; the signature rows resolve against the 4.10.197.2878 executable on disk, and the adapter is exercised against synthetic game objects only; switched off by default; not run in game"
+      "evidence": "Read-only item-port snapshot of the local player (whole attached tree, depth first, 128 ports max with TRUNCATED and total_seen); adapter grounded by static analysis and bound in production behind fail-closed guards; the signature rows resolve against the 4.10.197.2878 executable on disk, and the adapter is exercised against synthetic game objects only; off by default. Not run in game."
     },
     {
       "capability": "game.inventory.layout",
@@ -604,7 +616,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Copied stable logical-port identities and roles through an explicitly bound synthetic host producer; no production native layout producer is installed and no gameplay validation is claimed.",
+      "evidence": "Copied stable logical-port identities and roles through an explicitly bound synthetic host producer; no production native layout producer is installed. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -613,7 +625,7 @@
       "registry_default": "ON",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "ON by owner approval for R1 (loopback broker, no socket until Host/Join); synthetic service and ABI checks only; Windows/MSVC, private LAN, EAC inspection and gameplay NOT VERIFIED",
+      "evidence": "On by default (loopback broker, no socket until Host/Join). Synthetic service and ABI checks only; Windows/MSVC, private LAN and EAC inspection are not verified. Not run in game.",
       "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
     },
     {
@@ -622,7 +634,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": "SCO_CVARS_NATIVE",
-      "evidence": "Opt-in Windows reference-integer native read adapter with exact receiver/method checks, fresh admission and synthetic native-object fixtures; not run in game"
+      "evidence": "Opt-in Windows reference-integer native read adapter with exact receiver/method checks, fresh admission and synthetic native-object fixtures. Not run in game."
     },
     {
       "capability": "game.cvars.write",
@@ -630,7 +642,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Production native writes refused pending object and backing lifetime across callbacks/leases; setter and cleanup admission tested with synthetic native objects and actual host Stop; not run in game",
+      "evidence": "Production native writes refused pending object and backing lifetime across callbacks/leases; setter and cleanup admission tested with synthetic native objects and actual host Stop. Not run in game.",
       "reason": "Core refuses production native cvar writes; no switch enables them. Not run in game."
     },
     {
@@ -639,7 +651,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Default provider unavailable pending an owner-approved Windows adapter; synthetic callbacks only",
+      "evidence": "Default provider unavailable until a Windows adapter is supplied. Synthetic callbacks only. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -648,7 +660,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Default provider unavailable pending an owner-approved Windows adapter; synthetic callbacks only",
+      "evidence": "Default provider unavailable until a Windows adapter is supplied. Synthetic callbacks only. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -657,7 +669,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Default provider unavailable pending an owner-approved Windows adapter; synthetic callbacks only",
+      "evidence": "Default provider unavailable until a Windows adapter is supplied. Synthetic callbacks only. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -666,7 +678,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Default provider unavailable pending an owner-approved Windows adapter; synthetic callbacks only",
+      "evidence": "Default provider unavailable until a Windows adapter is supplied. Synthetic callbacks only. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -675,7 +687,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Default provider unavailable pending an owner-approved Windows adapter; synthetic callbacks only",
+      "evidence": "Default provider unavailable until a Windows adapter is supplied. Synthetic callbacks only. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -684,7 +696,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Default provider unavailable pending an owner-approved Windows adapter; synthetic callbacks only",
+      "evidence": "Default provider unavailable until a Windows adapter is supplied. Synthetic callbacks only. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -693,7 +705,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Off by default; native adapter not verified on Windows or in game; synthetic provider tests only",
+      "evidence": "Off by default; synthetic provider tests only; native adapter not verified on Windows. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {
@@ -702,7 +714,7 @@
       "registry_default": "ON",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "ON only while the host certifies offline admission, the engine rows resolve, a live player and a known star system exist and the product switch is on; otherwise OFF. Portable and Windows/MSVC synthetic provider/ABI tests; native engine behavior and gameplay not verified",
+      "evidence": "ON only while the host certifies offline admission, the engine rows resolve, a live player and a known star system exist and the product switch is on; otherwise OFF. Portable and Windows/MSVC synthetic provider and ABI tests. Not run in game.",
       "reason": "Core turns this on by itself when its rows resolve. No player switch exists."
     },
     {
@@ -711,7 +723,7 @@
       "registry_default": "OFF",
       "evidence_level": "synthetic_only",
       "switch": null,
-      "evidence": "Explicit position-only request and shared provider/socket fixtures; no native position transport, independent target-instance/epoch producer or fresh readback adapter. Existing FullPose adapter does not supply this path. Portable and Windows/MSVC synthetic provider/ABI tests; not run in game.",
+      "evidence": "Explicit position-only request and shared provider/socket fixtures; no native position transport, independent target-instance/epoch producer or fresh readback adapter. Existing FullPose adapter does not supply this path. Portable and Windows/MSVC synthetic provider and ABI tests. Not run in game.",
       "reason": "Core source reads no environment switch for this capability. Only synthetic tests exist for it. Not run in game."
     },
     {

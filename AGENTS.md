@@ -9,6 +9,11 @@ repository or in a fork.
   Rust one in `launcher-rs/` (`sc-offline.exe`); `launcher/` is the C++ launcher kept as the
   fallback (`sc-offline-classic.exe`). The in-game host stays C++ in `src/`; the Rust in-game menu
   (`launcher-rs/crates/scol-menu`) is opt-in. `tools/package_release.py` builds the release folder.
+- **Two game DLLs.** `dinput8.dll` is built with `SCO_HOST_MENU_CLIENT=OFF`, the configuration that has
+  run in game; the launchers install it by default. `dinput8-rust-menu.dll` is the same sources built
+  (target `dinput8_rust_menu`, option `SCO_BUILD_RUST_MENU_HOST=ON`) with the menu client on, not run in game. The Rust launcher
+  installs it as `dinput8.dll` only when `menu = rust` and the file sits beside the launcher. The C++
+  launcher always installs the first. Build commands: [docs/build.md](docs/build.md).
 - **Offline only:** never connect to CIG's servers or accounts, bypass anti-cheat or add
   telemetry. Full policy in `CONTRIBUTING.md` and `SECURITY.md`.
 - **Clean-room hygiene:** no game binaries, player DNA blobs, encryption keys or raw GUID
@@ -46,8 +51,8 @@ other repositories. Cite the relevant section or contract path in reviews. Read
   checks belong to the upstream SDK change and do not become product release approval.
 - **Report evidence precisely.** State the exact source and any SDK archive checked, the commands
   and results, and what remains unverified. Keep static resolution, synthetic tests, hosted CI
-  and game acceptance distinct. Say **"not run in game"** when applicable. Keep embedded-host
-  source and external-plugin archive identities separate; see [candidate coordinates](docs/sdk-candidate.md).
+  and game acceptance distinct. Say **"Not run in game."** when applicable, and link [docs/status.md](docs/status.md). Keep embedded-host
+  source and external-plugin archive identities separate; see [SDK coordinates](docs/sdk-candidate.md).
 - **Keep changes reviewable and release authority explicit.** Keep one concern per PR.
   Review SDK pin changes separately from feature behavior and name the exact commit or tag
   and what changed. Maintainers control tagging and publication under the

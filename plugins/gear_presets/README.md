@@ -1,31 +1,50 @@
-# Gear presets
+# Gear presets: saved outfits
 
-The page is called **Saved outfits** in the menu. It has two sections and a list of differences: **Save what you're wearing**
-(outfit name, **Check what I'm wearing**, **Save outfit**) and **Saved outfits** (the list, **Compare with what I'm wearing**,
-**Delete outfit**, **Refresh list**). After a comparison, **What is different** lists each slot with a plain sentence. Comparing
-only reports; it never changes gear. Checking needs the game's inventory layout, which the current product does not provide, so
-there the page answers "Couldn't read what you're wearing right now, so nothing was saved." The page text follows the player
-wording rules in `docs/plugin-ui.md`; command replies keep their detail, and `gear_presets.list` still prints the IDs.
+Gear presets saves a name for what you are wearing and compares it later with what you wear then. It only reads and reports: it never changes your gear.
 
-Capture a complete logical layout, give it a name, save it in the host's owner-scoped storage, and compare it with a fresh observation. Delete one saved preset with the picker button or `gear_presets.delete <id>`; `gear_presets.list` shows IDs. Deletion frees a slot without resetting the next ID. If storage reports a deletion error, refresh before retrying because the outcome may be unknown. The picker and commands use the public SDK; no game memory, item equip, move, input or mission mutation is used. Comparison is category-level advice, never exact class or item-instance identity. Storage ports are retained as layout context and never generate gear actions. Incomplete or unavailable observations cannot be saved or treated as empty.
+The plugin is not in the 0.8.0 release package, and capture does not work in the product anyway. Capturing needs the capability `game.inventory.layout`, which Core ships off and the launcher has no switch for. The page then says "Couldn't read what you're wearing right now, so nothing was saved."
 
-The published stable SDK 2.4.0 defines `game.inventory.layout` over `game.inventory` 1.2, including the required stable keys and roles. The offline player product has no ready producer for it, so capture is unavailable there. The synthetic host fixture is development evidence, not a claim about the game or an installed launcher. This module is not staged for players.
+## Saved outfits page
 
-Build the standalone module using a checksum-verified extracted SDK containing the 1.2 layout contract:
+Open **Saved outfits** in the **Character** section of the menu (key **M**). It has two sections and a list of differences:
+
+- **Save what you're wearing**: an outfit name, **Check what I'm wearing** and **Save outfit**.
+- **Saved outfits**: the list, **Compare with what I'm wearing**, **Delete outfit** and **Refresh list**.
+- **What is different**: after a comparison, one plain sentence per slot.
+
+Comparison works on categories, not on exact item classes or item instances. Storage ports are kept as context and never produce gear actions. An incomplete reading cannot be saved and is never treated as empty.
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `gear_presets.capture` | Reads your current layout. |
+| `gear_presets.save <name>` | Saves the captured layout under a name. |
+| `gear_presets.list` | Lists saved outfits with their ids. |
+| `gear_presets.compare <id>` | Compares one saved outfit with what you wear now. |
+| `gear_presets.delete <id>` | Deletes one saved outfit. Ids are not reused. If storage reports an error, refresh before retrying, because the result may be unknown. |
+
+Presets are kept in the plugin's own storage through `sco.storage`.
+
+## Settings
+
+None.
+
+## What it needs
+
+- Services: `game.inventory` 1.2 (the layout reading) and `sco.storage`, plus `sco.widgets` 1.0 for the page.
+- Capability: `game.inventory.layout`.
+
+Not run in game. See [docs/status.md](../../docs/status.md).
+
+## Developer notes
+
+Build against the extracted SDK 2.4.1 `include/` directory, which must hold `sc_inventory.h`, `sco_storage.h` and `scosdk/game/inventory_layout.hpp`. Without that header the plugin compiles to nothing and the configure step refuses an older SDK.
 
 ```sh
-cmake -S plugins/gear_presets -B build/gear-presets \
-  -DSCO_SDK_INCLUDE_DIR=/path/to/extracted-sdk/include -DSCO_GEAR_PRESETS_TESTS=ON
-cmake --build build/gear-presets
-ctest --test-dir build/gear-presets --output-on-failure
+cmake -S plugins/gear_presets -B build-gear-presets -DSCO_SDK_INCLUDE_DIR=<sdk>/include -DSCO_GEAR_PRESETS_TESTS=ON
+cmake --build build-gear-presets --config Release
+ctest --test-dir build-gear-presets -C Release --output-on-failure
 ```
 
-For the host-only SQLite and widget fixtures, additionally provide `SCO_CORE_HOST_TEST_ROOT` and `SCO_CORE_HOST_BUILD_DIR` from the same source as the SDK. These fixtures link a synthetic host; they do not ship a backend. Windows/MSVC and actual target-host/game acceptance remain separate.
-
-The earlier `44ffd129` candidate host omitted the layout header. Published stable
-source `6106fa3639cbcc28f78a1ded8de2707de019f4d3` includes it, so the syntax
-check can now see the development-only adapter. The standalone configure still
-requires the matching SDK archive and refuses an older SDK. CI runs the model,
-storage and actual-module fixtures against a checksum-verified SDK and matching
-Core source. This verifies contract compatibility only; the product has
-no active native producer, so there is no runtime capture.
+The model test `gear-presets-model` runs on its own. The storage and workflow tests also need `-DSCO_CORE_HOST_TEST_ROOT=<core source>` and `-DSCO_CORE_HOST_BUILD_DIR=<core build>` from the same Core source as the SDK. They link a stand-in host and ship no backend. The project's CI runs all three.

@@ -17,7 +17,7 @@ use scol_config::ini_edit::drop_ini_key;
 use scol_config::{read_config, Config, LogChoice};
 use scol_contract::{exit_code, files};
 use scol_install::fsops::{can_write_to, create_dir};
-use scol_install::install::put_mod;
+use scol_install::install::put_mod_with_menu;
 use scol_install::paths::{parent_dir, to_bin64, GamePaths, GAME_EXE};
 use scol_install::status::{fail, fail_code, find_game, pause_if_own_console, self_checks};
 use scol_install::version::SCO_VERSION;
@@ -353,7 +353,15 @@ pub fn run_play(args: &PlayArgs, host: &mut dyn Host, here: &str, out: &mut dyn 
         if mode == Mode::Uninstall {
             undo_pc_changes(host.system(), out, true);
         }
-        if put_mod(here, &g, if play { "play" } else { "install" }, true, out) != 0 {
+        if put_mod_with_menu(
+            here,
+            &g,
+            if play { "play" } else { "install" },
+            cfg.menu,
+            true,
+            out,
+        ) != 0
+        {
             return exit_code::ERROR;
         }
         if play {

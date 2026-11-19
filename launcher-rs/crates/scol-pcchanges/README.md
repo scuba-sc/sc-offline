@@ -2,8 +2,9 @@
 # scol-pcchanges
 
 The PC changes of the sc-offline launcher, ported from `launcher/launcher.cpp` to Rust. It is copied
-exactly and never widened. Status: library only, tested with a fake system, not wired into the
-command line yet. Nothing here was run in game.
+exactly and never widened. `scol-play` calls it, and only `scol-cli` builds its real system. It is tested with a fake system.
+
+Not run in game. See [docs/status.md](../../../docs/status.md).
 
 ## What it changes on the PC
 
@@ -34,9 +35,9 @@ changes as anything else, and do not say the launcher leaves anti-cheat alone.
   `%SystemRoot%\System32`. It runs no other program. The folder comes from the `SystemRoot`
   environment variable of the elevated process (fallback `C:\Windows`), exactly as in the C++
   code; it is not looked up with `GetSystemWindowsDirectoryW`. The hosts path uses the same
-  variable. Changing that at cutover is a flagged change, not a silent one.
-- The owner reviews this crate before the Rust launcher replaces the C++ one (cutover). Until
-  then the C++ launcher stays the shipped code.
+  variable. Changing that is a flagged change, not a silent one.
+- The owner reviews this crate before a release that ships it. The C++ launcher keeps the same
+  code in `sc-offline-classic.exe` and can undo the changes from the same record.
 
 ## Design
 
@@ -65,7 +66,7 @@ strings come from the C++ source and from the golden record in `tests/golden/pc-
   failed. `is_helper_invocation` is the test `wmain` uses to dispatch to it.
 - `Io` holds the `System`, the `HelperHooks` and the output. The hooks are what the helper needs from
   the rest of the launcher and this crate does not own: put the mod in, take it out, signal the ready
-  event, wait for the game to close.
+  event, wait for the game to close. `scol-play` supplies them.
 - `plan_helper_start`: the argument line the launcher passes the helper and whether it must run
   elevated (`StartHelper`). Starting the process (`runas` or hidden) is left to the caller.
 - `System::is_elevated` is part of the trait for the callers; the PC changes themselves do not
@@ -93,13 +94,12 @@ strings come from the C++ source and from the golden record in `tests/golden/pc-
 
 The real `System` (netsh, ipconfig, hosts edit, rename, registry read, token query, path resolve) is
 compiled and linted but no test runs it. The helper's mod copy and process waits are behind
-`HelperHooks`, and the process start (runas or hidden) is not in this crate. The CLI step must
-supply those. Do not build `RealSystem` anywhere but the program entry point, and never in a test. Two guards
+`HelperHooks`, and the process start (runas or hidden) is not in this crate. `scol-play` supplies those. Do not build `RealSystem` anywhere but the program entry point, and never in a test. Two guards
 back this up: the `real-system` feature is off by default, and `tests/no_real_system.rs` fails if
 any test file in the workspace names `RealSystem`, `real-system` or `scol_pcchanges::real`.
-Check the real one by hand on a throwaway machine. Not run in game.
+Check the real one by hand on a throwaway machine.
 
-Hand checks for the cutover checklist (throwaway machine only):
+Hand checks (throwaway machine only):
 - A Bin64 given as a UNC path (`\\server\share\...`) and as a `\\?\` path: the RSI Launcher
   and CrashHandler.exe rules must name the right folders. The fake covers drive-letter paths only.
 - Play, then close the game: every rule, the hosts line and the `.bak` are gone, and the record

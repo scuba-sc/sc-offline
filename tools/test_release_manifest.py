@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Tests for tools/release-manifest.py. Run: python3 tools/test_release_manifest.py (CI's check job does)."""
+import hashlib
 import importlib.util
 import json
 import os
@@ -33,6 +34,7 @@ class ReleaseManifest(unittest.TestCase):
         os.makedirs(os.path.join(self.dir, "data", "OfflineDB"))
         self.put("sc-offline.exe", b"MZ launcher")
         self.put("dinput8.dll", b"MZ mod")
+        self.put("dinput8-rust-menu.dll", b"MZ mod with the rust menu hook")
         self.put("data/items.txt", b"a\r\nb\r\n")
         self.put("data/OfflineDB/default_1.xml", b"<x/>")
         self.vh = os.path.join(self.tmp.name, "version.h")
@@ -55,12 +57,13 @@ class ReleaseManifest(unittest.TestCase):
 
     def test_write_lists_every_file_sorted_with_hashes(self):
         version, n = rm.write(self.dir, "v0.7.0", COMMIT, self.vh)
-        self.assertEqual((version, n), ("0.7.0", 4))
+        self.assertEqual((version, n), ("0.7.0", 5))
         man = json.loads(self.manifest())
         self.assertEqual((man["format"], man["version"], man["tag"], man["commit"]), (1, "0.7.0", "v0.7.0", COMMIT))
         paths = [e["path"] for e in man["files"]]
         self.assertEqual(paths, sorted(paths))
-        self.assertEqual(set(paths), {"sc-offline.exe", "dinput8.dll", "data/items.txt", "data/OfflineDB/default_1.xml"})
+        self.assertEqual(set(paths), {"sc-offline.exe", "dinput8.dll", "dinput8-rust-menu.dll", "data/items.txt",
+                                      "data/OfflineDB/default_1.xml"})
         self.assertNotIn(rm.NAME, paths)
         e = next(e for e in man["files"] if e["path"] == "data/items.txt")
         self.assertEqual(e["sha256"], "58055bdcc73787eb88c78d36f0b4939e9c5dc1c3ad17e25cc85a6833cf1a0cab")  # sha256(b"a\r\nb\r\n")
@@ -73,7 +76,7 @@ class ReleaseManifest(unittest.TestCase):
             self.put("data/plugins/inspector/plugin.ini", f.read())
         self.put("data/plugins/inspector/inspector.dll", b"synthetic module fixture, not a PE binary")
         _, count = rm.write(self.dir, "v0.7.0", COMMIT, self.vh)
-        self.assertEqual(count, 6)
+        self.assertEqual(count, 7)
         paths = {e["path"] for e in json.loads(self.manifest())["files"]}
         self.assertIn("data/plugins/inspector/plugin.ini", paths)
         self.assertIn("data/plugins/inspector/inspector.dll", paths)
@@ -89,7 +92,7 @@ class ReleaseManifest(unittest.TestCase):
             self.put("data/plugins/npc/plugin.ini", f.read())
         self.put("data/plugins/npc/npc.dll", b"synthetic module fixture, not a PE binary")
         _, count = rm.write(self.dir, "v0.7.0", COMMIT, self.vh)
-        self.assertEqual(count, 6)
+        self.assertEqual(count, 7)
         paths = {e["path"] for e in json.loads(self.manifest())["files"]}
         self.assertIn("data/plugins/npc/plugin.ini", paths)
         self.assertIn("data/plugins/npc/npc.dll", paths)
@@ -105,7 +108,7 @@ class ReleaseManifest(unittest.TestCase):
             self.put("data/plugins/contracts/plugin.ini", f.read())
         self.put("data/plugins/contracts/contracts.dll", b"synthetic module fixture, not a PE binary")
         _, count = rm.write(self.dir, "v0.7.0", COMMIT, self.vh)
-        self.assertEqual(count, 6)
+        self.assertEqual(count, 7)
         paths = {e["path"] for e in json.loads(self.manifest())["files"]}
         self.assertIn("data/plugins/contracts/plugin.ini", paths)
         self.assertIn("data/plugins/contracts/contracts.dll", paths)
@@ -202,14 +205,14 @@ class ReleaseManifest(unittest.TestCase):
     def test_one_file_per_line(self):
         rm.write(self.dir, "v0.7.0", COMMIT, self.vh)
         file_lines = [l for l in self.manifest().splitlines() if '"path"' in l]
-        self.assertEqual(len(file_lines), 4)
+        self.assertEqual(len(file_lines), 5)
         for l in file_lines:
             self.assertRegex(l.strip(), r'^\{"path": "[^"]+", "sha256": "[0-9a-f]{64}", "size": \d+\},?$')
 
     def test_rewrite_ignores_old_manifest(self):
         rm.write(self.dir, "v0.7.0", COMMIT, self.vh)
         _, n = rm.write(self.dir, "v0.7.0", COMMIT, self.vh)
-        self.assertEqual(n, 4)
+        self.assertEqual(n, 5)
 
     def test_tag_must_match_version_h(self):
         self.version("0.6.1")
@@ -274,6 +277,29 @@ class ReleaseManifest(unittest.TestCase):
         _, problems = rm.check(self.dir)
         self.assertIn("version '0.6.1' doesn't match tag 'v0.7.0'", problems)
         self.assertTrue(any(p.startswith("'../evil.exe'") for p in problems), problems)
+
+    def test_both_game_dlls_are_listed_and_required(self):
+        # The second game DLL is carried like the first: listed with its own hash and size ...
+        rm.write(self.dir, "v0.7.0", COMMIT, self.vh, require=rm.LAUNCHER_REQUIRED)
+        man = json.loads(self.manifest())
+        entries = {e["path"]: e for e in man["files"]}
+        for name, data in (("dinput8.dll", b"MZ mod"), ("dinput8-rust-menu.dll", b"MZ mod with the rust menu hook")):
+            self.assertEqual(entries[name]["size"], len(data))
+            self.assertEqual(entries[name]["sha256"], hashlib.sha256(data).hexdigest())
+        _, problems = rm.check(self.dir)
+        self.assertEqual(problems, [])
+        # ... a tampered second DLL is caught like a tampered first one ...
+        self.put("dinput8-rust-menu.dll", b"MZ evil")
+        _, problems = rm.check(self.dir)
+        self.assertEqual(problems, ["dinput8-rust-menu.dll: SHA-256 differs"])
+        # ... and a folder without it is refused when the launcher's files are required.
+        os.remove(os.path.join(self.dir, "dinput8-rust-menu.dll"))
+        with self.assertRaises(ValueError) as caught:
+            rm.write(self.dir, "v0.7.0", COMMIT, self.vh, require=rm.LAUNCHER_REQUIRED)
+        self.assertIn("dinput8-rust-menu.dll", str(caught.exception))
+        self.assertEqual(rm.main(["write", self.dir, "--tag", "v0.7.0", "--version-h", self.vh,
+                                  "--require-launcher-files"]), 1)
+        self.assertEqual(rm.main(["write", self.dir, "--tag", "v0.7.0", "--version-h", self.vh]), 0)
 
     def test_cli_exit_codes(self):
         self.assertEqual(rm.main(["write", self.dir, "--tag", "v0.7.0", "--commit", COMMIT, "--version-h", self.vh]), 0)

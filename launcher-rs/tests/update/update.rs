@@ -139,9 +139,10 @@ fn release_entries(tag: &str, files: &[(&str, &[u8])]) -> Vec<Ent> {
     v
 }
 
-const NEW_FILES: [(&str, &[u8]); 5] = [
+const NEW_FILES: [(&str, &[u8]); 6] = [
     ("sc-offline.exe", b"NEW-EXE"),
     ("dinput8.dll", b"NEW-DLL"),
+    ("dinput8-rust-menu.dll", b"NEW-RUST-MENU-DLL"),
     ("sc-offline.ini", b"start_ship = default\r\nnew_key = 5\r\n"),
     ("data/new.txt", b"fresh"),
     ("data/wallet.txt", b"RELEASE WALLET MUST NOT LAND"),
@@ -156,6 +157,7 @@ fn install(name: &str) -> PathBuf {
     let here = tmp(name);
     write(&here.join("sc-offline.exe"), b"OLD-EXE");
     write(&here.join("dinput8.dll"), b"OLD-DLL");
+    write(&here.join("dinput8-rust-menu.dll"), b"OLD-RUST-MENU-DLL");
     write(&here.join("sc-offline.ini"), b"start_ship = mine\r\n");
     write(&here.join("data/wallet.txt"), b"my wallet");
     here
@@ -480,6 +482,11 @@ fn good_update_replaces_program_files_and_keeps_player_files() {
     assert!(r.is_ok(), "{out}");
     assert_eq!(read(&here.join("sc-offline.exe")), b"NEW-EXE");
     assert_eq!(read(&here.join("dinput8.dll")), b"NEW-DLL");
+    // The second game DLL is carried like the first: staged, checked against the manifest, swapped.
+    assert_eq!(
+        read(&here.join("dinput8-rust-menu.dll")),
+        b"NEW-RUST-MENU-DLL"
+    );
     assert_eq!(read(&here.join("data/new.txt")), b"fresh");
     assert_eq!(read(&here.join("data/wallet.txt")), b"my wallet");
     let ini = String::from_utf8(read(&here.join("sc-offline.ini"))).unwrap();
@@ -490,7 +497,7 @@ fn good_update_replaces_program_files_and_keeps_player_files() {
         "new key must be commented out: {ini}"
     );
     assert!(
-        out.contains("4 files replaced") || out.contains("2 files replaced"),
+        out.contains("4 files replaced") || out.contains("3 files replaced"),
         "{out}"
     );
     // Journal ends with done; the next start cleans data\update.
@@ -1212,20 +1219,21 @@ fn stage_zip_deflate_entries_round_trip() {
     let big: Vec<u8> = (0..300_000u32)
         .flat_map(|i| (i % 251).to_le_bytes())
         .collect();
-    let files: [(&str, &[u8]); 3] = [
+    let files: [(&str, &[u8]); 4] = [
         ("sc-offline.exe", b"E"),
         ("dinput8.dll", b"D"),
+        ("dinput8-rust-menu.dll", b"R"),
         ("data/big.bin", &big),
     ];
     let mut e = release_entries("v0.7.1", &files);
-    e[2].deflate = true;
+    e[3].deflate = true;
     let zip = dir.join("r.zip");
     write(&zip, &zip_bytes(&e));
     let staged = dir.join("staged");
     let man = stage::stage_zip(&zip, &staged, "v0.7.1", "0.7.0", &mut Vec::new()).unwrap();
-    assert_eq!(man.files.len(), 3);
+    assert_eq!(man.files.len(), 4);
     assert_eq!(read(&staged.join("data/big.bin")), big);
-    assert_eq!(read(&staged.join("manifest.json")), e[3].data);
+    assert_eq!(read(&staged.join("manifest.json")), e[4].data);
 }
 
 // ---------------------------------------------------------------- old-launcher contract
@@ -1303,9 +1311,10 @@ fn an_old_cpp_launcher_updates_to_a_rust_style_exe() {
     let cur = cpp_version(&cpp);
     assert!(!cur.is_empty());
     let tag = "v99.0.0";
-    let files: [(&str, &[u8]); 4] = [
+    let files: [(&str, &[u8]); 5] = [
         ("sc-offline.exe", &standin),
         ("dinput8.dll", b"NEW-DLL"),
+        ("dinput8-rust-menu.dll", b"NEW-RUST-MENU-DLL"),
         ("data/new.txt", b"fresh"),
         ("sc-offline.ini", b"start_ship = default\r\nnew_key = 5\r\n"),
     ];
@@ -1384,7 +1393,11 @@ fn the_rust_updater_accepts_a_cpp_exe_as_the_new_launcher() {
     let cur = cpp_version(&cpp);
     let exe = std::fs::read(&cpp).unwrap();
     let tag = format!("v{cur}");
-    let files: [(&str, &[u8]); 2] = [("sc-offline.exe", &exe), ("dinput8.dll", b"NEW-DLL")];
+    let files: [(&str, &[u8]); 3] = [
+        ("sc-offline.exe", &exe),
+        ("dinput8.dll", b"NEW-DLL"),
+        ("dinput8-rust-menu.dll", b"NEW-RUST-MENU-DLL"),
+    ];
     let zip = zip_bytes(&release_entries(&tag, &files));
     let here = tmp("rust-applies-cpp");
     write(&here.join("sc-offline.exe"), b"OLD-EXE");

@@ -1,165 +1,81 @@
-# Quantum control and Travel — SDK-only G8/G3 consumer
+# Quantum: the Travel page and quantum drive controls
 
-## The Travel page
+Quantum moves you to a place in your current star system and keeps a list of named saved spots. Its Quantum drive section adds boost controls, which are not available in 0.8.0.
 
-Sections, in the order a player uses them: **Choose a destination** (search box, list, `Add the places you are inside`), **Set the height and go** (arrival height, `Travel to selected destination`), **Your saved spots** (list, `Go to selected spot`, `Delete selected spot`, name box, `Save this spot`), **Quantum drive** and **Status**. The Quantum drive section appears only when the drive can be controlled (or the controls are already on), so there are no buttons that can only refuse; Boost is disabled until the controls are on and, where the game reports its rules, the rules allow it. When the game does not report them (the rules capability is off, the default on the pinned Core) Boost is not held back by the rules: the provider still checks admission for every boost, as it does for `quantum.boost`, Caps Lock and the hotkey.
+**Travel to another planet is not in 0.8.0.** The game can name only the zone you are inside and the larger places around it, so a planet or moon outside that chain cannot be reached. Travel refuses such a destination and says why. This is a known gap in the game service, not something to retry.
 
-**Where Travel can go.** The game's `game.spatial` service can only resolve the place the player is inside and the larger places around it (its observed ancestry); it has no lookup by name for a sibling planet or moon. The Travel button is therefore disabled, with a sentence saying why, for a destination the game cannot resolve from where you are, and `quantum.travel` refuses it with the same sentence. `Add the places you are inside` adds only the zones in that ancestry (it is not a scan of everything the game has loaded; Lagrange points, comm arrays and other systems are not added). Saved spots remember the game's zone id as well as its name and go back by id while the game still streams that zone. Core proposal: a name or id route for sibling zones (see the hand-off report). Page text is plain sentences; command replies and `mod.log` keep their technical wording. Removed from the page: `Inspect selected bookmark` (printed internals only), `Release quantum hold` (Boost turns into `Stop boost`) and `Refresh quantum state and GameRules` (the page refreshes itself). Those commands are unchanged.
+## Travel page
 
-The external `quantum` folder owns commands, input policy and the retained **Travel** panel. It uses only extracted public SDK headers. The host does not compile/start its old `src/quantum.cpp` hooks, and its global quantum cvar keeper no longer runs. Legacy source is retained inactive; there is no built-in or private-pointer fallback when plugins are off.
+Open **Travel** in the **Travel** section of the menu (key **M**). The sections follow the order you use them:
 
-## Approved controls and engine validation
+- **Choose a destination**: a search box, a list and **Add the places you are inside**. That button adds the zone you are in and the larger places around it. It is not a scan of everything the game has loaded.
+- **Set the height and go**: **Arrival height (m)**, 100 to 20000, and **Travel to selected destination**. The button is disabled, with a sentence, for a destination the game cannot resolve from where you are.
+- **Your saved spots**: the list, **Go to selected spot**, **Delete selected spot**, a name box and **Save this spot**. A spot remembers the game's zone id as well as its name, and goes back by id while the game still streams that zone.
+- **Quantum drive**: shown only when the drive can be controlled. See below.
+- **Status**.
 
-G8 control is approved for R1. The pinned Core source contains a Windows production adapter, but whether the product host activates it depends on the Core: only a Core with the process-retained composition starts natively, and any other Core keeps the refusal. No production adapter is configured in the product. In an explicitly qualified host, configuration requires the game thread, resolved signature rows and positive fresh offline admission; source presence alone does not establish a configured backend. `game.quantum.control` also requires complete backend coverage and installed owner cleanup. Operations remain subject to admission and ownership checks, and missing prerequisites fail closed. Signature matches and historical offsets do not certify local-drive ownership or reversible charging/audio/effect teardown. Native execution and gameplay remain unverified; this module is an implemented consumer, **not completed boost/effects/NAV gameplay parity**.
+Arrival is reported by the plugin: when your own position is within 2 m of the target it says you arrived, even if Core has not confirmed it yet, and it then cancels the Core request. A later timeout of that request is logged and does not change the message. If you never come within 2 m, Core's own result is reported. One move runs at a time. Cancelling cannot undo a move that already started.
 
-| Command | Contract |
+## Commands
+
+| Command | What it does |
 | --- | --- |
-| `quantum.enable <on:bool>` | Explicit owner-scoped enable/disable; no load-time auto-enable |
-| `quantum.hold <milliseconds:int>` | 1..1000 ms inclusive; fresh capability/service lookup; provider rechecks thread/owner/drive/offline/EAC |
-| `quantum.release` | Owner-only hold cancellation, even after the capability closes |
-| `quantum.boost` | Toggle hold for at most 1000 ms without refresh; optional `ctrl+alt+b` binding |
-| `quantum.control_status` | Copied bounded phase/block/progress/owner state; unknown/unavailable is explicit |
+| `quantum.travel <place> <altitude>` | Moves you to a point above the named zone, `altitude` metres (100 to 20000) above its surface along that zone's own up axis. |
+| `quantum.bookmark <name>` | Goes to a saved spot. The first case-insensitive match wins. |
+| `quantum.save_bookmark <name>` | Saves where you stand under a name. |
+| `quantum.delete_bookmark <name>`, `quantum.inspect_bookmark <name>` | Delete a spot, or check that it can be reached without moving. |
+| `quantum.scan` | Adds the zones you are inside to the destination list (at most 256 zones, 64 a page). |
+| `quantum.status` | Counts destinations and spots and says whether moving is allowed. |
+| `quantum.enable <on>` | Turns the drive controls on or off. They are never on at load. |
+| `quantum.hold <milliseconds>` | Holds boost for 1 to 1000 ms. |
+| `quantum.release` | Ends your hold. |
+| `quantum.boost` | Starts or stops a boost hold, at most 1000 ms without a refresh. Bound to **Ctrl+Alt+B**. |
+| `quantum.control_status` | Shows the drive's state, or that it is unknown. |
 
-After explicit enable, the Windows game-thread tick can refresh **150 ms** hold leases every **50 ms** while Caps Lock is physically held and this process owns the foreground window. `caps_input` defaults true. `mouse_input` defaults **false**; enabling it explicitly treats the primary mouse button as hold input while focused. It **does not infer NAV mode** or intercept the game's B/engage action: leave it off for ordinary weapon firing. Native NAV/action forwarding requires an admitted game-pack adapter and remains pending. Non-Windows builds do not poll input.
+A move needs offline admission, a live player, a known star system and the capability `game.relocation` (on in Core). It stays inside the current star system. The page buttons and these commands go through Core's `game.relocation` and report its result: arrival, refusal or failure. The quick-save and go-back keys, **F7** and **F8**, belong to the [teleport plugin](../teleport/README.md).
 
-Charging, drive input forwarding, audio handles/effect state and restoration remain **G8 provider responsibilities**, not arbitrary plugin effect requests or raw writes. The public contract has no effect-tag, sound-ID, arbitrary action, cvar or game-pointer route. Do not copy legacy effects into the consumer to bypass provider admission or missing prerequisites. G7 cvar writes remain unapproved.
+## Quantum drive section
 
-Every callback extent is checked before use, tables are reopened per operation, durations/arguments/copied observations are validated, and the plugin never steals another owner's control. Capability/admission loss stops input refresh and requests owner cancellation. Ordinary unload unsubscribes, removes its hotkey and requests cancellation/disable for its own lease; the provider's actual owner-release hook remains authoritative for quarantine/fault cleanup. Failed cleanup is not a reload-safety claim.
+The section appears only when the capability `game.quantum.control` is on. Core ships it off and the launcher has no switch for it, so the section does not appear in 0.8.0. When it is on, after `quantum.enable on`, holding **Caps Lock** while the game window is in front refreshes a 150 ms boost hold every 50 ms. The mouse button does the same only if you turn on `mouse_input`; it does not detect NAV mode and does not read the game's own engage key, so leave it off while firing weapons. The provider checks admission for every boost. When the game reports its rules (the capability `game.gamerules.read`, off in 0.8.0), the section shows whether quantum travel and boost are allowed and pauses boost when they are unknown or forbidden. Without that capability the rules do not hold boost back.
 
-## Received GameRules in the control panel
+## Settings
 
-The existing Travel panel copies the public `game.gamerules` 1.0 snapshot only
-when `game.gamerules.read` is available. It shows the received generation,
-quantum-travel and boost gates, and whether group QT is enforced. Group
-membership remains unknown; enforcement is never treated as proof that the
-player belongs to a group. A generation is an opaque update token, including
-zero, and is not ordered or treated as a session identity.
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `relocation` | on | Allow moving you (offline only). Off keeps you in place. Boost and saving spots still work. |
+| `caps_input` | on | Hold Caps Lock to boost. |
+| `mouse_input` | off | Hold the left mouse button to boost. |
+| `data_root` | empty | Folder for places and saved spots. Empty means the folder of the launcher's `SC_OFFLINE_SPAWN_FILE`, else `data`. |
+| `spawn_file` | empty | Where the quick-saved spot is kept when there is no database. |
 
-Automatic presentation reads occur at most once per 250 ms. Explicit state
-refresh and a UI request to start boost reopen and read the service immediately.
-Every read checks the current capability, complete callback extent/non-nullness,
-record size, boolean gates and finite thresholds. Thresholds are not used to
-invent range or membership rules. Missing/unreadable, malformed or not-yet-valid
-snapshots clear any previously displayed permission and show an explicit unknown
-state. The last allowed snapshot is never used after a failed refresh.
-
-The boost affordance requires a received, valid snapshot allowing both quantum
-travel and boost, plus the existing capability and explicit owner lease. Unknown
-or forbidden rules pause new boost through this panel. The UI rechecks before
-starting a hold, so a stale or forged click cannot use an old allowed snapshot.
-A held boost can still be released when rules or capabilities become unreadable;
-the separate owned Release control and disable/cancel routes remain available.
-Control callbacks carry an opaque per-load identity, so callbacks retained from a
-previous load cannot start or release the new owner's controller.
-
-This is control-panel guidance. Existing commands, hotkeys and focused Windows
-input retain their G8 provider checks and authority; the snapshot does not replace
-native admission or enable a backend. These quantum-travel rules do not gate the
-separate `game.relocation` destination/bookmark operations. The default production
-GameRules reader remains unavailable; the G8 adapter's source does not establish a
-configured or admitted live provider. No default, SDK pin, staging or native
-activation changes here.
-
-## Existing travel and storage compatibility
-
-Retains `quantum.travel(place, altitude)`, `quantum.bookmark(name)`, `quantum.save_bookmark(name)` and `quantum.scan`. In a qualified host, `quantum.travel` and `quantum.bookmark` request sco-core's public **`game.relocation` 1.0** after checking the plugin setting, fresh capability and arguments; the module follows one ticket per move and never persists tickets. `quantum.travel` finds the destination zone by its entity name and requests a point at radius + altitude (100..20000 m) along that zone's own +Z axis; `quantum.bookmark` resolves a saved bookmark's exact/partial pose. The provider requires offline admission, a verified engine backend, a live player and a known current star system. On a Core with the process-retained composition the product starts natively and a move goes through `game.relocation` and reports its own result (arrival, refusal or failure); any other Core keeps the native-startup refusal. No move has been run in game. A Core version, resolved signatures or positive admission alone do not establish native activation or gameplay readiness. The `relocation` setting (bool, default true, "Allow moving the player (offline only)") requests movement for this plugin; it cannot bypass offline admission. The host policy setting in `sc-offline.ini` has the same limit. `quantum.status`, `quantum.delete_bookmark(name)` and `quantum.inspect_bookmark(name)` remain unchanged. `quantum.scan` copies at most 256 observed zones, 64 per page, with epoch checks; it is not exhaustive system discovery. Unknown system/root/name never authorizes movement; the provider decides the star system.
-
-Curated destinations use the public content route described below. Scan-generated `locations_found.txt` retains its existing `system | display name | entity name | radius` format and filesystem policy. Bookmarks remain `bookmark system|name` followed by `spot x y z zone` lines. Optional `pose x y z w` records preserve orientation; old readers ignore them and old files default to identity. Legacy spot and bookmark lines accept LF, CRLF, or mixed line endings. Import still skips malformed rows and can import an empty list. `data_root` selects this persistence root, not a curated-list source. Left empty (the default) it is the folder of the launcher's `SC_OFFLINE_SPAWN_FILE`, because the game runs from its own Bin64 folder and a relative `data` would land there; the folder is created before a file is written. Owner-scoped `quantum.db` keeps the exact `bookmarks(pos,system,name,spots)` schema and `bookmarks.txt.time` marker. Windows markers remain decimal FILETIME. An unchanged marker skips reimport; previously imported names are not automatically repaired. Absent storage retains text fallback and failed DB transactions do not overwrite it.
+The host setting `relocation = on|off` in `sc-offline.ini` applies to all plugins and cannot bypass offline admission. Saved spots live in `data/storage/quantum.db` (in `bookmarks.txt` when no database is available). Scan results go to `locations_found.txt`. Spots saved by an older version are imported the first time, and `pose x y z w` lines keep your facing.
 
 ### Curated destinations from an ordinary data pack
 
-While the host is stopped, explicitly install an ordinary enabled `kind = data`
-pack with a `lists/locations.txt` file. The existing published stable SDK 2.4.0 `sco.content`
-1.0 service provides its copied startup bytes. No default pack or production
-staging is added here. The original `data/locations.txt` is untouched and is no
-longer read by this external module; it is not automatically imported or used
-as a fallback. Users who want those curated rows must copy their own list into
-the pack explicitly. Restart the host after pack changes.
+The destination list comes from exactly one enabled data pack file named `lists/locations.txt`. The `locations_catalog` pack ships it, copied from `data/locations.txt`. Zero matches leave the curated list empty. Two matches refuse as ambiguous. To use your own list, copy it over that pack's file with the game closed, or add a pack of your own, and restart.
 
-Exactly one public List record must have the case-sensitive relative name
-`lists/locations.txt`. No match leaves curated destinations unavailable; two
-matches, including the same name in different packs, refuse as ambiguous. The
-module does not guess which pack should win. Commands remain available and
-`quantum.status` explains refusal. Generated locations and bookmarks remain
-available under their separate existing persistence policy.
+Rows are `system | display name | entity name | radius`. Blank lines and lines starting with `#` are ignored. The entity name is required and must match the game's name exactly. An omitted radius means 0. Limits: 1 MiB, 512 bytes per row, 3000 destinations, and 31, 63 and 95 bytes for system, display name and entity name. A malformed row refuses the whole list. For repeated entity names the first row wins. Scan results load afterwards and never replace a curated entry.
 
-Rows are `system | display name | entity name | radius`, in file order. Blank
-lines and lines beginning with `#` after trimming are ignored. Limits are
-1 MiB/file, 512 bytes/row, 3000 unique destinations, 31/63/95 bytes for the
-system/display/entity fields; entity must be nonempty. An omitted radius means
-zero; otherwise the complete value must parse as finite and nonnegative.
-Embedded NUL, malformed rows or exceeded bounds refuse the entire curated
-list, with no partial selection. Repeated entity names are case-insensitive:
-the first row wins. Existing first display/entity lookup order is preserved.
-Generated locations load afterward and do not replace a curated entity.
+`data/plugins/quantum_drive/` is a separate data pack with the new quantum drive's game data. It has no code and no link to this plugin.
 
-Content lookup checks the root/member extents, non-null methods, returned
-metadata and exact copied byte count. Loading retains only destination values,
-not content IDs or service pointers. Consumer reload reads the same host startup
-snapshot; changed disk bytes need a host restart. No query or list discovery
-authorizes relocation, quantum control or native backend activation.
+## What it needs
 
-The optional `sco.widgets` panel retains ID `quantum.travel` and now has title **Travel**, combining paged destination/bookmark lists, altitude, bookmark save/delete/read-only inspection and observed scan with bounded G8 controls. No host/ImGui include or renderer callback is added. The panel's Travel button uses the destination command. Bookmark Go, Delete and
-Inspect act on the exact selected row, including when multiple rows have the same
-name or differ only by case. Name-based commands keep their existing first
-case-insensitive match. Saving still appends and existing file/SQL formats are
-unchanged. Successful bookmark saves/deletes clear the selection; deletion of the
-last row on a page returns to the remaining page. Failed persistence keeps the
-prior in-memory rows and selection. A failed or uncertain storage operation does
-not establish what was durably written; investigate that outcome before retrying. Callbacks from older panel
-publications or loaded sessions are ignored; a failed panel replacement pauses
-old callbacks until a fresh publication succeeds. Missing widgets leaves
-command-only operation.
+- Services: `game.relocation` 1.0, `game.spatial` 1.0, `teleport.spatial` 1.0, `sco.storage`, `sco.settings`, `sco.content` 1.0, `sco.widgets` 1.0, `sco.ui` (the hotkey).
+- Capabilities: `game.relocation`; optional `game.quantum.control` and `game.gamerules.read`.
 
-## Build, install and focused evidence
+Not run in game. Nothing on this page has run in game, including `quantum.travel`. See [docs/status.md](../../docs/status.md).
 
-Use the published `sdk-v2.4.0` archive (it contains `sc_quantum.h`, `sc_game_spatial.h`, `sc_relocation.h`, `sc_gamerules.h`, `sco_widgets.h` and `sco_content.h`). The release workflow stages quantum enabled through `tools/check_quantum_sdk.py`, which builds against that archive outside the checkout, runs the module workflow below, traces compiler dependencies, runs boundary negatives and a relocation red arm (POSIX), and runs the SDK's `sco-plugin-check` with no game services. That is not a game proof.
+## Developer notes
+
+Build against the extracted SDK 2.4.1 `include/` directory, which must hold `sc_quantum.h`, `sc_game_spatial.h`, `sc_relocation.h`, `sc_gamerules.h`, `sco_widgets.h` and `sco_content.h`.
 
 ```sh
-cmake -S plugins/quantum -B build-quantum -DSCO_SDK_INCLUDE_DIR=/path/to/extracted/include -DSCO_QUANTUM_TEST=ON -DCMAKE_BUILD_TYPE=Debug
+cmake -S plugins/quantum -B build-quantum -DSCO_SDK_INCLUDE_DIR=<sdk>/include -DSCO_QUANTUM_TEST=ON -DCMAKE_BUILD_TYPE=Debug
 cmake --build build-quantum
-ctest --test-dir build-quantum -R '^quantum-(workflow|content|gamerules)$' --output-on-failure
-cmake --install build-quantum --prefix /path/to/product --component quantum
+ctest --test-dir build-quantum -R "^quantum-" --output-on-failure
+cmake --install build-quantum --prefix <stage> --component quantum
 ```
 
-Installed `data/plugins/quantum/` contains the native module and enabled manifest; ordinary folder disable and `plugins=off` semantics apply. Native modules are trusted code, GPL-3.0-only.
+The tests (`quantum-workflow`, `quantum-content`, `quantum-gamerules` and, with Python, `quantum-concurrency`) load the real module against stand-in services. `python tools/check_quantum_sdk.py --archive <sdk zip> --sums <SHA256SUMS> --work <new folder outside the checkout>` runs them from a verified SDK archive. Add `--candidate` and the digest options for an unpublished SDK (see [docs/sdk-candidate.md](../../docs/sdk-candidate.md)). `tools/test_quantum_core_integration.sh <core-source> <core-build> <quantum-module>` connects the module to Core's quantum service with a stand-in backend.
 
-The module workflow also exercises duplicate bookmark Go/Delete/Inspect, command
-compatibility, append/reload, page boundaries, stale selection/callbacks, failed
-panel publication, storage begin/write/commit failures with successful rollback and unavailable/malformed
-movement providers. These are public-service mocks and temporary legacy files;
-they do not certify production storage, renderer or gameplay behavior.
-
-The GameRules workflow drives the actual module/published panel with synthetic
-public providers, covering cache timing and clock wrap, opaque generations,
-malformed/short/null/refused reads, capability loss/recovery, current-owner
-cancellation, stale callbacks across unload/reload and unchanged relocation.
-The isolated helper runs all three workflows normally and with ASan/UBSan on
-POSIX, retains the relocation red arm and private-dependency negatives, and
-requires the GameRules workflow to fail if the unknown-policy guard is removed.
-These fixtures do not exercise the game or a live GameRules reader.
-
-The focused content workflow drives the actual module with synthetic public
-snapshots: canonical/ambiguous source selection, first-entity ordering, bounds,
-atomic malformed refusal, short/null service and root members, copied lifetime,
-generated-file precedence and unload/reload. It does not replace the separate
-real-provider integration proof or certify Windows, rendering or gameplay.
-
-**Historical content-migration evidence (PR #165):** macOS AppleClang compiled/linked the actual module with `-Wall -Wextra -Werror`; both dynamically loaded synthetic public-provider workflows passed, including 6,015 content checks, and passed again with ASan/UBSan. The existing control/movement workflow retains legacy IDs/Travel composition, no startup writes, bounded holds, capability-loss cancellation, relocation request/tick tracking, widget routes and unload/reload checks. A separate real content-provider fixture feeds ordinary synthetic packs into the actual Quantum module; it covers copied startup bytes, parsing, ambiguity/refusal, restart and persistence compatibility without game providers.
-
-For that earlier content slice, independent actual MSVC 19.44 compilation of the production DLL and both test executables passed with strict warnings. Both executables dynamically loaded that DLL and passed, including the 6,015 content checks, against the checksum-verified published RC1 headers. This is Windows compilation and synthetic module behavior, not game or renderer acceptance. The fixtures do not execute the real game-pack adapter, its release hook, Windows input, database transactions or engine effects. **Real renderer, storage import twice, native detours, NAV/action forwarding, owned drive/charge/audio/effect restoration, every in-game move and where `quantum.travel` actually puts you, and actual gameplay remain NOT VERIFIED; not run in game.**
-
-For a connected no-game preflight of this actual module against Core's quantum
-service, build the module from a checksum-verified extracted development SDK and
-build the matching Core source's `sco_quantum`, `sco_hook`, `sco_host`,
-`sco_runtime`, and `sco_core` libraries. On POSIX run:
-
-```sh
-tools/test_quantum_core_integration.sh <core-source> <core-build> <quantum-module>
-```
-
-The fixture injects a synthetic zero-hook backend and exercises absent admission,
-explicit enable and hold, offline admission loss, cooperative unload and owner
-release. It is not native-backend, crash/quarantine, renderer or gameplay evidence.
-Record the exact source, archive hash and module hash separately; a development
-archive is not an approved published candidate.
+The module shares its travel code with the teleport plugin (`plugins/spatial/`). The old host quantum hooks are retained inactive and there is no fallback when plugins are off. Services are reopened on every operation and every callback extent is checked. Callbacks from an older panel or an earlier load are ignored. Unload removes the hotkey and asks Core to end this plugin's hold; Core's owner release stays authoritative.

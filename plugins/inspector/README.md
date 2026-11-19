@@ -1,117 +1,57 @@
-# Inspector: external read-only SDK reference plugin
+# Inspector: read-only view of what the game reports
 
-The native inspector ships as an **enabled external plugin**, not a built-in.
-Release layout is `data/plugins/inspector/plugin.ini` plus `inspector.dll`, with no
-`disabled` marker. It requires `plugins = on`; the launcher's Plugins page can switch
-its folder off. There is no host fallback. NPC ships the same way as an enabled
-external command-first plugin ([NPC](../npc/README.md)); Discord ships off and refuses
-presence pending privacy and transport approval ([review](../discord/README.md)).
+Inspector shows your character's health, position, stats, inventory and the game's rules, as the game reports them. It is for finding bugs and writing plugins, and it never changes anything.
 
-## Source and contract
+## Inspector page
 
-- `inspector.cpp` / `inspector.h`: public-service reads and typed command logic.
-- `external.cpp`: `sco_plugin_query`, `sco_plugin_load`, `sco_plugin_unload`.
-- `plugin.ini`: `id = inspector`, independent version `1.0.0`, plugin ABI `1.1`,
-  native entry `inspector.dll`. Game capabilities are optional so missing services
-  can be reported by the command instead of preventing plugin load.
-- `inspector.lua` / `lua-plugin.ini`: non-default restricted read-only alternative.
-- `inspector_test.lua`: synthetic sandbox fixture, not bundled-runtime/game proof.
+The page is in the **Developer** section and appears only when **Menu settings > Show developer pages** is on. Its tabs are **Diagnostics**, **Inventory**, **Actions** and **Parameters**. **Refresh** captures diagnostics and inventory once. **Lookup**, **Browse parameters** and **Refresh action count** read action metadata when you press them. Drawing the page, switching tabs and paging do not poll the game. A captured snapshot is history, not a live view, and a failed refresh replaces the old values with "unavailable".
 
-Build from published **`sdk-v2.4.0`**, combined **`sco-sdk-2.4.0.zip`**, after
-checking the release **`SHA256SUMS`**. SDK 2.4.0, frozen plugin ABI 1.1 and Star
-Citizen game pack 0.8.0 are distinct versions. Use the extracted SDK `include/`,
-never private host headers, the source dependency include tree or new ImGui inputs.
-The host itself uses the tagged sco-core submodule, not this plugin archive.
+## Commands
 
-The [worked tutorial](../../docs/sdk-workflows.md#worked-tutorial-standalone-native-inspector)
-contains the three stages: **obtain/verify**, **isolated build/check**, then
-**install/enable**. It builds `sc-offline-inspector` from `plugins/` outside the
-checkout, compiles the checker from the published zip's
-`tools/sco-plugin-check.c`, invokes `inspector.read` with services absent, and
-runs only the named `inspector-module-workflow` synthetic test. Windows x64/MSVC
-produces the game DLL; macOS/Linux modules are development-only.
+Pages are numbered from zero. A reply that does not fit is refused, never cut short.
 
-## Command and failure behavior
+| Command | What it does |
+| --- | --- |
+| `inspector.read` | Logs your actor and entity ids, health, and zone-local position and rotation. |
+| `inspector.refresh` | Captures diagnostics and inventory once and starts a new snapshot. |
+| `inspector.status` | Shows the state of each snapshot section. |
+| `inspector.stats <page>` | One captured actor stat. |
+| `inspector.gamerules <page>` | One captured game rule. |
+| `inspector.inventory <page>` | One captured inventory port, with totals and truncation flags. |
+| `inspector.action_count` | Counts the game's actions. |
+| `inspector.action <name>` | Looks up one action by exact, case-sensitive name. |
+| `inspector.action_id <id>` | Looks up one action by id. |
+| `inspector.params <page>` | One action definition. It shows no live value. |
 
-Invoke **`inspector.read`** through the host command registry on the game thread.
-The legacy reply/log reports current player
-actor/entity IDs, health and zone-local position/quaternion. Public `game.actors`
-and `game.entities` tables are reopened for each read; no provider table or
-session ID is retained across commands.
+Missing providers, no player, a zero zone, an invalid rotation or non-finite data show as "unknown" or "unavailable". A health maximum of zero means unknown. The build identity is what the game reports and is not checked.
 
-No player, missing provider/capability, truncated/null methods, failed calls,
-non-finite data, zero zone or invalid rotation remain **unknown/unavailable**.
-A health maximum of zero means unknown, not a zero-sized pool or a denominator.
-The tool cannot certify engine state or guess fields the public service lacks.
+## Settings
 
-### Snapshot commands and optional panel
+| Setting | Values | Default |
+| --- | --- | --- |
+| `language` | `en`, `ru` | `en` |
 
-The expanded inspector uses the same checksum-verified published stable SDK 2.4.0
-as every external plugin. Its default proof verifies the stable archive and does
-not require an unpublished candidate override. The proof does not establish
-in-game acceptance.
+`ru` translates the fixed panel labels and the Lua example's command title and help. Command names, replies and diagnostics stay English. A missing or unsupported value uses English. The setting belongs to each Inspector plugin, not to the launcher. The native panel updates when the setting changes, or at the next click on a host without setting-change events. The Lua plugin needs a reload after a change.
 
-| Command | Required arguments | Behavior |
-|---|---|---|
-| `inspector.refresh` | none | Capture diagnostics and inventory once; advance generation |
-| `inspector.status` | none | Read copied section status and historical generation |
-| `inspector.stats` | integer page | Read one captured named actor stat |
-| `inspector.gamerules` | integer page | Read one captured live field |
-| `inspector.inventory` | integer page | Read one captured inventory port |
-| `inspector.action_count` | none | Explicit metadata count acquisition |
-| `inspector.action` | string name | Exact case-sensitive metadata lookup |
-| `inspector.action_id` | integer id | Metadata lookup by nonnegative uint32 id |
-| `inspector.params` | integer page | Acquire one definition, not a live value |
+## What it needs
 
-Pages are zero-based. Negative pages, wrong argument types and out-of-range
-identifiers are rejected. Inventory pages report total, next-page and provider
-truncated/limited flags. Replies that do not fit return `TOO_MANY`, never a
-successful partial record. Unknown actions return `NOT_FOUND`; unavailable
-captured sections return `UNAVAILABLE`.
+- Services: `game.actors`, `game.entities`, `game.inventory`, `game.gamerules`, `game.actor_stats`, `game.build`, `game.input`, `sco.widgets` 1.0, `sco.settings`.
+- Capabilities: `game.actors.local_player`, `game.actors.health`, `game.entities.transform`, `game.actor_stats.read`, `game.inventory.read` (on with `exp_inventory_read`) and `game.gamerules.read` (off in 0.8.0). Each one is optional: a missing one makes that part report "unavailable" and does not stop the plugin loading.
 
-When the host offers `sco.widgets`, panel `inspector.main` exposes Diagnostics,
-Inventory, Actions and Parameters. Refresh captures diagnostics/inventory;
-Lookup, Browse parameters and Refresh action count acquire metadata explicitly.
-Drawing, tab selection and cached paging do not poll providers. Without widgets,
-commands remain usable. A failed refresh replaces previous current values with
-unavailable status; an unrefreshed snapshot remains historical, not live.
-Build identity is provider-reported and not game-verified; synthetic hostd
-fixtures are identified separately in test evidence.
+Not run in game. See [docs/status.md](../../docs/status.md).
 
-The optional `SCO_SCUBA_HOSTD` CMake input registers `inspector_hostd_e2e` against
-an already-built external hostd and the actual inspector module, using Node.js 22+.
-The expected action count comes from the selected SDK header, not an old candidate constant. It stages only
-owned temporary plugin files, exercises synthetic and no-mock scenarios, then
-checks process exit and port closure. This does not certify in-game rendering.
+## Developer notes
 
-Unload clears borrowed API/owner state; the host withdraws owner-scoped commands.
-The plugin allocates no subscription/worker context. `sco.reload inspector` is
-an external command-consumer reload route in the running host; do not replace a
-loaded Windows DLL. Rebuild with the game closed or module unloaded. This is not
-provider hot-reload support, a native sandbox or recovery after corruption.
+The plugin is the worked example in [docs/sdk-workflows.md](../../docs/sdk-workflows.md): obtain and verify the SDK, build and check in isolation, then install. Files: `inspector.cpp` and `inspector.h` hold the reads and commands, `external.cpp` the three native exports, `plugin.ini` the manifest (`id = inspector`, version 1.0.0, plugin ABI 1.1).
 
-## Optional Lua companion example
+```sh
+cmake -S plugins -B build-plugins -DSCO_SDK_INCLUDE_DIR=<sdk>/include -DSCO_WORKFLOW_TESTS=ON
+cmake --build build-plugins --config Release --target sc-offline-inspector
+ctest --test-dir build-plugins -C Release -R inspector --output-on-failure
+```
 
-With the game closed, copy `inspector.lua` into
-`data/plugins/inspector_lua/` and rename `lua-plugin.ini` to `plugin.ini` in
-that folder. The existing example retains its `inspector_lua` ID and
-`inspector_lua.read` command. It is a language example, not another baseline
-feature or a release default.
-It uses only existing restricted `sco.game.actors` / `sco.game.entities` reads;
-no mutation or spatial binding is added. It is not the release default.
+The test is `inspector-module-workflow`. `python tools/check_inspector_sdk.py --archive <sdk zip> --sums <SHA256SUMS> --work <new folder outside the checkout>` runs it from a verified SDK archive and invokes `inspector.read` with no services. Add `--candidate` and the digest options for an unpublished SDK (see [docs/sdk-candidate.md](../../docs/sdk-candidate.md)). Setting `-DSCO_SCUBA_HOSTD=<scuba-hostd>` adds `inspector_hostd_e2e`, which needs Node.js 22 or newer. `python tools/check_inspector_locale.py` checks the Russian labels.
 
-## Evidence and policy
+Use `sco.reload inspector` to reload the command consumer in a running host. Do not overwrite a loaded DLL: close the game or unload the module first. A native fault needs a restart.
 
-Checker acceptance and dynamic loading against synthetic public providers are
-not actual game-provider, Windows rendering or gameplay evidence.
-**Owner Windows/in-game acceptance: NOT RUN.** The required exact-build read,
-unknown-value, disable and reload checks are in [status](../../docs/status.md).
-Native plugins execute trusted code; install only plugins you trust.
-
-[Owner decisions](../../docs/decisions.md) retain 13 baseline features plus two
-separately counted optional bridges, require explicit folder semantics eventually,
-and leave launcher/EAC/online refusal unchanged in this step. No bypass, remote
-console or runtime MCP control is authorized. Project licensing/provenance is
-unchanged; use the root [LICENSE](../../LICENSE) and upstream SDK notices, not an
-assumption that the four MIT wire headers license the entire SDK/plugin as MIT.
-The optional `language` setting belongs to each Inspector plugin, independently of the launcher. `en` is the default; `ru` translates fixed native panel labels and the Lua command title/help. Missing settings, unsupported choices or an unavailable service use English. Native labels refresh on a `settings.changed` event when subscriptions are available; otherwise they refresh on the next panel interaction. Command metadata is registered once; reload the Lua plugin after changing its language. Native command metadata, formatted status/result text and structured diagnostics remain English. No game or glyph coverage is claimed.
+The optional Lua version, `inspector.lua`, reads only `game.actors` and `game.entities`. With the game closed, copy `inspector.lua` to `data/plugins/inspector_lua/` and `lua-plugin.ini` there as `plugin.ini`. It keeps the id `inspector_lua` and the command `inspector_lua.read`. `inspector_test.lua` is its stand-in test.
