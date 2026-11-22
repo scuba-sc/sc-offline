@@ -10,7 +10,7 @@ use scol_install::paths::GamePaths;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-const OURS: &[u8] = b"MZ padding sc-offline v0.8.0-rc.1\0 tail";
+const OURS: &[u8] = b"MZ padding sc-offline v0.8.0-rc.2\0 tail";
 const OTHER: &[u8] = b"MZ another mod";
 
 struct Fixture {
@@ -93,7 +93,7 @@ fn fresh_install_without_xml_writes_marker_and_uninstall_removes_it() {
     assert_eq!(read(&f.bin().join("dinput8.dll")), OURS);
     let marker = String::from_utf8(read(&f.bin().join("sc-offline.installed"))).unwrap();
     let lines: Vec<&str> = marker.lines().collect();
-    assert_eq!(lines[0], "version=0.8.0-rc.1");
+    assert_eq!(lines[0], "version=0.8.0-rc.2");
     assert!(lines[1].starts_with("sha256=") && lines[1].len() == 7 + 64);
     assert_eq!(lines[2], "mode=install");
     assert!(lines[3].starts_with("time=20") && lines[3].len() == 5 + 19);
@@ -327,7 +327,7 @@ fn run_dry_run_install_writes_only_the_log() {
         ],
     );
     assert_eq!(rc, 0, "{out}");
-    assert!(out.starts_with("sc-offline launcher 0.8.0-rc.1 - dry run, nothing is changed\n\n"));
+    assert!(out.starts_with("sc-offline launcher 0.8.0-rc.2 - dry run, nothing is changed\n\n"));
     assert!(out.contains("[dry-run] would copy dinput8.dll to "));
     assert!(!f.bin().join("dinput8.dll").exists());
     assert!(!f.bin().join("sc-offline.installed").exists());

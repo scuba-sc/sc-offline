@@ -6,7 +6,7 @@ A build, a mock, a signature match or a test without the game does not count as 
 
 ## This build is a release candidate
 
-You are reading the pages of **0.8.0-rc.1**, a development pre-release of 0.8.0 for testers. It is built from the same sources as the planned 0.8.0 and differs from it only in its version (`0.8.0-rc.1`), these notes and the pins to a release candidate of the SDK. The final 0.8.0 is built after testers have reported, so its binaries will differ from this candidate's, and a run of this candidate does not carry over to it byte for byte.
+You are reading the pages of **0.8.0-rc.2**, the second development pre-release of 0.8.0 for testers. Its game DLLs and plugins are built from the same sources as 0.8.0-rc.1; the launcher window changed ([changelog](../CHANGELOG.md)). It is built from the same sources as the planned 0.8.0 and differs from it only in its version (`0.8.0-rc.2`), these notes and the pins to a release candidate of the SDK. The final 0.8.0 is built after testers have reported, so its binaries will differ from this candidate's, and a run of this candidate does not carry over to it byte for byte.
 
 Not run in game. Nothing in this candidate has been run in the real game as a package. The list under "Seen in game" is unchanged by it. A tester's report of a run belongs in an issue; the maintainer moves a result onto this page only after checking it. The order to test in is in [Release candidates](launcher.md#release-candidates).
 

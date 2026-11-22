@@ -1191,6 +1191,8 @@ jobs:
 
             **Test first:** in this order, and stop at the first thing that fails.
             1. `sc-offline.exe status`: it should find the game and show no leftover PC change.
+               Then double-click `sc-offline.exe`: the window's text should be easy to read, and
+               Home shows your game build with a Build check line under it.
             2. Play with the default menu (`menu = imgui`): the game starts, the menu opens on M,
                and equipping gear from the Gear page attaches the items. Then close the game and run
                `sc-offline.exe status` again.
@@ -1198,8 +1200,11 @@ jobs:
             4. The new menu (`menu = rust`).
 
             **Report:** open an issue on this repository. Say which candidate (`${{ github.ref_name }}`),
-            what you did, what you expected and what happened. Add the matching lines from `mod.log`
-            and `Game.log` and the output of `sc-offline.exe status`. Leave out anything personal.
+            what you did, what you expected and what happened. Run `sc-offline.exe report` (or
+            Settings > Create report in the window) and attach the zip it writes into `data\reports`:
+            it holds the status check, `mod.log`, `launcher.log` and `Game.log` with your account names
+            replaced. Read it before
+            you attach it. Nothing is sent by the launcher.
 
             **Go back:** run `sc-offline-classic.exe uninstall` (or `sc-offline.exe uninstall`). It
             takes the mod out of the game folder and undoes the PC changes. Then download the 0.7.7

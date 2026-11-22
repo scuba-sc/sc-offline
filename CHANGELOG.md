@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased (after 0.8.0-rc.1)
+## 0.8.0-rc.2 (release candidate, 2026-11-22)
+
+The second development pre-release of 0.8.0 for testers, published as a GitHub pre-release and not offered by the stable update channel. It fixes what the first tester report on 0.8.0-rc.1 found in the launcher window and adds two things to the launcher. The game DLLs and the plugins are built from the same sources as 0.8.0-rc.1, and the SDK pin is unchanged (`sdk-v2.4.1-rc.1`, game pack 0.8.1, game build 4.10.200.58746). Everything in the 0.8.0-rc.1 list below still applies. Not run in game.
 
 ### Added
 

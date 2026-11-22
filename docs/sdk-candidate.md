@@ -4,7 +4,7 @@ Which sco-core SDK sc-offline builds against, and how to check an archive before
 
 ## Published SDK 2.4.1 release candidate 1
 
-sc-offline 0.8.0-rc.1 is built for sco-core SDK **2.4.1** release candidate 1, game pack **0.8.1**, plugin ABI **1.1**, game build **4.10.200.58746**. Tag [`sdk-v2.4.1-rc.1`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.1-rc.1), published as a GitHub pre-release. Core source commit `ef4061b123a1f0b4f449e6c0257078d7348520e3`. The `external/sco-core` gitlink and every SDK pin in this repository name that tag and commit.
+sc-offline 0.8.0-rc.2 is built for sco-core SDK **2.4.1** release candidate 1 (the same SDK candidate as 0.8.0-rc.1), game pack **0.8.1**, plugin ABI **1.1**, game build **4.10.200.58746**. Tag [`sdk-v2.4.1-rc.1`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.1-rc.1), published as a GitHub pre-release. Core source commit `ef4061b123a1f0b4f449e6c0257078d7348520e3`. The `external/sco-core` gitlink and every SDK pin in this repository name that tag and commit.
 
 | Profile | Archive | SHA-256 |
 |---|---|---|

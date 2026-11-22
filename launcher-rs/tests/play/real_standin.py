@@ -25,7 +25,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = Path(os.environ.get("SCOL_SCRATCH") or Path(tempfile.gettempdir()) / "scol-scratch")
 RUST = Path(os.environ.get("SCOL_RUST_EXE") or HERE.parents[1] / "target" / "release" / "sc-offline.exe")
 STANDIN = Path(os.environ.get("SCOL_STANDIN_EXE") or HERE.parents[1] / "target" / "release" / "scol-play-standin.exe")
-OURS_DLL = b"MZ\x90\x00 padding sc-offline v0.8.0-rc.1\x00 more bytes"
+OURS_DLL = b"MZ\x90\x00 padding sc-offline v0.8.0-rc.2\x00 more bytes"
 
 
 def win(p):

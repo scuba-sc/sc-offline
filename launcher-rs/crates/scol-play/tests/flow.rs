@@ -35,7 +35,7 @@ fn play_end_to_end_with_the_stand_in_game() {
     let (code, text) = run(&w, &mut host, &args(Mode::Play, false, &["play"]));
     assert_eq!(code, 0, "{text}");
     assert!(
-        text.starts_with("sc-offline launcher 0.8.0-rc.1\n\n"),
+        text.starts_with("sc-offline launcher 0.8.0-rc.2\n\n"),
         "{text}"
     );
     has(&text, &format!("Folder:   {}", w.bin));
@@ -238,7 +238,7 @@ fn dry_run_prints_every_step_and_changes_nothing() {
     let before = tree(&w.root);
     let (code, text) = run(&w, &mut host, &args(Mode::Play, true, &["--dry-run"]));
     assert_eq!(code, 0, "{text}");
-    assert!(text.starts_with("sc-offline launcher 0.8.0-rc.1 - dry run, nothing is changed\n\n"));
+    assert!(text.starts_with("sc-offline launcher 0.8.0-rc.2 - dry run, nothing is changed\n\n"));
     for needle in [
         "[dry-run] would add a firewall rule blocking ",
         "[dry-run] would add `127.0.0.1 modules-cdn.eac-prod.on.epicgames.com` to the hosts file",
