@@ -1,4 +1,6 @@
 .vs/
+windows/obj/
+windows/out/
 build/
 # The build feature is source, not a generated CMake directory.
 !/plugins/build/
