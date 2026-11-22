@@ -51,18 +51,23 @@ impl WindowBackend {
 
 impl WindowBackend {
     /// Runs `program` with `args` as the window's child: no console window, `SC_OFFLINE_GUI` set, its
-    /// output streamed to `out` line by line (a question at once), its input kept so
-    /// [`Backend::answer`] can answer. Returns its exit code.
+    /// output streamed to `out` line by line (a question at once). With `answerable` its input is kept
+    /// so [`Backend::answer`] can answer; without, it has no input. Returns its exit code.
     pub fn run_child(
         &self,
         program: &Path,
         args: &[&str],
+        answerable: bool,
         out: &mut dyn FnMut(&str),
     ) -> Result<i32, String> {
         let mut child = std::process::Command::new(program)
             .args(args)
             .env(scol_contract::env::GUI, "1")
-            .stdin(Stdio::piped())
+            .stdin(if answerable {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .creation_flags(CREATE_NO_WINDOW)
@@ -70,6 +75,9 @@ impl WindowBackend {
             .map_err(|e| format!("could not start {}: {e}", program.display()))?;
         // Kept while the child runs. Dropping it ends the child's input: a question nobody answered
         // then takes its default (no, keep).
+        if !answerable {
+            return pump(child, out);
+        }
         *self.answers.lock().unwrap_or_else(|e| e.into_inner()) = child.stdin.take();
         let code = pump(child, out);
         *self.answers.lock().unwrap_or_else(|e| e.into_inner()) = None;
@@ -176,9 +184,11 @@ impl Backend for WindowBackend {
             Command::Play => args.push("play"),
             Command::Repair => args.push("uninstall"),
             Command::Update => args.extend(["update", "--yes"]),
+            Command::Report => args.push("report"),
             Command::Stop => unreachable!(),
         }
-        let code = self.run_child(&self.exe, &args, out)?;
+        // `report` asks nothing and may run beside Play, whose input must stay the one that is answered.
+        let code = self.run_child(&self.exe, &args, command != Command::Report, out)?;
         if code == scol_contract::exit_code::RESTART {
             // An update was swapped in (the `update --yes` child says so, like the C++ child does): start the
             // new window and close this one, which still runs the old exe.

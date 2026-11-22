@@ -23,9 +23,9 @@ Differences from a byte-for-byte diff, by design and listed here so nothing is h
   * the C++ launcher prints through the C runtime in text mode, so a pipe sees CRLF; the Rust one
     writes LF. Line endings are normalised before comparing.
   * the version banner (first line) is compared with the version replaced, as the task allows.
-  * the Rust usage text has two lines the C++ usage lacks, because the C++ launcher has no `stop` and no
-    `plugins` command: the `stop` line and the `plugins` line (RUST_ONLY_USAGE_LINES below). Exactly those two
-    lines are dropped from the Rust output; any other difference in the usage text still fails.
+  * the Rust usage text has three lines the C++ usage lacks, because the C++ launcher has no `stop`, no
+    `report` and no `plugins` command (RUST_ONLY_USAGE_LINES below). Exactly those lines are dropped from
+    the Rust output; any other difference in the usage text still fails.
   * paths are ASCII. The C++ launcher prints wide paths with %ls in the "C" locale, which stops at a
     character it cannot convert; the Rust one prints UTF-8. That is not emulated.
 
@@ -599,10 +599,11 @@ def machine_drive_search(c):
 
 # --------------------------------------------------------------------------------------------
 
-# The two usage lines only the Rust launcher has (scol_cli::CPP_USAGE_LINES_NOT_HERE). The C++ output never
+# The usage lines only the Rust launcher has (scol_cli::CPP_USAGE_LINES_NOT_HERE). The C++ output never
 # contains them, so dropping them from both outputs changes nothing for the C++ side.
 RUST_ONLY_USAGE_LINES = (
     "  stop       ask the running game to close (the mod saves first); --end ends it if it is still open a minute later",
+    "  report     zip the status check and the logs into data\\reports for a bug report; names replaced, nothing sent",
     "  plugins    list, enable, disable, install, remove and set up plugins, and the catalogue; `plugins` alone shows how",
 )
 

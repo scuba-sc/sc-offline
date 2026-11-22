@@ -50,6 +50,7 @@ fn a_child_process_is_answered_through_its_input() {
                     "/c",
                     "set /p A=Delete these files? [y/N/always/never] & echo answered !A!",
                 ],
+                true,
                 &mut |l| {
                     let _ = tx.send(l.to_string());
                 },

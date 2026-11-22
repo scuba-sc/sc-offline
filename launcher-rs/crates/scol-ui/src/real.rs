@@ -198,6 +198,20 @@ impl Backend for RealBackend {
             Command::Play => self.play_or_repair(Mode::Play, "play", here, out),
             Command::Repair => self.play_or_repair(Mode::Uninstall, "uninstall", here, out),
             Command::Update => self.update(here, out),
+            Command::Report => {
+                let mut lines = Lines::new(out);
+                let code = scol_play::report::make_report(
+                    &mut scol_play::real::RealHost::new(),
+                    &mut lines,
+                    &here.to_string_lossy(),
+                    &scol_play::report::ReportArgs {
+                        game: String::new(),
+                        game_log: true,
+                    },
+                );
+                lines.finish();
+                Ok(code)
+            }
         }
     }
 

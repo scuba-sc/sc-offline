@@ -85,7 +85,7 @@ fn usage_text_is_the_cpp_text() {
     ));
     assert!(USAGE
         .ends_with("exit codes: 0 ok, 1 error, 2 Easy Anti-Cheat active, 3 the game is running\n"));
-    assert_eq!(USAGE.lines().count(), 21);
+    assert_eq!(USAGE.lines().count(), 22);
 }
 
 /// The text of `kUsage` in `launcher/launcher.cpp`, read from the source next to this workspace.
@@ -114,22 +114,23 @@ fn cpp_usage() -> Option<String> {
 }
 
 #[test]
-fn the_usage_differs_from_the_cpp_usage_by_exactly_the_two_rust_only_lines() {
+fn the_usage_differs_from_the_cpp_usage_by_exactly_the_rust_only_lines() {
     let Some(cpp) = cpp_usage() else {
         eprintln!("launcher.cpp is not next to this workspace; skipped");
         return;
     };
     assert!(cpp.starts_with("usage: sc-offline.exe [command]"), "{cpp}");
-    // C++ has neither of them, Rust has both, and nothing else differs
+    // C++ has none of them, Rust has all, and nothing else differs
     for rust_only in scol_cli::CPP_USAGE_LINES_NOT_HERE {
         assert!(USAGE.contains(&format!("{rust_only}\n")), "{rust_only}");
         assert!(!cpp.contains(rust_only), "{rust_only}");
     }
     assert_eq!(usage_without_rust_only_lines(USAGE), cpp);
-    assert_eq!(USAGE.lines().count(), cpp.lines().count() + 2);
-    // and `plugins` and `stop` are said exactly once each
+    assert_eq!(USAGE.lines().count(), cpp.lines().count() + 3);
+    // and `plugins`, `stop` and `report` are said exactly once each
     assert_eq!(USAGE.matches("\n  plugins ").count(), 1);
     assert_eq!(USAGE.matches("\n  stop ").count(), 1);
+    assert_eq!(USAGE.matches("\n  report ").count(), 1);
 }
 
 /// Tests that set the process environment the checks read run one at a time.

@@ -20,7 +20,7 @@ const ATTR_REPARSE_POINT: u32 = 0x400;
 const ERROR_ACCESS_DENIED: i32 = 5;
 
 /// Files of `dir` written at or after `since` (FILETIME ticks). Reparse points are skipped.
-fn files_in(dir: &str, since: u64, recurse: bool, out: &mut Vec<String>) {
+pub(crate) fn files_in(dir: &str, since: u64, recurse: bool, out: &mut Vec<String>) {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return;
     };
@@ -84,7 +84,7 @@ pub fn delete_session_logs(channel_dir: &str, since: u64) -> i32 {
     }
 }
 
-fn plural(n: usize) -> &'static str {
+pub(crate) fn plural(n: usize) -> &'static str {
     if n == 1 {
         ""
     } else {
@@ -218,7 +218,7 @@ want to report a bug. Older logs are not touched.\n\
     );
 }
 
-fn is_text_report(f: &str) -> bool {
+pub(crate) fn is_text_report(f: &str) -> bool {
     match f.rfind('.') {
         Some(dot) => {
             let ext = &f[dot..];
@@ -230,7 +230,7 @@ fn is_text_report(f: &str) -> bool {
     }
 }
 
-fn url_encode(s: &str) -> String {
+pub(crate) fn url_encode(s: &str) -> String {
     let mut o = String::new();
     for c in s.bytes() {
         if c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b'.' | b'~') {
@@ -263,6 +263,91 @@ fn host_identities(host: &dyn Host) -> scol_redact::Identities {
         id.account_names.push(last.as_bytes().to_vec());
     }
     id
+}
+
+/// The last lines of a bundle's README: what was replaced and what the reader still has to do.
+pub(crate) const REDACTED_NOTE: &str = "Redacted: RSI handle, nickname, character name and account/GEID numbers -> <redacted>; Windows user name -> <user>;\r\nprofile paths -> %USERPROFILE%; e-mail addresses -> <redacted>. Free text can still hold a name: read the files before you share them.\r\n";
+
+/// What goes into a bundle and where it is written.
+pub(crate) struct BundleSpec<'a> {
+    /// The folder the bundle is made in (`data\crash-reports`, `data\reports`).
+    pub dir: &'a str,
+    /// The start of the zip's name; the local date and time follow.
+    pub name: &'a str,
+    /// Files to take: (path, name in the bundle). A missing or empty file is left out; of a huge one
+    /// the last 16 MiB are kept.
+    pub files: &'a [(String, String)],
+    /// Texts the launcher made itself: (name in the bundle, text). Redacted like the files.
+    pub texts: &'a [(String, Vec<u8>)],
+    /// `README.txt`, written as it is.
+    pub readme: &'a str,
+}
+
+/// A bundle that was written.
+pub(crate) struct Bundle {
+    /// The zip, or the folder when `tar.exe` could not zip it.
+    pub made: String,
+    pub zipped: bool,
+    /// What is in it besides `README.txt`: (name, bytes after redaction).
+    pub names: Vec<(String, usize)>,
+    /// The logs held more handles than the redactor keeps, so one may be left in free text.
+    pub handles_dropped: bool,
+}
+
+/// Writes a redacted bundle: every file teaches the redactor the handle for all of them, then each
+/// is written with the strict rules (a bundle leaves the PC), then `tar.exe` zips the folder. Nothing
+/// is sent anywhere.
+pub(crate) fn write_bundle(host: &mut dyn Host, spec: &BundleSpec<'_>) -> Bundle {
+    let mut ids = host_identities(host);
+    ids.strict = true; // hide short and common-word handles inside words too
+    const KEEP: usize = 16 << 20;
+    let mut parts: Vec<(&str, Vec<u8>)> = Vec::new();
+    for (src, name) in spec.files {
+        let Ok(mut bytes) = std::fs::read(src) else {
+            continue;
+        };
+        if bytes.len() > KEEP {
+            bytes.drain(..bytes.len() - KEEP); // keep the tail of huge logs
+        }
+        scol_redact::learn(&mut ids, &bytes);
+        parts.push((name, bytes));
+    }
+    for (name, text) in spec.texts {
+        scol_redact::learn(&mut ids, text);
+        parts.push((name, text.clone()));
+    }
+    let (y, mo, d, h, mi, s) = local_time();
+    let stamp = format!("{y:04}{mo:02}{d:02}-{h:02}{mi:02}{s:02}");
+    let stage = format!("{}\\tmp-{stamp}", spec.dir);
+    let zip = format!("{}\\{}-{stamp}.zip", spec.dir, spec.name);
+    let _ = std::fs::create_dir_all(&stage);
+    let redactor = scol_redact::Redactor::new(&ids);
+    let mut names = Vec::new();
+    for (name, bytes) in &parts {
+        if bytes.is_empty() {
+            continue;
+        }
+        let clean = redactor.apply(bytes);
+        if std::fs::write(format!("{stage}\\{name}"), &clean).is_ok() {
+            names.push((name.to_string(), clean.len()));
+        }
+    }
+    let _ = std::fs::write(format!("{stage}\\README.txt"), spec.readme);
+    let tar = system32(host.system(), "tar.exe");
+    let zipped = host.system().is_file(&tar)
+        && host
+            .system()
+            .run(&tar, &format!("-a -cf \"{zip}\" -C \"{stage}\" ."))
+            == 0;
+    if zipped {
+        let _ = std::fs::remove_dir_all(&stage);
+    }
+    Bundle {
+        made: if zipped { zip } else { stage },
+        zipped,
+        names,
+        handles_dropped: ids.legacy_dropped > 0 || ids.priority_dropped > 0,
+    }
 }
 
 /// `OfferCrashReport`: after a session with files in `Crashes`, offers a redacted bundle in
@@ -315,50 +400,20 @@ pub fn offer_crash_report(
         let rel = f.get(crash_root.len()..).unwrap_or(f).replace('\\', "_");
         items.push((f.clone(), format!("Crashes_{rel}")));
     }
-    let mut texts: Vec<Vec<u8>> = vec![Vec::new(); items.len()];
-    let mut ids = host_identities(host);
-    ids.strict = true; // a crash bundle leaves the PC: hide short and common-word handles inside words too
-    const KEEP: usize = 16 << 20;
-    for (i, (src, _)) in items.iter().enumerate() {
-        let Ok(mut bytes) = std::fs::read(src) else {
-            continue;
-        };
-        if bytes.len() > KEEP {
-            bytes.drain(..bytes.len() - KEEP); // keep the tail of huge logs
-        }
-        scol_redact::learn(&mut ids, &bytes); // every file teaches the handle for all of them
-        texts[i] = bytes;
-    }
-    let (y, mo, d, h, mi, s) = local_time();
-    let stamp = format!("{y:04}{mo:02}{d:02}-{h:02}{mi:02}{s:02}");
-    let dir = format!("{here}\\data\\crash-reports");
-    let stage = format!("{dir}\\tmp-{stamp}");
-    let zip = format!("{dir}\\sc-offline-crash-{stamp}.zip");
-    let _ = std::fs::create_dir_all(&stage);
-    let redactor = scol_redact::Redactor::new(&ids);
-    let mut put = 0usize;
-    for (i, (_, name)) in items.iter().enumerate() {
-        if texts[i].is_empty() {
-            continue;
-        }
-        if std::fs::write(format!("{stage}\\{name}"), redactor.apply(&texts[i])).is_ok() {
-            put += 1;
-        }
-    }
-    let readme = format!(
-        "sc-offline {SCO_VERSION} crash report\r\nGame: {game_build}\r\nRedacted: RSI handle, nickname, character name and account/GEID numbers -> <redacted>; Windows user name -> <user>;\r\nprofile paths -> %USERPROFILE%; e-mail addresses -> <redacted>. Free text can still hold a name: read the files before you share them.\r\n"
+    let readme =
+        format!("sc-offline {SCO_VERSION} crash report\r\nGame: {game_build}\r\n{REDACTED_NOTE}");
+    let bundle = write_bundle(
+        host,
+        &BundleSpec {
+            dir: &format!("{here}\\data\\crash-reports"),
+            name: "sc-offline-crash",
+            files: &items,
+            texts: &[],
+            readme: &readme,
+        },
     );
-    let _ = std::fs::write(format!("{stage}\\README.txt"), readme);
-    let tar = system32(host.system(), "tar.exe");
-    let zipped = host.system().is_file(&tar)
-        && host
-            .system()
-            .run(&tar, &format!("-a -cf \"{zip}\" -C \"{stage}\" ."))
-            == 0;
-    if zipped {
-        let _ = std::fs::remove_dir_all(&stage);
-    }
-    let made = if zipped { zip } else { stage };
+    let (put, zipped, made) = (bundle.names.len(), bundle.zipped, bundle.made);
+    let ids_dropped = bundle.handles_dropped;
     let _ = writeln!(
         out,
         "Crash:    report saved: {made} ({put} file{}{})",
@@ -370,7 +425,7 @@ pub fn offer_crash_report(
         }
     );
     let _ = writeln!(out, "          Look through it before you share it: the redaction covers known shapes only, so a name in free text can remain.");
-    if ids.legacy_dropped > 0 || ids.priority_dropped > 0 {
+    if ids_dropped {
         let _ = writeln!(out, "          The logs held more handles than the redactor keeps, so a handle may be left in free text: read every file.");
     }
     if !host.ask_yes(

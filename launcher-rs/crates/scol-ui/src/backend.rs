@@ -22,6 +22,8 @@ pub enum Command {
     Update,
     /// `uninstall`: the Repair button.
     Repair,
+    /// `report`: the Create report button. It only reads, so it also runs beside Play.
+    Report,
 }
 
 impl Command {
@@ -32,6 +34,7 @@ impl Command {
             Command::Stop => "stop",
             Command::Update => "update",
             Command::Repair => "uninstall",
+            Command::Report => "report",
         }
     }
 }

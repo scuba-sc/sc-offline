@@ -244,6 +244,12 @@ pub fn self_checks(here: &str, cfg: &Config, g: &GamePaths, out: &mut dyn Write)
 /// Read-only: nothing is written, no update check goes out, no folder picker opens and a leftover
 /// update is not settled. Returns the exit code.
 pub fn run_status(here: &str, game_arg: &str, out: &mut dyn Write) -> i32 {
+    status_and_folder(here, game_arg, out).0
+}
+
+/// [`run_status`], and the game's Bin64 folder it found (empty when it found none). For the problem
+/// report, which puts this text in the bundle and reads `Game.log` from that folder.
+pub fn status_and_folder(here: &str, game_arg: &str, out: &mut dyn Write) -> (i32, String) {
     let _ = write!(out, "sc-offline launcher {SCO_VERSION}\n\n");
     let cfg = match read_config(std::path::Path::new(&format!(
         "{here}\\{}",
@@ -265,12 +271,12 @@ pub fn run_status(here: &str, game_arg: &str, out: &mut dyn Write) -> i32 {
     };
     let bin = match find_game(here, game_arg, &cfg, out) {
         Ok((bin, _discovered)) => bin,
-        Err(code) => return code,
+        Err(code) => return (code, String::new()),
     };
     let _ = writeln!(out, "Folder:   {bin}");
     self_checks(here, &cfg, &GamePaths::new(&bin), out);
     let _ = writeln!(out);
-    exit_code::OK
+    (exit_code::OK, bin)
 }
 
 /// Step 1 of the C++ `wmain`, shared with `RunStatus`: the game folder from `--game`, then `game =`

@@ -7,7 +7,7 @@ The new launcher's `play` command and the steps it takes with administrator righ
 ## Commands
 
 ```text
-sc-offline.exe [play|install|uninstall|status|mcp|update|stop|plugins|help] [--game <folder>] [--dry-run] [--skip-eac-check] [--game-log] [--end]
+sc-offline.exe [play|install|uninstall|status|mcp|update|stop|report|plugins|help] [--game <folder>] [--dry-run] [--skip-eac-check] [--game-log] [--end] [--no-game-log]
 ```
 
 | Command | What it does |
@@ -19,6 +19,7 @@ sc-offline.exe [play|install|uninstall|status|mcp|update|stop|plugins|help] [--g
 | `mcp` | A read-only server that lets an [AI agent](ai-agents.md) see status, plugins, log tails and `sc-offline.ini`. `Game.log` is served only with `--game-log`, because it can hold account names. |
 | `update` | Checks GitHub for a newer sc-offline and offers to install it ([Updates](#updates)). `--check` only checks, `--yes` does not ask, `--prerelease` also offers test builds. The binary accepts these three flags, but `sc-offline.exe help` does not list them. |
 | `stop` | Asks the running game of this install to close, like the window's Stop ([below](#stop)). Exit `0` when it closed or nothing was running, `1` when the game folder is unknown or the game is still running. `--end` ends the process if it is still open a minute later. |
+| `report` | Writes a [problem report](#problem-report-on-request) into `data\reports`: the status check and the logs in one zip, with your names replaced. It only reads the game folder and sends nothing. `--no-game-log` leaves `Game.log` out. The window's **Create report** button runs it. |
 | `plugins` | Manages the plugins in `data\plugins` ([Plugin commands](#plugin-commands)). |
 
 | Option | Meaning |
@@ -50,7 +51,7 @@ A double-click opens the window. It speaks English and Russian (**Language** on 
 
 **Output** shows what the running command prints, with a **Copy** button. **Plugins** is described [below](#the-plugins-page). **Capabilities** lists the [capability switches](#capability-switches-in-sc-offlineini) as toggles; a change applies at the next Play.
 
-**Settings** has **Repair: undo PC changes**, **Game logs after a session**, **Language**, **In-game menu** (**Classic**, or **New**, which has not been run in game), **Plugins** on or off, **Check for updates**, **Edit sc-offline.ini** and **Open folder**. They are read-only while the game or a command runs. Browse (the folder picker, also shown when no game is found) and the restart after an update have not been run in game.
+**Settings** has **Repair: undo PC changes**, **Game logs after a session**, **Language**, **In-game menu** (**Classic**, or **New**, which has not been run in game), **Plugins** on or off, **Check for updates**, **Create report** (with **Open the reports folder**), **Edit sc-offline.ini** and **Open folder**. They are read-only while the game or a command runs, except **Create report**, which only reads and also works while the game runs. Browse (the folder picker, also shown when no game is found) and the restart after an update have not been run in game.
 
 ### Stop
 
@@ -177,6 +178,18 @@ The Discord plugin (`data\plugins\discord`) is **off** until a decision is made 
 ## Crash reports and session logs
 
 If the game wrote crash files during the session, the launcher offers a report before the log cleanup. **y** zips `mod.log`, `launcher.log`, `Game.log` and the crash folder's text files into `data\crash-reports\sc-offline-crash-<time>.zip`. In the copies, your RSI handle, nickname, character name, account numbers and e-mail addresses become `<redacted>`, and your Windows user name becomes `<user>`. Free text can still hold a name no log line announced, so read the zip before you share it. Memory dumps (`.dmp`) are left out because they cannot be redacted. **Nothing is uploaded**: you attach the zip. `crash_reports = off` turns this off.
+
+### Problem report on request
+
+For a bug that is not a crash, `sc-offline.exe report` (or **Settings > Create report** in the window) makes the same kind of bundle whenever you ask: `data\reports\sc-offline-report-<time>.zip`. It holds:
+
+- `status.txt`, the output of `status`;
+- `sc-offline.ini` and `plugins.txt` (each plugin folder, on or off, with the id, version and kind from its `plugin.ini`);
+- `data\mod.log` and `data\launcher.log`;
+- the game's `Game.log`, unless you pass `--no-game-log`;
+- the text files of crashes from the last 7 days (at most 32, newest first). Memory dumps are left out.
+
+Every file goes through the same replacement as the crash report, and the command lists what it put in with each file's size. It writes only into `data\reports` and reads the game folder, so it also works while the game runs. **Nothing is sent.** Read the zip, then attach it to your bug report. From a terminal the command offers to open the bug form; the window opens the reports folder. Of a very large log only the last 16 MiB are kept. Not run in game.
 
 When the game closes, the launcher lists the logs the game wrote this session (`Game.log`, new files in `logbackups` and `Crashes`) and asks **"Delete these files?"** The answers are **Delete** (after one more **"Are you sure?"**), **Keep** (also Enter), **Always delete** and **Never delete**. The last two are saved as `clean_logs = always` or `never`. Anything unclear keeps the files. Only this session's files are deleted. Older files, `data\mod.log` and `data\launcher.log` are never touched. Keep `Game.log` if you want to report a bug.
 

@@ -2,6 +2,10 @@
 
 ## Unreleased (after 0.8.0-rc.1)
 
+### Added
+
+- **Problem report on request.** `sc-offline.exe report` and **Settings > Create report** in the window write `data\reports\sc-offline-report-<time>.zip`: the output of `status`, `sc-offline.ini`, the plugin list, `mod.log`, `launcher.log`, `Game.log` (`--no-game-log` leaves it out) and the text files of crashes from the last 7 days. Your RSI handle, account numbers, e-mail addresses and Windows user name are replaced, as in the crash report. Nothing is sent: you read the zip and attach it yourself ([details](docs/launcher.md#problem-report-on-request)). The classic launcher does not have this command.
+
 ### Fixed
 
 - **Launcher window on a PC in light mode.** With Windows set to its light theme the window drew dark text and light buttons on its dark panels, so most text was hard to read ([#219](https://github.com/scuba-sc/sc-offline/issues/219) by [@Power-9](https://github.com/Power-9)). The window is now dark whatever theme Windows uses.

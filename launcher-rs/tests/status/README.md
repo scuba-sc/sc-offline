@@ -20,10 +20,10 @@ python tests/status/compare_status.py --cpp <build dir>/bin/Release/sc-offline.e
   (including two games and the same install under two spellings, one a junction).
 - `status` must write nothing: the whole scenario tree is compared before and after each run, for both
   programs. The Rust exe is also scanned for network DLL imports.
-- The Rust usage text has two lines the C++ usage lacks, because the C++ launcher has no `stop` and no `plugins`
-  command (`scol_cli::CPP_USAGE_LINES_NOT_HERE`). `compare_status.py` drops exactly those two lines from the output
-  before comparing; any other difference in the usage still fails. The crate test
-  `the_usage_differs_from_the_cpp_usage_by_exactly_the_two_rust_only_lines` reads `kUsage` from `launcher.cpp`
+- The Rust usage text has three lines the C++ usage lacks, because the C++ launcher has no `stop`, no `report`
+  and no `plugins` command (`scol_cli::CPP_USAGE_LINES_NOT_HERE`). `compare_status.py` drops exactly those lines
+  from the output before comparing; any other difference in the usage still fails. The crate test
+  `the_usage_differs_from_the_cpp_usage_by_exactly_the_rust_only_lines` reads `kUsage` from `launcher.cpp`
   and checks the same.
 - Line endings are normalised (the C++ launcher prints CRLF to a pipe) and the version banner is
   compared with the version replaced. Paths are ASCII.

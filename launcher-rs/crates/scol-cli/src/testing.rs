@@ -23,6 +23,8 @@ pub struct FakeBackend {
     /// What the console answers to a question of `stop`, and the questions asked.
     pub stop_answer: bool,
     pub stop_asked: Vec<String>,
+    /// Every `report` call.
+    pub report_calls: Vec<scol_play::report::ReportArgs>,
     /// `free_console` of every window call.
     pub window_calls: Vec<bool>,
     pub wants_window: bool,
@@ -44,6 +46,7 @@ impl FakeBackend {
             },
             stop_answer: false,
             stop_asked: Vec::new(),
+            report_calls: Vec::new(),
             window_calls: Vec::new(),
             wants_window: false,
         }
@@ -90,6 +93,15 @@ impl Backend for FakeBackend {
             },
             out,
         )
+    }
+    fn report(
+        &mut self,
+        args: &scol_play::report::ReportArgs,
+        here: &str,
+        out: &mut dyn Write,
+    ) -> i32 {
+        self.report_calls.push(args.clone());
+        scol_play::report::make_report(&mut self.host, out, here, args)
     }
     fn window(&mut self, _here: &str, free_console: bool) -> i32 {
         self.window_calls.push(free_console);

@@ -33,4 +33,4 @@ body:
     id: logs
     attributes:
       label: Logs
-      description: Attach data/launcher.log, data/mod.log and the game's Game.log (drag the files in).
+      description: "From 0.8.0: run `sc-offline.exe report` (or Settings > Create report in the window) and attach the zip it writes into data/reports. Your account names are replaced in it. Otherwise attach data/launcher.log, data/mod.log and the game's Game.log; note that Game.log holds your account name."

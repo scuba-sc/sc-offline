@@ -349,3 +349,57 @@ fn the_window_restart_reports_when_the_new_exe_cannot_start() {
     let missing = scratch("restart").join("no-such.exe");
     assert!(!scol_cli::window::restart_window(&missing));
 }
+
+// ---- report ---------------------------------------------------------------------------------
+
+#[test]
+fn report_reads_its_own_flag_and_writes_the_bundle_into_data_reports() {
+    use scol_cli::report_args;
+    use scol_play::report::ReportArgs;
+    let on = |game: &str, game_log: bool| {
+        Some(ReportArgs {
+            game: game.to_string(),
+            game_log,
+        })
+    };
+    assert_eq!(report_args(&args(&[])), on("", true));
+    assert_eq!(report_args(&args(&["--no-game-log"])), on("", false));
+    assert_eq!(
+        report_args(&args(&["--NO-GAME-LOG", "--game", "D:\\g"])),
+        on("D:\\g", false)
+    );
+    assert_eq!(report_args(&args(&["--game"])), None);
+    assert_eq!(report_args(&args(&["--dry-run"])), None);
+
+    let (here, _bin) = world("report");
+    std::fs::write(here.join("data").join("mod.log"), b"a line of the mod").unwrap();
+    let mut be = backend();
+    let (code, out) = run_stop_cli(&mut be, &here, &["report", "--no-game-log"]);
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(be.report_calls, [on("", false).unwrap()]);
+    assert!(out.contains("Report:   saved: "), "{out}");
+    assert!(
+        out.contains("Game.log was left out (--no-game-log)."),
+        "{out}"
+    );
+    let reports: Vec<_> = std::fs::read_dir(here.join("data").join("reports"))
+        .unwrap()
+        .flatten()
+        .collect();
+    assert_eq!(reports.len(), 1, "one bundle in data\\reports");
+    assert!(reports[0].path().join("status.txt").is_file());
+    assert!(reports[0].path().join("mod.log").is_file());
+
+    // The command word after an option, as every other command allows.
+    let (code, out) = run_stop_cli(&mut be, &here, &["--game", "D:\\nowhere", "report"]);
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(be.report_calls.len(), 2);
+    assert_eq!(be.report_calls[1], on("D:\\nowhere", true).unwrap());
+
+    // Anything else after `report` is an unknown argument: usage, then the error, and nothing is written.
+    let (code, out) = run_stop_cli(&mut be, &here, &["report", "--send"]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out.starts_with("usage: sc-offline.exe"), "{out}");
+    assert!(out.contains("[!] unknown argument '--send'"), "{out}");
+    assert_eq!(be.report_calls.len(), 2);
+}

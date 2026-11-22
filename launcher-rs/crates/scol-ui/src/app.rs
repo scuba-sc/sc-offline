@@ -166,6 +166,11 @@ impl App {
         self.ctx = Some(ctx.clone());
     }
 
+    /// `data\reports`: where Create report writes its zips.
+    pub fn reports_dir(&self) -> PathBuf {
+        self.here.join("data").join("reports")
+    }
+
     pub fn ini_path(&self) -> PathBuf {
         self.here.join(scol_contract::files::INI)
     }
@@ -330,6 +335,10 @@ impl App {
                                 )
                             };
                             self.output.push(done);
+                            if c == Command::Report && code == 0 {
+                                // Show the player the zip they are about to read and attach.
+                                self.backend.open(&self.reports_dir());
+                            }
                             self.submit(Job::Status);
                         }
                         Err(e) => {
@@ -339,6 +348,7 @@ impl App {
                                     Command::Stop => self.t("launcher.action.stop"),
                                     Command::Update => self.t("launcher.action.update"),
                                     Command::Repair => self.t("launcher.action.repair"),
+                                    Command::Report => self.t("launcher.ui.settings.report_button"),
                                 };
                                 self.tf(
                                     "launcher.ui.unavailable",

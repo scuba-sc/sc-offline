@@ -23,6 +23,7 @@ pub mod pick;
 pub mod post;
 #[cfg(feature = "real")]
 pub mod real;
+pub mod report;
 pub mod selftest;
 pub mod settle;
 pub mod stop;

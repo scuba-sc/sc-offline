@@ -367,6 +367,60 @@ impl Backend for SlowPlay {
     }
 }
 
+/// Create report: answers with the exit code it is told to, and records what the window opens.
+struct Reporting {
+    code: i32,
+    opened: std::sync::Mutex<Vec<PathBuf>>,
+}
+
+impl Backend for Reporting {
+    fn run(&self, c: Command, _h: &Path, out: &mut dyn FnMut(&str)) -> Result<i32, String> {
+        match c {
+            Command::Report => {
+                out("Report:   saved: somewhere");
+                Ok(self.code)
+            }
+            _ => Err("not connected yet".into()),
+        }
+    }
+
+    fn open(&self, path: &Path) {
+        self.opened.lock().unwrap().push(path.to_path_buf());
+    }
+}
+
+#[test]
+fn create_report_opens_the_reports_folder_only_when_a_report_was_written() {
+    use scol_ui::app::{App, Job};
+    assert_eq!(Command::Report.word(), "report");
+    for (code, opens) in [(0, 1), (1, 0)] {
+        let s = Scratch::new(&format!("report{code}"));
+        let backend = Arc::new(Reporting {
+            code,
+            opened: std::sync::Mutex::new(Vec::new()),
+        });
+        let mut app = App::new(s.0.clone(), backend.clone());
+        app.submit(Job::Command(Command::Report));
+        assert_eq!(
+            app.output.last().map(String::as_str),
+            Some("> sc-offline.exe report")
+        );
+        let start = std::time::Instant::now();
+        while app.busy > 0 {
+            app.pump();
+            assert!(start.elapsed().as_secs() < 180, "jobs did not finish");
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let opened = backend.opened.lock().unwrap().clone();
+        assert_eq!(opened.len(), opens, "exit code {code}: {opened:?}");
+        if opens == 1 {
+            assert_eq!(opened[0], s.0.join("data").join("reports"));
+            assert_eq!(opened[0], app.reports_dir());
+        }
+        assert!(app.output.iter().any(|l| l == "Report:   saved: somewhere"));
+    }
+}
+
 #[test]
 fn stop_runs_beside_play_and_play_stays_running() {
     use scol_ui::app::{App, Job};

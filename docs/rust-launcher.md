@@ -64,7 +64,7 @@ sc-offline.exe [command] [--game <folder>] [--dry-run] [--skip-eac-check]
 - No arguments: the window when double-clicked, otherwise `play`.
 - Hidden modes: `--helper`, `--delete-logs`, `--self-test <tag>`, `--elevated-update`. Test builds add `--apply-zip`. `scol-ui.exe` also takes `--here`, `--ui-self-test`, `--ui-screenshots`.
 - Exit codes: 0 ok, 1 error, 2 Easy Anti-Cheat active, 3 the game is running, 10 (window child only) an update was applied and the window restarts.
-- `stop` and `plugins` do not exist in the C++ launcher. The usage text differs by exactly those two lines, and the parity scripts drop them.
+- `stop`, `report` and `plugins` do not exist in the C++ launcher. The usage text differs by exactly those three lines, and the parity scripts drop them.
 
 ## How the launcher and the game talk
 

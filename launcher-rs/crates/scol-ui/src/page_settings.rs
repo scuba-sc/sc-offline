@@ -121,6 +121,20 @@ pub fn draw(a: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     });
     ui.add_space(8.0);
 
+    card(ui, &a.t("launcher.ui.settings.report"), |ui| {
+        ui.horizontal_wrapped(|ui| {
+            let idle = !a.running.contains(&Command::Report);
+            if button(ui, &a.t("launcher.ui.settings.report_button"), idle) {
+                acts.push(Act::Job(Job::Command(Command::Report)));
+            }
+            if plain(ui, &a.t("launcher.ui.settings.report_open"), true) {
+                acts.push(Act::OpenPath(a.reports_dir()));
+            }
+        });
+        ui.add(egui::Label::new(dim(a.t("launcher.ui.settings.report_hint"))).wrap());
+    });
+    ui.add_space(8.0);
+
     card(ui, &a.t("launcher.ui.settings.ini_path"), |ui| {
         ui.add(
             egui::Label::new(egui::RichText::new(a.ini_path().display().to_string()).monospace())

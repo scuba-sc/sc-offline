@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The command line of the sc-offline Rust launcher: `play` (the default), `install`, `uninstall`,
-//! `status`, `mcp [--game-log]`, `update`, `stop [--end]`, `plugins ...`, `help`, and the hidden `--helper`,
-//! `--delete-logs`, `--self-test` and `--elevated-update`.
+//! `status`, `mcp [--game-log]`, `update`, `stop [--end]`, `report [--no-game-log]`, `plugins ...`, `help`,
+//! and the hidden `--helper`, `--delete-logs`, `--self-test` and `--elevated-update`.
 //!
 //! The argument rules, the usage text, the messages and the exit codes are those of `sc-offline.exe`
-//! (`wmain` in `launcher/launcher.cpp`), with two commands the C++ launcher only has as window buttons or
-//! not at all: `stop` and `plugins`. Their two usage lines are the only lines [`USAGE`] has that the C++
-//! usage lacks ([`CPP_USAGE_LINES_NOT_HERE`]); the parity scripts and tests drop exactly those two.
+//! (`wmain` in `launcher/launcher.cpp`), with three commands the C++ launcher only has as window buttons or
+//! not at all: `stop`, `report` and `plugins`. Their usage lines are the only lines [`USAGE`] has that the
+//! C++ usage lacks ([`CPP_USAGE_LINES_NOT_HERE`]); the parity scripts and tests drop exactly those.
+//! `report` writes a redacted zip of the status check and the logs into `data\reports` and sends nothing.
 //! `status` and `mcp` are read-only and offline. `play`, `install` and `uninstall` run `scol_play`'s flow
 //! over a [`Backend`]; the binary uses the real one, the tests a fake with a stand-in game process.
 //! `update` runs `scol_update` (offer, install, restart into the new exe); `stop` runs the stop channel and
@@ -23,6 +24,7 @@ use scol_contract::exit_code;
 use scol_install::status::{fail, run_status};
 use scol_install::version::{SCO_BASED_ON, SCO_VERSION};
 use scol_mcp::{run_in as run_mcp_in, Io as McpIo};
+use scol_play::report::ReportArgs;
 use scol_play::{Mode, PlayArgs};
 use std::io::{Read, Write};
 
@@ -37,6 +39,7 @@ pub const USAGE: &str = "usage: sc-offline.exe [command] [--game <folder>] [--dr
 \x20            add --game-log to let it read Game.log too (off by default: it can hold account names)\n\
 \x20 update     check GitHub for a newer sc-offline and offer to install it (saves and ini kept)\n\
 \x20 stop       ask the running game to close (the mod saves first); --end ends it if it is still open a minute later\n\
+\x20 report     zip the status check and the logs into data\\reports for a bug report; names replaced, nothing sent\n\
 \x20 plugins    list, enable, disable, install, remove and set up plugins, and the catalogue; `plugins` alone shows how\n\
 \x20 help       show this\n\
 \n\
@@ -49,28 +52,31 @@ pub const USAGE: &str = "usage: sc-offline.exe [command] [--game <folder>] [--dr
 \n\
 exit codes: 0 ok, 1 error, 2 Easy Anti-Cheat active, 3 the game is running\n";
 
-/// The two usage lines of [`USAGE`] the C++ launcher's usage does not have: the C++ launcher has no `stop`
-/// command (its window has a Stop button) and no `plugins` command. Parity checks drop exactly these.
-pub const CPP_USAGE_LINES_NOT_HERE: [&str; 2] = [
+/// The usage lines of [`USAGE`] the C++ launcher's usage does not have: the C++ launcher has no `stop`
+/// command (its window has a Stop button), no `report` and no `plugins` command. Parity checks drop
+/// exactly these.
+pub const CPP_USAGE_LINES_NOT_HERE: [&str; 3] = [
     "  stop       ask the running game to close (the mod saves first); --end ends it if it is still open a minute later",
+    "  report     zip the status check and the logs into data\\reports for a bug report; names replaced, nothing sent",
     "  plugins    list, enable, disable, install, remove and set up plugins, and the catalogue; `plugins` alone shows how",
 ];
 
-/// [`USAGE`] as the C++ launcher prints it: the two lines above removed.
+/// [`USAGE`] as the C++ launcher prints it: the lines above removed.
 pub fn usage_without_rust_only_lines(text: &str) -> String {
     text.split_inclusive('\n')
         .filter(|l| !CPP_USAGE_LINES_NOT_HERE.contains(&l.trim_end_matches('\n')))
         .collect()
 }
 
-/// The words of the commands (the C++ launcher's, and `stop`; `plugins` is taken before parsing).
-const COMMANDS: [&str; 8] = [
+/// The words of the commands (the C++ launcher's, `stop` and `report`; `plugins` is taken before parsing).
+const COMMANDS: [&str; 9] = [
     "play",
     "install",
     "uninstall",
     "status",
     "update",
     "stop",
+    "report",
     "help",
     "mcp",
 ];
@@ -191,6 +197,8 @@ pub trait Backend {
     fn update(&mut self, args: &[String], here: &str, out: &mut dyn Write) -> i32;
     /// `stop [--game <folder>] [--end]`: the stop channel, then WM_CLOSE, then (after a minute) the End step.
     fn stop(&mut self, args: &StopArgs, here: &str, out: &mut dyn Write) -> i32;
+    /// `report [--game <folder>] [--no-game-log]`: the redacted problem report in `data\reports`.
+    fn report(&mut self, args: &ReportArgs, here: &str, out: &mut dyn Write) -> i32;
     /// Opens the window; returns when it closes. `free_console`: this exe owns its console (double-click).
     fn window(&mut self, here: &str, free_console: bool) -> i32;
     /// True when no arguments should open the window: double-clicked, not under Wine, not a window child.
@@ -243,6 +251,13 @@ pub fn run_with(
     }
     if !args.is_empty() && is(&args[0], "plugins") {
         return run_plugins(&args[1..], here);
+    }
+    // `report [--game <folder>] [--no-game-log]`: its own flag, so it is read here. Anything else after
+    // `report` goes through the common rules below and ends as an unknown argument.
+    if !args.is_empty() && is(&args[0], "report") {
+        if let Some(report) = report_args(&args[1..]) {
+            return backend.report(&report, here, io.stdout);
+        }
     }
     if !args.is_empty()
         && is(&args[0], "update")
@@ -310,6 +325,14 @@ pub fn run_with(
         }
         "update" => backend.update(&["update".to_string()], here, io.stdout),
         "stop" => backend.stop(&StopArgs { game, end }, here, io.stdout),
+        "report" => backend.report(
+            &ReportArgs {
+                game,
+                game_log: true,
+            },
+            here,
+            io.stdout,
+        ),
         "play" | "install" | "uninstall" => {
             let play = PlayArgs {
                 mode: match command.as_str() {
@@ -326,6 +349,28 @@ pub fn run_with(
         }
         other => fail(io.stdout, &format!("unknown command '{other}'")),
     }
+}
+
+/// The arguments after `report`: `--game <folder>` and `--no-game-log`, in any order. None when
+/// something else is there (the common argument rules then name it).
+pub fn report_args(rest: &[String]) -> Option<ReportArgs> {
+    let mut r = ReportArgs {
+        game: String::new(),
+        game_log: true,
+    };
+    let mut i = 0;
+    while i < rest.len() {
+        if is(&rest[i], "--no-game-log") {
+            r.game_log = false;
+        } else if is(&rest[i], "--game") && i + 1 < rest.len() {
+            i += 1;
+            r.game = rest[i].clone();
+        } else {
+            return None;
+        }
+        i += 1;
+    }
+    Some(r)
 }
 
 /// `plugins list|enable|disable|install|remove|catalogue ...`: the plugin manager, rooted at the launcher
@@ -565,6 +610,9 @@ impl Backend for RealBackend {
             &mut ask_on_console,
             out,
         )
+    }
+    fn report(&mut self, args: &ReportArgs, here: &str, out: &mut dyn Write) -> i32 {
+        scol_play::report::make_report(&mut scol_play::real::RealHost::new(), out, here, args)
     }
     fn window(&mut self, here: &str, free_console: bool) -> i32 {
         window::open_window(here, free_console)
