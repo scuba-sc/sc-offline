@@ -1,0 +1,9 @@
+{
+  "version": "0.7.7",
+  "tag": "v0.7.7",
+  "source_commit": "1ac5308a65ac0ba7955e4108bd1dc800449cfa69",
+  "repository": "scuba-sc/sc-offline",
+  "url": "https://github.com/scuba-sc/sc-offline/releases/download/v0.7.7/sc-offline-v0.7.7.zip",
+  "sha256": "24599b8f140e137cd1b8d0701cb1c0b8b895e154a3bbed0107d446b266a0ef0f",
+  "status": "Published legacy runtime; not a build of the development host. Gameplay must be qualified separately for each game build."
+}

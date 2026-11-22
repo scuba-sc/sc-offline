@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Optional Windows desktop installer and session supervisor.** A per-user app,
+  Start menu/desktop shortcuts and Windows Apps uninstall entry wrap the published,
+  checksum-pinned legacy runtime without changing development-host admission.
+  Session-only firewall protection survives a closed launcher, cleanup is automatic,
+  and Stanton-first startup includes committed-memory checks and OOM diagnostics.
+  See `windows/README.md` for runtime provenance, validation and limitations.
+
 - **Adopt the stable SDK 2.4.0 package.** The coordinated development host
   source and standalone plugin archive now use sco-core `6106fa36`; the combined
   archive is checksum- and source-verified against `sdk-v2.4.0`. Linux tutorial,

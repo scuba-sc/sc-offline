@@ -43,6 +43,10 @@ For the actual commands and worked examples, start with [sc-offline's SDK workfl
 
 ## Quick start
 
+For the optional registered Windows app and graphical installer, see
+[Windows desktop installation](windows/README.md). Its checksum-pinned legacy
+runtime is separate from the current development host and its startup gate.
+
 You need your own installed copy of Star Citizen and **64-bit Windows**. Linux through Wine is [experimental](docs/linux.md).
 
 1. Download **`sc-offline-<version>.zip`** from [Releases](https://github.com/scuba-sc/sc-offline/releases/latest), not GitHub's source-code zip.
