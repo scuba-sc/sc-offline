@@ -847,6 +847,10 @@ jobs:
     env:
       SDK_VERSION: '2.4.1'
       SDK_TAG: 'sdk-v2.4.1-rc.1'
+      # sc-creative's own default pin is an older published SDK. The product names the SDK it pins:
+      # the archive hash and the source commit below are checked against the downloaded archive.
+      SDK_SHA256: '7d17e8671a45129a74b129b4620899ba999d7be783785baa69a8e985a43cb0fd'
+      SDK_SOURCE: 'ef4061b123a1f0b4f449e6c0257078d7348520e3'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -857,7 +861,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release download "$env:SDK_TAG" -R scuba-sc/sco-core -p "sco-sdk-$env:SDK_VERSION.zip" -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
       - name: Build, test, check and stage creative from the submodule
-        run: python external/sc-creative/tools/check_creative_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-$env:SDK_VERSION.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/feature-proof"
+        run: python external/sc-creative/tools/check_creative_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-$env:SDK_VERSION.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/feature-proof" --candidate --sdk-version "$env:SDK_VERSION" --sdk-sha256 "$env:SDK_SHA256" --archive-sha256 "$env:SDK_SHA256" --sdk-source "$env:SDK_SOURCE" --sdk-profile legacy
       - name: Upload published-SDK release folder
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

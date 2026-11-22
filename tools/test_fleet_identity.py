@@ -190,7 +190,7 @@ int main(int argc,char** argv) {
             cpp = directory / "fleet_identity.cpp"
             cpp.write_text(prelude + globals_ + registry + build + mapping + retrieve + checks)
             executable = directory / "fleet_identity"
-            subprocess.run(["clang++", "-std=c++17", "-Wall", "-Wextra", "-Werror", "-Wno-unused-variable", "-Wno-unused-but-set-global", "-fsanitize=address,undefined", str(cpp), "-o", str(executable)], check=True)
+            subprocess.run(["clang++", "-std=c++17", "-Wall", "-Wextra", "-Werror", "-Wno-unused-variable", "-Wno-unknown-warning-option", "-Wno-unused-but-set-global", "-fsanitize=address,undefined", str(cpp), "-o", str(executable)], check=True)
             sanitizer_env = dict(os.environ, UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1")
             for case in ("rebuild", "malformed", "null", "empty", "capacity", "snapshot", "read-fault"):
                 with self.subTest(case=case):
