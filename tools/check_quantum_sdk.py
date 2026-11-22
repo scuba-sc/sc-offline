@@ -27,8 +27,8 @@ QUANTUM = {
           'quantum.scan -> unavailable', 'quantum.status -> ok', 'game.relocation off', 'OK: 0 failure(s)')),
     ],
     'policy_red_arm': ('plugins/quantum/controls.h',
-                       'return g.rules_known && g.rules.quantum_travel_allowed && g.rules.quantum_boost_allowed;',
-                       'return true;', 'quantum-gamerules', 'unknown policy pauses new boost UI'),
+                       'return !g.rules_readable || (g.rules_known && g.rules.quantum_travel_allowed && g.rules.quantum_boost_allowed);',
+                       'return true;', 'quantum-gamerules', 'readable but unknown rules pause new boost UI'),
     'red_arm': ('plugins/spatial/travel_plugin.h',
                 '    if (!MovesAllowed()) { why=switched_off; return SCO_UNAVAILABLE; }\n', ''),
 }
