@@ -6,8 +6,11 @@
 
 - **Problem report on request.** `sc-offline.exe report` and **Settings > Create report** in the window write `data\reports\sc-offline-report-<time>.zip`: the output of `status`, `sc-offline.ini`, the plugin list, `mod.log`, `launcher.log`, `Game.log` (`--no-game-log` leaves it out) and the text files of crashes from the last 7 days. Your RSI handle, account numbers, e-mail addresses and Windows user name are replaced, as in the crash report. Nothing is sent: you read the zip and attach it yourself ([details](docs/launcher.md#problem-report-on-request)). The classic launcher does not have this command.
 
+- **Build check on Home.** The window says whether your game build is the one this release was checked on, an earlier one from Core's list, or one nobody checked, and what to expect then. It refuses nothing. The list comes from the pinned Core (`tools/game_builds.py`), and the problem report's README carries the same line.
+
 ### Fixed
 
+- **Capabilities page wording.** A capability without a switch was described as turning on "when this game build is supported". Nothing checks a build: it turns on when its code is found in your game build, and the text now says so.
 - **Launcher window on a PC in light mode.** With Windows set to its light theme the window drew dark text and light buttons on its dark panels, so most text was hard to read ([#219](https://github.com/scuba-sc/sc-offline/issues/219) by [@Power-9](https://github.com/Power-9)). The window is now dark whatever theme Windows uses.
 - **Questions in the launcher window.** The window could not answer the launcher's questions (delete this session's logs, make a crash report), so each took its default and the question was left on the Output page. Each question now has a button per answer, Y and N work, and the taskbar button flashes while one waits.
 

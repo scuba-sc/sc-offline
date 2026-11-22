@@ -195,9 +195,22 @@ fn report_without_game_log_and_the_bug_form_on_a_yes() {
     let (w, mut host) = world("report-nolog");
     host.console_input = true;
     host.answers.push_back("y".into());
+    // A build one step past the one this release was checked on, as the game's manifest gives it.
+    let pin = scol_contract::game_builds::parse(&scol_contract::game_builds::verified()).unwrap();
+    let newer = format!("{}.{}.{}.7", pin[0], pin[1], pin[2] + 1);
+    std::fs::write(
+        format!("{}\\build_manifest.id", w.channel),
+        format!("{{\"Data\":{{\"Version\":\"{newer}\",\"RequestedP4ChangeNum\":\"99\"}}}}"),
+    )
+    .unwrap();
     let (code, text) = run(&w, &mut host, "", false);
     assert_eq!(code, 0, "{text}");
     let dir = saved(&text);
+    let readme = std::fs::read_to_string(format!("{dir}\\README.txt")).unwrap();
+    assert!(
+        readme.contains(&format!("Game: {newer} (CL 99)\r\nBuild check: newer than the build this release was checked on (")),
+        "{readme}"
+    );
     assert!(!names(&dir).contains(&"Game.log".to_string()));
     assert!(
         text.contains("Game.log was left out (--no-game-log)."),
@@ -255,6 +268,10 @@ fn the_window_child_is_not_asked_and_a_missing_game_still_gives_a_report() {
     );
     let readme = std::fs::read_to_string(format!("{dir}\\README.txt")).unwrap();
     assert!(readme.contains("Game: not found"), "{readme}");
+    assert!(
+        !readme.contains("Build check:"),
+        "no build, no claim about it: {readme}"
+    );
 }
 
 #[test]

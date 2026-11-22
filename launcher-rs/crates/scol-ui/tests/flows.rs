@@ -549,6 +549,56 @@ fn a_question_of_the_command_is_answered_with_the_window_buttons() {
 }
 
 #[test]
+fn home_says_how_the_installed_build_stands_to_the_checked_one() {
+    use scol_contract::game_builds::{listed, parse, verified};
+    use scol_ui::app::App;
+    use scol_ui::pages::{build_check_row, Mark};
+    let s = Scratch::new("buildcheck");
+    let app = App::new(s.0.clone(), Arc::new(scol_ui::Unconnected));
+    let pin = verified();
+    let p = parse(&pin).unwrap();
+
+    let (name, text, mark) = build_check_row(&app, &format!("{pin} (CL 13165946)")).unwrap();
+    assert_eq!(name, "Build check");
+    assert_eq!(text, "The build this release was checked on");
+    assert_eq!(mark, Mark::Good);
+
+    // a patch nobody checked yet: the player is told, and nothing is refused
+    let newer = format!("{}.{}.{}.48085 (CL 13220821)", p[0], p[1], p[2] + 1);
+    let (_, text, mark) = build_check_row(&app, &newer).unwrap();
+    assert!(
+        text.starts_with(&format!(
+            "Newer than the build this release was checked on ({pin})."
+        )),
+        "{text}"
+    );
+    assert!(text.contains("turn themselves off"), "{text}");
+    assert_eq!(mark, Mark::Look);
+
+    let first = &listed()[0];
+    let (_, text, mark) = build_check_row(&app, &first.build).unwrap();
+    assert_eq!(
+        text,
+        format!(
+            "An earlier build ({}). This release was checked on {pin}.",
+            first.patch
+        )
+    );
+    assert_eq!(mark, Mark::Plain);
+
+    let (_, text, mark) = build_check_row(&app, "0.0.0.1").unwrap();
+    assert!(
+        text.starts_with("Not a build this release was checked on ("),
+        "{text}"
+    );
+    assert_eq!(mark, Mark::Look);
+
+    // no build number, no line
+    assert!(build_check_row(&app, "").is_none());
+    assert!(build_check_row(&app, "StarCitizen.exe 1 bytes, 2026-11-22 21:42").is_none());
+}
+
+#[test]
 fn unconnected_backend_answers_in_words() {
     let u = scol_ui::Unconnected;
     assert!(u

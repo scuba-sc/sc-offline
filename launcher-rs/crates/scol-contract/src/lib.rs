@@ -175,6 +175,123 @@ pub mod capability_env {
 /// and checked by `tests/capabilities.rs`. Nothing in it was run in game.
 pub const CAPABILITIES_JSON: &str = include_str!("capabilities.json");
 
+/// The game builds the pinned Core's signature rows were checked against, and how an installed
+/// build stands to the one this release is verified on. The launcher shows this; it never refuses
+/// a build, because a build nobody checked usually still starts and the features whose code moved
+/// turn themselves off. "Checked" is a static signature run, not an in-game run.
+pub mod game_builds {
+    /// The generated list (`tools/game_builds.py`, from Core's `sc_game_pack.h` and
+    /// `docs/game/builds.json`). `tests/game_builds.rs` reads it with a real JSON parser too.
+    pub const JSON: &str = include_str!("game_builds.json");
+
+    /// A build of Core's register.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct Listed {
+        pub build: String,
+        /// The public patch name, for example "Alpha 4.10.3".
+        pub patch: String,
+    }
+
+    /// How the installed game build stands to the build this release was checked on.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub enum Fit {
+        /// It is the verified build.
+        Verified,
+        /// An earlier build of the register; its patch name.
+        Earlier(String),
+        /// A higher build number than the verified build: a newer patch, a hotfix or a test channel.
+        Newer,
+        /// A lower build number that the register does not have.
+        Unlisted,
+        /// No four-part build number could be read (no `build_manifest.id`).
+        Unknown,
+    }
+
+    /// Every value of `"key": "..."` in the generated file, in order. The file is written by one
+    /// tool in one shape and holds no escaped quotes, so no JSON parser is needed at run time.
+    fn values(key: &str) -> Vec<String> {
+        let needle = format!("\"{key}\": \"");
+        let mut out = Vec::new();
+        let mut rest = JSON;
+        while let Some(at) = rest.find(&needle) {
+            rest = &rest[at + needle.len()..];
+            let end = rest.find('"').unwrap_or(rest.len());
+            out.push(rest[..end].to_string());
+            rest = &rest[end..];
+        }
+        out
+    }
+
+    /// The build this release's game pack is verified on, for example "4.10.200.58746".
+    pub fn verified() -> String {
+        values("verified_build")
+            .into_iter()
+            .next()
+            .unwrap_or_default()
+    }
+
+    /// The register, oldest first.
+    pub fn listed() -> Vec<Listed> {
+        values("build")
+            .into_iter()
+            .zip(values("patch"))
+            .map(|(build, patch)| Listed { build, patch })
+            .collect()
+    }
+
+    /// The four numbers a build text starts with: "4.10.200.58746 (CL 13165946)" gives
+    /// `[4, 10, 200, 58746]`. None for the launcher's fallback text ("StarCitizen.exe 1 bytes, ...").
+    pub fn parse(text: &str) -> Option<[u32; 4]> {
+        let head = text.split_whitespace().next()?;
+        let mut parts = [0u32; 4];
+        let mut n = 0;
+        for p in head.split('.') {
+            if n == 4 || p.is_empty() || !p.bytes().all(|b| b.is_ascii_digit()) {
+                return None;
+            }
+            parts[n] = p.parse().ok()?;
+            n += 1;
+        }
+        (n == 4).then_some(parts)
+    }
+
+    /// Where `game_build` (the text of `build_manifest.id` as the launcher shows it) stands.
+    pub fn fit(game_build: &str) -> Fit {
+        let (Some(have), Some(pin)) = (parse(game_build), parse(&verified())) else {
+            return Fit::Unknown;
+        };
+        if have == pin {
+            return Fit::Verified;
+        }
+        if let Some(l) = listed().into_iter().find(|l| parse(&l.build) == Some(have)) {
+            return Fit::Earlier(l.patch);
+        }
+        if have > pin {
+            Fit::Newer
+        } else {
+            Fit::Unlisted
+        }
+    }
+
+    /// One English sentence for a console or a report. Empty for [`Fit::Unknown`].
+    pub fn describe(fit: &Fit) -> String {
+        let pin = verified();
+        match fit {
+            Fit::Verified => "the build this release was checked on".to_string(),
+            Fit::Earlier(patch) => {
+                format!("an earlier build ({patch}); this release was checked on {pin}")
+            }
+            Fit::Newer => format!(
+                "newer than the build this release was checked on ({pin}); features whose code moved turn themselves off"
+            ),
+            Fit::Unlisted => format!(
+                "not a build this release was checked on ({pin}); features whose code is not found turn themselves off"
+            ),
+            Fit::Unknown => String::new(),
+        }
+    }
+}
+
 /// Launcher process exit codes. Source: `launcher/launcher.cpp:156` to `158`.
 pub mod exit_code {
     /// `kExitOk`

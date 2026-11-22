@@ -370,16 +370,19 @@ pub fn status_rows(a: &App) -> Vec<(String, String, Mark)> {
     } else {
         a.t("launcher.status.plugins_off")
     };
-    vec![
-        (
-            a.t("launcher.status.game"),
-            game,
-            if s.folder_known {
-                Mark::Good
-            } else {
-                Mark::Look
-            },
-        ),
+    let mut rows = vec![(
+        a.t("launcher.status.game"),
+        game,
+        if s.folder_known {
+            Mark::Good
+        } else {
+            Mark::Look
+        },
+    )];
+    if let Some(row) = build_check_row(a, &s.build) {
+        rows.push(row);
+    }
+    rows.extend([
         (
             a.t("launcher.status.mod"),
             a.t(if s.mod_installed {
@@ -415,7 +418,36 @@ pub fn status_rows(a: &App) -> Vec<(String, String, Mark)> {
             crate::catalogue::HOST_SDK.to_string(),
             Mark::Plain,
         ),
-    ]
+    ]);
+    rows
+}
+
+/// The line under Game: is the installed build the one this release was checked on? Nothing is
+/// refused on the answer; the line tells the player what to expect. No line when the build number
+/// could not be read.
+pub fn build_check_row(a: &App, build: &str) -> Option<(String, String, Mark)> {
+    use scol_contract::game_builds::{fit, verified, Fit};
+    let pin = verified();
+    let (text, mark) = match fit(build) {
+        Fit::Unknown => return None,
+        Fit::Verified => (a.t("launcher.ui.home.build_verified"), Mark::Good),
+        Fit::Earlier(patch) => (
+            a.tf(
+                "launcher.ui.home.build_earlier",
+                &[("patch", &patch), ("verified", &pin)],
+            ),
+            Mark::Plain,
+        ),
+        Fit::Newer => (
+            a.tf("launcher.ui.home.build_newer", &[("verified", &pin)]),
+            Mark::Look,
+        ),
+        Fit::Unlisted => (
+            a.tf("launcher.ui.home.build_unlisted", &[("verified", &pin)]),
+            Mark::Look,
+        ),
+    };
+    Some((a.t("launcher.ui.home.build_check"), text, mark))
 }
 
 fn home(a: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {

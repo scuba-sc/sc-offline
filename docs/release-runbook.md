@@ -164,12 +164,14 @@ Then do what it lists as follow-ups by hand. In `docs/sdk-candidate.md`, turn "P
 ```bash
 python tools/capabilities.py --core external/sco-core
 python tools/capabilities.py --core external/sco-core --check
+python tools/game_builds.py --core external/sco-core
+python tools/game_builds.py --core external/sco-core --check
 python tools/check_capability_names.py --core external/sco-core
 python tools/check_menu_wording.py
 python tools/check_host_wiring.py
 ```
 
-`capabilities.py` rewrites `launcher-rs/crates/scol-contract/src/capabilities.json` and `docs/capabilities.md` from the Core's status registry. If either file changes, the launcher binary changes with it. Commit them with the pin move.
+`game_builds.py` rewrites `launcher-rs/crates/scol-contract/src/game_builds.json` from Core's `sc_game_pack.h` and build register; the launcher window uses it to say whether the installed game build is the one the release was checked on. `capabilities.py` rewrites `launcher-rs/crates/scol-contract/src/capabilities.json` and `docs/capabilities.md` from the Core's status registry. If either file changes, the launcher binary changes with it. Commit them with the pin move.
 
 ## 5. Push and open a pull request
 

@@ -166,9 +166,17 @@ pub fn make_report(host: &mut dyn Host, out: &mut dyn Write, here: &str, args: &
         ("status.txt".to_string(), status),
         ("plugins.txt".to_string(), plugin_lines(here)),
     ];
+    // Whether this is the build the release was checked on: the first thing a reader of the report asks.
+    let check = scol_contract::game_builds::describe(&scol_contract::game_builds::fit(&build));
+    let build_check = if check.is_empty() {
+        String::new()
+    } else {
+        format!("Build check: {check}\r\n")
+    };
     let readme = format!(
-        "sc-offline {SCO_VERSION} problem report\r\nGame: {}\r\nMade by `sc-offline.exe report` on this PC. Nothing was sent anywhere: attach this zip to your bug report yourself.\r\n{}{REDACTED_NOTE}",
+        "sc-offline {SCO_VERSION} problem report\r\nGame: {}\r\n{}Made by `sc-offline.exe report` on this PC. Nothing was sent anywhere: attach this zip to your bug report yourself.\r\n{}{REDACTED_NOTE}",
         if build.is_empty() { "not found" } else { &build },
+        build_check,
         if args.game_log {
             ""
         } else {

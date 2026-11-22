@@ -667,6 +667,9 @@ jobs:
       - name: Capability table is current and its wording is honest
         working-directory: .
         run: python tools/capabilities.py --core external/sco-core --check
+      - name: The launcher's game build list matches the pinned Core
+        working-directory: .
+        run: python tools/game_builds.py --core external/sco-core --check
       - name: Install the pinned Rust toolchain
         run: |
           channel="$(sed -n 's/^channel *= *"\(.*\)".*/\1/p' rust-toolchain.toml)"
