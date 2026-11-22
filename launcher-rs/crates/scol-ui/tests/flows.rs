@@ -388,7 +388,9 @@ fn stop_runs_beside_play_and_play_stays_running() {
     );
     while app.busy > 0 {
         app.pump();
-        assert!(start.elapsed().as_secs() < 10, "jobs did not finish");
+        // Each finished command starts a status job that reads the real PC state (firewall rules, hosts
+        // file); that takes seconds on a slow machine, so this wait is generous.
+        assert!(start.elapsed().as_secs() < 180, "jobs did not finish");
         std::thread::sleep(std::time::Duration::from_millis(10));
     }
     assert!(app.running.is_empty());

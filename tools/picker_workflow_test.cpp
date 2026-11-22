@@ -55,7 +55,7 @@ sco_result Set(sco_plugin* self,const char* id,const char* title,const sco_widge
         for(uint32_t j=0;j<n.item_count;++j){assert(n.items && n.items[j] && std::strlen(n.items[j])<=SCO_WIDGETS_MAX_TEXT);out.items.emplace_back(n.items[j]);}
         p.nodes.emplace(n.id,std::move(out));
     }
-    {const auto why=sc_offline::panel_dump::Violation(nodes,count,stride);if(!why.empty())std::fprintf(stderr,"%s: %s\n",id,why.c_str());assert(why.empty());}
+    {const auto why=sc_offline::panel_dump::Violation(nodes,count,stride);if(!why.empty()){std::fprintf(stderr,"%s: %s\n",id,why.c_str());}assert(why.empty());}
     sc_offline::panel_dump::Record(id,title,nodes,count,stride);
     panels[id]=std::move(p);return SCO_OK;
 }
@@ -84,14 +84,14 @@ sco_result Seats(uint64_t ship,sc_vehicle_seat* out,uint32_t max,uint32_t* count
     for(uint32_t i=0;i<*count;++i){out[i]={};out[i].index=i;out[i].flags=SC_SEAT_USABLE|SC_SEAT_USABLE_KNOWN;out[i].occupant_id=occupants[i];std::snprintf(out[i].name,sizeof(out[i].name),"synthetic seat %u",i);}
     return SCO_OK;
 }
-sco_result Occupant(uint64_t ship,uint32_t index,uint64_t* out){if(ship!=99 || index>=128)return SCO_NOT_FOUND;*out=occupants[index];return SCO_OK;}
-sco_result Seat(sco_plugin*,uint64_t actor,uint64_t ship,uint32_t index){if(ship!=99 || index>=128)return SCO_BAD_ARG;occupants[index]=actor;++seated;return SCO_OK;}
-sco_result Eject(sco_plugin*,uint64_t actor){for(auto& id:occupants)if(id==actor)id=0;++ejected;return SCO_OK;}
+sco_result Occupant(uint64_t ship,uint32_t index,uint64_t* out){if(ship!=99 || index>=128){return SCO_NOT_FOUND;}*out=occupants[index];return SCO_OK;}
+sco_result Seat(sco_plugin*,uint64_t actor,uint64_t ship,uint32_t index){if(ship!=99 || index>=128){return SCO_BAD_ARG;}occupants[index]=actor;++seated;return SCO_OK;}
+sco_result Eject(sco_plugin*,uint64_t actor){for(auto& id:occupants){if(id==actor){id=0;}}++ejected;return SCO_OK;}
 sco_result Power(sco_plugin*,uint64_t){return SCO_OK;}
 sc_vehicles_v1 v{};
-sco_result Local(uint64_t* actor,uint64_t* entity){if(actor)*actor=9001;if(entity)*entity=1;return SCO_OK;} // entity id 1; actor id differs
+sco_result Local(uint64_t* actor,uint64_t* entity){if(actor){*actor=9001;}if(entity){*entity=1;}return SCO_OK;} // entity id 1; actor id differs
 sco_result Spawn(sco_plugin* self,const char* cls,uint64_t,const double*,uint64_t* id){lastNpc=cls;*id=nextId++;owners[*id]=self;++spawned;return SCO_OK;}
-sco_result Despawn(sco_plugin* self,uint64_t id){if(owners[id]!=self)return SCO_BAD_ARG;++removed;return SCO_OK;}
+sco_result Despawn(sco_plugin* self,uint64_t id){if(owners[id]!=self){return SCO_BAD_ARG;}++removed;return SCO_OK;}
 sc_actors_v1 a{};
 int Pose(double* pos,double* q,uint64_t* zone){pos[0]=pos[1]=pos[2]=0;q[0]=q[1]=q[2]=0;q[3]=1;*zone=7;return 1;}
 sc_spatial_v1 s{};
@@ -109,7 +109,7 @@ void Log(sco_plugin*,sco_log_level,const char*){}
 sco_result Register(sco_plugin*,const sco_command* cmd){commands[cmd->name]=*cmd;return SCO_OK;}
 sco_result Subscribe(sco_plugin*,const char*,sco_event_fn,void*){return SCO_OK;}
 sco_result Unsubscribe(sco_plugin*,const char*,sco_event_fn){return SCO_OK;}
-sco_result Invoke(sco_plugin*,const char*,const sco_arg*,uint32_t,sco_invoke_done done,void* ctx){if(done)done(SCO_NOT_FOUND,"plugin absent",ctx);return SCO_NOT_FOUND;}
+sco_result Invoke(sco_plugin*,const char*,const sco_arg*,uint32_t,sco_invoke_done done,void* ctx){if(done){done(SCO_NOT_FOUND,"plugin absent",ctx);}return SCO_NOT_FOUND;}
 // Rule 2 of docs/plugin-ui.md: no developer words in anything the player reads.
 void NoInternalWords(const char* id) {
     static const char* const words[]={"archetype","owned","ticket","phase","catalog","sdk","g2","g3","payload","pagination","adapter","gamerules","retained","preview","session id"};
@@ -246,9 +246,12 @@ int main(int argc,char** argv) {
     assert(panels.at("npc.npcs").nodes.at(2).items[0]=="synthetic actor 0 (synthetic_catalog)");
     Event("npc.npcs",2,SCO_WIDGET_LIST,1);Event("npc.npcs",5,SCO_WIDGET_BUTTON);
     assert(spawned==2 && lastNpc=="synthetic_actor_0"); // No alias: exact legacy identifier stays selectable.
+    // The Characters page reads its lists once at startup and has no reload button while that read succeeded;
+    // like a player running `sco.reload npc`, the test unloads and loads the module to read the files again.
+    const auto reloadNpc=[&]{npc.unload();assert(npc.load(&api,reinterpret_cast<sco_plugin*>(3))==SCO_OK);};
     contentFiles.push_back({"alias_conflict_a","lists/npcs.aliases.txt","synthetic_actor_298\tFirst Human Name\n"});
     contentFiles.push_back({"alias_conflict_b","lists/npcs.aliases.txt","synthetic_actor_298\tSecond Human Name\n"});
-    Event("npc.npcs",8,SCO_WIDGET_BUTTON); // two packs name this character differently: neither name is shown
+    reloadNpc(); // two packs name this character differently: neither name is shown
     Event("npc.npcs",1,SCO_WIDGET_TEXT_INPUT,-1,"first human");
     assert(panels.at("npc.npcs").nodes.at(2).items.empty());
     Event("npc.npcs",1,SCO_WIDGET_TEXT_INPUT,-1,"synthetic_actor_298");
@@ -256,7 +259,7 @@ int main(int argc,char** argv) {
     assert(panels.at("npc.npcs").nodes.at(2).items[0]=="synthetic actor 298 (synthetic_catalog)");
     contentFiles.push_back({"incomplete_alias","lists/npcs.aliases.txt","synthetic_actor_297\tIncomplete Read\n"});
     failingReadId=contentFiles.size();
-    Event("npc.npcs",8,SCO_WIDGET_BUTTON); // an unreadable name file is ignored as a whole
+    reloadNpc(); // an unreadable name file is ignored as a whole
     Event("npc.npcs",1,SCO_WIDGET_TEXT_INPUT,-1,"synthetic pilot");
     assert(panels.at("npc.npcs").nodes.at(2).items.empty());
     Event("npc.npcs",1,SCO_WIDGET_TEXT_INPUT,-1,"synthetic_actor_299");
@@ -265,24 +268,28 @@ int main(int argc,char** argv) {
     std::string invalidAlias="synthetic_actor_297\tInvalid ";
     invalidAlias.push_back(static_cast<char>(0xc3));invalidAlias.push_back('(');invalidAlias.push_back('\n');
     contentFiles.push_back({"malformed_alias","lists/npcs.aliases.txt",invalidAlias});
-    Event("npc.npcs",8,SCO_WIDGET_BUTTON); // an unreadable name file is ignored as a whole
+    reloadNpc(); // an unreadable name file is ignored as a whole
     Event("npc.npcs",1,SCO_WIDGET_TEXT_INPUT,-1,"synthetic pilot");
     assert(panels.at("npc.npcs").nodes.at(2).items.empty());
     Event("npc.npcs",1,SCO_WIDGET_TEXT_INPUT,-1,"synthetic_actor_299");
     assert(panels.at("npc.npcs").nodes.at(2).items[0]=="synthetic actor 299 (synthetic_catalog)");
-    Event("npc.npcs",9,SCO_WIDGET_COMBO,0);Event("npc.npcs",10,SCO_WIDGET_BUTTON);assert(removed==1);
+    assert(removed==2); // each reload released the two characters spawned so far
+    Event("npc.npcs",1,SCO_WIDGET_TEXT_INPUT,-1,"synthetic_actor_299");Event("npc.npcs",2,SCO_WIDGET_LIST,0);Event("npc.npcs",5,SCO_WIDGET_BUTTON);
+    assert(spawned==3 && lastNpc=="synthetic_actor_299");
+    Event("npc.npcs",9,SCO_WIDGET_COMBO,0);Event("npc.npcs",10,SCO_WIDGET_BUTTON);assert(removed==3);
     assert(panels.at("crew.crew").nodes.at(21).items.size()==96); // 32 seats a page, 3 columns
     Event("crew.crew",16,SCO_WIDGET_BUTTON);assert(panels.at("crew.crew").nodes.at(4).items[0]=="synthetic seat 32");
     Event("crew.crew",1,SCO_WIDGET_TEXT_INPUT,-1,"synthetic pilot");
     assert(panels.at("crew.crew").nodes.at(2).items.size()==2);
+    const uint64_t firstCrew=nextId; // the first character the Crew page adds
     Event("crew.crew",2,SCO_WIDGET_LIST,1);Event("crew.crew",4,SCO_WIDGET_COMBO,0);Event("crew.crew",18,SCO_WIDGET_BUTTON);
-    assert(spawned==3 && lastNpc=="synthetic_actor_299");
+    assert(spawned==4 && lastNpc=="synthetic_actor_299");
     Event("crew.crew",4,SCO_WIDGET_COMBO,1);Event("crew.crew",3,SCO_WIDGET_TEXT_INPUT,-1,"synthetic_crew");Event("crew.crew",18,SCO_WIDGET_BUTTON);
-    assert(spawned==4 && lastNpc=="synthetic_crew"); // Manual identifiers remain available.
+    assert(spawned==5 && lastNpc=="synthetic_crew"); // Manual identifiers remain available.
     Event("crew.crew",4,SCO_WIDGET_COMBO,0);
-    occupants[32]=102;Event("crew.crew",19,SCO_WIDGET_BUTTON);assert(ejected==1);
-    occupants[32]=102;Event("crew.crew",20,SCO_WIDGET_BUTTON);assert(removed==2);
-    occupants[32]=9999;Event("crew.crew",20,SCO_WIDGET_BUTTON);Event("crew.crew",19,SCO_WIDGET_BUTTON);assert(removed==2 && ejected==1);
+    occupants[32]=firstCrew;Event("crew.crew",19,SCO_WIDGET_BUTTON);assert(ejected==1);
+    occupants[32]=firstCrew;Event("crew.crew",20,SCO_WIDGET_BUTTON);assert(removed==4);
+    occupants[32]=9999;Event("crew.crew",20,SCO_WIDGET_BUTTON);Event("crew.crew",19,SCO_WIDGET_BUTTON);assert(removed==4 && ejected==1);
     assert(panels.at("spawn.vehicles").nodes.count(16)==0 && panels.at("spawn.vehicles").nodes.count(17)==0); // the ammo toggle moved to the Creative tab; the start-place button could only refuse
     Event("spawn.vehicles",16,SCO_WIDGET_TOGGLE,-1,nullptr,1);assert(panels.at("spawn.vehicles").nodes.count(16)==0); // a forged event for it is ignored
     {const auto before=panels.at("spawn.vehicles").nodes.at(20).label;Event("spawn.vehicles",17,SCO_WIDGET_BUTTON);assert(panels.at("spawn.vehicles").nodes.at(20).label==before);}

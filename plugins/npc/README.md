@@ -6,7 +6,7 @@ NPCs puts a character from the game next to you and removes the ones you added. 
 
 Open **Characters** in the **People** section of the menu (key **M**). The sections follow the order you use them:
 
-- **Choose a character**: a search box, a paged list, **Reload character list** and a field for a typed character name.
+- **Choose a character**: a search box, a paged list and a field for a typed character name. **Try loading the character list again** appears only when the list could not be read at startup; otherwise changed list files need `sco.reload npc` or a restart.
 - **Spawn them**: **How many** (1 to 10) and **Spawn characters**.
 - **Characters you spawned**: a choice, **Remove character**, **Remove all my characters** and **Check on them**.
 - **Last result**.
