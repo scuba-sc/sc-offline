@@ -101,6 +101,30 @@ class ReleasePluginProfile(unittest.TestCase):
             for excluded in profile["excluded"]:
                 self.assertFalse(any((destination / excluded).glob("*.dll")), excluded)
 
+    def test_release_keeps_committed_text_when_an_artifact_differs_only_in_line_endings(self):
+        # A plugin built on a Windows runner carries CRLF text files; the release job checks out LF.
+        profile = offline_profile()
+        with tempfile.TemporaryDirectory() as tmp:
+            temp = Path(tmp)
+            artifacts = temp / "artifacts"
+            destination = temp / "package" / "data" / "plugins"
+            make_artifacts(artifacts, profile)
+            shutil.copytree(ROOT / "data" / "plugins", destination)
+            mining = next(entry for entry in profile["plugins"] if entry["id"] == "mining")
+            staged = artifacts / mining["artifact_dir"] / "import_settings.py"
+            committed = destination / "mining" / "import_settings.py"
+            lf = committed.read_bytes().replace(b"\r\n", b"\n")
+            committed.write_bytes(lf)
+            staged.write_bytes(lf.replace(b"\n", b"\r\n"))
+            self.assertNotEqual(staged.read_bytes(), committed.read_bytes())
+
+            stage.stage_profile(profile, artifacts, destination)
+            self.assertEqual(committed.read_bytes(), lf)
+
+            staged.write_bytes(lf.replace(b"\n", b"\r\n") + b"# changed\r\n")
+            with self.assertRaisesRegex(ValueError, "conflicts with existing product data"):
+                stage.stage_profile(profile, artifacts, destination)
+
     def test_release_loadout_conflicting_destination_refuses_to_stage(self):
         profile = offline_profile()
         with tempfile.TemporaryDirectory() as tmp:

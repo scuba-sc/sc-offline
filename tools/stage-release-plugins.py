@@ -138,7 +138,10 @@ def stage_profile(profile: dict[str, Any], artifact_root: Path, destination: Pat
                 raise ValueError(f"refusing to replace a symlink: {target}")
             if target.exists():
                 existing = _regular_file(target, f"existing {plugin_id}/{filename}")
-                if existing != contents:
+                # A text file built on a Windows runner can differ from the committed copy only in line
+                # endings. The committed bytes are kept (the copy loop never replaces an existing file).
+                same_text = filename != module and existing.replace(b"\r\n", b"\n") == contents.replace(b"\r\n", b"\n")
+                if existing != contents and not same_text:
                     raise ValueError(f"staged {plugin_id}/{filename} conflicts with existing product data")
         plan.append((source_dir, target_dir, filenames))
 
