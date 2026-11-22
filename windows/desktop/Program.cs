@@ -8,7 +8,6 @@ using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.Windows.Forms;
-using Microsoft.Win32;
 
 namespace ScOffline.Desktop
 {
@@ -142,33 +141,6 @@ namespace ScOffline.Desktop
                              during = "blocked", after = "connected", utc = DateTime.UtcNow.ToString("o") });
             return 0;
         }
-        private static int ConfigureMemory()
-        {
-            string drive = Path.GetPathRoot(Environment.SystemDirectory);
-            if (new DriveInfo(drive).AvailableFreeSpace < 36L * 1024 * 1024 * 1024)
-                throw new InvalidOperationException("At least 36 GB of free system-drive space is required " +
-                                                    "for this paging-file configuration.");
-            const string keyPath = @"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management";
-            using (var key = Registry.LocalMachine.OpenSubKey(keyPath, true))
-            {
-                var previous = (string[])key.GetValue("PagingFiles", new string[0]);
-                string backup = Path.Combine(Paths.State, "paging-file-before.json");
-                if (!File.Exists(backup))
-                    Json.Write(backup, previous);
-                string pagefile = drive + "pagefile.sys";
-                var updated =
-                    previous
-                        .Where(line => !line.StartsWith(pagefile + " ", StringComparison.OrdinalIgnoreCase))
-                        .ToList();
-                updated.Add(pagefile + " 32768 49152");
-                key.SetValue("PagingFiles", updated.ToArray(), RegistryValueKind.MultiString);
-            }
-            File.WriteAllText(
-                Path.Combine(Paths.State, "memory-restart-required"),
-                "Restart Windows to activate the 32-48 GB paging file. This setting is not part " +
-                    "of temporary offline isolation.");
-            return 0;
-        }
         [STAThread]
         public static int Main(string[] args)
         {
@@ -184,8 +156,6 @@ namespace ScOffline.Desktop
                     return Probe(args[1]);
                 if (args.Length == 1 && args[0] == "--test-firewall")
                     return TestFirewall();
-                if (args.Length == 1 && args[0] == "--configure-memory")
-                    return ConfigureMemory();
                 bool restoreOnOpen = args.Length == 1 && args[0] == "--restore";
                 if (args.Length != 0 && !restoreOnOpen)
                     throw new ArgumentException("Unknown launcher command.");

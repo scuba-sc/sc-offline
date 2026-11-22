@@ -52,6 +52,9 @@ $utf8=[Text.UTF8Encoding]::new($false)
 Copy-Item (Join-Path $root 'runtime-lock.json') $stage
 Copy-Item (Join-Path (Split-Path $root) 'LICENSE') $stage
 Copy-Item (Join-Path $root 'README.md') (Join-Path $stage 'README.txt')
+Copy-Item (Join-Path $root 'THIRD_PARTY_NOTICES.md') $stage
+Copy-Item (Join-Path $root 'RELEASE-0.1.md') (Join-Path $stage 'RELEASE-NOTES.txt')
+Copy-Item (Join-Path $root 'licenses') (Join-Path $stage 'licenses') -Recurse
 
 # Own, code-generated application icon; no game artwork or copied assets.
 Add-Type -AssemblyName System.Drawing
@@ -93,5 +96,11 @@ $digest=Join-Path $obj 'payload.sha256'
 $setup=Join-Path $out 'SCOfflineSetup.exe'
 & $csc /nologo /warnaserror+ /target:winexe /platform:x64 /optimize+ /main:ScOffline.Setup.SetupProgram "/out:$setup" "/win32icon:$icon" "/resource:$payload,payload.zip" "/resource:$digest,payload.sha256" $refs $sources $installer
 if($LASTEXITCODE -ne 0){throw 'Installer build failed.'}
+$releaseInstaller=Join-Path $out 'SCOfflineSetup-0.1-win-x64.exe'
+$releaseZip=Join-Path $out 'SCOffline-0.1-win-x64.zip'
+Copy-Item -LiteralPath $setup -Destination $releaseInstaller -Force
+Copy-Item -LiteralPath $payload -Destination $releaseZip -Force
+$sums=@($releaseInstaller,$releaseZip) | ForEach-Object { ((Get-FileHash -LiteralPath $_ -Algorithm SHA256).Hash.ToLowerInvariant())+'  '+[IO.Path]::GetFileName($_) }
+[IO.File]::WriteAllLines((Join-Path $out 'SHA256SUMS.txt'),[string[]]$sums,$utf8)
 Get-FileHash -LiteralPath $setup -Algorithm SHA256
 Write-Output "Built $setup"

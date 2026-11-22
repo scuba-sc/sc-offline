@@ -8,6 +8,11 @@ runtime download is required on the player's PC.
 
 ## Player flow
 
+Download `SCOfflineSetup-0.1-win-x64.exe` from the fork's **0.1** release
+(`desktop-v0.1`) for the registered Windows installation. The complete
+`SCOffline-0.1-win-x64.zip` is also provided for portable use; keep its launcher
+and runtime files together. `SHA256SUMS.txt` covers both downloads.
+
 Run `SCOfflineSetup.exe`, install, then open **SC Offline**. Select the installed
 game channel folder containing `Data.p4k` and `Bin64`. Press **Play offline** and
 approve Windows' administrator prompts for session protection and the native
@@ -49,11 +54,9 @@ the game log rather than attributing every crash to memory. User/profile errors
 are reported separately when actually present in the matching session log. Stanton-only startup
 did not resolve that observed limit; additional commitment is still required.
 
-**Virtual memory** optionally configures a 32–48 GiB paging file on the system drive,
-preserves other configured paging drives, saves the previous configuration locally,
-and requires a Windows restart. It never restarts Windows automatically. This is a
-persistent, explicitly selected Windows setting, separate from temporary session
-changes. At least 36 GiB of free system-drive space is required before changing it.
+The launcher does not configure Windows paging files or require a restart as a
+condition of starting an offline session. The earlier optional virtual-memory
+configuration helper was removed from the desktop release.
 
 ## Runtime provenance and upstream boundaries
 
@@ -112,8 +115,10 @@ Run this only as an explicit validation action; it is never part of ordinary pla
 - The initial frontend refused another launch with roughly 24 GiB available;
   that arbitrary minimum was subsequently removed. Current Play has no memory gate.
   A 32–48 GiB paging-file configuration was applied locally but requires a restart;
-  **successful gameplay after that restart has not been verified**. Do not describe
-  the memory policy or installer as proof that the legacy runtime is playable on this build.
+  the user subsequently reported a working offline session and local logs show
+  movement and inventory activity beyond initial loading. Performance and all
+  individual gameplay features have not been qualified. This report is separate
+  from the previous startup failures and does not establish general game compatibility.
 - Abrupt UI-process termination and power-loss recovery are implemented and covered
   by cleanup-policy fault checks, but were not exercised with a live game.
 

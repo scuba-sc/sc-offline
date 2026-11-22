@@ -94,11 +94,6 @@ namespace ScOffline.Desktop
             StyleButton(logs, "Open logs");
             logs.Click += (s, e) => Process.Start("explorer.exe", Program.Quote(Paths.State));
             actions.Controls.Add(logs);
-            var paging = new Button();
-            StyleButton(paging, "Virtual memory");
-            paging.Width = 140;
-            paging.Click += async (s, e) => await SetMemory();
-            actions.Controls.Add(paging);
             layout.Controls.Add(actions, 0, 6);
             status.Text = "Ready. No session firewall rules are active.";
             status.Dock = DockStyle.Fill;
@@ -209,36 +204,6 @@ namespace ScOffline.Desktop
                 Task.Run(() => Guard.StopGame());
                 if (activeSession != null)
                     File.WriteAllText(Path.Combine(Paths.Session(activeSession), "cancel"), "cancel");
-            }
-        }
-        private async Task SetMemory()
-        {
-            if (busy)
-                return;
-            if (MessageBox.Show(
-                    this,
-                    "Configure a 32-48 GB Windows paging file on the system drive? This is a persistent " +
-                        "Windows setting and requires a restart. Other paging drives are preserved.",
-                    "Virtual memory", MessageBoxButtons.OKCancel,
-                    MessageBoxIcon.Information) != DialogResult.OK)
-                return;
-            try
-            {
-                using (var p = Program.Elevate("--configure-memory"))
-                {
-                    await Task.Run(() => p.WaitForExit());
-                    if (p.ExitCode != 0)
-                        throw new InvalidOperationException(
-                            "Could not configure virtual memory. See helper-error.txt.");
-                }
-                MessageBox.Show(this,
-                                "Restart Windows to activate the larger paging file. No restart was " +
-                                    "performed automatically.",
-                                "Virtual memory");
-            }
-            catch (Exception error)
-            {
-                MessageBox.Show(this, error.Message, "Virtual memory");
             }
         }
         private async Task Recover()

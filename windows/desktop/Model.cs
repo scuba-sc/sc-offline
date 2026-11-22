@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
-using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -131,8 +130,8 @@ namespace ScOffline.Desktop
             var match = Regex.Match(
                 log,
                 @"^.*(?:invalid[ _-]*user|user[ " +
-                @"_-]*(?:information|info|session|profile)[^\r\n]{0,40}(?:invalid|not found)|(?:could " +
-                @"not|couldn't|failed to)[^\r\n]{0,30}user[ _-]*(?:information|info))[^\r\n]*$",
+                    @"_-]*(?:information|info|session|profile)[^\r\n]{0,40}(?:invalid|not found)|(?:could " +
+                    @"not|couldn't|failed to)[^\r\n]{0,30}user[ _-]*(?:information|info))[^\r\n]*$",
                 RegexOptions.IgnoreCase | RegexOptions.Multiline);
             return match.Success ? match.Value.Trim() : null;
         }

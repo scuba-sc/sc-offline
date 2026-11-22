@@ -8,7 +8,6 @@ using System.IO.Compression;
 using System.Linq;
 using System.Reflection;
 using System.Security.Cryptography;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Win32;

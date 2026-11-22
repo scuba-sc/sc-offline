@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## Desktop 0.1 (2026-11-23)
+
+- Publish the optional per-user Windows installer and complete launcher/runtime
+  ZIP with SHA-256 checksums and pinned native-runtime licence notices.
+- Remove the optional Windows paging-file configuration helper; the launcher
+  reports memory without changing that system setting or gating Play on a minimum.
+- The desktop release uses tag `desktop-v0.1`; native runtime and SDK versioning
+  remain unchanged. Local desktop checks pass; gameplay was reported working by
+  the user, with performance and full feature coverage still unqualified.
 
 - **Desktop Play no longer has an arbitrary memory minimum.** Available memory
   is informational only. Matching user/profile errors are reported separately,
@@ -11,8 +19,10 @@
   Start menu/desktop shortcuts and Windows Apps uninstall entry wrap the published,
   checksum-pinned legacy runtime without changing development-host admission.
   Session-only firewall protection survives a closed launcher, cleanup is automatic,
-  and Stanton-first startup includes committed-memory checks and OOM diagnostics.
+  and Stanton-first startup includes memory reporting and runtime diagnostics.
   See `windows/README.md` for runtime provenance, validation and limitations.
+
+## Unreleased
 
 - **Adopt the stable SDK 2.4.0 package.** The coordinated development host
   source and standalone plugin archive now use sco-core `6106fa36`; the combined

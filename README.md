@@ -1,5 +1,13 @@
 # sc-offline
 
+## Windows desktop edition — 0.1
+
+[Download the installer and complete launcher ZIP](https://github.com/kroryan/sc-offline/releases/tag/desktop-v0.1).
+This fork adds a registered Windows app with automatic offline-session cleanup.
+See [desktop installation and build instructions](windows/README.md).
+Desktop 0.1 bundles the published native runtime 0.7.7; it does not enable the
+current development host described below.
+
 **An offline Star Citizen mod, built on [sco-core](https://github.com/scuba-sc/sco-core).**
 
 [![Latest release](https://img.shields.io/github/v/release/scuba-sc/sc-offline?style=flat-square&label=release&color=2ec4d6)](https://github.com/scuba-sc/sc-offline/releases/latest)
