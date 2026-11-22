@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Desktop Play no longer has an arbitrary memory minimum.** Available memory
+  is informational only. Matching user/profile errors are reported separately,
+  and session crash reporters are closed promptly without touching another
+  application's same-named process.
+
 - **Optional Windows desktop installer and session supervisor.** A per-user app,
   Start menu/desktop shortcuts and Windows Apps uninstall entry wrap the published,
   checksum-pinned legacy runtime without changing development-host admission.

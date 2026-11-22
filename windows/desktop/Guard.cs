@@ -49,11 +49,16 @@ namespace ScOffline.Desktop
                     if (!IsCrashReporter(process, game))
                         continue;
                     // A report process can outlive the game. It must not become online when rules leave.
-                    process.CloseMainWindow();
-                    if (!process.WaitForExit(2000))
+                    try
                     {
-                        process.Kill();
-                        process.WaitForExit(10000);
+                        if (!process.HasExited)
+                        {
+                            process.Kill();
+                            process.WaitForExit(10000);
+                        }
+                    }
+                    catch (InvalidOperationException)
+                    { /* The report process already exited. */
                     }
                 }
         }
@@ -266,14 +271,21 @@ namespace ScOffline.Desktop
                     session.Phase = "Protected";
                     Save(session);
                     File.WriteAllText(Path.Combine(Paths.Session(id), "ready"), "ok");
+                    DateTime nextFirewallCheck = DateTime.UtcNow;
                     while (OwnerAlive(session) && !File.Exists(Path.Combine(Paths.Session(id), "done")))
                     {
-                        Thread.Sleep(1500);
+                        // Crash reporting has no offline identity and must not remain open after a fault.
+                        StopCrashReporters(session.Game);
+                        Thread.Sleep(250);
                         if (File.Exists(Path.Combine(Paths.Session(id), "cancel")))
                             StopGame();
                         try
                         {
-                            firewall.AssertEnabled();
+                            if (DateTime.UtcNow >= nextFirewallCheck)
+                            {
+                                firewall.AssertEnabled();
+                                nextFirewallCheck = DateTime.UtcNow.AddSeconds(2);
+                            }
                         }
                         catch
                         {
@@ -282,7 +294,10 @@ namespace ScOffline.Desktop
                         }
                     }
                     while (GameRunning() || NativeRunning())
-                        Thread.Sleep(1500);
+                    {
+                        StopCrashReporters(session.Game);
+                        Thread.Sleep(250);
+                    }
                     Finish(session, firewall);
                 }
                 return 0;

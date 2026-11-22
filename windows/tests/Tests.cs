@@ -80,12 +80,6 @@ namespace ScOffline.Tests
                                               () => order += "release;");
                 Check(order == "restore;verify;release;",
                       "Release occurs only after restoration and verification");
-                ulong gib = 1024UL * 1024 * 1024;
-                Check(SessionPolicy.HasEnoughCommit(36 * gib, false), "Stanton accepts available headroom");
-                Check(!SessionPolicy.HasEnoughCommit(36 * gib, true),
-                      "All-systems launch requires more headroom");
-                Check(!SessionPolicy.HasEnoughCommit(25 * gib, false),
-                      "Stanton refuses the headroom observed in the failed local run");
                 string ini = "# comment\r\nmultiplayer = on\r\nmultiplayer = on\r\ncheck_updates = " +
                              "on\r\ngame = old\r\n";
                 ini = SessionPolicy.SetIni(ini, "multiplayer", "off");
@@ -102,6 +96,14 @@ namespace ScOffline.Tests
                       "Recognizes observed game OOM");
                 Check(!SessionPolicy.IsOutOfMemory("Is GPU crash: Yes"),
                       "Does not label GPU crashes as memory exhaustion");
+                Check(SessionPolicy.UserFailure("[Error] Invalid user information") != null,
+                      "Reports an actual invalid-user message without replacing it with memory advice");
+                Check(SessionPolicy.UserFailure("[Error] Couldn't find user information") != null,
+                      "Recognizes missing-user information when the log actually contains it");
+                Check(SessionPolicy.UserFailure("[Info] invalid entity ignored") == null,
+                      "Does not turn unrelated invalid-entity messages into user errors");
+                Check(SessionPolicy.LocalUserLoaded("Player[default_1] Result[succeed]"),
+                      "Recognizes successful local offline user load");
                 string root = Path.Combine(Path.GetTempPath(), "sc-offline-installer-fixture");
                 Check(Paths.Below(Deployment.SafeEntry(root, "runtime/data/file.txt"), root),
                       "Valid package path");

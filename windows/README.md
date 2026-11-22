@@ -37,15 +37,16 @@ part of this frontend or installer.
 ## Memory and the observed crash
 
 Stanton (`boot_map = PU`) is the default. Loading every system (`PU_All`) is optional.
-The preflight requires 32 GiB of available commitment for Stanton or 40 GiB for all
-systems. These are conservative frontend policies, not proven upper bounds for the
-game. A successful check cannot guarantee that the game will not exhaust memory.
+Memory is informational only. There is no free-RAM or commitment threshold that
+blocks Play, and no requirement to have 32 GiB free. Memory policy is not a
+compatibility fix for the legacy runtime.
 
 Local 4.10.201.48085 runs with legacy runtime 0.7.7 and both `PU_All` and `PU` ended with
 `STATUS_CRYENGINE_OUT_OF_SYSMEM`: about 25 GiB game commitment, a 52 GiB system commit
 limit, and only 5 MiB remaining for the game. Free disk space and installed RAM are
 different from available commitment. The UI classifies this specific failure from
-the game log rather than attributing every crash to memory. Stanton-only startup
+the game log rather than attributing every crash to memory. User/profile errors
+are reported separately when actually present in the matching session log. Stanton-only startup
 did not resolve that observed limit; additional commitment is still required.
 
 **Virtual memory** optionally configures a 32–48 GiB paging file on the system drive,
@@ -87,7 +88,7 @@ offline build can supply `-RuntimeArchive <verified-zip>`. Output:
 not download anything when installing. Build scripts are not installed or launched
 by the player applications.
 
-Unit checks cover release policy on cleanup failures, memory thresholds, INI
+Unit checks cover release policy on cleanup failures, user-error classification, INI
 normalization/injection, OOM diagnosis, atomic journals and archive traversal.
 An elevated `SCOfflineLauncher.exe --test-firewall` performs a real TCP reference →
 blocked → restored test against `api.github.com:443` using a child copy of the same
@@ -98,7 +99,7 @@ Run this only as an explicit validation action; it is never part of ordinary pla
 ### Recorded local validation
 
 - Built x64 with the Windows .NET Framework compiler, treating warnings as errors.
-- 31 checks passed, including real fixture processes verifying that cleanup stops
+- 32 checks passed, including real fixture processes verifying that cleanup stops
   only the selected game's crash reporter and leaves an unrelated same-named process alone.
 - Installed and registered the app; upgraded, uninstalled and reinstalled it.
   A save fixture survived both upgrade and uninstall/reinstall, and the Windows Apps
@@ -108,7 +109,8 @@ Run this only as an explicit validation action; it is never part of ordinary pla
 - On game **4.10.201.48085 (CL 13220821)**, the legacy runtime started with
   `bOnline[0]`, but both all-system and Stanton-only runs exhausted system commitment
   before usable gameplay. Native cleanup completed and frontend session rules were removed.
-- The updated frontend refused another launch with roughly 24 GiB available.
+- The initial frontend refused another launch with roughly 24 GiB available;
+  that arbitrary minimum was subsequently removed. Current Play has no memory gate.
   A 32–48 GiB paging-file configuration was applied locally but requires a restart;
   **successful gameplay after that restart has not been verified**. Do not describe
   the memory policy or installer as proof that the legacy runtime is playable on this build.

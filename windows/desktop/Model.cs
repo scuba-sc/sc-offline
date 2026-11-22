@@ -113,14 +113,6 @@ namespace ScOffline.Desktop
         {
             return !gameRunning && !nativeRunning && !leftovers && !crashReporterRunning;
         }
-        public static ulong MinimumCommit(bool allSystems)
-        {
-            return (allSystems ? 40UL : 32UL) * 1024 * 1024 * 1024;
-        }
-        public static bool HasEnoughCommit(ulong available, bool allSystems)
-        {
-            return available >= MinimumCommit(allSystems);
-        }
         public static void CompleteCleanup(Action restore, Func<bool> canRelease, Action release)
         {
             restore();
@@ -133,6 +125,21 @@ namespace ScOffline.Desktop
         {
             return log.Contains("STATUS_CRYENGINE_OUT_OF_SYSMEM") ||
                    log.Contains("Is out of system memory: Yes");
+        }
+        public static string UserFailure(string log)
+        {
+            var match = Regex.Match(
+                log,
+                @"^.*(?:invalid[ _-]*user|user[ " +
+                @"_-]*(?:information|info|session|profile)[^\r\n]{0,40}(?:invalid|not found)|(?:could " +
+                @"not|couldn't|failed to)[^\r\n]{0,30}user[ _-]*(?:information|info))[^\r\n]*$",
+                RegexOptions.IgnoreCase | RegexOptions.Multiline);
+            return match.Success ? match.Value.Trim() : null;
+        }
+        public static bool LocalUserLoaded(string log)
+        {
+            return Regex.IsMatch(log, @"Player\[default_1\][^\r\n]*Result\[(?:succeed|success)\]",
+                                 RegexOptions.IgnoreCase);
         }
         public static string SetIni(string text, string key, string value)
         {

@@ -286,14 +286,7 @@ namespace ScOffline.Desktop
                 if (File.Exists(Paths.Journal) || Guard.Leftovers(game))
                     throw new InvalidOperationException("Use Restore online before starting a new session.");
                 Program.VerifyRuntime();
-                ulong available = Memory.AvailableCommit();
-                if (!SessionPolicy.HasEnoughCommit(available, all))
-                    throw new InvalidOperationException(
-                        "Only " + Memory.GiB(available) +
-                        " of committed memory is available. This start needs at least " +
-                        Memory.GiB(SessionPolicy.MinimumCommit(all)) +
-                        (". Close memory-heavy apps, select Stanton only, or increase virtual memory and " +
-                         "restart Windows."));
+                // Memory is informational. It must never impose an arbitrary launch threshold.
                 Json.Write(Paths.Settings, new Settings { Game = game, AllSystems = all });
                 SessionPolicy.Configure(game, all);
                 id = Guid.NewGuid().ToString("N");
@@ -349,12 +342,26 @@ namespace ScOffline.Desktop
                                        }
                                    });
                     string gameLog = Path.Combine(game, "Game.log");
-                    if (File.Exists(gameLog) && File.GetLastWriteTimeUtc(gameLog) >= sessionStarted &&
-                        SessionPolicy.IsOutOfMemory(File.ReadAllText(gameLog)))
+                    string currentLog =
+                        File.Exists(gameLog) && File.GetLastWriteTimeUtc(gameLog) >= sessionStarted
+                            ? File.ReadAllText(gameLog)
+                            : "";
+                    string userError = SessionPolicy.UserFailure(currentLog);
+                    if (userError != null)
+                    {
+                        SetStatus("The runtime reported a user/profile error. Cleanup completed.");
+                        Append(userError);
+                        Append("This session stayed offline. No account login or entitlement changes were " +
+                               "attempted.");
+                    }
+                    else if (SessionPolicy.IsOutOfMemory(currentLog))
                     {
                         SetStatus("Game ran out of committed memory. Cleanup completed.");
-                        Append("The game log reports system memory exhaustion. Use Virtual memory, restart " +
-                               "Windows, and keep Stanton only selected.");
+                        if (SessionPolicy.LocalUserLoaded(currentLog))
+                            Append("The local offline player loaded successfully before this failure.");
+                        Append("The game recorded STATUS_CRYENGINE_OUT_OF_SYSMEM. This is a runtime " +
+                               "failure, not proof that the PC cannot run the normal game. Native logs " +
+                               "have been preserved.");
                     }
                     else
                     {
