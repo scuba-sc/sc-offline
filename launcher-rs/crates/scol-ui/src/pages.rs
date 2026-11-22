@@ -12,8 +12,11 @@ use scol_config::MenuChoice;
 use scol_install::checks::{describe_pc_changes, Eac};
 
 use crate::app::{App, Job, Page, PluginTab, PAGES};
-use crate::backend::Command;
-use crate::theme::{self, button, card, dim};
+use crate::backend::{Command, PromptKind};
+use crate::theme::{self, button, card, dim, Icon, Kind};
+
+/// The width of the side list.
+const SIDE_WIDTH: f32 = 172.0;
 
 /// One thing the player asked for during a frame.
 pub enum Act {
@@ -33,6 +36,8 @@ pub enum Act {
     Browse,
     CapsMore(bool),
     CapsAuto(bool),
+    /// The answer to the question a running command asked: the word it reads.
+    Answer(&'static str),
 }
 
 pub fn page_label(a: &App, p: Page) -> String {
@@ -45,21 +50,96 @@ pub fn page_label(a: &App, p: Page) -> String {
     }
 }
 
-fn nav_button(ui: &mut egui::Ui, text: &str, selected: bool) -> bool {
-    let rt = if selected {
-        RichText::new(text).color(theme::GREEN).strong()
-    } else {
-        RichText::new(text).color(theme::BODY)
-    };
-    let fill = if selected {
-        theme::ROW_HOVER
-    } else {
-        Color32::TRANSPARENT
-    };
-    let b = egui::Button::new(rt)
-        .fill(fill)
-        .min_size(egui::vec2(ui.available_width(), 32.0));
-    ui.add(b).clicked()
+fn page_icon(p: Page) -> Icon {
+    match p {
+        Page::Home => Icon::Home,
+        Page::Output => Icon::Output,
+        Page::Plugins => Icon::Plugins,
+        Page::Capabilities => Icon::Capabilities,
+        Page::Settings => Icon::Settings,
+    }
+}
+
+/// One line of the side list: a picture and the page name. The page that is open has a filled row and
+/// a green bar. `mark` draws a small dot at the right (a question is waiting on that page).
+fn nav_button(ui: &mut egui::Ui, text: &str, icon: Icon, selected: bool, mark: bool) -> bool {
+    let size = egui::vec2(ui.available_width(), 34.0);
+    let (rect, mut r) = ui.allocate_exact_size(size, egui::Sense::click());
+    r.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, selected, text));
+    if ui.is_rect_visible(rect) {
+        let p = ui.painter();
+        let fill = if selected {
+            theme::ROW
+        } else if r.hovered() || r.has_focus() {
+            theme::CARD
+        } else {
+            Color32::TRANSPARENT
+        };
+        p.rect_filled(rect, 8.0, fill);
+        let fg = if selected { theme::TEXT } else { theme::BODY };
+        if selected {
+            let bar = egui::Rect::from_min_max(
+                egui::pos2(rect.left(), rect.top() + 9.0),
+                egui::pos2(rect.left() + 3.0, rect.bottom() - 9.0),
+            );
+            p.rect_filled(bar, 1.5, theme::GREEN);
+        }
+        theme::paint_icon(
+            p,
+            egui::pos2(rect.left() + 13.0, rect.center().y - 8.0),
+            icon,
+            if selected { theme::GREEN } else { theme::DIM },
+        );
+        let galley = p.layout_no_wrap(text.to_string(), egui::FontId::proportional(14.0), fg);
+        p.galley(
+            egui::pos2(rect.left() + 39.0, rect.center().y - galley.size().y / 2.0),
+            galley,
+            fg,
+        );
+        if mark {
+            p.circle_filled(
+                egui::pos2(rect.right() - 12.0, rect.center().y),
+                3.5,
+                theme::WARN,
+            );
+        }
+        if r.has_focus() {
+            p.rect_stroke(
+                rect,
+                8.0,
+                egui::Stroke::new(1.5, theme::GREEN),
+                egui::StrokeKind::Inside,
+            );
+        }
+    }
+    r = r.on_hover_cursor(egui::CursorIcon::PointingHand);
+    r.clicked()
+}
+
+/// The mark and the name at the top of the side list.
+fn brand(ui: &mut egui::Ui) {
+    ui.horizontal(|ui| {
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(30.0, 30.0), egui::Sense::hover());
+        let p = ui.painter();
+        p.rect_filled(rect, 8.0, theme::GREEN);
+        // A planet and a moon that went its own way.
+        p.circle_stroke(
+            rect.center(),
+            7.0,
+            egui::Stroke::new(2.0, theme::GREEN_TEXT),
+        );
+        p.circle_filled(
+            rect.center() + egui::vec2(7.5, -7.5),
+            2.6,
+            theme::GREEN_TEXT,
+        );
+        ui.add_space(2.0);
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            ui.label(RichText::new("sc-offline").strong().size(15.0));
+            ui.label(dim(format!("v{}", scol_install::version::SCO_VERSION)).size(11.5));
+        });
+    });
 }
 
 /// Draw the whole window for one frame.
@@ -79,25 +159,50 @@ pub fn draw(a: &mut App, ui: &mut egui::Ui) {
     if ui.input_mut(|inp| inp.consume_key(Modifiers::NONE, Key::F5)) {
         acts.push(Act::Job(Job::Status));
     }
+    // Y and N answer an open question, as in a console (not while a text field has the keyboard).
+    if a.prompt.is_some() && !ui.ctx().egui_wants_keyboard_input() {
+        for (key, word) in [(Key::Y, "y"), (Key::N, "n")] {
+            if ui.input_mut(|inp| inp.consume_key(Modifiers::NONE, key)) {
+                acts.push(Act::Answer(word));
+                break;
+            }
+        }
+    }
     egui::Panel::left("nav")
-        .exact_size(150.0)
+        .exact_size(SIDE_WIDTH)
         .frame(egui::Frame::new().fill(theme::SIDE).inner_margin(12.0))
         .show(ui, |ui| {
-            ui.label(RichText::new("sc-offline").strong().size(16.0));
-            ui.label(dim(format!("v{}", scol_install::version::SCO_VERSION)));
-            ui.add_space(14.0);
+            brand(ui);
+            ui.add_space(16.0);
+            ui.spacing_mut().item_spacing.y = 3.0;
             for p in PAGES {
-                if nav_button(ui, &page_label(a, p), a.page == p) {
+                let mark = p == Page::Output && a.prompt.is_some() && a.page != Page::Output;
+                if nav_button(ui, &page_label(a, p), page_icon(p), a.page == p, mark) {
                     acts.push(Act::Go(p));
                 }
             }
-            ui.add_space(12.0);
-            if a.busy > 0 {
-                ui.label(dim(a.t("launcher.ui.busy")));
-            }
+            // The foot of the list: is the game running, and is anything being worked on.
+            ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                ui.spacing_mut().item_spacing.y = 6.0;
+                ui.horizontal(|ui| {
+                    let (colour, key) = if a.game_up {
+                        (theme::GREEN, "launcher.ui.side.game_running")
+                    } else {
+                        (theme::DIM, "launcher.ui.side.game_closed")
+                    };
+                    theme::dot(ui, colour, 12.0);
+                    ui.label(dim(a.t(key)).size(12.0));
+                });
+                if a.busy > 0 {
+                    ui.horizontal(|ui| {
+                        ui.add(egui::Spinner::new().size(12.0).color(theme::GREEN));
+                        ui.label(dim(a.t("launcher.ui.busy")).size(12.0));
+                    });
+                }
+            });
         });
     egui::CentralPanel::default()
-        .frame(egui::Frame::new().fill(theme::BG).inner_margin(16.0))
+        .frame(egui::Frame::new().fill(theme::BG).inner_margin(20.0))
         .show(ui, |ui| {
             let mut area = egui::ScrollArea::vertical()
                 .id_salt(("page", a.page as usize))
@@ -108,7 +213,7 @@ pub fn draw(a: &mut App, ui: &mut egui::Ui) {
             }
             area.show(ui, |ui| match a.page {
                 Page::Home => home(a, ui, &mut acts),
-                Page::Output => output(a, ui),
+                Page::Output => output(a, ui, &mut acts),
                 Page::Plugins => crate::page_plugins::draw(a, ui, &mut acts),
                 Page::Capabilities => crate::page_caps::draw(a, ui, &mut acts),
                 Page::Settings => crate::page_settings::draw(a, ui, &mut acts),
@@ -154,6 +259,7 @@ fn apply(a: &mut App, act: Act) {
         Act::Browse => a.browse(),
         Act::CapsMore(v) => a.caps_more = v,
         Act::CapsAuto(v) => a.caps_auto = v,
+        Act::Answer(word) => a.answer(word),
     }
 }
 
@@ -175,9 +281,10 @@ pub fn note_line(a: &App, ui: &mut egui::Ui) {
 pub fn title(ui: &mut egui::Ui, text: &str, sub: &str) {
     ui.label(RichText::new(text).heading().strong());
     if !sub.is_empty() {
+        ui.add_space(2.0);
         ui.add(egui::Label::new(theme::body(sub)).wrap());
     }
-    ui.add_space(8.0);
+    ui.add_space(12.0);
 }
 
 // ---- Home -----------------------------------------------------------------------------------
@@ -193,14 +300,34 @@ pub fn pc_items(rec: &[u8]) -> String {
         .join(", ")
 }
 
-fn status_rows(a: &App) -> Vec<(String, String, bool)> {
+/// How a status line reads: fine, nothing to say, or something the player should look at.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Mark {
+    Good,
+    Plain,
+    Look,
+}
+
+impl Mark {
+    fn colour(self) -> Color32 {
+        match self {
+            Mark::Good => theme::GREEN,
+            Mark::Plain => theme::DIM,
+            Mark::Look => theme::WARN,
+        }
+    }
+}
+
+/// The lines of the Status card: name, value and how it reads.
+pub fn status_rows(a: &App) -> Vec<(String, String, Mark)> {
     let Some(s) = &a.status else {
         return vec![(
             a.t("launcher.heading.status"),
             a.t("launcher.status.checking"),
-            false,
+            Mark::Plain,
         )];
     };
+    let good = |ok: bool| if ok { Mark::Good } else { Mark::Plain };
     let game = if !s.folder_known {
         a.t("launcher.status.game_not_found")
     } else if s.build.is_empty() {
@@ -226,11 +353,11 @@ fn status_rows(a: &App) -> Vec<(String, String, bool)> {
     } else {
         a.t("launcher.status.net_open")
     };
-    let eac = match s.eac {
-        Eac::Active if s.eac_rename => a.t("launcher.status.eac_on_auto"),
-        Eac::Active => a.t("launcher.status.eac_on"),
-        Eac::Disabled => a.t("launcher.status.eac_off"),
-        Eac::NotInstalled => a.t("launcher.status.eac_none"),
+    let (eac, eac_mark) = match s.eac {
+        Eac::Active if s.eac_rename => (a.t("launcher.status.eac_on_auto"), Mark::Good),
+        Eac::Active => (a.t("launcher.status.eac_on"), Mark::Look),
+        Eac::Disabled => (a.t("launcher.status.eac_off"), Mark::Good),
+        Eac::NotInstalled => (a.t("launcher.status.eac_none"), Mark::Good),
     };
     let plugins = if s.plugins_on {
         a.tf(
@@ -244,7 +371,15 @@ fn status_rows(a: &App) -> Vec<(String, String, bool)> {
         a.t("launcher.status.plugins_off")
     };
     vec![
-        (a.t("launcher.status.game"), game, s.folder_known),
+        (
+            a.t("launcher.status.game"),
+            game,
+            if s.folder_known {
+                Mark::Good
+            } else {
+                Mark::Look
+            },
+        ),
         (
             a.t("launcher.status.mod"),
             a.t(if s.mod_installed {
@@ -252,20 +387,33 @@ fn status_rows(a: &App) -> Vec<(String, String, bool)> {
             } else {
                 "launcher.status.mod_not_installed"
             }),
-            s.mod_installed,
+            // In the game folder while nothing runs is a leftover; out of it is the resting state.
+            if s.mod_installed && !a.game_up {
+                Mark::Look
+            } else {
+                Mark::Plain
+            },
         ),
-        (a.t("launcher.status.pc_changes"), pc, s.pc_left.is_empty()),
+        (
+            a.t("launcher.status.pc_changes"),
+            pc,
+            if s.pc_left.is_empty() {
+                Mark::Good
+            } else {
+                Mark::Look
+            },
+        ),
         (
             a.t("launcher.status.network"),
             net,
-            s.network_blocked || s.wine,
+            good(s.network_blocked || s.wine),
         ),
-        (a.t("launcher.status.eac"), eac, s.eac != Eac::Active),
-        (a.t("launcher.status.plugins"), plugins, s.plugins_on),
+        (a.t("launcher.status.eac"), eac, eac_mark),
+        (a.t("launcher.status.plugins"), plugins, good(s.plugins_on)),
         (
             a.t("launcher.ui.home.sdk"),
             crate::catalogue::HOST_SDK.to_string(),
-            true,
+            Mark::Plain,
         ),
     ]
 }
@@ -282,11 +430,8 @@ fn home(a: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
             } else {
                 items
             };
-            egui::Frame::new()
-                .fill(theme::CARD)
+            theme::card_frame()
                 .stroke(egui::Stroke::new(1.0, theme::WARN))
-                .corner_radius(8.0)
-                .inner_margin(12.0)
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.label(
@@ -301,15 +446,15 @@ fn home(a: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
                         acts.push(Act::Job(Job::Command(Command::Repair)));
                     }
                 });
-            ui.add_space(10.0);
+            ui.add_space(12.0);
         }
     }
-    // Light: the one-line verdict.
-    let (head, detail, ok) = match &a.status {
+    // The one-line verdict.
+    let (head, detail, mark) = match &a.status {
         _ if running => (
             a.t("launcher.status.unsafe_running"),
             a.t("launcher.status.running_detail"),
-            false,
+            Mark::Look,
         ),
         Some(s) if !s.pc_left.is_empty() => {
             let items = pc_items(&s.pc_left);
@@ -321,77 +466,166 @@ fn home(a: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
             (
                 a.t("launcher.status.unsafe_leftovers"),
                 a.tf("launcher.status.undo_detail", &[("items", &items)]),
-                false,
+                Mark::Look,
             )
         }
         Some(s) if !s.folder_known => (
             a.t("launcher.status.unknown_folder"),
             a.t("launcher.status.unknown_folder_detail"),
-            false,
+            Mark::Look,
         ),
         Some(_) => (
             a.t("launcher.status.safe_online"),
             a.t("launcher.status.safe_detail"),
-            true,
+            Mark::Good,
         ),
-        None => (a.t("launcher.status.checking"), String::new(), false),
+        None => (a.t("launcher.status.checking"), String::new(), Mark::Plain),
     };
-    ui.label(RichText::new(head).size(19.0).strong().color(if ok {
-        theme::GREEN
-    } else {
-        theme::WARN
-    }));
-    ui.add(egui::Label::new(dim(detail)).wrap());
-    ui.add_space(10.0);
-
-    ui.columns(2, |cols| {
-        card(&mut cols[0], &a.t("launcher.heading.status"), |ui| {
-            egui::Grid::new("status-grid")
-                .num_columns(2)
-                .spacing([14.0, 6.0])
-                .show(ui, |ui| {
-                    for (k, v, good) in status_rows(a) {
-                        ui.label(dim(k));
-                        ui.add(
-                            egui::Label::new(if good {
-                                theme::good(v)
+    // The verdict on the left, Play (or Stop) on the right, the smaller actions under them.
+    theme::card_frame().inner_margin(18.0).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        let (word, command, kind) = if running {
+            ("launcher.action.stop", Command::Stop, Kind::Halt)
+        } else {
+            ("launcher.action.play", Command::Play, Kind::Go)
+        };
+        let main = egui::vec2(176.0, 50.0);
+        ui.horizontal(|ui| {
+            let text_width = (ui.available_width() - main.x - 16.0).max(120.0);
+            ui.allocate_ui_with_layout(
+                egui::vec2(text_width, main.y),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.set_width(text_width);
+                    ui.horizontal(|ui| {
+                        theme::dot(ui, mark.colour(), 18.0);
+                        ui.label(RichText::new(head).size(21.0).strong().color(
+                            if mark == Mark::Plain {
+                                theme::TEXT
                             } else {
-                                RichText::new(v)
-                            })
-                            .wrap(),
-                        );
-                        ui.end_row();
+                                mark.colour()
+                            },
+                        ));
+                    });
+                    if !detail.is_empty() {
+                        ui.horizontal(|ui| {
+                            // Under the words of the verdict, not under its dot.
+                            ui.add_space(18.0);
+                            ui.add(egui::Label::new(theme::body(detail)).wrap());
+                        });
                     }
-                });
-        });
-        card(&mut cols[1], &a.t("launcher.heading.actions"), |ui| {
-            let (word, command) = if running {
-                ("launcher.action.stop", Command::Stop)
-            } else {
-                ("launcher.action.play", Command::Play)
-            };
-            if button(ui, &a.t(word), !cmd_busy || running) {
+                },
+            );
+            if theme::draw_button(ui, &a.t(word), kind, !cmd_busy || running, main, 18.0) {
                 acts.push(Act::Job(Job::Command(command)));
             }
-            ui.add_space(4.0);
+        });
+        ui.add_space(12.0);
+        ui.separator();
+        ui.add_space(6.0);
+        ui.horizontal_wrapped(|ui| {
             if theme::plain(ui, &a.t("launcher.action.update"), !cmd_busy && !running) {
                 acts.push(Act::Job(Job::Command(Command::Update)));
             }
-            if theme::plain(ui, &a.t("launcher.action.reload"), true) {
+            if theme::plain(ui, &a.t("launcher.hint.refresh"), true) {
                 acts.push(Act::Job(Job::Status));
             }
             if running {
-                ui.add_space(4.0);
-                ui.add(egui::Label::new(dim(a.t("launcher.ui.home.running"))).wrap());
+                ui.label(dim(a.t("launcher.ui.home.running")));
             }
         });
+    });
+    ui.add_space(12.0);
+
+    card(ui, &a.t("launcher.heading.status"), |ui| {
+        egui::Grid::new("status-grid")
+            .num_columns(2)
+            .min_col_width(150.0)
+            .spacing([14.0, 9.0])
+            .show(ui, |ui| {
+                for (k, v, mark) in status_rows(a) {
+                    ui.horizontal(|ui| {
+                        theme::dot(ui, mark.colour(), 12.0);
+                        ui.label(dim(k));
+                    });
+                    ui.add(
+                        egui::Label::new(match mark {
+                            Mark::Look => theme::warn(v),
+                            _ => RichText::new(v),
+                        })
+                        .wrap(),
+                    );
+                    ui.end_row();
+                }
+            });
     });
     note_line(a, ui);
 }
 
 // ---- Output ---------------------------------------------------------------------------------
 
-fn output(a: &mut App, ui: &mut egui::Ui) {
+/// The question a running command asked, with a button for each answer.
+fn prompt_card(a: &App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
+    let Some(q) = &a.prompt else {
+        return;
+    };
+    theme::card_frame()
+        .stroke(egui::Stroke::new(1.0, theme::GREEN))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.label(theme::section(&a.t("launcher.ui.prompt.title")));
+            ui.add_space(4.0);
+            ui.add(egui::Label::new(RichText::new(&q.text).strong()).wrap());
+            ui.add_space(6.0);
+            ui.horizontal_wrapped(|ui| {
+                let answers: &[(&str, &'static str, bool)] = match q.kind {
+                    PromptKind::YesNo => &[
+                        ("launcher.action.yes", "y", true),
+                        ("launcher.action.no", "n", false),
+                    ],
+                    PromptKind::Logs => &[
+                        ("launcher.action.keep", "n", true),
+                        ("launcher.action.delete", "y", false),
+                        ("launcher.action.always_delete", "always", false),
+                        ("launcher.action.never_delete", "never", false),
+                    ],
+                };
+                for (key, word, main) in answers {
+                    let clicked = if *main {
+                        button(ui, &a.t(key), true)
+                    } else {
+                        theme::draw_button(
+                            ui,
+                            &a.t(key),
+                            Kind::Plain,
+                            true,
+                            egui::vec2(0.0, 34.0),
+                            14.0,
+                        )
+                    };
+                    if clicked {
+                        acts.push(Act::Answer(word));
+                    }
+                }
+            });
+        });
+    ui.add_space(10.0);
+}
+
+/// The colour of one output line, by how the launcher marks it.
+fn line_colour(l: &str) -> Color32 {
+    if l.starts_with("[!]") || l.contains("Failed") {
+        theme::WARN
+    } else if l.starts_with('>') {
+        theme::GREEN
+    } else if l.starts_with("[i]") || l.starts_with("---") {
+        theme::DIM
+    } else {
+        theme::BODY
+    }
+}
+
+fn output(a: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     ui.horizontal(|ui| {
         ui.label(
             RichText::new(a.t("launcher.heading.output"))
@@ -409,27 +643,27 @@ fn output(a: &mut App, ui: &mut egui::Ui) {
             }
         });
     });
-    ui.add_space(6.0);
+    ui.add_space(10.0);
     if a.output.is_empty() {
-        ui.label(dim(a.t("launcher.ui.output.empty")));
+        card(ui, "", |ui| {
+            ui.label(dim(a.t("launcher.ui.output.empty")));
+        });
         return;
     }
     egui::Frame::new()
         .fill(theme::SIDE)
-        .corner_radius(8.0)
-        .inner_margin(10.0)
+        .stroke(egui::Stroke::new(1.0, theme::LINE))
+        .corner_radius(10.0)
+        .inner_margin(12.0)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 3.0;
             for l in &a.output {
-                let colour = if l.starts_with("[!]") || l.contains("Failed") {
-                    theme::WARN
-                } else if l.starts_with('>') {
-                    theme::GREEN
-                } else {
-                    theme::BODY
-                };
-                ui.add(egui::Label::new(RichText::new(l).monospace().color(colour)).wrap());
+                ui.add(egui::Label::new(RichText::new(l).monospace().color(line_colour(l))).wrap());
             }
         });
+    // Under the lines, where the view sticks: the question is the last thing the command wrote.
+    ui.add_space(10.0);
+    prompt_card(a, ui, acts);
     note_line(a, ui);
 }

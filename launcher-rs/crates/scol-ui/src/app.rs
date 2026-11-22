@@ -15,7 +15,7 @@ use scol_config::{read_config, Config, Language, MenuChoice};
 use scol_contract::capability_env::Switch;
 use scol_install::StatusReport;
 
-use crate::backend::{Backend, Command, NOT_CONNECTED};
+use crate::backend::{question, Backend, Command, PromptKind, NOT_CONNECTED};
 use crate::catalogue::{self, State};
 use crate::i18n::{self, tr, trf, Lang};
 use crate::plugins::{self, PluginRow};
@@ -81,6 +81,14 @@ pub struct Note {
     pub error: bool,
 }
 
+/// A question a running command waits on. The Output page shows it with a button for each answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Prompt {
+    pub kind: PromptKind,
+    /// The question, without the list of answers.
+    pub text: String,
+}
+
 pub struct App {
     pub here: PathBuf,
     pub backend: Arc<dyn Backend>,
@@ -110,6 +118,8 @@ pub struct App {
     pub running: Vec<Command>,
     /// The game process of this install runs (read once per frame).
     pub game_up: bool,
+    /// The question the running command asked and nobody answered yet.
+    pub prompt: Option<Prompt>,
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
     ctx: Option<egui::Context>,
@@ -141,6 +151,7 @@ impl App {
             busy: 0,
             running: Vec::new(),
             game_up: false,
+            prompt: None,
             tx,
             rx,
             ctx: None,
@@ -232,6 +243,35 @@ impl App {
         });
     }
 
+    /// Answer the question on the Output page: `word` is what the command reads (`y`, `n`, `always`
+    /// or `never`). The answer is written after the question, as a console would show it.
+    pub fn answer(&mut self, word: &str) {
+        if self.prompt.take().is_none() {
+            return;
+        }
+        if let Some(last) = self.output.last_mut() {
+            last.push(' ');
+            last.push_str(word);
+        }
+        self.backend.answer(word);
+    }
+
+    /// A line of a running command. A question (it ends with the list of answers) is also kept as the
+    /// prompt: the Output page comes forward and the taskbar button flashes, because the game has
+    /// usually just closed and the window is behind something.
+    fn take_line(&mut self, line: String) {
+        if let Some((kind, text)) = question(&line) {
+            self.prompt = Some(Prompt { kind, text });
+            self.page = Page::Output;
+            if let Some(c) = &self.ctx {
+                c.send_viewport_cmd(egui::ViewportCommand::RequestUserAttention(
+                    egui::UserAttentionType::Informational,
+                ));
+            }
+        }
+        self.output.push(line);
+    }
+
     fn done_one(&mut self) {
         self.busy = self.busy.saturating_sub(1);
     }
@@ -269,9 +309,13 @@ impl App {
                     self.status = Some(*s);
                     self.done_one();
                 }
-                Msg::Line(l) => self.output.push(l),
+                Msg::Line(l) => self.take_line(l),
                 Msg::CommandDone(c, r) => {
                     self.done_one();
+                    if c != Command::Stop {
+                        // Whoever asked is gone; an unanswered question took its default.
+                        self.prompt = None;
+                    }
                     if let Some(i) = self.running.iter().position(|x| *x == c) {
                         self.running.remove(i);
                     }

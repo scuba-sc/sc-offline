@@ -9,7 +9,7 @@ use scol_config::{Language, LogChoice, MenuChoice};
 use crate::app::{App, Job};
 use crate::backend::Command;
 use crate::pages::{note_line, title, Act};
-use crate::theme::{self, button, card, choice, dim, plain};
+use crate::theme::{self, button, card, dim, plain, segmented};
 
 pub fn draw(a: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     title(ui, &a.t("launcher.ui.nav.settings"), "");
@@ -19,7 +19,7 @@ pub fn draw(a: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
         ui.add_space(4.0);
     }
 
-    card(ui, &a.t("launcher.action.repair"), |ui| {
+    card(ui, &a.t("launcher.ui.settings.repair"), |ui| {
         let left = a.status.as_ref().is_some_and(|s| !s.pc_left.is_empty());
         if button(ui, &a.t("launcher.action.repair"), editable && left) {
             acts.push(Act::Job(Job::Command(Command::Repair)));
@@ -37,33 +37,35 @@ pub fn draw(a: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     ui.add_space(8.0);
 
     card(ui, &a.t("launcher.settings.logs_label"), |ui| {
-        ui.horizontal_wrapped(|ui| {
-            for (c, word, key) in [
-                (LogChoice::Ask, "ask", "launcher.settings.logs_ask"),
-                (LogChoice::Always, "always", "launcher.action.always_delete"),
-                (LogChoice::Never, "never", "launcher.action.never_delete"),
-            ] {
-                if choice(ui, &a.t(key), a.cfg.clean_logs == c, editable) {
-                    acts.push(Act::CleanLogs(word));
-                }
-            }
-        });
+        let all = [
+            (LogChoice::Ask, "ask", "launcher.settings.logs_ask"),
+            (LogChoice::Always, "always", "launcher.action.always_delete"),
+            (LogChoice::Never, "never", "launcher.action.never_delete"),
+        ];
+        let options: Vec<(String, bool)> = all
+            .iter()
+            .map(|(c, _, key)| (a.t(key), a.cfg.clean_logs == *c))
+            .collect();
+        if let Some(i) = segmented(ui, &options, editable) {
+            acts.push(Act::CleanLogs(all[i].1));
+        }
         ui.add(egui::Label::new(dim(a.t("launcher.settings.logs_hint"))).wrap());
     });
     ui.add_space(8.0);
 
     card(ui, &a.t("launcher.ui.settings.language"), |ui| {
-        ui.horizontal_wrapped(|ui| {
-            for (l, key) in [
-                (Language::Auto, "launcher.language.auto"),
-                (Language::English, "launcher.language.english"),
-                (Language::Russian, "launcher.language.russian"),
-            ] {
-                if choice(ui, &a.t(key), a.cfg.language == l, editable) {
-                    acts.push(Act::Language(l));
-                }
-            }
-        });
+        let all = [
+            (Language::Auto, "launcher.language.auto"),
+            (Language::English, "launcher.language.english"),
+            (Language::Russian, "launcher.language.russian"),
+        ];
+        let options: Vec<(String, bool)> = all
+            .iter()
+            .map(|(l, key)| (a.t(key), a.cfg.language == *l))
+            .collect();
+        if let Some(i) = segmented(ui, &options, editable) {
+            acts.push(Act::Language(all[i].0));
+        }
         ui.add(egui::Label::new(dim(a.t("launcher.language.hint"))).wrap());
         if !editable {
             ui.add(egui::Label::new(dim(a.t("launcher.language.busy"))).wrap());
@@ -72,16 +74,17 @@ pub fn draw(a: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
     ui.add_space(8.0);
 
     card(ui, &a.t("launcher.ui.settings.menu"), |ui| {
-        ui.horizontal_wrapped(|ui| {
-            for (m, key) in [
-                (MenuChoice::Imgui, "launcher.ui.settings.menu_classic"),
-                (MenuChoice::Rust, "launcher.ui.settings.menu_new"),
-            ] {
-                if choice(ui, &a.t(key), a.cfg.menu == m, editable) {
-                    acts.push(Act::Menu(m));
-                }
-            }
-        });
+        let all = [
+            (MenuChoice::Imgui, "launcher.ui.settings.menu_classic"),
+            (MenuChoice::Rust, "launcher.ui.settings.menu_new"),
+        ];
+        let options: Vec<(String, bool)> = all
+            .iter()
+            .map(|(m, key)| (a.t(key), a.cfg.menu == *m))
+            .collect();
+        if let Some(i) = segmented(ui, &options, editable) {
+            acts.push(Act::Menu(all[i].0));
+        }
         ui.add(egui::Label::new(dim(a.t("launcher.ui.settings.menu_hint"))).wrap());
     });
     ui.add_space(8.0);

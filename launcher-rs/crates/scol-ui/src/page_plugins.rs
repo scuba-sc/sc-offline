@@ -35,13 +35,16 @@ pub fn draw(a: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>) {
                 .strong(),
         );
         ui.add_space(12.0);
-        for (tab, key) in [
+        let all = [
             (PluginTab::Installed, "launcher.ui.plugins.tab_installed"),
             (PluginTab::Catalogue, "launcher.ui.plugins.tab_catalogue"),
-        ] {
-            if theme::choice(ui, &a.t(key), a.plugin_tab == tab, true) {
-                acts.push(Act::Tab(tab));
-            }
+        ];
+        let options: Vec<(String, bool)> = all
+            .iter()
+            .map(|(tab, key)| (a.t(key), a.plugin_tab == *tab))
+            .collect();
+        if let Some(i) = theme::segmented(ui, &options, true) {
+            acts.push(Act::Tab(all[i].0));
         }
     });
     ui.add_space(6.0);
@@ -108,10 +111,8 @@ fn add_card(a: &mut App, ui: &mut egui::Ui, acts: &mut Vec<Act>, editable: bool)
             }
         });
         ui.add(egui::Label::new(dim(a.t("launcher.ui.plugins.add_note"))).wrap());
-        if ui
-            .small_button(a.t("launcher.hint.plugins_folder"))
-            .clicked()
-        {
+        ui.add_space(2.0);
+        if theme::plain(ui, &a.t("launcher.hint.plugins_folder"), true) {
             acts.push(Act::OpenPath(crate::plugins::plugins_dir(&a.here)));
         }
     });

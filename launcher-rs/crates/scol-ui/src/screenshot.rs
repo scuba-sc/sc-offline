@@ -74,9 +74,18 @@ struct Shots {
 /// (file name, page, plugin tab, plugin whose settings are open, capability groups open (1 auto, 2 not yet), scroll)
 type Shot = (&'static str, Page, PluginTab, Option<&'static str>, u8, f32);
 
-const SHOTS: [Shot; 14] = [
+const SHOTS: [Shot; 15] = [
     ("home", Page::Home, PluginTab::Installed, None, 0, 0.0),
     ("output", Page::Output, PluginTab::Installed, None, 0, 0.0),
+    // The session-log question with its four answer buttons (see `Shots::ui`).
+    (
+        "output-question",
+        Page::Output,
+        PluginTab::Installed,
+        None,
+        0,
+        0.0,
+    ),
     ("plugins", Page::Plugins, PluginTab::Installed, None, 0, 0.0),
     (
         "plugin-settings",
@@ -182,6 +191,10 @@ impl eframe::App for Shots {
         self.app.open_plugin = open.map(str::to_string);
         self.app.caps_auto = more & 1 != 0;
         self.app.caps_more = more & 2 != 0;
+        self.app.prompt = (name == "output-question").then(|| crate::app::Prompt {
+            kind: crate::backend::PromptKind::Logs,
+            text: "Delete these files?".to_string(),
+        });
         if name.ends_with("-ru") && self.app.lang != crate::i18n::Lang::Ru {
             self.app.set_language(scol_config::Language::Russian);
             self.app.note = None;

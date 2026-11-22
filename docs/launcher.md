@@ -42,9 +42,9 @@ sc-offline.exe [play|install|uninstall|status|mcp|update|stop|plugins|help] [--g
 
 A double-click opens the window. It speaks English and Russian (**Language** on the Settings page; Auto follows Windows). If it cannot open, run `sc-offline.exe play` from a terminal. Under Wine the console run is the default, and `--window` opens the window anyway. After a double-click, `--console` runs `play` in the console instead. The sidebar has five pages.
 
-**Home** shows your status on the left and the actions on the right.
+**Home** shows the verdict with **Play** beside it, the smaller actions under them, and your status below. The window is dark whatever theme Windows uses.
 
-- **Play** and **Update** run the same commands as the terminal. Their questions become **Yes** and **No** buttons (or press Y or N). Both buttons are disabled while a command or the game runs.
+- **Play** and **Update** run the same commands as the terminal. Their questions appear on the **Output** page with a button for each answer (or press Y or N), and the taskbar button flashes when one is waiting. A question nobody answers takes its default (no, keep) when the command ends. Both buttons are disabled while a command or the game runs.
 - **Repair banner.** When a crash left PC changes behind, a banner lists them and offers **Repair: undo PC changes**, which runs `uninstall`.
 - **Status panel.** The same checks as `status`: game folder and build, whether the mod is installed, PC changes left over, whether the network is blocked while you play, Easy Anti-Cheat, how many plugins are on, and the SDK version. It refreshes by itself. The line above the rows says **Safe to go online**, **Not safe to go online** (with what is left), or **Game folder not known yet**.
 

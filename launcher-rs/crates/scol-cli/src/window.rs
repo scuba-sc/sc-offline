@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The window's backend: Play, Update and Repair run this same exe as a child with `SC_OFFLINE_GUI` set
 //! (the C++ launcher does the same, so the window and the command line share one code path) and stream
-//! its output into the Output page. Stop runs the stop channel of `scol_play` in this process.
+//! its output into the Output page. The child's `[y/N]` questions (delete this session's logs, make a
+//! crash report) are answered by the window's buttons through the child's stdin, as the C++ window does.
+//! Stop runs the stop channel of `scol_play` in this process.
 //! Catalogue downloads use the WinHTTP fetcher of `scol_update`. Not run in game.
 
 use scol_catalogue::fetch::Fetcher;
@@ -9,7 +11,7 @@ use scol_install::status::collect_status;
 use scol_play::real::RealStop;
 use scol_play::stop::{run_stop_command, EndPolicy, StopCommand, STOP_ACK_WAIT_MS};
 use scol_ui::{Backend, Command};
-use std::io::{BufRead, BufReader};
+use std::io::{Read, Write};
 use std::os::windows::process::CommandExt;
 use std::path::Path;
 use std::process::Stdio;
@@ -24,6 +26,8 @@ pub struct WindowBackend {
     exe: std::path::PathBuf,
     /// (bin folder, when the cached running flag was taken, the flag)
     cache: Mutex<(Option<String>, Option<Instant>, bool)>,
+    /// The input of the child that runs now: the answers to its questions go here.
+    answers: Mutex<Option<std::process::ChildStdin>>,
 }
 
 impl WindowBackend {
@@ -32,6 +36,7 @@ impl WindowBackend {
         WindowBackend {
             exe,
             cache: Mutex::new((None, None, false)),
+            answers: Mutex::new(None),
         }
     }
 
@@ -44,9 +49,70 @@ impl WindowBackend {
     }
 }
 
+impl WindowBackend {
+    /// Runs `program` with `args` as the window's child: no console window, `SC_OFFLINE_GUI` set, its
+    /// output streamed to `out` line by line (a question at once), its input kept so
+    /// [`Backend::answer`] can answer. Returns its exit code.
+    pub fn run_child(
+        &self,
+        program: &Path,
+        args: &[&str],
+        out: &mut dyn FnMut(&str),
+    ) -> Result<i32, String> {
+        let mut child = std::process::Command::new(program)
+            .args(args)
+            .env(scol_contract::env::GUI, "1")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| format!("could not start {}: {e}", program.display()))?;
+        // Kept while the child runs. Dropping it ends the child's input: a question nobody answered
+        // then takes its default (no, keep).
+        *self.answers.lock().unwrap_or_else(|e| e.into_inner()) = child.stdin.take();
+        let code = pump(child, out);
+        *self.answers.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        code
+    }
+}
+
 impl Default for WindowBackend {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Reads `src` to its end and sends its lines. A question has no line end (the answer is typed after
+/// it), so text that ends with a question's answer list is sent as soon as it is there.
+pub fn read_lines(mut src: impl Read, tx: &mpsc::Sender<String>) {
+    let send = |bytes: &mut Vec<u8>| {
+        let text = String::from_utf8_lossy(bytes);
+        let _ = tx.send(text.trim_end_matches('\r').to_string());
+        bytes.clear();
+    };
+    let mut pending: Vec<u8> = Vec::new();
+    let mut buf = [0u8; 4096];
+    loop {
+        let n = match src.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => n,
+        };
+        for &b in &buf[..n] {
+            if b == b'\n' {
+                send(&mut pending);
+            } else {
+                pending.push(b);
+            }
+        }
+        if !pending.is_empty()
+            && scol_ui::backend::question(&String::from_utf8_lossy(&pending)).is_some()
+        {
+            send(&mut pending);
+        }
+    }
+    if !pending.is_empty() {
+        send(&mut pending);
     }
 }
 
@@ -55,19 +121,11 @@ fn pump(mut child: std::process::Child, out: &mut dyn FnMut(&str)) -> Result<i32
     let mut readers = Vec::new();
     if let Some(o) = child.stdout.take() {
         let tx = tx.clone();
-        readers.push(std::thread::spawn(move || {
-            for l in BufReader::new(o).lines().map_while(Result::ok) {
-                let _ = tx.send(l);
-            }
-        }));
+        readers.push(std::thread::spawn(move || read_lines(o, &tx)));
     }
     if let Some(e) = child.stderr.take() {
         let tx = tx.clone();
-        readers.push(std::thread::spawn(move || {
-            for l in BufReader::new(e).lines().map_while(Result::ok) {
-                let _ = tx.send(l);
-            }
-        }));
+        readers.push(std::thread::spawn(move || read_lines(e, &tx)));
     }
     drop(tx);
     for l in rx {
@@ -120,16 +178,7 @@ impl Backend for WindowBackend {
             Command::Update => args.extend(["update", "--yes"]),
             Command::Stop => unreachable!(),
         }
-        let child = std::process::Command::new(&self.exe)
-            .args(&args)
-            .env(scol_contract::env::GUI, "1")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn()
-            .map_err(|e| format!("could not start {}: {e}", self.exe.display()))?;
-        let code = pump(child, out)?;
+        let code = self.run_child(&self.exe, &args, out)?;
         if code == scol_contract::exit_code::RESTART {
             // An update was swapped in (the `update --yes` child says so, like the C++ child does): start the
             // new window and close this one, which still runs the old exe.
@@ -140,6 +189,18 @@ impl Backend for WindowBackend {
             out("[!] couldn't start the new version; start sc-offline.exe again");
         }
         Ok(code)
+    }
+
+    fn answer(&self, word: &str) {
+        if let Some(input) = self
+            .answers
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_mut()
+        {
+            let _ = writeln!(input, "{word}");
+            let _ = input.flush();
+        }
     }
 
     fn game_running(&self) -> bool {

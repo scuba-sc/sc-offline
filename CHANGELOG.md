@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased (after 0.8.0-rc.1)
+
+### Fixed
+
+- **Launcher window on a PC in light mode.** With Windows set to its light theme the window drew dark text and light buttons on its dark panels, so most text was hard to read ([#219](https://github.com/scuba-sc/sc-offline/issues/219) by [@Power-9](https://github.com/Power-9)). The window is now dark whatever theme Windows uses.
+- **Questions in the launcher window.** The window could not answer the launcher's questions (delete this session's logs, make a crash report), so each took its default and the question was left on the Output page. Each question now has a button per answer, Y and N work, and the taskbar button flashes while one waits.
+
+### Changed
+
+- **Launcher window look.** Play is one large green button beside the verdict, status lines carry a coloured mark (green fine, coral needs a look), the side list has pictures and shows whether the game is running, choices are one segmented control, and small print is lighter so it reads on the dark panels.
+
 ## 0.8.0-rc.1 (release candidate, 2026-11-19)
 
 A development pre-release of 0.8.0 for testers, published as a GitHub pre-release and not offered by the stable update channel. The list below is the 0.8.0 list. The version is `0.8.0-rc.1` in the launchers, the game DLLs and the manifest, and both launchers order it between 0.7.8 and 0.8.0 (`0.8.0-rc.1` < `0.8.0-rc.2` < `0.8.0`). Not run in game. The final 0.8.0 will be listed under its own heading after testers have reported, and the 0.7.7 zip is the way back ([release candidates](docs/launcher.md#release-candidates)).

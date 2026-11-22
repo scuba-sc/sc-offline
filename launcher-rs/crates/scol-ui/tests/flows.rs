@@ -396,6 +396,104 @@ fn stop_runs_beside_play_and_play_stays_running() {
     assert!(app.running.is_empty());
 }
 
+/// Play asks the session-log question and waits for the answer the window gives it.
+struct Asking {
+    answers: std::sync::Mutex<std::sync::mpsc::Sender<String>>,
+    waits: std::sync::Mutex<std::sync::mpsc::Receiver<String>>,
+}
+
+impl Backend for Asking {
+    fn run(&self, c: Command, _h: &Path, out: &mut dyn FnMut(&str)) -> Result<i32, String> {
+        if c != Command::Play {
+            return Err("not connected yet".into());
+        }
+        out("The game wrote these logs during this modded session:");
+        out("Delete these files? [y/N/always/never] ");
+        let word = self
+            .waits
+            .lock()
+            .unwrap()
+            .recv_timeout(std::time::Duration::from_secs(20))
+            .unwrap_or_else(|_| "nothing".into());
+        out(&format!("answered {word}"));
+        out("Make a crash report? [y/N] ");
+        Ok(0)
+    }
+
+    fn answer(&self, word: &str) {
+        let _ = self.answers.lock().unwrap().send(word.to_string());
+    }
+}
+
+#[test]
+fn a_question_of_the_command_is_answered_with_the_window_buttons() {
+    use scol_ui::app::{App, Job, Page};
+    use scol_ui::backend::{question, PromptKind};
+    assert_eq!(
+        question("Delete these files? [y/N/always/never] "),
+        Some((PromptKind::Logs, "Delete these files?".to_string()))
+    );
+    assert_eq!(
+        question("Make a crash report? [y/N] "),
+        Some((PromptKind::YesNo, "Make a crash report?".to_string()))
+    );
+    assert_eq!(question("Logs:     deleted 1 file"), None);
+    assert_eq!(question("[y/N] is how a question ends"), None);
+
+    let s = Scratch::new("ask");
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut app = App::new(
+        s.0.clone(),
+        Arc::new(Asking {
+            answers: std::sync::Mutex::new(tx),
+            waits: std::sync::Mutex::new(rx),
+        }),
+    );
+    app.submit(Job::Command(Command::Play));
+    app.page = Page::Settings; // the player looked elsewhere while the game ran
+    let start = std::time::Instant::now();
+    while app.prompt.is_none() {
+        app.pump();
+        assert!(start.elapsed().as_secs() < 10, "no question arrived");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let q = app.prompt.clone().unwrap();
+    assert_eq!(q.kind, PromptKind::Logs);
+    assert_eq!(q.text, "Delete these files?");
+    assert_eq!(app.page, Page::Output, "the question comes forward");
+    assert!(app.command_running(), "the command waits for the answer");
+
+    app.answer("always");
+    assert!(app.prompt.is_none());
+    assert_eq!(
+        app.output.last().map(String::as_str),
+        Some("Delete these files? [y/N/always/never]  always"),
+        "the answer is shown after the question"
+    );
+    app.answer("y"); // no question is open: nothing is sent
+    while !app.output.iter().any(|l| l == "answered always") {
+        app.pump();
+        assert!(start.elapsed().as_secs() < 10, "the answer did not arrive");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    // The command ended with a second question open: nobody is left to answer, so it goes away.
+    while app.command_running() {
+        app.pump();
+        assert!(start.elapsed().as_secs() < 10, "Play did not finish");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(app.prompt.is_none(), "{:?}", app.prompt);
+    assert!(app
+        .output
+        .iter()
+        .any(|l| l == "Make a crash report? [y/N] "));
+    while app.busy > 0 {
+        app.pump();
+        assert!(start.elapsed().as_secs() < 180, "jobs did not finish");
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
 #[test]
 fn unconnected_backend_answers_in_words() {
     let u = scol_ui::Unconnected;

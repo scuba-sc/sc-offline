@@ -36,9 +36,43 @@ impl Command {
     }
 }
 
+/// The two questions a command asks, by the answers it reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PromptKind {
+    /// `... [y/N] `: yes or no.
+    YesNo,
+    /// `... [y/N/always/never] `: the session-log question.
+    Logs,
+}
+
+/// What the launcher puts at the end of a yes/no question (`AskYes`).
+pub const ASK_YES_NO: &str = "[y/N]";
+/// What it puts at the end of the session-log question (`AskLogs`).
+pub const ASK_LOGS: &str = "[y/N/always/never]";
+
+/// When `line` is a question a command waits on: its kind and the question without the answer list.
+/// A question has no line end, so a backend hands it over as soon as its text ends this way.
+pub fn question(line: &str) -> Option<(PromptKind, String)> {
+    let l = line.trim_end();
+    let (kind, mark) = if l.ends_with(ASK_LOGS) {
+        (PromptKind::Logs, ASK_LOGS)
+    } else if l.ends_with(ASK_YES_NO) {
+        (PromptKind::YesNo, ASK_YES_NO)
+    } else {
+        return None;
+    };
+    Some((kind, l[..l.len() - mark.len()].trim().to_string()))
+}
+
 /// Lines go to `out` as they are produced (the Output page shows them live). Return the exit code,
 /// or an error text when the command could not start.
 pub trait Backend: Send + Sync {
+    /// Give `word` (`y`, `n`, `always` or `never`) to the command that asked a question. A backend that
+    /// cannot answer does nothing, and the command takes its own default when its input ends.
+    fn answer(&self, word: &str) {
+        let _ = word;
+    }
+
     fn run(&self, command: Command, here: &Path, out: &mut dyn FnMut(&str)) -> Result<i32, String> {
         let _ = (here, out);
         Err(format!("{} is {NOT_CONNECTED}", command.word()))
