@@ -4,7 +4,7 @@ TitanLink and voxel_bridge are independent, optional native plugins: [`plugins/t
 
 ## Build, install and enable
 
-1. Get an identified SDK that contains the IPC and spatial reads and full-pose conversion. The published SDK 2.4.0 archive (`sco-sdk-2.4.0.zip`, tag `sdk-v2.4.0`) does (`sco_ipc.h`, `sc_game_spatial.h`). Use no private host headers.
+1. Get an identified SDK that contains the IPC and spatial reads and full-pose conversion. The published SDK 2.4.1 release candidate 1 archive (`sco-sdk-2.4.1.zip`, tag `sdk-v2.4.1-rc.1`) does (`sco_ipc.h`, `sc_game_spatial.h`). Use no private host headers.
 2. Configure each bridge on its own:
 
    ```text

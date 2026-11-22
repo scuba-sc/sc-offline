@@ -17,7 +17,7 @@
         {"id": "loadout", "artifact_dir": "built-loadout/loadout", "module": "loadout.dll", "disabled": false}
       ],
       "excluded": {
-        "gear_presets": "Development consumer: the published stable SDK 2.4.0 defines game.inventory.layout, but the current offline player product has no ready producer, so capture is unavailable at runtime.",
+        "gear_presets": "Development consumer: the published SDK 2.4.1 release candidate 1 defines game.inventory.layout, but the current offline player product has no ready producer, so capture is unavailable at runtime.",
         "titanlink": "Optional local bridge: built separately and kept disabled pending maintainer Windows/offline acceptance.",
         "voxel_bridge": "Optional local bridge: built separately and kept disabled pending maintainer Windows/offline acceptance."
       },

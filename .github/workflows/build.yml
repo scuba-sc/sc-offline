@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       qualify_stable_sdk:
-        description: 'Qualify the published sco-core SDK 2.4.0 release'
+        description: 'Qualify the published sco-core SDK 2.4.1 release'
         type: boolean
         default: false
 # Default to read; only the release job asks for write.
@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: scuba-sc/sco-core
-          ref: 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          ref: ef4061b123a1f0b4f449e6c0257078d7348520e3
           path: stable-core
           fetch-depth: 0
           persist-credentials: false
@@ -53,20 +53,20 @@ jobs:
           fi
           test "$(git -C ../offline-source rev-parse HEAD)" = "$OFFLINE_RUN_SHA"
           test -z "$(git -C ../offline-source status --porcelain)"
-          test "$(git -C ../stable-core rev-parse HEAD)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
-          git -C ../stable-core fetch origin refs/tags/sdk-v2.4.0:refs/tags/sdk-v2.4.0
-          test "$(git -C ../stable-core rev-parse 'refs/tags/sdk-v2.4.0^{commit}')" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          test "$(git -C ../stable-core rev-parse HEAD)" = ef4061b123a1f0b4f449e6c0257078d7348520e3
+          git -C ../stable-core fetch origin refs/tags/sdk-v2.4.1-rc.1:refs/tags/sdk-v2.4.1-rc.1
+          test "$(git -C ../stable-core rev-parse 'refs/tags/sdk-v2.4.1-rc.1^{commit}')" = ef4061b123a1f0b4f449e6c0257078d7348520e3
           test -z "$(git -C ../stable-core status --porcelain)"
-          gh release view sdk-v2.4.0 --repo scuba-sc/sco-core --json tagName,isDraft,isPrerelease > "$RUNNER_TEMP/release-view.json"
+          gh release view sdk-v2.4.1-rc.1 --repo scuba-sc/sco-core --json tagName,isDraft,isPrerelease > "$RUNNER_TEMP/release-view.json"
           python3 - "$RUNNER_TEMP/release-view.json" <<'PY'
           import json, sys
           release_view = json.load(open(sys.argv[1], encoding='utf-8'))
-          assert release_view['tagName'] == 'sdk-v2.4.0'
+          assert release_view['tagName'] == 'sdk-v2.4.1-rc.1'
           assert release_view['isDraft'] is False
-          assert release_view['isPrerelease'] is False
+          assert release_view['isPrerelease'] is True
           PY
           mkdir -p "$RUNNER_TEMP/stable-assets"
-          gh release download sdk-v2.4.0 --repo scuba-sc/sco-core --dir "$RUNNER_TEMP/stable-assets"
+          gh release download sdk-v2.4.1-rc.1 --repo scuba-sc/sco-core --dir "$RUNNER_TEMP/stable-assets"
           cd "$RUNNER_TEMP/stable-assets"
           sha256sum -c SHA256SUMS
           python3 - <<'PY'
@@ -74,14 +74,14 @@ jobs:
           root = pathlib.Path('.')
           release = json.loads((root / 'release.json').read_text())
           expected = {
-              'sco-sdk-2.4.0.zip': '0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc',
-              'sco-sdk-core-source-2.4.0.zip': 'df756719da0de54ead18973258d3bc35640e26d44088b3b6ffcf8672ebb1ee51',
-              'sco-sdk-host-source-sc-2.4.0.zip': 'a0aaaba07e3d4eb0d8c264912cd6f2ab23f0d237a99fa07816005790a76efc4c',
+              'sco-sdk-2.4.1.zip': '7d17e8671a45129a74b129b4620899ba999d7be783785baa69a8e985a43cb0fd',
+              'sco-sdk-core-source-2.4.1.zip': 'e36bb3d70c79d96d038b3f08996ec524c9f5cc7a12064fce431f1fba01a0ac05',
+              'sco-sdk-host-source-sc-2.4.1.zip': '80792d67bb5b94ab747aad0b9ca519816f5df96fed5a9afed6cec55d75e2eecc',
           }
-          assert release['tag'] == 'sdk-v2.4.0'
+          assert release['tag'] == 'sdk-v2.4.1-rc.1'
           assert release['source']['repo'] == 'scuba-sc/sco-core'
-          assert release['source']['sha'] == '6106fa3639cbcc28f78a1ded8de2707de019f4d3'
-          assert release['builder']['run_id'] == 41342490537
+          assert release['source']['sha'] == 'ef4061b123a1f0b4f449e6c0257078d7348520e3'
+          assert release['builder']['run_id'] == 44964296497
           assets = {item['name']: item for item in release['artifacts']}
           for name, digest in expected.items():
               item = assets[name]
@@ -91,21 +91,21 @@ jobs:
               assert hashlib.sha256(data).hexdigest() == digest, name
           PY
           mkdir -p "$RUNNER_TEMP/stable-extracted"
-          unzip -q sco-sdk-host-source-sc-2.4.0.zip -d "$RUNNER_TEMP/stable-extracted"
-          kit="$RUNNER_TEMP/stable-extracted/sco-sdk-host-source-sc-2.4.0"
+          unzip -q sco-sdk-host-source-sc-2.4.1.zip -d "$RUNNER_TEMP/stable-extracted"
+          kit="$RUNNER_TEMP/stable-extracted/sco-sdk-host-source-sc-2.4.1"
           (cd "$kit" && sha256sum -c SHA256SUMS)
           python3 - "$kit/COMPATIBILITY.json" <<'PY'
           import json, sys
           data = json.load(open(sys.argv[1], encoding='utf-8'))
           assert data['profile'] == 'host-source-sc'
-          assert data['core_sdk_version'] == '2.4.0'
-          assert data['source_commits']['core'] == '6106fa3639cbcc28f78a1ded8de2707de019f4d3'
-          assert data['source_commits']['game-sc'] == '6106fa3639cbcc28f78a1ded8de2707de019f4d3'
+          assert data['core_sdk_version'] == '2.4.1'
+          assert data['source_commits']['core'] == 'ef4061b123a1f0b4f449e6c0257078d7348520e3'
+          assert data['source_commits']['game-sc'] == 'ef4061b123a1f0b4f449e6c0257078d7348520e3'
           PY
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: stable-host-source-kit
-          path: ${{ runner.temp }}/stable-assets/sco-sdk-host-source-sc-2.4.0.zip
+          path: ${{ runner.temp }}/stable-assets/sco-sdk-host-source-sc-2.4.1.zip
           if-no-files-found: error
           retention-days: 7
 
@@ -126,7 +126,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: scuba-sc/sco-core
-          ref: 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          ref: ef4061b123a1f0b4f449e6c0257078d7348520e3
           path: stable-core
           fetch-depth: 0
           persist-credentials: false
@@ -140,7 +140,7 @@ jobs:
           INPUT_KIND: ${{ matrix.source }}
         run: |
           set -euo pipefail
-          test "$(git -C stable-core rev-parse HEAD)" = 6106fa3639cbcc28f78a1ded8de2707de019f4d3
+          test "$(git -C stable-core rev-parse HEAD)" = ef4061b123a1f0b4f449e6c0257078d7348520e3
           test -z "$(git -C stable-core status --porcelain)"
           workspace="$GITHUB_WORKSPACE"; temp="$RUNNER_TEMP"; py=python3; generator=()
           if [ "$RUNNER_OS" = Windows ]; then
@@ -149,19 +149,19 @@ jobs:
           else
             export CC=clang CXX=clang++
           fi
-          archive="$temp/stable-kit/sco-sdk-host-source-sc-2.4.0.zip"
+          archive="$temp/stable-kit/sco-sdk-host-source-sc-2.4.1.zip"
           "$py" - "$archive" <<'PY'
           import hashlib, sys
-          assert hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest() == 'a0aaaba07e3d4eb0d8c264912cd6f2ab23f0d237a99fa07816005790a76efc4c'
+          assert hashlib.sha256(open(sys.argv[1], 'rb').read()).hexdigest() == '80792d67bb5b94ab747aad0b9ca519816f5df96fed5a9afed6cec55d75e2eecc'
           PY
           "$py" -m zipfile -e "$archive" "$temp/stable-extracted"
-          kit="$temp/stable-extracted/sco-sdk-host-source-sc-2.4.0"
+          kit="$temp/stable-extracted/sco-sdk-host-source-sc-2.4.1"
           "$py" - "$kit/COMPATIBILITY.json" <<'PY'
           import json, sys
           data = json.load(open(sys.argv[1], encoding='utf-8'))
           assert data['profile'] == 'host-source-sc'
-          assert data['source_commits']['core'] == '6106fa3639cbcc28f78a1ded8de2707de019f4d3'
-          assert data['source_commits']['game-sc'] == '6106fa3639cbcc28f78a1ded8de2707de019f4d3'
+          assert data['source_commits']['core'] == 'ef4061b123a1f0b4f449e6c0257078d7348520e3'
+          assert data['source_commits']['game-sc'] == 'ef4061b123a1f0b4f449e6c0257078d7348520e3'
           PY
           source="$workspace/stable-core"
           if [ "$INPUT_KIND" = kit ]; then source="$kit"; fi
@@ -522,9 +522,9 @@ jobs:
       - name: Download published SDK (combined core + game)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.4.0 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.4.1-rc.1 -R scuba-sc/sco-core -p 'sco-sdk-2.4.1.zip' -p SHA256SUMS -D "$RUNNER_TEMP/sdk-assets"
       - name: Isolated inspector build, full dependency traces, negative controls and checker
-        run: python3 tools/check_inspector_sdk.py --archive "$RUNNER_TEMP/sdk-assets/sco-sdk-2.4.0.zip" --sums "$RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$RUNNER_TEMP/inspector-proof"
+        run: python3 tools/check_inspector_sdk.py --archive "$RUNNER_TEMP/sdk-assets/sco-sdk-2.4.1.zip" --sums "$RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$RUNNER_TEMP/inspector-proof"
 
   inspector-sdk:
     runs-on: windows-2025-vs2026
@@ -535,9 +535,9 @@ jobs:
       - name: Download published SDK (combined core + game)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.4.0 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.4.1-rc.1 -R scuba-sc/sco-core -p 'sco-sdk-2.4.1.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
       - name: Isolated MSVC inspector, module workflow, full dependency traces and checker
-        run: python tools/check_inspector_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.4.0.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/inspector-proof"
+        run: python tools/check_inspector_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.4.1.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/inspector-proof"
       - name: Upload enabled inspector release folder
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -555,9 +555,9 @@ jobs:
       - name: Download published SDK (combined core + game)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.4.0 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.4.1-rc.1 -R scuba-sc/sco-core -p 'sco-sdk-2.4.1.zip' -p SHA256SUMS -D "$RUNNER_TEMP/sdk-assets"
       - name: Isolated NPC build, lifecycle module test, full dependency traces, negative controls and checker
-        run: python3 tools/check_npc_sdk.py --archive "$RUNNER_TEMP/sdk-assets/sco-sdk-2.4.0.zip" --sums "$RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$RUNNER_TEMP/npc-proof"
+        run: python3 tools/check_npc_sdk.py --archive "$RUNNER_TEMP/sdk-assets/sco-sdk-2.4.1.zip" --sums "$RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$RUNNER_TEMP/npc-proof"
 
   npc-sdk:
     runs-on: windows-2025-vs2026
@@ -568,9 +568,9 @@ jobs:
       - name: Download published SDK (combined core + game)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.4.0 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.4.1-rc.1 -R scuba-sc/sco-core -p 'sco-sdk-2.4.1.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
       - name: Isolated MSVC NPC, lifecycle module test, full dependency traces and checker
-        run: python tools/check_npc_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.4.0.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/npc-proof"
+        run: python tools/check_npc_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.4.1.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/npc-proof"
       - name: Upload enabled NPC release folder
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -590,9 +590,9 @@ jobs:
       - name: Download published SDK (combined core + game)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.4.0 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.4.1-rc.1 -R scuba-sc/sco-core -p 'sco-sdk-2.4.1.zip' -p SHA256SUMS -D "$RUNNER_TEMP/sdk-assets"
       - name: Validate Loadout module workflows, sanitizers and public dependency boundaries
-        run: python3 tools/check_loadout_sdk.py --archive "$RUNNER_TEMP/sdk-assets/sco-sdk-2.4.0.zip" --sums "$RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$RUNNER_TEMP/loadout-proof"
+        run: python3 tools/check_loadout_sdk.py --archive "$RUNNER_TEMP/sdk-assets/sco-sdk-2.4.1.zip" --sums "$RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$RUNNER_TEMP/loadout-proof"
 
   loadout-sdk:
     runs-on: windows-2025-vs2026
@@ -603,9 +603,9 @@ jobs:
       - name: Download published SDK (combined core + game)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.4.0 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.4.1-rc.1 -R scuba-sc/sco-core -p 'sco-sdk-2.4.1.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
       - name: Validate MSVC Loadout module workflows and public dependency traces
-        run: python tools/check_loadout_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.4.0.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/loadout-proof"
+        run: python tools/check_loadout_sdk.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.4.1.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/loadout-proof"
       - name: Upload enabled loadout release folder
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -792,9 +792,9 @@ jobs:
       - name: Download published SDK (combined core + game)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download sdk-v2.4.0 -R scuba-sc/sco-core -p 'sco-sdk-2.4.0.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
+        run: gh release download sdk-v2.4.1-rc.1 -R scuba-sc/sco-core -p 'sco-sdk-2.4.1.zip' -p SHA256SUMS -D "$env:RUNNER_TEMP/sdk-assets"
       - name: Isolated MSVC contracts build, read-slice module workflow, full dependency traces and checker
-        run: python tools/contracts_sdk_check.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.4.0.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/contracts-proof" --slice read
+        run: python tools/contracts_sdk_check.py --archive "$env:RUNNER_TEMP/sdk-assets/sco-sdk-2.4.1.zip" --sums "$env:RUNNER_TEMP/sdk-assets/SHA256SUMS" --work "$env:RUNNER_TEMP/contracts-proof" --slice read
       - name: Upload enabled contracts release folder
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -806,7 +806,7 @@ jobs:
   # Proofs: check_discord_sdk.py, check_crew_sdk.py, check_spawn_sdk.py, check_build_sdk.py,
   # check_teleport_sdk.py, check_quantum_sdk.py. Creative is proved by its own job below.
   # Isolated native features; checker and compiler traces use published archives only.
-  # Every external plugin consumes the one published SDK 2.4.0 stable release.
+  # Every external plugin consumes the one published SDK 2.4.1 stable release.
   # The archive basename and tag carry the same SDK version.
   external-sdk:
     strategy:
@@ -816,8 +816,8 @@ jobs:
         feature: [discord, crew, spawn, build, mining, teleport, quantum]
     runs-on: windows-2025-vs2026
     env:
-      SDK_VERSION: '2.4.0'
-      SDK_TAG: 'sdk-v2.4.0'
+      SDK_VERSION: '2.4.1'
+      SDK_TAG: 'sdk-v2.4.1-rc.1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -845,8 +845,8 @@ jobs:
   creative-sdk:
     runs-on: windows-2025-vs2026
     env:
-      SDK_VERSION: '2.4.0'
-      SDK_TAG: 'sdk-v2.4.0'
+      SDK_VERSION: '2.4.1'
+      SDK_TAG: 'sdk-v2.4.1-rc.1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

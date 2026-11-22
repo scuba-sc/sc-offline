@@ -191,9 +191,9 @@ class GeneratorSelection(unittest.TestCase):
         def args(**kw):
             values = dict(sdk_version=SDK_VERSION, sdk_sha256=SDK_SHA256, archive_sha256=None, candidate=False, sdk_source=None, sdk_profile=None)
             values.update(kw); return SimpleNamespace(**values)
-        self.assertEqual(explicit_preflight_pin(args()), ('sco-sdk-2.4.0', SDK_SHA256))
+        self.assertEqual(explicit_preflight_pin(args()), ('sco-sdk-2.4.1', SDK_SHA256))
         digest = '1' * 64
-        self.assertEqual(explicit_preflight_pin(args(candidate=True, sdk_sha256=digest, archive_sha256=digest, sdk_source='a' * 40, sdk_profile='legacy')), ('sco-sdk-2.4.0', digest, 'a' * 40, 'legacy'))
+        self.assertEqual(explicit_preflight_pin(args(candidate=True, sdk_sha256=digest, archive_sha256=digest, sdk_source='a' * 40, sdk_profile='legacy')), ('sco-sdk-2.4.1', digest, 'a' * 40, 'legacy'))
         for invalid in (args(sdk_sha256=digest), args(archive_sha256=digest),
                         args(candidate=True, sdk_sha256=digest),
                         args(candidate=True, sdk_sha256=digest, archive_sha256='2' * 64),
@@ -203,7 +203,7 @@ class GeneratorSelection(unittest.TestCase):
     def test_build_contracts_preflight_rejects_mismatched_archive(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            archive = root / 'sco-sdk-2.4.0.zip'; archive.write_bytes(b'not matching')
+            archive = root / 'sco-sdk-2.4.1.zip'; archive.write_bytes(b'not matching')
             sums = root / 'SHA256SUMS'; sums.write_text('0' * 64 + '  ' + archive.name + '\n')
             for tool in ('check_build_sdk.py', 'contracts_sdk_check.py'):
                 work = root / (tool + '.work')
@@ -222,7 +222,7 @@ class GeneratorSelection(unittest.TestCase):
             (['--archive-sha256', '0' * 64], '--archive-sha256 requires --candidate'),
             (['--candidate', '--sdk-sha256', '0' * 64], '--candidate requires matching'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '1' * 64], '--candidate requires matching'),
-            (['--candidate', '--archive-sha256', '0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc'], '--candidate must select a non-default'),
+            (['--candidate', '--archive-sha256', '7d17e8671a45129a74b129b4620899ba999d7be783785baa69a8e985a43cb0fd'], '--candidate must select a non-default'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64], '--candidate requires full lowercase --sdk-source'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64, '--sdk-source', 'a' * 40], '--candidate requires --sdk-profile legacy'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64, '--sdk-source', 'a' * 40, '--sdk-profile', 'core'], '--candidate requires --sdk-profile legacy'),
@@ -243,7 +243,7 @@ class GeneratorSelection(unittest.TestCase):
             (['--archive-sha256', '0' * 64], '--archive-sha256 requires --candidate'),
             (['--candidate', '--sdk-sha256', '0' * 64], '--candidate requires matching'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '1' * 64], '--candidate requires matching'),
-            (['--candidate', '--archive-sha256', '0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc'], '--candidate must select a non-default'),
+            (['--candidate', '--archive-sha256', '7d17e8671a45129a74b129b4620899ba999d7be783785baa69a8e985a43cb0fd'], '--candidate must select a non-default'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64], '--candidate requires full lowercase --sdk-source'),
             (['--candidate', '--sdk-sha256', '0' * 64, '--archive-sha256', '0' * 64, '--sdk-source', 'a' * 40], '--candidate requires --sdk-profile legacy'),
         ]
@@ -293,7 +293,7 @@ class GeneratorSelection(unittest.TestCase):
     def test_travel_preflight_rejects_archive_digest_mismatch(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            archive = root / 'sco-sdk-2.4.0.zip'; archive.write_bytes(b'not matching')
+            archive = root / 'sco-sdk-2.4.1.zip'; archive.write_bytes(b'not matching')
             sums = root / 'SHA256SUMS'; sums.write_text('0' * 64 + '  ' + archive.name + '\n')
             for feature in ('quantum', 'teleport', 'npc', 'loadout', 'discord', 'crew', 'mining'):
                 work = root / feature
@@ -364,8 +364,8 @@ class GeneratorSelection(unittest.TestCase):
     def test_inspector_defaults_keep_published_stable_identity(self):
         module = proof_module('inspector')
         args = module.parse_args(['--archive', 'sdk.zip', '--sums', 'SHA256SUMS', '--work', 'proof'])
-        self.assertEqual(args.sdk_version, '2.4.0')
-        self.assertEqual(args.sdk_sha256, '0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc')
+        self.assertEqual(args.sdk_version, '2.4.1')
+        self.assertEqual(args.sdk_sha256, '7d17e8671a45129a74b129b4620899ba999d7be783785baa69a8e985a43cb0fd')
         self.assertFalse(args.candidate)
 
 

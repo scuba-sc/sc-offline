@@ -6,7 +6,7 @@ Both CMake options `SCO_ASOP_HOST_COMPOSITION` and `SCO_ASOP_SELECTION_COMPOSITI
 
 The Core at the `external/sco-core` gitlink still returns `Unavailable` from the ASOP host `Start` before it installs any hook, even when validation and admission pass. Invalid or disabled configurations can return other results. Its `Stop` is synchronous. The legacy quit detour requests owner closure and then forwards the original call on the same stack, without draining the owner. The separate `ForwardQuit` helper calls `BeforeQuit`, which runs `Stop`. Neither path shows engine-object lifetime or a safe native drain. See [SDK coordinates](sdk-candidate.md) for the Core version.
 
-`src/asop_shell.*` consumes the game-specific public host-source interface `sco::game::asop_host`. It is not a plugin service. The published SDK 2.4.0 carries it in `sco-sdk-host-source-sc-2.4.0.zip` (`include/sco/game/asop_host.h`). Having the header does not enable the consumer. The missing lifecycle contract is the blocker.
+`src/asop_shell.*` consumes the game-specific public host-source interface `sco::game::asop_host`. It is not a plugin service. The published SDK 2.4.1 release candidate 1 (`sdk-v2.4.1-rc.1`) carries it in `sco-sdk-host-source-sc-2.4.1.zip` (`include/sco/game/asop_host.h`). Having the header does not enable the consumer. The missing lifecycle contract is the blocker.
 
 ## Configure status
 

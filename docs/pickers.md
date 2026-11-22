@@ -44,7 +44,7 @@ The list order is the copied catalogue order, not the old ship list ranked by si
 
 ## Building and checking the pickers
 
-Build the plugins against the extracted, checksum-verified `sco-sdk-2.4.0.zip` of the published SDK 2.4.0 (`sdk-v2.4.0`), which ships the widgets and content headers. Do not add the host checkout to a plugin's include paths. One fixture loads the three real modules against synthetic public providers:
+Build the plugins against the extracted, checksum-verified `sco-sdk-2.4.1.zip` of the published SDK 2.4.1 release candidate 1 (`sdk-v2.4.1-rc.1`), which ships the widgets and content headers. Do not add the host checkout to a plugin's include paths. One fixture loads the three real modules against synthetic public providers:
 
 ```sh
 cmake -S plugins -B picker-build -DSCO_SDK_INCLUDE_DIR=<extracted-sdk>/include \

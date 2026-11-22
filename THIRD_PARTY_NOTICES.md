@@ -24,9 +24,9 @@ what the build compiles in and where it comes from. It is not a legal opinion.
 The plugin DLLs (`data/plugins/*/`) are built from `plugins/` against sco-core's SDK
 headers; NPC and inspector are built against the published SDK archive.
 
-At this revision `external/sco-core` is pinned to `4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd`
-(local coordinated `2.4.1-dev.3` source, not published SDK 2.4.0). This checkpoint
-is unpublished; commit-pinned upstream links may be unavailable until publication.
+At this revision `external/sco-core` is pinned to `ef4061b123a1f0b4f449e6c0257078d7348520e3`
+(the commit of the tag `sdk-v2.4.1-rc.1`, SDK 2.4.1 release candidate 1, a published
+GitHub pre-release). The final `sdk-v2.4.1` will move this pin again.
 sco-core keeps its own
 [`THIRD_PARTY_NOTICES.md`](https://github.com/scuba-sc/sco-core/blob/4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd/THIRD_PARTY_NOTICES.md)
 and [`docs/legal/third-party-inventory.md`](https://github.com/scuba-sc/sco-core/blob/4e78a6a6246636d0c1f2d5f7c16e33f36b1b20dd/docs/legal/third-party-inventory.md),

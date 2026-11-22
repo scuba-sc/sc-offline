@@ -14,9 +14,9 @@ The host registers no built-in features. The release stages 12 external plugin f
 
 ## Which SDK
 
-Use the published SDK 2.4.0: tag `sdk-v2.4.0`, combined archive `sco-sdk-2.4.0.zip`, checked against the release's `SHA256SUMS`. SDK 2.4.0, plugin ABI 1.1 and game pack 0.8.0 are different version numbers. The release binds the archive to Core source `6106fa3639cbcc28f78a1ded8de2707de019f4d3`. [SDK coordinates](sdk-candidate.md) lists every archive hash.
+Use the published SDK 2.4.1 release candidate 1: tag `sdk-v2.4.1-rc.1`, combined archive `sco-sdk-2.4.1.zip`, checked against the release's `SHA256SUMS`. SDK 2.4.1, plugin ABI 1.1 and game pack 0.8.1 are different version numbers. The release binds the archive to Core source `ef4061b123a1f0b4f449e6c0257078d7348520e3`. [SDK coordinates](sdk-candidate.md) lists every archive hash.
 
-The host itself builds from the Core at the `external/sco-core` gitlink, a development revision of the 2.4.1 line. The 2.4.0 archive and its checks do not certify that pairing.
+The host itself builds from the Core at the `external/sco-core` gitlink, the commit of the tag `sdk-v2.4.1-rc.1` (`ef4061b123a1f0b4f449e6c0257078d7348520e3`), the same source the 2.4.1 release candidate archives were built from. The 2.4.0 archive and its checks do not certify that pairing.
 
 To prove a plugin against an unpublished development archive, pass these options to the proof script. The published defaults do not change.
 
@@ -40,22 +40,22 @@ You need CMake 3.20 or newer, Python 3 and a C and C++20 compiler. The game DLL 
 
 ### 1. Get and verify the SDK
 
-Download `sco-sdk-2.4.0.zip` and `SHA256SUMS` from the [2.4.0 release](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0). The archive's SHA-256 is `0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc`. Use an empty work folder. In a Developer PowerShell:
+Download `sco-sdk-2.4.1.zip` and `SHA256SUMS` from the [2.4.1 release](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.1-rc.1). The archive's SHA-256 is `7d17e8671a45129a74b129b4620899ba999d7be783785baa69a8e985a43cb0fd`. Use an empty work folder. In a Developer PowerShell:
 
 ```powershell
 $Work = Join-Path $PWD "inspector-dev"
 New-Item -ItemType Directory -Path $Work -ErrorAction Stop | Out-Null
 Set-Location $Work
-$Release = "https://github.com/scuba-sc/sco-core/releases/download/sdk-v2.4.0"
-Invoke-WebRequest "$Release/sco-sdk-2.4.0.zip" -OutFile "sco-sdk-2.4.0.zip"
+$Release = "https://github.com/scuba-sc/sco-core/releases/download/sdk-v2.4.1-rc.1"
+Invoke-WebRequest "$Release/sco-sdk-2.4.1.zip" -OutFile "sco-sdk-2.4.1.zip"
 Invoke-WebRequest "$Release/SHA256SUMS" -OutFile "SHA256SUMS"
-python -c "import hashlib,pathlib; p=pathlib.Path('sco-sdk-2.4.0.zip'); rows=[l.split() for l in pathlib.Path('SHA256SUMS').read_text().splitlines() if l.strip()]; hashes=[r[0] for r in rows if r[1].lstrip('*')==p.name]; assert len(hashes)==1 and hashlib.sha256(p.read_bytes()).hexdigest()==hashes[0], 'SDK archive checksum mismatch'"
+python -c "import hashlib,pathlib; p=pathlib.Path('sco-sdk-2.4.1.zip'); rows=[l.split() for l in pathlib.Path('SHA256SUMS').read_text().splitlines() if l.strip()]; hashes=[r[0] for r in rows if r[1].lstrip('*')==p.name]; assert len(hashes)==1 and hashlib.sha256(p.read_bytes()).hexdigest()==hashes[0], 'SDK archive checksum mismatch'"
 if ($LASTEXITCODE -ne 0) { throw "Do not extract an unverified SDK" }
-python -m zipfile -e sco-sdk-2.4.0.zip sdk
-$SDK = Join-Path $Work "sdk/sco-sdk-2.4.0"
+python -m zipfile -e sco-sdk-2.4.1.zip sdk
+$SDK = Join-Path $Work "sdk/sco-sdk-2.4.1"
 ```
 
-Check `VERSIONS.txt` and `COMPATIBILITY.json` in the archive: SDK 2.4.0, plugin ABI 1.1, game pack 0.8.0. The archive root `sco-sdk-2.4.0/` holds `include/`, `CMakeLists.txt` and `tools/sco-plugin-check.c`. A matching hash identifies the file you downloaded. It is not a trust guarantee. Do not replace `include/` with `external/sco-core/include`, and do not repackage the SDK yourself.
+Check `VERSIONS.txt` and `COMPATIBILITY.json` in the archive: SDK 2.4.1, plugin ABI 1.1, game pack 0.8.1. The archive root `sco-sdk-2.4.1/` holds `include/`, `CMakeLists.txt` and `tools/sco-plugin-check.c`. A matching hash identifies the file you downloaded. It is not a trust guarantee. Do not replace `include/` with `external/sco-core/include`, and do not repackage the SDK yourself.
 
 ### 2. Build and check in isolation
 

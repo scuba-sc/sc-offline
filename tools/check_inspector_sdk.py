@@ -21,11 +21,11 @@ import zipfile
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent.parent
-# Published stable SDK 2.4.0; gameplay acceptance remains separate.
-SDK_VERSION = '2.4.0'
+# Published stable SDK 2.4.1; gameplay acceptance remains separate.
+SDK_VERSION = '2.4.1'
 SDK_ROOT = 'sco-sdk-' + SDK_VERSION
 SDK_ARCHIVE = SDK_ROOT + '.zip'
-SDK_SHA256 = '0df4995624e9b094d24e9c5534b1ea7357f517c83a0a8c8ed6ad7d4d475afcbc'
+SDK_SHA256 = '7d17e8671a45129a74b129b4620899ba999d7be783785baa69a8e985a43cb0fd'
 
 
 def _unique_json_object(pairs):
@@ -196,7 +196,7 @@ def verify_extract(archive, sums, destination, pin=None):
                 raise AssertionError('Candidate SDK source mismatch: ' + name)
     if not public:
         raise AssertionError('Empty published header inventory')
-    if sdk_root == 'sco-sdk-2.4.0':
+    if sdk_root == 'sco-sdk-2.4.1':
         contracts = {
             'sc_game_build.h': ('sc_game_build_v1',),
             'sc_actor_stats.h': ('sc_actor_stats_v1',),
@@ -579,7 +579,7 @@ def main(args):
         cpp.write_text(original)
     identity = (
         'explicit unpublished candidate' if args.candidate
-        else 'published stable SDK 2.4.0 proof; final release and gameplay acceptance separate'
+        else 'published stable SDK 2.4.1 proof; final release and gameplay acceptance separate'
     )
     print(f'inspector SDK {identity} {args.sdk_version} SHA-256 {args.sdk_sha256}: PASS (synthetic, not run in game)')
 
@@ -592,7 +592,7 @@ def parse_args(argv=None):
     parser.add_argument('--generator', default='Visual Studio 18 2026',
                         help='CMake generator for Windows (default: Visual Studio 18 2026)')
     parser.add_argument('--sdk-version', default=SDK_VERSION,
-                        help='Exact SDK archive version (default: published stable 2.4.0)')
+                        help='Exact SDK archive version (default: published stable 2.4.1)')
     parser.add_argument('--sdk-sha256', default=SDK_SHA256,
                         help='Expected archive SHA-256 for the selected version')
     parser.add_argument('--candidate', action='store_true',

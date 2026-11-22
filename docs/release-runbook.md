@@ -22,9 +22,9 @@ What the candidate changes in the rules:
 
 | # | Step | Who |
 | --- | --- | --- |
-| C1 | The SDK candidate is published | maintainer only (publish), agent can do (check) |
-| C2 | Move the Core pin | agent can do |
-| C3 | Move the SDK pins | agent can do |
+| C1 | The SDK candidate is published | **Done 2026-11-22** (`sdk-v2.4.1-rc.1`) |
+| C2 | Move the Core pin | **Done** (gitlink `ef4061b`, uncommitted) |
+| C3 | Move the SDK pins | **Done** (115 pins, `--check` agrees, uncommitted) |
 | C4 | Check and commit | agent can do |
 | C5 | Push the branch | maintainer only |
 | C6 | Run the full CI on the branch | maintainer only (dispatch), agent can do (read the result) |
@@ -34,7 +34,7 @@ What the candidate changes in the rules:
 | C10 | How testers get it | maintainer only (to announce) |
 | C11 | Withdraw a bad candidate | maintainer only |
 
-**C1. The SDK candidate is published.** In `sco-core`, `release-candidate.yml` takes the prospective tag `sdk-v2.4.1-rc.1` (only from `main`), then `release.yml` publishes it (tag, run id and artifact id; it needs the `release` environment approval and skips its notify job for an `-rc` tag). Check it before anything below (agent can do):
+**C1. The SDK candidate is published. Done on 2026-11-22.** `sdk-v2.4.1-rc.1` is a GitHub pre-release on `scuba-sc/sco-core`, tag commit `ef4061b123a1f0b4f449e6c0257078d7348520e3`. The text below is kept for the re-check and for a later `-rc.2`. In `sco-core`, `release-candidate.yml` takes the prospective tag `sdk-v2.4.1-rc.1` (only from `main`), then `release.yml` publishes it (tag, run id and artifact id; it needs the `release` environment approval and skips its notify job for an `-rc` tag). Check it before anything below (agent can do):
 
 ```bash
 gh release view sdk-v2.4.1-rc.1 -R scuba-sc/sco-core --json tagName,isDraft,isPrerelease --jq '[.tagName, .isDraft, .isPrerelease]'
@@ -43,7 +43,7 @@ git ls-remote https://github.com/scuba-sc/sco-core 'refs/tags/sdk-v2.4.1-rc.1*'
 
 It must say `false` for the draft and `true` for the pre-release. The release gate refuses a candidate that gh reports as a full release. The earlier candidates `sdk-v2.4.0-rc.1` and `-rc.2` were published as full releases, so this is not automatic: mark it with `gh release edit sdk-v2.4.1-rc.1 -R scuba-sc/sco-core --prerelease` (maintainer only). The commit it names must hold `sdk/VERSION` `2.4.1` and an `sdk/DEVELOPMENT_VERSION` with `-dev.` in it: the `check` job builds a development SDK from the commit the pin selects and stops without that file.
 
-**C2. Move the Core pin (agent can do).** `external/sco-core` is a submodule that this worktree does not check out. `git update-index --cacheinfo` writes the gitlink straight into the index, which is what `git add` would do for a checked-out submodule, so it is the right command here. It touches only the index, and `git ls-files -s external/sco-core` shows the change.
+**C2. Move the Core pin (agent can do). Done:** the gitlink is `ef4061b123a1f0b4f449e6c0257078d7348520e3` in the index, not yet committed. `external/sco-core` is a submodule that this worktree does not check out. `git update-index --cacheinfo` writes the gitlink straight into the index, which is what `git add` would do for a checked-out submodule, so it is the right command here. It touches only the index, and `git ls-files -s external/sco-core` shows the change.
 
 ```bash
 CORE=$(git ls-remote https://github.com/scuba-sc/sco-core 'refs/tags/sdk-v2.4.1-rc.1^{}' 'refs/tags/sdk-v2.4.1-rc.1' | tail -1 | cut -f1)
@@ -53,7 +53,7 @@ git update-index --cacheinfo 160000,"$CORE",external/sco-core
 git ls-files -s external/sco-core                       # 160000 <the tag's commit> 0 external/sco-core
 ```
 
-**C3. Move the SDK pins (agent can do).** With the published candidate's own `release.json` and `SHA256SUMS`:
+**C3. Move the SDK pins (agent can do). Done:** `tools/bump_sdk_pin.py` moved 115 pins to SDK 2.4.1, tag `sdk-v2.4.1-rc.1`, and `--check` agrees; not yet committed. The follow-up pages are updated, and `docs/sdk-candidate.md` has a "Published SDK 2.4.1 release candidate 1" section. With the published candidate's own `release.json` and `SHA256SUMS`:
 
 ```bash
 mkdir sdk-assets
@@ -157,7 +157,7 @@ python tools/bump_sdk_pin.py --check --release-json sdk-assets/release.json --sh
 
 [`tools/bump_sdk_pin.py`](../tools/bump_sdk_pin.py) rewrites the SDK version, tag, game pack, archive hashes, source commit and publication run id in `.github/workflows/build.yml`, `tools/check_*_sdk.py`, `tools/contracts_sdk_check.py`, `tools/ci-stable-sdk-preflight.sh`, `tools/test_sdk_generators.py` and `docs/sdk-workflows.md`, and the `sdk-v` tag in CMake comments. It prints each change. The second command must report that every pin is at SDK 2.4.1.
 
-Then do what it lists as follow-ups by hand. In `docs/sdk-candidate.md`, turn "Target for 0.8.0: SDK 2.4.1 (not yet published)" into a "Published SDK 2.4.1" section with the hashes it printed, and read each page it says still names another version.
+Then do what it lists as follow-ups by hand. In `docs/sdk-candidate.md`, turn "Published SDK 2.4.1 release candidate 1" into a "Published SDK 2.4.1" section with the hashes it printed (keep the candidate as history), and read each page it says still names another version.
 
 ## 4. Regenerate and check
 

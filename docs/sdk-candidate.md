@@ -2,11 +2,25 @@
 
 Which sco-core SDK sc-offline builds against, and how to check an archive before you use it. Keep three identities apart: the Core source the host builds from (the `external/sco-core` gitlink), the SDK archive plugin proofs use, and the game. Hash and version labels do not replace each other.
 
-## Target for 0.8.0: SDK 2.4.1 (not yet published)
+## Published SDK 2.4.1 release candidate 1
 
-sc-offline 0.8.0 is built for sco-core SDK **2.4.1**, game pack **0.8.1**, plugin ABI **1.1**, game build **4.10.200.58746**. The release job refuses to package until the maintainer publishes SDK 2.4.1 and the `external/sco-core` pin matches it. The pin currently selects a development revision of the 2.4.1 line.
+sc-offline 0.8.0-rc.1 is built for sco-core SDK **2.4.1** release candidate 1, game pack **0.8.1**, plugin ABI **1.1**, game build **4.10.200.58746**. Tag [`sdk-v2.4.1-rc.1`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.1-rc.1), published as a GitHub pre-release. Core source commit `ef4061b123a1f0b4f449e6c0257078d7348520e3`. The `external/sco-core` gitlink and every SDK pin in this repository name that tag and commit.
 
-The consumer proofs for 0.8.0 ran against the final local, unpublished SDK 2.4.1 archive (`--candidate`, profile `legacy`):
+| Profile | Archive | SHA-256 |
+|---|---|---|
+| Combined core and game SDK (`legacy`) | `sco-sdk-2.4.1.zip` | `7d17e8671a45129a74b129b4620899ba999d7be783785baa69a8e985a43cb0fd` |
+| Core SDK | `sco-sdk-core-2.4.1.zip` | `9f0386c7df4b55a9f3f7af09483a46aede35f3ed6845895268b3af052a5c61e3` |
+| Core source | `sco-sdk-core-source-2.4.1.zip` | `e36bb3d70c79d96d038b3f08996ec524c9f5cc7a12064fce431f1fba01a0ac05` |
+| Star Citizen game overlay | `sco-sdk-game-sc-0.8.1.zip` | `aeb4ca1cd72a1aae77c4abf66edf8e41d03b2376e43ea7bf6959576caacb4704` |
+| Star Citizen host source | `sco-sdk-host-source-sc-2.4.1.zip` | `80792d67bb5b94ab747aad0b9ca519816f5df96fed5a9afed6cec55d75e2eecc` |
+
+This is a release candidate. The final `sdk-v2.4.1` will move every pin again, and its archives will have other hashes. Nothing built from these archives has been run in game; see [status.md](status.md).
+
+## Local development archive (record only)
+
+This section records what the local test builds used before the candidate was published. It is not what 0.8.0-rc.1 pins. The archives below were never published.
+
+The consumer proofs ran against the final local, unpublished SDK 2.4.1 archive (`--candidate`, profile `legacy`):
 
 | Item | Value |
 |---|---|
@@ -25,9 +39,9 @@ The five archives of this build, packaged twice from a clean LF export of that C
 | Star Citizen game overlay | `sco-sdk-game-sc-0.8.1.zip` | `6609b4dc45ab0f9d48591c7f108c96927a5f23199bbf49eb235c6a46453535aa` |
 | Star Citizen host source | `sco-sdk-host-source-sc-2.4.1.zip` | `de0de34c1ec6df1277789b7382326f50c85a6fdce018c48f4783d6d5111a995c` |
 
-The packager reads file bytes from the working tree, so a CRLF checkout gives different hashes from CI. These hashes are from the LF export. These are development receipts. When the SDK is published, the release's own `SHA256SUMS` and `release.json` replace them. Nothing built from these archives has been run in game; see [status.md](status.md). Earlier development archives (`2.4.1-dev.2`, `2.4.1-dev.3`, `2.4.1-dev.6` and the pre-final `5858fdb6` archive) are superseded, and their hashes are in this file's git history.
+The packager reads file bytes from the working tree, so a CRLF checkout gives different hashes from CI. These hashes are from the LF export. These are development receipts. The release's own `SHA256SUMS` and `release.json` are the authority for the published candidate above. Nothing built from these archives has been run in game; see [status.md](status.md). Earlier development archives (`2.4.1-dev.2`, `2.4.1-dev.3`, `2.4.1-dev.6` and the pre-final `5858fdb6` archive) are superseded, and their hashes are in this file's git history.
 
-## Published SDK 2.4.0
+## Published SDK 2.4.0 (history)
 
 Tag [`sdk-v2.4.0`](https://github.com/scuba-sc/sco-core/releases/tag/sdk-v2.4.0). The annotated tag peels to Core source `6106fa3639cbcc28f78a1ded8de2707de019f4d3`. The candidate run ([41342490537](https://github.com/scuba-sc/sco-core/actions/runs/41342490537)) and the publication run ([41343086992](https://github.com/scuba-sc/sco-core/actions/runs/41343086992)) both finished successfully at that source. The release manifest records the candidate artifact (`13098182566`), the source identity, the components manifest hash, all payload sizes and digests, and the five SDK profiles.
 
@@ -41,7 +55,7 @@ The five archives were checked against the release's `SHA256SUMS` and `release.j
 | Star Citizen game overlay | `sco-sdk-game-sc-0.8.0.zip` | `a5881e321bb456a3a17894413a07ece9ce6d3787bd6d1ad7dcc34fc288951f6b` | 203 |
 | Star Citizen host source | `sco-sdk-host-source-sc-2.4.0.zip` | `a0aaaba07e3d4eb0d8c264912cd6f2ab23f0d237a99fa07816005790a76efc4c` | 986 |
 
-The external plugin jobs in CI use the combined 2.4.0 archive, not the host pin. The host builds from its gitlink or from an explicit matching host-source kit (`-DSCO_HOST_SOURCE_DIR`, see [host composition](host-composition.md)).
+The 2.4.0 archives are history. The external plugin jobs in CI now use the combined 2.4.1 release candidate 1 archive, not the host pin. The host builds from its gitlink or from an explicit matching host-source kit (`-DSCO_HOST_SOURCE_DIR`, see [host composition](host-composition.md)).
 
 ## Check an archive
 

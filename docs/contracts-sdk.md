@@ -6,7 +6,7 @@ Nothing on this page has been run in game; see [status.md](status.md).
 
 ## Build, check and install
 
-1. Get a checksum-verified SDK archive that contains `sc_missions.h`. The published SDK 2.4.0 archive (`sco-sdk-2.4.0.zip`, tag `sdk-v2.4.0`) does. See [SDK coordinates](sdk-candidate.md).
+1. Get a checksum-verified SDK archive that contains `sc_missions.h`. The published SDK 2.4.1 release candidate 1 archive (`sco-sdk-2.4.1.zip`, tag `sdk-v2.4.1-rc.1`) does. See [SDK coordinates](sdk-candidate.md).
 2. Run the check:
 
    ```sh
@@ -20,7 +20,7 @@ Nothing on this page has been run in game; see [status.md](status.md).
    Or configure `plugins/contracts` with `SCO_SDK_INCLUDE_DIR=<extracted>/include` and `SCO_WORKFLOW_TESTS=ON`, build `contracts-module-test`, and run one slice.
 3. Install the `contracts` component into a separate staging folder. The host registers no `contracts` built-in, so this folder is the only provider.
 
-The read-slice check passed against the published 2.4.0 archive on Linux with synthetic providers. It builds and loads the module, checks its public dependencies, stages it and confirms the refusal when no provider is present. It does not cover the other slices, Windows or gameplay.
+The read-slice check passed against the published 2.4.1 release candidate 1 archive on Linux with synthetic providers. It builds and loads the module, checks its public dependencies, stages it and confirms the refusal when no provider is present. It does not cover the other slices, Windows or gameplay.
 
 ## Commands
 
